@@ -160,3 +160,16 @@ tasks.register('verifyPublishedModuleMetadata') {
         }
     }
 }
+
+tasks.register('verifyExamplesAgainstPublishedArtifacts') {
+    group = 'verification'
+    description = 'Publishes Corusco locally, then compiles example sources against Maven-local artifacts.'
+    dependsOn publishableProjects.collect { it.tasks.named('publishToMavenLocal') }
+    dependsOn ':corusco-examples:compilePublishedArtifactsJava'
+}
+
+gradle.projectsEvaluated {
+    project(':corusco-examples').tasks.named('compilePublishedArtifactsJava') {
+        dependsOn publishableProjects.collect { it.tasks.named('publishToMavenLocal') }
+    }
+}

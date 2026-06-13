@@ -1,7 +1,24 @@
+sourceSets {
+    publishedArtifacts {
+        java.srcDirs = sourceSets.main.java.srcDirs
+        resources.srcDirs = sourceSets.main.resources.srcDirs
+    }
+}
+
 dependencies {
     implementation project(':corusco-core')
     implementation project(':corusco-glazedlists')
     implementation project(':corusco-swing')
     implementation project(':corusco-annotations')
     annotationProcessor project(':corusco-processor')
+
+    publishedArtifactsImplementation "cz.auderis.corusco:corusco-core:${project.version}"
+    publishedArtifactsImplementation "cz.auderis.corusco:corusco-glazedlists:${project.version}"
+    publishedArtifactsImplementation "cz.auderis.corusco:corusco-swing:${project.version}"
+    publishedArtifactsImplementation "cz.auderis.corusco:corusco-annotations:${project.version}"
+    publishedArtifactsAnnotationProcessor "cz.auderis.corusco:corusco-processor:${project.version}"
+}
+
+tasks.named('compilePublishedArtifactsJava') {
+    description = 'Compiles example sources against Maven-local Corusco artifacts instead of project dependencies.'
 }

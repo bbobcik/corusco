@@ -109,8 +109,8 @@ Before tagging a preview release:
 1. Run the AudEnv-recommended test and build commands.
 2. Run `publishToMavenLocal`, `verifyMavenLocalPublication`, and
    `verifyPublishedModuleMetadata`.
-3. Confirm examples compile against the published artifacts or an equivalent
-   local published-artifact consumer build.
+3. Run `verifyExamplesAgainstPublishedArtifacts` to confirm examples compile
+   against Maven-local artifacts instead of project dependencies.
 4. Review public API names and package boundaries.
 5. Update `CHANGELOG.md` with additions, fixes, breaking changes, and migration
    notes.
