@@ -214,6 +214,9 @@ Prefer assertions against stable `BehaviorKey` values over checks for private
 listener classes, border implementations, or field names. For custom behavior
 cleanup, test both installed state and post-close state.
 
+See [Testing Guide](testing.md) for broader Swing MVP testing patterns,
+component-key lookup, command assertions, and generated-source tests.
+
 ## Authoring Checklist
 
 - Install and dispose Swing state on the EDT.

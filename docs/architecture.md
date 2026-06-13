@@ -177,6 +177,9 @@ Processor tests compile sample sources with `GeneratedSourceCompiler` and then
 assert generated sources with normalized line endings. This keeps generator
 regressions visible without making every processor test reimplement javac setup.
 
+See [Testing Guide](testing.md) for Swing MVP tests, generated-source compiler
+tests, example regression tests, and local verification commands.
+
 ## Current Limits
 
 The project is still pre-preview. The following areas are intentionally not

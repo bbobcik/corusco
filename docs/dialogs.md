@@ -202,6 +202,9 @@ See `FormDialogExample`, `DirtyCancelDialogExample`,
 and `DialogActiveEditorExample` for compiling scenarios with method-body
 comments.
 
+See [Testing Guide](testing.md) for the shared Swing MVP and generated-source
+testing patterns used across examples.
+
 ## Current Limits
 
 - Corusco does not provide a native `JDialog` factory yet.
