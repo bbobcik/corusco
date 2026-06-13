@@ -274,6 +274,9 @@ Record component names become constant names and method names by convention:
 - Read generated source during code review. It should be direct, deterministic,
   and easy to debug.
 
+See [Generated Code Examples](generated-code-examples.md) for the example
+source records, generated companion classes, and review checklist.
+
 ## Current Limits
 
 - No mutable JavaBean support.

@@ -191,5 +191,6 @@ directory layout, compiler diagnostics, or platform-specific line endings.
 - `docs/commands.md`
 - `docs/dialogs.md`
 - `docs/testing.md`
+- `docs/generated-code-examples.md`
 - `docs/corusco-roadmap.md`
 - `docs/implementation-stage-plans/README.md`

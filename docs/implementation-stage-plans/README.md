@@ -106,6 +106,7 @@ commit has been created.
 | [COR-075](COR-075-add-command-action-guide.md) | `COR-075 Add command action guide` | Stage 20, command/action guide slice |
 | [COR-076](COR-076-add-dialog-guide.md) | `COR-076 Add dialog guide` | Stage 20, dialog guide slice |
 | [COR-077](COR-077-add-testing-guide.md) | `COR-077 Add testing guide` | Stage 20, testing guide slice |
+| [COR-078](COR-078-add-generated-code-examples-guide.md) | `COR-078 Add generated code examples guide` | Stage 20, generated code examples slice |
 
 ## Stage Completion Rule
 

@@ -462,14 +462,15 @@ final class GeneratedSourceWriter {
                     field.constantName,
                     field.componentName,
                     field.converterExpression
-            );
+            ).indent(4);
         }
         return """
                     this.%s = register(new FieldModel<>(
                             %s.%s,
                             original.%s()
                     ));
-                """.formatted(field.componentName, fieldsType, field.constantName, field.componentName);
+                """.formatted(field.componentName, fieldsType, field.constantName, field.componentName)
+                .indent(4);
     }
 
     private String descriptorListSource(List<FieldSpec> fields, String descriptorsType) {

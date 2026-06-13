@@ -94,6 +94,10 @@ constructors, method references, descriptor factories, and binding helpers. It
 does not scan annotations at runtime, discover JavaBeans properties, or evaluate
 property paths.
 
+See [Generated Code Examples](generated-code-examples.md) for the current
+annotated example records, generated companions, runtime examples, and review
+checklist.
+
 ## Keys and IDs
 
 Application code should pass typed keys and descriptors, not raw strings:
