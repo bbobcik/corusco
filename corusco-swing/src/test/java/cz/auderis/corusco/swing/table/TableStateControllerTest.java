@@ -99,11 +99,57 @@ class TableStateControllerTest {
             TableStateController<CustomerRow> controller = TableStateController.install(table, model, store);
 
             controller.setColumnVisible("customers/orders", false);
+            controller.flushPendingSaves();
 
             assertThat(visibleColumnIds(table)).containsExactly("customers/name", "customers/status");
             assertThat(store.load("customers").orElseThrow().columns())
                     .filteredOn(column -> column.id().equals("customers/orders"))
                     .containsExactly(new ColumnState("customers/orders", 80, 2, false));
+            controller.close();
+            model.close();
+        });
+    }
+
+    @Test
+    void eventSavesAreDebouncedUntilFlushed() {
+        SwingEdt.runAndWait(() -> {
+            RecordingStore store = new RecordingStore();
+            ObservableTableModel<CustomerRow> model = model();
+            JTable table = table(model);
+            TableStateController<CustomerRow> controller = TableStateController.install(table, model, store, 10_000);
+            assertThat(store.saveCount()).isEqualTo(1);
+
+            table.getColumnModel().moveColumn(1, 0);
+            table.getColumnModel().getColumn(0).setWidth(150);
+            table.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
+
+            assertThat(store.saveCount()).isEqualTo(1);
+            controller.flushPendingSaves();
+
+            assertThat(store.saveCount()).isEqualTo(2);
+            assertThat(store.state().orElseThrow().columns().getFirst().id()).isEqualTo("customers/orders");
+            assertThat(store.state().orElseThrow().sort()).containsExactly(
+                    new SortState("customers/name", SortDirection.ASCENDING, 0)
+            );
+            controller.close();
+            model.close();
+        });
+    }
+
+    @Test
+    void explicitSaveNowCancelsPendingDelayedSave() {
+        SwingEdt.runAndWait(() -> {
+            RecordingStore store = new RecordingStore();
+            ObservableTableModel<CustomerRow> model = model();
+            JTable table = table(model);
+            TableStateController<CustomerRow> controller = TableStateController.install(table, model, store, 10_000);
+
+            table.getColumnModel().moveColumn(1, 0);
+            controller.saveNow();
+            controller.flushPendingSaves();
+
+            assertThat(store.saveCount()).isEqualTo(2);
+            assertThat(store.state().orElseThrow().columns().getFirst().id()).isEqualTo("customers/orders");
             controller.close();
             model.close();
         });
@@ -198,6 +244,7 @@ class TableStateControllerTest {
 
         private final InMemoryTableStateStore delegate = new InMemoryTableStateStore();
         private boolean flushed;
+        private int saveCount;
 
         @Override
         public Optional<TableState> load(String tableId) {
@@ -206,6 +253,7 @@ class TableStateControllerTest {
 
         @Override
         public void save(TableState state) {
+            saveCount++;
             delegate.save(state);
         }
 
@@ -226,6 +274,10 @@ class TableStateControllerTest {
 
         boolean flushed() {
             return flushed;
+        }
+
+        int saveCount() {
+            return saveCount;
         }
     }
 }

@@ -64,7 +64,9 @@ public final class GeneratedTableColumnsExample {
                 result.add(Integer.toString(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().maxWidth()));
 
                 // The state controller bridges JTable's mutable TableColumn
-                // model back to generated persistence ids before saving.
+                // model back to generated persistence ids before saving. The
+                // binding scope closes the controller later, flushing any
+                // delayed table-state write before the view is discarded.
                 table.getColumnModel().moveColumn(1, 0);
                 stateController.saveNow();
                 result.add(tableStateStore.load(GeneratedCustomerRowColumns.TABLE.id())

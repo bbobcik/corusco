@@ -62,6 +62,7 @@ commit has been created.
 | [COR-031](COR-031-add-table-state-core.md) | `COR-031 Add table state core` | Stage 14, table state model and merge slice |
 | [COR-032](COR-032-add-table-state-stores.md) | `COR-032 Add table state stores` | Stage 14, table state store slice |
 | [COR-033](COR-033-add-table-state-controller.md) | `COR-033 Add table state controller` | Stage 14, Swing table state controller slice |
+| [COR-034](COR-034-add-debounced-table-state-saves.md) | `COR-034 Add debounced table state saves` | Stage 14, table state debounce/flush slice |
 
 ## Stage Completion Rule
 
