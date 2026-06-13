@@ -17,13 +17,17 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JPanel;
+import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIndexOutOfBoundsException;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -47,6 +51,8 @@ class SwingMvpTesterTest {
             ComponentKey.of("customer/type-combo", JComboBox.class);
     private static final ComponentKey<JTextField> ALIAS_FIELD =
             ComponentKey.of("customer/alias-field", JTextField.class);
+    private static final ComponentKey<JTable> CUSTOMER_TABLE =
+            ComponentKey.of("customer/table", JTable.class);
 
     @Test
     void createsViewAndPresenterOnEdt() {
@@ -290,6 +296,76 @@ class SwingMvpTesterTest {
     }
 
     @Test
+    void tableSelectionHelpersSelectViewAndModelRows() {
+        SwingMvpTester<TableView, Void> tester = SwingMvpTester.create(TableView::new);
+
+        tester.selectTableViewRow(CUSTOMER_TABLE, 0)
+                .assertSelectedTableViewRow(CUSTOMER_TABLE, 0)
+                .assertSelectedTableModelRow(CUSTOMER_TABLE, 2)
+                .selectTableModelRow(CUSTOMER_TABLE, 1)
+                .assertSelectedTableViewRow(CUSTOMER_TABLE, 1)
+                .assertSelectedTableModelRow(CUSTOMER_TABLE, 1);
+    }
+
+    @Test
+    void clearTableSelectionClearsSelectionOnEdt() {
+        SwingMvpTester<TableView, Void> tester = SwingMvpTester.create(TableView::new);
+
+        tester.selectTableModelRow(CUSTOMER_TABLE, 1)
+                .clearTableSelection(CUSTOMER_TABLE)
+                .assertSelectedTableViewRow(CUSTOMER_TABLE, -1)
+                .assertSelectedTableModelRow(CUSTOMER_TABLE, -1);
+    }
+
+    @Test
+    void tableSelectionRunsOnEdt() {
+        EdtCheckingTable table = new EdtCheckingTable();
+        SwingMvpTester<SingleTableView, Void> tester = SwingMvpTester.create(() -> new SingleTableView(table));
+
+        tester.selectTableViewRow(CUSTOMER_TABLE, 0)
+                .clearTableSelection(CUSTOMER_TABLE);
+
+        assertThat(table.selectionSetOnEdt).isTrue();
+        assertThat(table.clearSelectionOnEdt).isTrue();
+    }
+
+    @Test
+    void tableSelectionMissingComponentFailsClearly() {
+        SwingMvpTester<CustomerView, Void> tester = SwingMvpTester.create(CustomerView::new);
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> tester.selectTableViewRow(CUSTOMER_TABLE, 0))
+                .withMessageContaining("Missing component")
+                .withMessageContaining("customer/table");
+    }
+
+    @Test
+    void tableSelectionInvalidRowsFailClearly() {
+        SwingMvpTester<TableView, Void> tester = SwingMvpTester.create(TableView::new);
+
+        assertThatIndexOutOfBoundsException()
+                .isThrownBy(() -> tester.selectTableViewRow(CUSTOMER_TABLE, 10))
+                .withMessageContaining("Table view row out of bounds: 10");
+        assertThatIndexOutOfBoundsException()
+                .isThrownBy(() -> tester.selectTableModelRow(CUSTOMER_TABLE, -1))
+                .withMessageContaining("Table model row out of bounds: -1");
+    }
+
+    @Test
+    void tableSelectionAssertionsAreReadable() {
+        SwingMvpTester<TableView, Void> tester = SwingMvpTester.create(TableView::new);
+
+        tester.selectTableModelRow(CUSTOMER_TABLE, 1);
+
+        Throwable failure = catchThrowable(() -> tester.assertSelectedTableModelRow(CUSTOMER_TABLE, 0));
+        assertThat(failure)
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("ComponentKey[customer/table:JTable]")
+                .hasMessageContaining("selected model row 0")
+                .hasMessageContaining("but was 1");
+    }
+
+    @Test
     void missingCommandFailsClearly() {
         SwingMvpTester<CustomerView, CustomerPresenter> tester = testerWithCommands(new CommandSet(java.util.List.of()));
 
@@ -400,6 +476,63 @@ class SwingMvpTesterTest {
             JComboBox markedCombo = SwingComponentKeys.mark(comboBox, TYPE_COMBO);
             add(markedCombo);
         }
+    }
+
+    private static final class TableView extends JPanel {
+
+        private static final long serialVersionUID = 1L;
+
+        private final JTable table = SwingComponentKeys.mark(new JTable(tableModel()), CUSTOMER_TABLE);
+
+        private TableView() {
+            TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>((DefaultTableModel) table.getModel());
+            table.setRowSorter(sorter);
+            sorter.toggleSortOrder(0);
+            add(table);
+        }
+    }
+
+    private static final class SingleTableView extends JPanel {
+
+        private static final long serialVersionUID = 1L;
+
+        private SingleTableView(JTable table) {
+            add(SwingComponentKeys.mark(table, CUSTOMER_TABLE));
+        }
+    }
+
+    private static final class EdtCheckingTable extends JTable {
+
+        private static final long serialVersionUID = 1L;
+        private boolean selectionSetOnEdt;
+        private boolean clearSelectionOnEdt;
+
+        private EdtCheckingTable() {
+            super(tableModel());
+        }
+
+        @Override
+        public void setRowSelectionInterval(int index0, int index1) {
+            selectionSetOnEdt = SwingUtilities.isEventDispatchThread();
+            super.setRowSelectionInterval(index0, index1);
+        }
+
+        @Override
+        public void clearSelection() {
+            clearSelectionOnEdt = SwingUtilities.isEventDispatchThread();
+            super.clearSelection();
+        }
+    }
+
+    private static DefaultTableModel tableModel() {
+        return new DefaultTableModel(
+                new Object[][] {
+                        { "Carol" },
+                        { "Bob" },
+                        { "Alice" }
+                },
+                new Object[] { "Name" }
+        );
     }
 
     private enum CustomerType {

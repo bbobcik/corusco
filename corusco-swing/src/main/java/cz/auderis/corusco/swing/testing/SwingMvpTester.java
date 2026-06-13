@@ -21,6 +21,7 @@ import java.util.function.Supplier;
 import javax.swing.AbstractButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.text.JTextComponent;
 
@@ -241,6 +242,108 @@ public final class SwingMvpTester<V extends JComponent, P> {
     }
 
     /**
+     * Selects a table view row on the EDT.
+     *
+     * <p>The row index is the JTable view index after sorting and filtering.
+     * Use {@link #selectTableModelRow(ComponentKey, int)} when the test speaks
+     * in model-row coordinates.</p>
+     *
+     * @param key component key for a {@link JTable}
+     * @param viewRow table view-row index
+     * @param <C> table type
+     * @return this tester
+     */
+    public <C extends JTable> SwingMvpTester<V, P> selectTableViewRow(ComponentKey<C> key, int viewRow) {
+        Objects.requireNonNull(key, "key");
+        runAndWaitUnchecked(() -> selectViewRow(requireComponentOnEdt(view, key), viewRow));
+        return this;
+    }
+
+    /**
+     * Selects a table model row on the EDT.
+     *
+     * <p>The row index is converted through {@link JTable#convertRowIndexToView(int)}
+     * so sorted and filtered tables can be addressed by stable model row.</p>
+     *
+     * @param key component key for a {@link JTable}
+     * @param modelRow table model-row index
+     * @param <C> table type
+     * @return this tester
+     */
+    public <C extends JTable> SwingMvpTester<V, P> selectTableModelRow(ComponentKey<C> key, int modelRow) {
+        Objects.requireNonNull(key, "key");
+        runAndWaitUnchecked(() -> {
+            JTable table = requireComponentOnEdt(view, key);
+            checkModelRow(table, modelRow);
+            int viewRow = table.convertRowIndexToView(modelRow);
+            if (viewRow < 0) {
+                throw new IllegalArgumentException("Table model row is not visible: " + modelRow);
+            }
+            selectViewRow(table, viewRow);
+        });
+        return this;
+    }
+
+    /**
+     * Clears table row selection on the EDT.
+     *
+     * @param key component key for a {@link JTable}
+     * @param <C> table type
+     * @return this tester
+     */
+    public <C extends JTable> SwingMvpTester<V, P> clearTableSelection(ComponentKey<C> key) {
+        Objects.requireNonNull(key, "key");
+        runAndWaitUnchecked(() -> requireComponentOnEdt(view, key).clearSelection());
+        return this;
+    }
+
+    /**
+     * Asserts selected table view row on the EDT.
+     *
+     * @param key component key for a {@link JTable}
+     * @param expectedViewRow expected selected view row, or {@code -1}
+     * @param <C> table type
+     * @return this tester
+     */
+    public <C extends JTable> SwingMvpTester<V, P> assertSelectedTableViewRow(
+            ComponentKey<C> key,
+            int expectedViewRow
+    ) {
+        Objects.requireNonNull(key, "key");
+        int actual = queryOnEdt((view, presenter) -> requireComponentOnEdt(view, key).getSelectedRow());
+        if (actual != expectedViewRow) {
+            throw new AssertionError("Expected table " + key + " selected view row "
+                    + expectedViewRow + " but was " + actual);
+        }
+        return this;
+    }
+
+    /**
+     * Asserts selected table model row on the EDT.
+     *
+     * @param key component key for a {@link JTable}
+     * @param expectedModelRow expected selected model row, or {@code -1}
+     * @param <C> table type
+     * @return this tester
+     */
+    public <C extends JTable> SwingMvpTester<V, P> assertSelectedTableModelRow(
+            ComponentKey<C> key,
+            int expectedModelRow
+    ) {
+        Objects.requireNonNull(key, "key");
+        int actual = queryOnEdt((view, presenter) -> {
+            JTable table = requireComponentOnEdt(view, key);
+            int selectedViewRow = table.getSelectedRow();
+            return selectedViewRow < 0 ? -1 : table.convertRowIndexToModel(selectedViewRow);
+        });
+        if (actual != expectedModelRow) {
+            throw new AssertionError("Expected table " + key + " selected model row "
+                    + expectedModelRow + " but was " + actual);
+        }
+        return this;
+    }
+
+    /**
      * Finds a command by generated action key.
      *
      * <p>The lookup runs on the EDT. Prefer tester command helpers for
@@ -318,6 +421,26 @@ public final class SwingMvpTester<V extends JComponent, P> {
     private static <C extends JComponent> C requireComponentOnEdt(JComponent root, ComponentKey<C> key) {
         return findComponentOnEdt(root, key)
                 .orElseThrow(() -> new IllegalArgumentException("Missing component: " + key));
+    }
+
+    private static void selectViewRow(JTable table, int viewRow) {
+        checkViewRow(table, viewRow);
+        table.setRowSelectionInterval(viewRow, viewRow);
+        if (table.getColumnCount() > 0) {
+            table.scrollRectToVisible(table.getCellRect(viewRow, 0, true));
+        }
+    }
+
+    private static void checkViewRow(JTable table, int viewRow) {
+        if (viewRow < 0 || viewRow >= table.getRowCount()) {
+            throw new IndexOutOfBoundsException("Table view row out of bounds: " + viewRow);
+        }
+    }
+
+    private static void checkModelRow(JTable table, int modelRow) {
+        if (modelRow < 0 || modelRow >= table.getModel().getRowCount()) {
+            throw new IndexOutOfBoundsException("Table model row out of bounds: " + modelRow);
+        }
     }
 
     private static <C extends JComponent> Optional<C> findComponentOnEdt(JComponent root, ComponentKey<C> key) {
