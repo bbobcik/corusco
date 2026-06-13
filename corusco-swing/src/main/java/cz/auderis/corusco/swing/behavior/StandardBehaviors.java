@@ -13,6 +13,7 @@ import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.BindingFactory;
 import cz.auderis.corusco.swing.binding.SwingEdt;
+import cz.auderis.corusco.swing.task.BusyOverlayBinding;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.KeyAdapter;
@@ -24,6 +25,7 @@ import javax.swing.ActionMap;
 import javax.swing.InputMap;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JLayer;
 import javax.swing.KeyStroke;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -374,6 +376,29 @@ public final class StandardBehaviors {
         String accessibleName = resources.require(descriptor.labelKey());
         String accessibleDescription = resolveOptional(resources, descriptor.tooltipKey());
         return accessibleText(accessibleName, accessibleDescription);
+    }
+
+    /**
+     * Creates a busy overlay decoration behavior for a {@code JLayer}-wrapped
+     * view.
+     *
+     * @param busy observable busy state
+     * @param <C> wrapped component type
+     * @return busy overlay behavior
+     */
+    public static <C extends JComponent> DecorationBehavior<JLayer<C>> busyOverlay(ReadableValue<Boolean> busy) {
+        Objects.requireNonNull(busy, "busy");
+        return new DecorationBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.single(StandardBehaviorKeys.BUSY_OVERLAY, BehaviorPhase.DECORATION);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<JLayer<C>> context) {
+                return BusyOverlayBinding.install(context.component(), busy);
+            }
+        };
     }
 
     /**
