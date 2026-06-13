@@ -5,6 +5,7 @@ import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.help.HelpService;
 import cz.auderis.corusco.core.key.HelpTopic;
 import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.tooltip.TooltipPolicy;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.BindingFactory;
@@ -112,12 +113,75 @@ public final class StandardBehaviors {
         return new DecorationBehavior<>() {
             @Override
             public BehaviorDescriptor descriptor() {
-                return BehaviorDescriptor.single(StandardBehaviorKeys.VALIDATION_TOOLTIP, BehaviorPhase.DECORATION);
+                return BehaviorDescriptor.single(StandardBehaviorKeys.TOOLTIP, BehaviorPhase.DECORATION);
             }
 
             @Override
             public Binding install(BehaviorContext<C> context) {
                 return BindingFactory.validationTooltip(context.component(), problems);
+            }
+        };
+    }
+
+    /**
+     * Creates a composed tooltip decoration behavior.
+     *
+     * <p>The behavior uses the core {@link TooltipPolicy#standard()} ordering:
+     * validation feedback first, then disabled reason, static descriptor help,
+     * and finally the F1/help indicator.</p>
+     *
+     * @param problems observable problems
+     * @param disabledReason observable disabled reason, or {@code null}
+     * @param staticHelp static descriptor/resource help
+     * @param helpAvailable whether F1/context help is available
+     * @param <C> component type
+     * @return tooltip behavior
+     */
+    public static <C extends JComponent> DecorationBehavior<C> composedTooltip(
+            ReadableValue<ProblemSet> problems,
+            ReadableValue<String> disabledReason,
+            String staticHelp,
+            boolean helpAvailable
+    ) {
+        return composedTooltip(problems, disabledReason, staticHelp, helpAvailable, TooltipPolicy.standard());
+    }
+
+    /**
+     * Creates a composed tooltip decoration behavior.
+     *
+     * @param problems observable problems
+     * @param disabledReason observable disabled reason, or {@code null}
+     * @param staticHelp static descriptor/resource help
+     * @param helpAvailable whether F1/context help is available
+     * @param policy tooltip policy
+     * @param <C> component type
+     * @return tooltip behavior
+     */
+    public static <C extends JComponent> DecorationBehavior<C> composedTooltip(
+            ReadableValue<ProblemSet> problems,
+            ReadableValue<String> disabledReason,
+            String staticHelp,
+            boolean helpAvailable,
+            TooltipPolicy policy
+    ) {
+        Objects.requireNonNull(problems, "problems");
+        Objects.requireNonNull(policy, "policy");
+        return new DecorationBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.single(StandardBehaviorKeys.TOOLTIP, BehaviorPhase.DECORATION);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<C> context) {
+                return BindingFactory.composedTooltip(
+                        context.component(),
+                        problems,
+                        disabledReason,
+                        staticHelp,
+                        helpAvailable,
+                        policy
+                );
             }
         };
     }

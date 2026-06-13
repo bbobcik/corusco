@@ -7,7 +7,9 @@ import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.help.DefaultHelpService;
 import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.key.TextFieldKey;
+import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.awt.event.FocusEvent;
@@ -189,6 +191,21 @@ class BehaviorScopeTest {
             scope.close();
             field.setText("30.00");
             assertThat(model.rawText().value()).isEqualTo("bad");
+        });
+    }
+
+    @Test
+    void tooltipDecoratorsShareOneBehaviorSlot() {
+        SwingEdt.runAndWait(() -> {
+            SimpleValue<ProblemSet> problems = SimpleValue.of(ProblemSet.empty());
+            BehaviorScope scope = new BehaviorScope();
+
+            assertThatThrownBy(() -> scope.install(new JTextField(), List.of(
+                    StandardBehaviors.validationTooltip(problems),
+                    StandardBehaviors.composedTooltip(problems, null, "Static help", true)
+            )))
+                    .isInstanceOf(BehaviorConflictException.class)
+                    .hasMessage("Behavior already installed: decoration/tooltip");
         });
     }
 

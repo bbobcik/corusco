@@ -16,9 +16,18 @@ public final class StandardBehaviorKeys {
     public static final BehaviorKey CHECKBOX_BINDING = BehaviorKey.of("binding/checkbox");
 
     /**
-     * Validation tooltip decoration behavior.
+     * Tooltip decoration behavior.
      */
-    public static final BehaviorKey VALIDATION_TOOLTIP = BehaviorKey.of("decoration/validation-tooltip");
+    public static final BehaviorKey TOOLTIP = BehaviorKey.of("decoration/tooltip");
+
+    /**
+     * Validation tooltip decoration behavior.
+     *
+     * @deprecated use {@link #TOOLTIP}; validation tooltips share the same
+     *         component tooltip slot as composed tooltips.
+     */
+    @Deprecated(since = "0.1", forRemoval = false)
+    public static final BehaviorKey VALIDATION_TOOLTIP = TOOLTIP;
 
     /**
      * Validation border decoration behavior.

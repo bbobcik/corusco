@@ -9,6 +9,15 @@ class BehaviorExampleTest {
     @Test
     void exampleInstallsBehaviorBasedBindingAndDecoration() {
         assertThat(BehaviorExample.runScenario())
-                .containsExactly("bad", "10", "Expected BigDecimal", "generated-customer-table/name");
+                .containsExactly(
+                        "bad",
+                        "10",
+                        """
+                                Expected BigDecimal
+                                Save is disabled until the field is valid
+                                Customer display name
+                                Press F1 for help""",
+                        "generated-customer-table/name"
+                );
     }
 }

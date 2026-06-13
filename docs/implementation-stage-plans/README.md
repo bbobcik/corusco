@@ -69,6 +69,7 @@ commit has been created.
 | [COR-038](COR-038-add-help-service-core.md) | `COR-038 Add help service core` | Stage 15, core help service slice |
 | [COR-039](COR-039-add-swing-help-behavior.md) | `COR-039 Add Swing help behavior` | Stage 15, Swing F1 help behavior slice |
 | [COR-040](COR-040-add-tooltip-policy-core.md) | `COR-040 Add tooltip policy core` | Stage 15, core tooltip composition slice |
+| [COR-041](COR-041-add-swing-tooltip-behavior.md) | `COR-041 Add Swing tooltip behavior` | Stage 15, Swing tooltip composition behavior slice |
 
 ## Stage Completion Rule
 
