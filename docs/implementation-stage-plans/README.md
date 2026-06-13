@@ -78,6 +78,7 @@ commit has been created.
 | [COR-047](COR-047-add-loadable-observable-list.md) | `COR-047 Add loadable observable list` | Stage 16, loadable observable-list slice |
 | [COR-048](COR-048-add-detachable-lifecycle-scope.md) | `COR-048 Add detachable lifecycle scope` | Stage 16, attach/detach lifecycle integration slice |
 | [COR-049](COR-049-add-master-detail-loadable-value.md) | `COR-049 Add master-detail loadable value` | Stage 16, master-detail loadable value slice |
+| [COR-050](COR-050-add-async-task-core.md) | `COR-050 Add async task core` | Stage 17, core async task service slice |
 
 ## Stage Completion Rule
 
