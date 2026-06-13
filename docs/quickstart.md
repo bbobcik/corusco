@@ -185,5 +185,6 @@ directory layout, compiler diagnostics, or platform-specific line endings.
 - `corusco-examples/src/main/java/cz/auderis/corusco/examples`
 - `docs/annotations.md`
 - `docs/architecture.md`
+- `docs/behaviors.md`
 - `docs/corusco-roadmap.md`
 - `docs/implementation-stage-plans/README.md`

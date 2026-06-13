@@ -53,6 +53,7 @@ For a full verification pass:
 - [Architecture overview](docs/architecture.md)
 - [Quickstart](docs/quickstart.md)
 - [Annotation reference](docs/annotations.md)
+- [Behavior authoring guide](docs/behaviors.md)
 - [Implementation stage plans](docs/implementation-stage-plans/README.md)
 - [Architecture decision records](docs/adr/README.md)
 

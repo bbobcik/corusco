@@ -150,6 +150,9 @@ Commands are presentation objects identified by `ActionKey`. Swing buttons,
 menu items, toolbar entries, key bindings, and tests should share the same
 command instance instead of maintaining parallel enabled/selected state.
 
+See [Behavior Authoring Guide](behaviors.md) for behavior phases, descriptors,
+cleanup rules, and custom behavior examples.
+
 ## Testing Strategy
 
 Runtime tests exercise values, lists, form models, validation, commands,
