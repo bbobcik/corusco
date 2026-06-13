@@ -8,6 +8,6 @@ class SwingMvpTesterExampleTest {
 
     @Test
     void swingMvpTesterExampleFindsGeneratedComponents() {
-        assertThat(SwingMvpTesterExample.runScenario()).containsExactly("Alice", "true", "1", "true");
+        assertThat(SwingMvpTesterExample.runScenario()).containsExactly("Alice", "true", "VIP", "true", "1", "true");
     }
 }

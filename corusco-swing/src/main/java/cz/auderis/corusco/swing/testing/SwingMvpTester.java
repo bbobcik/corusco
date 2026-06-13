@@ -18,8 +18,11 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import javax.swing.AbstractButton;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
+import javax.swing.text.JTextComponent;
 
 /**
  * EDT-safe test harness for Swing MVP views and presenters.
@@ -191,6 +194,53 @@ public final class SwingMvpTester<V extends JComponent, P> {
     }
 
     /**
+     * Enters text into a generated text component on the EDT.
+     *
+     * @param key component key for a {@link JTextComponent}
+     * @param text replacement text
+     * @param <C> text component type
+     * @return this tester
+     */
+    public <C extends JTextComponent> SwingMvpTester<V, P> enterText(ComponentKey<C> key, String text) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(text, "text");
+        runAndWaitUnchecked(() -> requireComponentOnEdt(view, key).setText(text));
+        return this;
+    }
+
+    /**
+     * Sets selected state on a generated checkbox, radio button, or toggle
+     * button component on the EDT.
+     *
+     * @param key component key for an {@link AbstractButton}
+     * @param selected selected state
+     * @param <C> button component type
+     * @return this tester
+     */
+    public <C extends AbstractButton> SwingMvpTester<V, P> setSelected(ComponentKey<C> key, boolean selected) {
+        Objects.requireNonNull(key, "key");
+        runAndWaitUnchecked(() -> requireComponentOnEdt(view, key).setSelected(selected));
+        return this;
+    }
+
+    /**
+     * Selects an item in a generated combo box on the EDT.
+     *
+     * <p>The item parameter follows Swing's {@link JComboBox#setSelectedItem(Object)}
+     * contract because generated component keys use erased component classes.</p>
+     *
+     * @param key component key for a {@link JComboBox}
+     * @param item item to select
+     * @param <C> combo box component type
+     * @return this tester
+     */
+    public <C extends JComboBox<?>> SwingMvpTester<V, P> selectItem(ComponentKey<C> key, Object item) {
+        Objects.requireNonNull(key, "key");
+        runAndWaitUnchecked(() -> requireComponentOnEdt(view, key).setSelectedItem(item));
+        return this;
+    }
+
+    /**
      * Finds a command by generated action key.
      *
      * <p>The lookup runs on the EDT. Prefer tester command helpers for
@@ -263,6 +313,11 @@ public final class SwingMvpTester<V extends JComponent, P> {
 
     private Command requireCommandOnEdt(ActionKey key) {
         return commands.find(key).orElseThrow(() -> new IllegalArgumentException("Missing command: " + key));
+    }
+
+    private static <C extends JComponent> C requireComponentOnEdt(JComponent root, ComponentKey<C> key) {
+        return findComponentOnEdt(root, key)
+                .orElseThrow(() -> new IllegalArgumentException("Missing component: " + key));
     }
 
     private static <C extends JComponent> Optional<C> findComponentOnEdt(JComponent root, ComponentKey<C> key) {
