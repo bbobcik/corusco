@@ -114,6 +114,7 @@ commit has been created.
 | [COR-083](COR-083-add-published-examples-check.md) | `COR-083 Add published examples check` | Stage 21, examples compile against Maven-local artifacts slice |
 | [COR-084](COR-084-add-preview-api-audit-gates.md) | `COR-084 Add preview API audit gates` | Stage 21, API/package review and runtime reflection policy gates |
 | [COR-085](COR-085-add-preview-release-readiness-gate.md) | `COR-085 Add preview release readiness gate` | Stage 21, generated Javadoc and aggregate preview release gate slice |
+| [COR-086](COR-086-finalize-preview-release.md) | `COR-086 Finalize preview release` | Stage 21, version finalization and `v0.1.0-preview` tag slice |
 
 ## Stage Completion Rule
 

@@ -12,8 +12,8 @@ Published artifacts use semantic-version shaped coordinates:
 MAJOR.MINOR.PATCH[-QUALIFIER]
 ```
 
-The current development version is `0.1.0-SNAPSHOT`. The first preview tag is
-planned as `v0.1.0-preview`.
+The first preview version is `0.1.0-preview`, tagged as
+`v0.1.0-preview`.
 
 During the `0.x` line, each minor version represents a preview compatibility
 line. A patch release should be compatible with the previous patch release in
@@ -75,9 +75,9 @@ types in a way that breaks recompilation of existing consumers.
 
 ## Breaking Changes
 
-Breaking changes are allowed only in a new preview minor line or before the
-first preview tag is cut. They must be recorded in `CHANGELOG.md` under
-`Breaking Changes` with migration notes.
+Breaking changes after `v0.1.0-preview` are allowed only in a new preview minor
+line. They must be recorded in `CHANGELOG.md` under `Breaking Changes` with
+migration notes.
 
 Examples of breaking changes:
 
