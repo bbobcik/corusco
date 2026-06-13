@@ -1,6 +1,7 @@
 package cz.auderis.corusco.swing.binding;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.concurrent.Executor;
 import javax.swing.SwingUtilities;
 
 /**
@@ -8,7 +9,19 @@ import javax.swing.SwingUtilities;
  */
 public final class SwingEdt {
 
+    private static final Executor EXECUTOR = SwingEdt::runLater;
+
     private SwingEdt() {
+    }
+
+    /**
+     * Returns an executor that delivers work on the Swing Event Dispatch
+     * Thread.
+     *
+     * @return EDT executor
+     */
+    public static Executor executor() {
+        return EXECUTOR;
     }
 
     /**
@@ -38,5 +51,14 @@ public final class SwingEdt {
         } catch (InvocationTargetException e) {
             throw new IllegalStateException("EDT work failed", e.getCause());
         }
+    }
+
+    /**
+     * Queues work on the EDT.
+     *
+     * @param work work to run
+     */
+    public static void runLater(Runnable work) {
+        SwingUtilities.invokeLater(work);
     }
 }
