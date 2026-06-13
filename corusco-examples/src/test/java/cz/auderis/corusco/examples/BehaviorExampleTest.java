@@ -9,6 +9,6 @@ class BehaviorExampleTest {
     @Test
     void exampleInstallsBehaviorBasedBindingAndDecoration() {
         assertThat(BehaviorExample.runScenario())
-                .containsExactly("bad", "10", "Expected BigDecimal");
+                .containsExactly("bad", "10", "Expected BigDecimal", "generated-customer-table/name");
     }
 }

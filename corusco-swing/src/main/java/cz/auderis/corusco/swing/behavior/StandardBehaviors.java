@@ -2,6 +2,8 @@ package cz.auderis.corusco.swing.behavior;
 
 import cz.auderis.corusco.core.form.FieldModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
+import cz.auderis.corusco.core.help.HelpService;
+import cz.auderis.corusco.core.key.HelpTopic;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.swing.binding.Binding;
@@ -12,8 +14,12 @@ import java.awt.event.FocusEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.Objects;
+import javax.swing.AbstractAction;
 import javax.swing.AbstractButton;
+import javax.swing.ActionMap;
+import javax.swing.InputMap;
 import javax.swing.JComponent;
+import javax.swing.KeyStroke;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.text.JTextComponent;
@@ -199,6 +205,61 @@ public final class StandardBehaviors {
                 return () -> {
                     SwingEdt.requireEdt();
                     context.component().removeKeyListener(listener);
+                };
+            }
+        };
+    }
+
+    /**
+     * Creates a behavior that opens a help topic when F1 is pressed.
+     *
+     * @param topic help topic
+     * @param <C> component type
+     * @return help behavior
+     */
+    public static <C extends JComponent> ViewBehavior<C> helpOnF1(HelpTopic topic) {
+        Objects.requireNonNull(topic, "topic");
+        return new ViewBehavior<>() {
+            private static final String ACTION_KEY_PREFIX = "corusco.helpOnF1.";
+
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.single(StandardBehaviorKeys.HELP_ON_F1, BehaviorPhase.INTERACTION);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<C> context) {
+                SwingEdt.requireEdt();
+                HelpService helpService = context.helpServiceOptional()
+                        .orElseThrow(() -> new IllegalStateException("HelpService is required for F1 help behavior"));
+                C component = context.component();
+                InputMap inputMap = component.getInputMap(JComponent.WHEN_FOCUSED);
+                ActionMap actionMap = component.getActionMap();
+                KeyStroke keyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0);
+                Object oldInput = inputMap.get(keyStroke);
+                String actionKey = ACTION_KEY_PREFIX + topic.id();
+                javax.swing.Action oldAction = actionMap.get(actionKey);
+
+                inputMap.put(keyStroke, actionKey);
+                actionMap.put(actionKey, new AbstractAction() {
+                    @Override
+                    public void actionPerformed(java.awt.event.ActionEvent event) {
+                        helpService.open(topic, component, "F1");
+                    }
+                });
+
+                return () -> {
+                    SwingEdt.requireEdt();
+                    if (oldInput == null) {
+                        inputMap.remove(keyStroke);
+                    } else {
+                        inputMap.put(keyStroke, oldInput);
+                    }
+                    if (oldAction == null) {
+                        actionMap.remove(actionKey);
+                    } else {
+                        actionMap.put(actionKey, oldAction);
+                    }
                 };
             }
         };

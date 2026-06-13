@@ -4,6 +4,7 @@ import cz.auderis.corusco.core.convert.Converters;
 import cz.auderis.corusco.core.convert.EmptyTextPolicy;
 import cz.auderis.corusco.core.form.FieldModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
+import cz.auderis.corusco.core.help.DefaultHelpService;
 import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.key.TextFieldKey;
 import cz.auderis.corusco.core.value.ChangeOrigin;
@@ -50,6 +51,31 @@ class BehaviorScopeTest {
                     "close:decoration",
                     "close:binding"
             );
+        });
+    }
+
+    @Test
+    void behaviorContextExposesScopeHelpService() {
+        SwingEdt.runAndWait(() -> {
+            DefaultHelpService helpService = new DefaultHelpService(request -> { });
+            BehaviorScope scope = new BehaviorScope(helpService);
+            List<Boolean> available = new ArrayList<>();
+
+            scope.install(new JTextField(), List.of(new ViewBehavior<JTextField>() {
+                @Override
+                public BehaviorDescriptor descriptor() {
+                    return BehaviorDescriptor.single(BehaviorKey.of("test/help-context"), BehaviorPhase.INTERACTION);
+                }
+
+                @Override
+                public Binding install(BehaviorContext<JTextField> context) {
+                    available.add(context.helpServiceOptional().orElseThrow() == helpService);
+                    return () -> { };
+                }
+            }));
+
+            assertThat(available).containsExactly(true);
+            scope.close();
         });
     }
 
