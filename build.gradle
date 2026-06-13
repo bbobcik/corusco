@@ -42,6 +42,69 @@ def publishableProjectNames = publishableProjects.collect { it.name }
 def publicationGroupPath = group.toString().replace('.', File.separator)
 def publicationVersion = version.toString()
 def projectRootPath = rootDir.absolutePath
+def previewPackageSurface = [
+    'corusco-core': [
+        'cz.auderis.corusco.core',
+        'cz.auderis.corusco.core.collection',
+        'cz.auderis.corusco.core.command',
+        'cz.auderis.corusco.core.convert',
+        'cz.auderis.corusco.core.dialog',
+        'cz.auderis.corusco.core.form',
+        'cz.auderis.corusco.core.help',
+        'cz.auderis.corusco.core.key',
+        'cz.auderis.corusco.core.lifecycle',
+        'cz.auderis.corusco.core.meta',
+        'cz.auderis.corusco.core.problem',
+        'cz.auderis.corusco.core.resource',
+        'cz.auderis.corusco.core.table',
+        'cz.auderis.corusco.core.task',
+        'cz.auderis.corusco.core.tooltip',
+        'cz.auderis.corusco.core.validation',
+        'cz.auderis.corusco.core.value'
+    ],
+    'corusco-glazedlists': [
+        'cz.auderis.corusco.glazedlists'
+    ],
+    'corusco-swing': [
+        'cz.auderis.corusco.swing',
+        'cz.auderis.corusco.swing.behavior',
+        'cz.auderis.corusco.swing.binding',
+        'cz.auderis.corusco.swing.collection',
+        'cz.auderis.corusco.swing.command',
+        'cz.auderis.corusco.swing.dialog',
+        'cz.auderis.corusco.swing.table',
+        'cz.auderis.corusco.swing.task',
+        'cz.auderis.corusco.swing.testing'
+    ],
+    'corusco-annotations': [
+        'cz.auderis.corusco.annotations'
+    ],
+    'corusco-processor': [
+        'cz.auderis.corusco.processor'
+    ],
+    'corusco-test': [
+        'cz.auderis.corusco.test'
+    ]
+]
+def runtimeReflectionScanRoots = [
+    'corusco-core/src/main/java',
+    'corusco-glazedlists/src/main/java',
+    'corusco-swing/src/main/java'
+]
+def forbiddenRuntimeReflectionPatterns = [
+    'java.beans.Introspector',
+    'java.beans.PropertyDescriptor',
+    'java.lang.reflect.Method',
+    'java.lang.reflect.Field',
+    'java.lang.reflect.Constructor',
+    '.getDeclaredField(',
+    '.getDeclaredFields(',
+    '.getDeclaredMethod(',
+    '.getDeclaredMethods(',
+    '.setAccessible(',
+    '.getAnnotation(',
+    '.getAnnotations('
+]
 def publishedModuleChecks = publishableProjectNames.collectEntries { projectName ->
     [(projectName): [
         jarPath: "${projectName}/build/libs/${projectName}-${publicationVersion}.jar",
@@ -172,4 +235,76 @@ gradle.projectsEvaluated {
     project(':corusco-examples').tasks.named('compilePublishedArtifactsJava') {
         dependsOn publishableProjects.collect { it.tasks.named('publishToMavenLocal') }
     }
+}
+
+tasks.register('verifyPreviewPackageSurface') {
+    group = 'verification'
+    description = 'Verifies that published source packages match the reviewed preview API surface.'
+
+    doLast {
+        previewPackageSurface.each { projectName, expectedPackages ->
+            def sourceRoot = new File(projectRootPath, "${projectName}/src/main/java")
+            def actualPackages = [] as Set
+            java.nio.file.Files.walk(sourceRoot.toPath()).withCloseable { stream ->
+                stream
+                        .filter { java.nio.file.Files.isRegularFile(it) }
+                        .filter { it.fileName.toString().endsWith('.java') }
+                        .filter { it.fileName.toString() != 'module-info.java' }
+                        .forEach { sourceFile ->
+                            def matcher = (sourceFile.toFile().text =~ /(?m)^\s*package\s+([A-Za-z0-9_.]+)\s*;/)
+                            if (matcher.find()) {
+                                actualPackages.add(matcher.group(1))
+                            }
+                        }
+            }
+
+            def expected = expectedPackages as Set
+            def unexpected = (actualPackages - expected).sort()
+            def missing = (expected - actualPackages).sort()
+            if (!unexpected.isEmpty() || !missing.isEmpty()) {
+                throw new GradleException("""
+                        Preview package surface mismatch for ${projectName}.
+                        Unexpected packages: ${unexpected}
+                        Missing packages: ${missing}
+                        Update docs/api-review.md and previewPackageSurface intentionally.
+                        """.stripIndent())
+            }
+        }
+    }
+}
+
+tasks.register('verifyRuntimeReflectionPolicy') {
+    group = 'verification'
+    description = 'Rejects JavaBeans and runtime reflection constructs in runtime modules.'
+
+    doLast {
+        def violations = []
+        runtimeReflectionScanRoots.each { relativeRoot ->
+            def sourceRoot = new File(projectRootPath, relativeRoot)
+            java.nio.file.Files.walk(sourceRoot.toPath()).withCloseable { stream ->
+                stream
+                        .filter { java.nio.file.Files.isRegularFile(it) }
+                        .filter { it.fileName.toString().endsWith('.java') }
+                        .forEach { sourceFile ->
+                            def text = sourceFile.toFile().text
+                            forbiddenRuntimeReflectionPatterns.each { pattern ->
+                                if (text.contains(pattern)) {
+                                    def relativePath = java.nio.file.Path.of(projectRootPath).relativize(sourceFile)
+                                    violations.add("${relativePath} contains ${pattern}")
+                                }
+                            }
+                        }
+            }
+        }
+        if (!violations.isEmpty()) {
+            throw new GradleException("Forbidden runtime reflection/API usage:\n" + violations.sort().join('\n'))
+        }
+    }
+}
+
+tasks.register('verifyPreviewApiAudit') {
+    group = 'verification'
+    description = 'Runs preview API/package surface and runtime reflection policy checks.'
+    dependsOn 'verifyPreviewPackageSurface'
+    dependsOn 'verifyRuntimeReflectionPolicy'
 }

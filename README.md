@@ -73,6 +73,7 @@ consumer and is not published as a reusable artifact.
 - [Testing guide](docs/testing.md)
 - [Generated code examples](docs/generated-code-examples.md)
 - [Release policy](docs/release-policy.md)
+- [Preview API review](docs/api-review.md)
 - [Changelog](CHANGELOG.md)
 - [Implementation stage plans](docs/implementation-stage-plans/README.md)
 - [Architecture decision records](docs/adr/README.md)
