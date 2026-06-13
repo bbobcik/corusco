@@ -13,5 +13,15 @@ public enum FieldKind {
     /**
      * Boolean checkbox field.
      */
-    CHECK_BOX
+    CHECK_BOX,
+
+    /**
+     * Combo-box selection field.
+     */
+    COMBO_BOX,
+
+    /**
+     * Date-editable field.
+     */
+    DATE
 }

@@ -1,10 +1,14 @@
 package cz.auderis.corusco.processor;
 
 import cz.auderis.corusco.annotations.CheckBox;
+import cz.auderis.corusco.annotations.ComboBox;
 import cz.auderis.corusco.annotations.DecimalRange;
+import cz.auderis.corusco.annotations.DateField;
 import cz.auderis.corusco.annotations.Help;
+import cz.auderis.corusco.annotations.IntRange;
 import cz.auderis.corusco.annotations.Length;
 import cz.auderis.corusco.annotations.Required;
+import cz.auderis.corusco.annotations.Regex;
 import cz.auderis.corusco.annotations.SwingForm;
 import cz.auderis.corusco.annotations.TextField;
 import java.io.IOException;
@@ -93,15 +97,21 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         for (RecordComponentElement component : formType.getRecordComponents()) {
             boolean textField = component.getAnnotation(TextField.class) != null;
             boolean checkBox = component.getAnnotation(CheckBox.class) != null;
-            if (!textField && !checkBox) {
+            boolean comboBox = component.getAnnotation(ComboBox.class) != null;
+            boolean dateField = component.getAnnotation(DateField.class) != null;
+            int fieldKindCount = (textField ? 1 : 0)
+                    + (checkBox ? 1 : 0)
+                    + (comboBox ? 1 : 0)
+                    + (dateField ? 1 : 0);
+            if (fieldKindCount == 0) {
                 if (hasFieldMetadata(component)) {
-                    error(component, "Field metadata annotations require @TextField or @CheckBox");
+                    error(component, "Field metadata annotations require a field kind annotation");
                     failed = true;
                 }
                 continue;
             }
-            if (textField && checkBox) {
-                error(component, "Record component cannot be both @TextField and @CheckBox");
+            if (fieldKindCount > 1) {
+                error(component, "Record component must have only one field kind annotation");
                 failed = true;
                 continue;
             }
@@ -110,12 +120,22 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 failed = true;
                 continue;
             }
+            if (comboBox && component.asType().getKind() != TypeKind.DECLARED) {
+                error(component, "@ComboBox requires a declared component type");
+                failed = true;
+                continue;
+            }
+            if (dateField && !isLocalDate(component.asType())) {
+                error(component, "@DateField requires java.time.LocalDate component type");
+                failed = true;
+                continue;
+            }
             if (!isSupportedValueType(component.asType())) {
                 error(component, "Generated field keys require primitive or declared component types");
                 failed = true;
                 continue;
             }
-            FieldSpec field = fieldSpec(formType, annotation.id(), component, textField);
+            FieldSpec field = fieldSpec(formType, annotation.id(), component, textField, checkBox, comboBox, dateField);
             if (!validateMetadata(component, field)) {
                 failed = true;
                 continue;
@@ -140,7 +160,10 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             TypeElement formType,
             String formId,
             RecordComponentElement component,
-            boolean textField
+            boolean textField,
+            boolean checkBox,
+            boolean comboBox,
+            boolean dateField
     ) {
         String componentName = component.getSimpleName().toString();
         String constantName = constantName(componentName);
@@ -148,7 +171,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         String ownerType = formType.getSimpleName().toString();
         String valueType = genericType(component.asType());
         String valueClass = classLiteral(component.asType());
-        String kind = textField ? "TEXT" : "CHECK_BOX";
+        String kind = fieldKind(textField, checkBox, comboBox, dateField);
+        boolean textKey = textField || dateField;
         Help help = component.getAnnotation(Help.class);
         String tooltipId = null;
         String helpTopicId = null;
@@ -169,7 +193,7 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 tooltipId == null ? null : constantName + "_TOOLTIP",
                 tooltipId,
                 helpTopicId,
-                textField,
+                textKey,
                 constraints
         );
     }
@@ -184,6 +208,14 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             error(component, "@DecimalRange is supported only on @TextField BigDecimal components");
             valid = false;
         }
+        if (component.getAnnotation(IntRange.class) != null && (!field.textField || !isInteger(component.asType()))) {
+            error(component, "@IntRange is supported only on @TextField integer components");
+            valid = false;
+        }
+        if (component.getAnnotation(Regex.class) != null && (!field.textField || !isString(component.asType()))) {
+            error(component, "@Regex is supported only on @TextField String components");
+            valid = false;
+        }
         Length length = component.getAnnotation(Length.class);
         if (length != null && (length.min() < 0 || length.max() < length.min())) {
             error(component, "@Length requires 0 <= min <= max");
@@ -191,6 +223,16 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         }
         DecimalRange decimalRange = component.getAnnotation(DecimalRange.class);
         if (decimalRange != null && !validateDecimalRange(component, decimalRange)) {
+            valid = false;
+        }
+        IntRange intRange = component.getAnnotation(IntRange.class);
+        if (intRange != null && intRange.max() < intRange.min()) {
+            error(component, "@IntRange requires min <= max");
+            valid = false;
+        }
+        Regex regex = component.getAnnotation(Regex.class);
+        if (regex != null && regex.value().isBlank()) {
+            error(component, "@Regex pattern must not be blank");
             valid = false;
         }
         Help help = component.getAnnotation(Help.class);
@@ -230,6 +272,26 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                     keyId + "/decimal-range",
                     emptyToNull(decimalRange.min()),
                     emptyToNull(decimalRange.max())
+            ));
+        }
+        IntRange intRange = component.getAnnotation(IntRange.class);
+        if (intRange != null) {
+            constraints.add(new ConstraintSpec(
+                    "INT_RANGE",
+                    constantName + "_INT_RANGE",
+                    keyId + "/int-range",
+                    Integer.toString(intRange.min()),
+                    Integer.toString(intRange.max())
+            ));
+        }
+        Regex regex = component.getAnnotation(Regex.class);
+        if (regex != null) {
+            constraints.add(new ConstraintSpec(
+                    "REGEX",
+                    constantName + "_REGEX",
+                    keyId + "/regex",
+                    regex.value(),
+                    null
             ));
         }
         return List.copyOf(constraints);
@@ -416,6 +478,10 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                         + constraint.min + ", " + constraint.max + ")";
                 case "DECIMAL_RANGE" -> "ConstraintDescriptor.decimalRange(" + problemReference + ", "
                         + stringLiteralOrNull(constraint.min) + ", " + stringLiteralOrNull(constraint.max) + ")";
+                case "INT_RANGE" -> "ConstraintDescriptor.intRange(" + problemReference + ", "
+                        + constraint.min + ", " + constraint.max + ")";
+                case "REGEX" -> "ConstraintDescriptor.regex(" + problemReference + ", "
+                        + stringLiteralOrNull(constraint.min) + ")";
                 default -> throw new IllegalStateException("Unknown constraint kind: " + constraint.kind);
             });
         }
@@ -447,6 +513,14 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
 
     private boolean isBigDecimal(TypeMirror type) {
         return "java.math.BigDecimal".equals(types.erasure(type).toString());
+    }
+
+    private boolean isInteger(TypeMirror type) {
+        return type.getKind() == TypeKind.INT || "java.lang.Integer".equals(types.erasure(type).toString());
+    }
+
+    private boolean isLocalDate(TypeMirror type) {
+        return "java.time.LocalDate".equals(types.erasure(type).toString());
     }
 
     private boolean validateDecimalRange(RecordComponentElement component, DecimalRange decimalRange) {
@@ -484,6 +558,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         return component.getAnnotation(Required.class) != null
                 || component.getAnnotation(Length.class) != null
                 || component.getAnnotation(DecimalRange.class) != null
+                || component.getAnnotation(IntRange.class) != null
+                || component.getAnnotation(Regex.class) != null
                 || component.getAnnotation(Help.class) != null;
     }
 
@@ -504,6 +580,22 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
     private static String constantName(String componentName) {
         String kebab = kebab(componentName);
         return kebab.replace('-', '_').toUpperCase(Locale.ROOT);
+    }
+
+    private static String fieldKind(boolean textField, boolean checkBox, boolean comboBox, boolean dateField) {
+        if (textField) {
+            return "TEXT";
+        }
+        if (checkBox) {
+            return "CHECK_BOX";
+        }
+        if (comboBox) {
+            return "COMBO_BOX";
+        }
+        if (dateField) {
+            return "DATE";
+        }
+        throw new IllegalArgumentException("No field kind selected");
     }
 
     private static boolean isStableId(String value) {

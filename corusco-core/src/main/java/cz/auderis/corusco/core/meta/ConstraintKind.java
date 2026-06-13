@@ -18,5 +18,15 @@ public enum ConstraintKind {
     /**
      * Decimal numeric range.
      */
-    DECIMAL_RANGE
+    DECIMAL_RANGE,
+
+    /**
+     * Integer numeric range.
+     */
+    INT_RANGE,
+
+    /**
+     * Regular-expression match.
+     */
+    REGEX
 }
