@@ -1,9 +1,11 @@
 package cz.auderis.corusco.examples;
 
 import cz.auderis.corusco.core.table.ColumnState;
+import cz.auderis.corusco.core.table.InMemoryTableStateStore;
 import cz.auderis.corusco.core.table.SortDirection;
 import cz.auderis.corusco.core.table.SortState;
 import cz.auderis.corusco.core.table.TableState;
+import cz.auderis.corusco.core.table.TableStateStore;
 import java.util.List;
 
 /**
@@ -21,6 +23,7 @@ public final class TableStateExample {
      * @return state diagnostics
      */
     public static List<String> runScenario() {
+        TableStateStore store = new InMemoryTableStateStore();
         TableState stored = new TableState(
                 GeneratedCustomerRowColumns.TABLE.id(),
                 List.of(
@@ -33,10 +36,18 @@ public final class TableStateExample {
                         new SortState("generated-customer-table/orders", SortDirection.DESCENDING, 1)
                 )
         );
+        store.save(stored);
+
+        // Controllers load by stable generated table id before merging. Missing
+        // entries intentionally flow through the same merge path as old data.
+        TableState loaded = store.load(GeneratedCustomerRowColumns.TABLE.id()).orElse(null);
 
         // The descriptor decides which stored columns are still known. Unknown
         // old columns disappear and known widths are clamped to current bounds.
-        TableState merged = TableState.merge(GeneratedCustomerRowTableDescriptor.DESCRIPTOR, stored);
+        TableState merged = TableState.merge(GeneratedCustomerRowTableDescriptor.DESCRIPTOR, loaded);
+        store.save(merged);
+        store.flush();
+
         ColumnState first = merged.columns().get(0);
         ColumnState second = merged.columns().get(1);
 
