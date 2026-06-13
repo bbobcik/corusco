@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JCheckBox;
+import javax.swing.JLabel;
 import javax.swing.JTextField;
 import org.junit.jupiter.api.Test;
 
@@ -248,6 +249,24 @@ class BehaviorScopeTest {
             scope.close();
             int listenerCount = field.getKeyListeners().length + field.getFocusListeners().length;
             assertThat(listenerCount).isEqualTo(initialListenerCount);
+        });
+    }
+
+    @Test
+    void statusTextBehaviorPublishesOnFocus() {
+        SwingEdt.runAndWait(() -> {
+            JTextField field = new JTextField();
+            JLabel status = new JLabel("Ready");
+            BehaviorScope scope = new BehaviorScope();
+
+            scope.install(field, List.of(StandardBehaviors.statusText(status, "Edit customer name")));
+
+            field.getFocusListeners()[field.getFocusListeners().length - 1]
+                    .focusGained(new FocusEvent(field, FocusEvent.FOCUS_GAINED));
+            assertThat(status.getText()).isEqualTo("Edit customer name");
+
+            scope.close();
+            assertThat(status.getText()).isEqualTo("Ready");
         });
     }
 

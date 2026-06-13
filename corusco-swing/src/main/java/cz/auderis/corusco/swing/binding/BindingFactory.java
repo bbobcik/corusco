@@ -9,10 +9,14 @@ import cz.auderis.corusco.core.tooltip.TooltipContent;
 import cz.auderis.corusco.core.tooltip.TooltipPolicy;
 import cz.auderis.corusco.core.value.ChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
+import cz.auderis.corusco.core.value.ValueChangeListener;
 import java.awt.Color;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.util.Objects;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -117,6 +121,70 @@ public final class BindingFactory {
         return () -> {
             SwingEdt.requireEdt();
             subscription.close();
+        };
+    }
+
+    /**
+     * Publishes static status text while a component owns focus.
+     *
+     * @param component component whose focus controls status ownership
+     * @param statusLabel shared status label
+     * @param statusText status text to show while focused
+     * @return binding
+     */
+    public static Binding statusText(JComponent component, JLabel statusLabel, String statusText) {
+        return statusText(component, statusLabel, constantText(statusText));
+    }
+
+    /**
+     * Publishes observable status text while a component owns focus.
+     *
+     * <p>The binding snapshots the status label text on focus gain and restores
+     * that snapshot on focus loss or close. Status text changes are reflected
+     * immediately only while the component is focused.</p>
+     *
+     * @param component component whose focus controls status ownership
+     * @param statusLabel shared status label
+     * @param statusText observable status text
+     * @return binding
+     */
+    public static Binding statusText(JComponent component, JLabel statusLabel, ReadableValue<String> statusText) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(component, "component");
+        Objects.requireNonNull(statusLabel, "statusLabel");
+        Objects.requireNonNull(statusText, "statusText");
+        boolean[] active = new boolean[1];
+        String[] previousText = new String[1];
+        FocusAdapter focusListener = new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent event) {
+                if (!active[0]) {
+                    previousText[0] = statusLabel.getText();
+                    active[0] = true;
+                }
+                statusLabel.setText(normalizeStatusText(statusText.value()));
+            }
+
+            @Override
+            public void focusLost(FocusEvent event) {
+                restoreStatus(statusLabel, active, previousText);
+            }
+        };
+        component.addFocusListener(focusListener);
+        Subscription subscription = statusText.subscribe(event -> {
+            SwingEdt.requireEdt();
+            if (active[0]) {
+                statusLabel.setText(normalizeStatusText(event.newValue()));
+            }
+        });
+        return () -> {
+            SwingEdt.requireEdt();
+            try {
+                subscription.close();
+                component.removeFocusListener(focusListener);
+            } finally {
+                restoreStatus(statusLabel, active, previousText);
+            }
         };
     }
 
@@ -321,6 +389,35 @@ public final class BindingFactory {
 
     private static String disabledReasonValue(ReadableValue<String> disabledReason) {
         return (disabledReason == null) ? "" : disabledReason.value();
+    }
+
+    private static ReadableValue<String> constantText(String text) {
+        String value = normalizeStatusText(text);
+        return new ReadableValue<>() {
+            @Override
+            public String value() {
+                return value;
+            }
+
+            @Override
+            public Subscription subscribe(ValueChangeListener<String> listener) {
+                Objects.requireNonNull(listener, "listener");
+                return Subscription.EMPTY;
+            }
+        };
+    }
+
+    private static void restoreStatus(JLabel statusLabel, boolean[] active, String[] previousText) {
+        if (!active[0]) {
+            return;
+        }
+        active[0] = false;
+        statusLabel.setText(previousText[0]);
+        previousText[0] = null;
+    }
+
+    private static String normalizeStatusText(String text) {
+        return (text == null) ? "" : text;
     }
 
     private static void updateTooltip(

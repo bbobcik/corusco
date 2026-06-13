@@ -20,6 +20,7 @@ import javax.swing.AbstractButton;
 import javax.swing.ActionMap;
 import javax.swing.InputMap;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.KeyStroke;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -270,6 +271,56 @@ public final class StandardBehaviors {
                     SwingEdt.requireEdt();
                     context.component().removeKeyListener(listener);
                 };
+            }
+        };
+    }
+
+    /**
+     * Creates a behavior that publishes static status-bar text while focused.
+     *
+     * @param statusLabel shared status label
+     * @param statusText status text to show while focused
+     * @param <C> component type
+     * @return status text behavior
+     */
+    public static <C extends JComponent> ViewBehavior<C> statusText(JLabel statusLabel, String statusText) {
+        Objects.requireNonNull(statusLabel, "statusLabel");
+        return new ViewBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.single(StandardBehaviorKeys.STATUS_TEXT, BehaviorPhase.INTERACTION);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<C> context) {
+                return BindingFactory.statusText(context.component(), statusLabel, statusText);
+            }
+        };
+    }
+
+    /**
+     * Creates a behavior that publishes observable status-bar text while focused.
+     *
+     * @param statusLabel shared status label
+     * @param statusText observable status text
+     * @param <C> component type
+     * @return status text behavior
+     */
+    public static <C extends JComponent> ViewBehavior<C> statusText(
+            JLabel statusLabel,
+            ReadableValue<String> statusText
+    ) {
+        Objects.requireNonNull(statusLabel, "statusLabel");
+        Objects.requireNonNull(statusText, "statusText");
+        return new ViewBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.single(StandardBehaviorKeys.STATUS_TEXT, BehaviorPhase.INTERACTION);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<C> context) {
+                return BindingFactory.statusText(context.component(), statusLabel, statusText);
             }
         };
     }
