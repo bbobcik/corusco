@@ -8,6 +8,10 @@ import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.problem.ProblemCode;
 import cz.auderis.corusco.core.problem.ProblemFilter;
 import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.table.ColumnState;
+import cz.auderis.corusco.core.table.SortDirection;
+import cz.auderis.corusco.core.table.SortState;
+import cz.auderis.corusco.core.table.TableState;
 import cz.auderis.corusco.swing.behavior.BehaviorKey;
 import cz.auderis.corusco.swing.behavior.BehaviorScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
@@ -503,6 +507,152 @@ public final class SwingMvpTester<V extends JComponent, P> {
     }
 
     /**
+     * Asserts a table state's stable table id.
+     *
+     * <p>The source function runs on the EDT, so it can safely call
+     * {@code TableStateController.captureState()} or read presenter-owned table
+     * state. Assertions use stable table and column ids, not Swing column
+     * instances.</p>
+     *
+     * @param stateSource table state source queried on the EDT
+     * @param expectedTableId expected stable table id
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertTableStateId(
+            BiFunction<? super V, ? super P, ? extends TableState> stateSource,
+            String expectedTableId
+    ) {
+        Objects.requireNonNull(expectedTableId, "expectedTableId");
+        TableState state = readTableState(stateSource);
+        if (!state.tableId().equals(expectedTableId)) {
+            throw new AssertionError("Expected table state id " + expectedTableId + " but was " + state.tableId());
+        }
+        return this;
+    }
+
+    /**
+     * Asserts a table column's visible flag.
+     *
+     * @param stateSource table state source queried on the EDT
+     * @param columnId stable column persistence id
+     * @param expectedVisible expected visibility
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertTableColumnVisible(
+            BiFunction<? super V, ? super P, ? extends TableState> stateSource,
+            String columnId,
+            boolean expectedVisible
+    ) {
+        TableState state = readTableState(stateSource);
+        ColumnState column = requireColumnState(state, columnId);
+        if (column.visible() != expectedVisible) {
+            throw new AssertionError("Expected table column " + columnId + " visible="
+                    + expectedVisible + " but was " + column.visible());
+        }
+        return this;
+    }
+
+    /**
+     * Asserts a table column's visual order.
+     *
+     * @param stateSource table state source queried on the EDT
+     * @param columnId stable column persistence id
+     * @param expectedOrder expected zero-based visual order
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertTableColumnOrder(
+            BiFunction<? super V, ? super P, ? extends TableState> stateSource,
+            String columnId,
+            int expectedOrder
+    ) {
+        if (expectedOrder < 0) {
+            throw new IllegalArgumentException("expectedOrder must not be negative");
+        }
+        TableState state = readTableState(stateSource);
+        ColumnState column = requireColumnState(state, columnId);
+        if (column.order() != expectedOrder) {
+            throw new AssertionError("Expected table column " + columnId + " order "
+                    + expectedOrder + " but was " + column.order());
+        }
+        return this;
+    }
+
+    /**
+     * Asserts a table column's persisted width.
+     *
+     * @param stateSource table state source queried on the EDT
+     * @param columnId stable column persistence id
+     * @param expectedWidth expected width in pixels
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertTableColumnWidth(
+            BiFunction<? super V, ? super P, ? extends TableState> stateSource,
+            String columnId,
+            int expectedWidth
+    ) {
+        if (expectedWidth <= 0) {
+            throw new IllegalArgumentException("expectedWidth must be greater than zero");
+        }
+        TableState state = readTableState(stateSource);
+        ColumnState column = requireColumnState(state, columnId);
+        if (column.width() != expectedWidth) {
+            throw new AssertionError("Expected table column " + columnId + " width "
+                    + expectedWidth + " but was " + column.width());
+        }
+        return this;
+    }
+
+    /**
+     * Asserts a table sort entry by stable column id.
+     *
+     * @param stateSource table state source queried on the EDT
+     * @param columnId stable column persistence id
+     * @param expectedDirection expected sort direction
+     * @param expectedPriority expected zero-based sort priority
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertTableSort(
+            BiFunction<? super V, ? super P, ? extends TableState> stateSource,
+            String columnId,
+            SortDirection expectedDirection,
+            int expectedPriority
+    ) {
+        Objects.requireNonNull(expectedDirection, "expectedDirection");
+        if (expectedPriority < 0) {
+            throw new IllegalArgumentException("expectedPriority must not be negative");
+        }
+        TableState state = readTableState(stateSource);
+        SortState sort = requireSortState(state, columnId);
+        if (sort.direction() != expectedDirection || sort.priority() != expectedPriority) {
+            throw new AssertionError("Expected table sort " + columnId + " direction="
+                    + expectedDirection + " priority=" + expectedPriority
+                    + " but was direction=" + sort.direction() + " priority=" + sort.priority());
+        }
+        return this;
+    }
+
+    /**
+     * Asserts that a table has no sort entry for a stable column id.
+     *
+     * @param stateSource table state source queried on the EDT
+     * @param columnId stable column persistence id
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertNoTableSort(
+            BiFunction<? super V, ? super P, ? extends TableState> stateSource,
+            String columnId
+    ) {
+        Objects.requireNonNull(columnId, "columnId");
+        TableState state = readTableState(stateSource);
+        boolean present = state.sort().stream()
+                .anyMatch(sort -> sort.columnId().equals(columnId));
+        if (present) {
+            throw new AssertionError("Expected no table sort for column " + columnId);
+        }
+        return this;
+    }
+
+    /**
      * Finds a command by generated action key.
      *
      * <p>The lookup runs on the EDT. Prefer tester command helpers for
@@ -634,6 +784,42 @@ public final class SwingMvpTester<V extends JComponent, P> {
             BehaviorScope scope = Objects.requireNonNull(scopeSource.apply(view, presenter), "scopeSource.apply()");
             return scope.hasBehavior(component, behaviorKey);
         });
+    }
+
+    private TableState readTableState(BiFunction<? super V, ? super P, ? extends TableState> stateSource) {
+        Objects.requireNonNull(stateSource, "stateSource");
+        return queryOnEdt((view, presenter) ->
+                Objects.requireNonNull(stateSource.apply(view, presenter), "stateSource.apply()"));
+    }
+
+    private static ColumnState requireColumnState(TableState state, String columnId) {
+        Objects.requireNonNull(columnId, "columnId");
+        return state.columns().stream()
+                .filter(column -> column.id().equals(columnId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected table state " + state.tableId()
+                        + " to contain column " + columnId + " but columns were " + columnIds(state)));
+    }
+
+    private static SortState requireSortState(TableState state, String columnId) {
+        Objects.requireNonNull(columnId, "columnId");
+        return state.sort().stream()
+                .filter(sort -> sort.columnId().equals(columnId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected table state " + state.tableId()
+                        + " to contain sort for column " + columnId + " but sorts were " + sortColumnIds(state)));
+    }
+
+    private static List<String> columnIds(TableState state) {
+        return state.columns().stream()
+                .map(ColumnState::id)
+                .toList();
+    }
+
+    private static List<String> sortColumnIds(TableState state) {
+        return state.sort().stream()
+                .map(SortState::columnId)
+                .toList();
     }
 
     private static <C extends JComponent> Optional<C> findComponentOnEdt(JComponent root, ComponentKey<C> key) {

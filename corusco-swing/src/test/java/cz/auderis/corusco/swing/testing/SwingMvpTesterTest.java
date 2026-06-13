@@ -15,6 +15,10 @@ import cz.auderis.corusco.core.problem.ProblemFilter;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.problem.ProblemSeverity;
 import cz.auderis.corusco.core.problem.ProblemTarget;
+import cz.auderis.corusco.core.table.ColumnState;
+import cz.auderis.corusco.core.table.SortDirection;
+import cz.auderis.corusco.core.table.SortState;
+import cz.auderis.corusco.core.table.TableState;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.behavior.BehaviorScope;
@@ -551,6 +555,91 @@ class SwingMvpTesterTest {
     }
 
     @Test
+    void tableStateAssertionsMatchCapturedState() {
+        SwingMvpTester<CustomerView, TableStatePresenter> tester = testerWithTableState(tableState());
+
+        tester.assertTableStateId((view, presenter) -> presenter.state(), "customers")
+                .assertTableColumnVisible((view, presenter) -> presenter.state(), "customers/name", true)
+                .assertTableColumnVisible((view, presenter) -> presenter.state(), "customers/status", false)
+                .assertTableColumnOrder((view, presenter) -> presenter.state(), "customers/orders", 1)
+                .assertTableColumnWidth((view, presenter) -> presenter.state(), "customers/name", 160)
+                .assertTableSort((view, presenter) -> presenter.state(),
+                        "customers/orders", SortDirection.DESCENDING, 0)
+                .assertNoTableSort((view, presenter) -> presenter.state(), "customers/status");
+    }
+
+    @Test
+    void tableStateAssertionsReadStateOnEdt() {
+        SwingMvpTester<CustomerView, TableStatePresenter> tester = testerWithTableState(tableState());
+
+        tester.assertTableColumnWidth((view, presenter) -> presenter.state(), "customers/name", 160);
+
+        Boolean stateReadOnEdt = tester.queryOnEdt((view, presenter) -> presenter.stateReadOnEdt);
+        assertThat(stateReadOnEdt).isTrue();
+    }
+
+    @Test
+    void tableStateAssertionFailuresAreReadable() {
+        SwingMvpTester<CustomerView, TableStatePresenter> tester = testerWithTableState(tableState());
+
+        Throwable missingColumn = catchThrowable(() ->
+                tester.assertTableColumnVisible((view, presenter) -> presenter.state(), "customers/missing", true));
+        assertThat(missingColumn)
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("customers")
+                .hasMessageContaining("customers/missing")
+                .hasMessageContaining("customers/name");
+
+        Throwable wrongWidth = catchThrowable(() ->
+                tester.assertTableColumnWidth((view, presenter) -> presenter.state(), "customers/name", 200));
+        assertThat(wrongWidth)
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("customers/name")
+                .hasMessageContaining("width 200")
+                .hasMessageContaining("but was 160");
+
+        Throwable missingSort = catchThrowable(() ->
+                tester.assertTableSort((view, presenter) -> presenter.state(),
+                        "customers/status", SortDirection.ASCENDING, 0));
+        assertThat(missingSort)
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("sort for column customers/status")
+                .hasMessageContaining("customers/orders");
+    }
+
+    @Test
+    void tableStateAssertionsRejectNullAndInvalidInputs() {
+        SwingMvpTester<CustomerView, TableStatePresenter> tester = testerWithTableState(tableState());
+
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertTableStateId(null, "customers"))
+                .withMessageContaining("stateSource");
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertTableStateId((view, presenter) -> null, "customers"))
+                .withMessageContaining("stateSource.apply()");
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertTableColumnVisible(
+                        (view, presenter) -> presenter.state(), null, true))
+                .withMessageContaining("columnId");
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertTableSort(
+                        (view, presenter) -> presenter.state(), "customers/name", null, 0))
+                .withMessageContaining("expectedDirection");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> tester.assertTableColumnOrder(
+                        (view, presenter) -> presenter.state(), "customers/name", -1))
+                .withMessageContaining("expectedOrder");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> tester.assertTableColumnWidth(
+                        (view, presenter) -> presenter.state(), "customers/name", 0))
+                .withMessageContaining("expectedWidth");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> tester.assertTableSort(
+                        (view, presenter) -> presenter.state(), "customers/name", SortDirection.ASCENDING, -1))
+                .withMessageContaining("expectedPriority");
+    }
+
+    @Test
     void missingCommandFailsClearly() {
         SwingMvpTester<CustomerView, CustomerPresenter> tester = testerWithCommands(new CommandSet(java.util.List.of()));
 
@@ -587,8 +676,24 @@ class SwingMvpTesterTest {
         return SwingMvpTester.create(CustomerView::new, view -> new ProblemPresenter(problems));
     }
 
+    private static SwingMvpTester<CustomerView, TableStatePresenter> testerWithTableState(TableState state) {
+        return SwingMvpTester.create(CustomerView::new, view -> new TableStatePresenter(state));
+    }
+
     private static Problem problem(ProblemCode code, ProblemSeverity severity, String message) {
         return Problem.validation(code, severity, ProblemTarget.field(NAME), message);
+    }
+
+    private static TableState tableState() {
+        return new TableState(
+                "customers",
+                java.util.List.of(
+                        new ColumnState("customers/name", 160, 0, true),
+                        new ColumnState("customers/orders", 80, 1, true),
+                        new ColumnState("customers/status", 120, 2, false)
+                ),
+                java.util.List.of(new SortState("customers/orders", SortDirection.DESCENDING, 0))
+        );
     }
 
     private static MutableCommand command(
@@ -859,6 +964,21 @@ class SwingMvpTesterTest {
         private BehaviorScope scope() {
             scopeReadOnEdt = SwingUtilities.isEventDispatchThread();
             return scope;
+        }
+    }
+
+    private static final class TableStatePresenter {
+
+        private final TableState state;
+        private boolean stateReadOnEdt;
+
+        private TableStatePresenter(TableState state) {
+            this.state = state;
+        }
+
+        private TableState state() {
+            stateReadOnEdt = SwingUtilities.isEventDispatchThread();
+            return state;
         }
     }
 }
