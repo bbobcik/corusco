@@ -55,6 +55,7 @@ commit has been created.
 | [COR-024](COR-024-add-table-selection-binding.md) | `COR-024 Add table selection binding` | Stage 12, table selection binding slice |
 | [COR-025](COR-025-add-table-cell-problem-decoration.md) | `COR-025 Add table cell problem decoration` | Stage 12, table cell problem/decorator slice |
 | [COR-026](COR-026-add-generated-table-columns.md) | `COR-026 Add generated table columns` | Stage 13, generated table column metadata slice |
+| [COR-027](COR-027-add-generated-table-row-updaters.md) | `COR-027 Add generated table row updaters` | Stage 13, editable generated table column slice |
 
 ## Stage Completion Rule
 

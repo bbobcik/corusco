@@ -18,6 +18,7 @@ final class TableColumnSpec {
     final boolean sortable;
     final boolean filterable;
     final boolean hideable;
+    final boolean editable;
 
     TableColumnSpec(
             String constantName,
@@ -35,7 +36,8 @@ final class TableColumnSpec {
             boolean visible,
             boolean sortable,
             boolean filterable,
-            boolean hideable
+            boolean hideable,
+            boolean editable
     ) {
         this.constantName = constantName;
         this.keyId = keyId;
@@ -53,5 +55,6 @@ final class TableColumnSpec {
         this.sortable = sortable;
         this.filterable = filterable;
         this.hideable = hideable;
+        this.editable = editable;
     }
 }

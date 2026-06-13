@@ -42,10 +42,11 @@ public final class GeneratedTableColumnsExample {
             result.add(model.getColumnClass(1).getSimpleName());
             result.add(model.getValueAt(1, 1).toString());
 
-            // Generated columns are read-only in this slice. Editable record
-            // replacement needs generated row updaters, so it is intentionally
-            // rejected by the processor for now.
+            // Editing a generated column calls a generated updater helper that
+            // creates a replacement record with the edited component value.
             result.add(Boolean.toString(model.isCellEditable(0, 0)));
+            model.setValueAt("Acme Corp", 0, 0);
+            result.add(eventList.get(0).name());
 
             // A Glazed Lists EventList is a first-class row source because the
             // adapter implements ObservableList; generated descriptors do not
