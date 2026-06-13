@@ -18,7 +18,7 @@ import java.util.function.Supplier;
  *
  * @param <T> derived value type
  */
-public class DerivedValue<T> implements ReadableValue<T>, Disposable {
+public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
 
     private final Supplier<? extends T> supplier;
     private final SubscriptionScope dependencyScope = new SubscriptionScope();
@@ -26,10 +26,12 @@ public class DerivedValue<T> implements ReadableValue<T>, Disposable {
     private T value;
     private boolean closed;
 
-    protected DerivedValue(Supplier<? extends T> supplier, Iterable<? extends ReadableValue<?>> dependencies) {
+    private DerivedValue(Supplier<? extends T> supplier, Iterable<? extends ReadableValue<?>> dependencies) {
         this.supplier = Objects.requireNonNull(supplier, "supplier");
+        Objects.requireNonNull(dependencies, "dependencies");
         this.value = supplier.get();
         for (ReadableValue<?> dependency : dependencies) {
+            Objects.requireNonNull(dependency, "dependency");
             dependencyScope.add(dependency.subscribe(event -> recompute(event.origin())));
         }
     }
@@ -88,8 +90,11 @@ public class DerivedValue<T> implements ReadableValue<T>, Disposable {
             return;
         }
         closed = true;
-        dependencyScope.close();
-        listeners.clear();
+        try {
+            dependencyScope.close();
+        } finally {
+            listeners.clear();
+        }
     }
 
     private void recompute(ChangeOrigin origin) {

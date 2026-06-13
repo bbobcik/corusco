@@ -22,15 +22,22 @@ public final class LifecycleCleanupExample {
     public static int remainingListenersAfterCleanup() {
         List<Runnable> listeners = new ArrayList<>();
         try (SubscriptionScope scope = new SubscriptionScope()) {
+            // The list stands in for an external event source that keeps strong
+            // references to listeners until explicitly unregistered.
             Runnable first = () -> {
             };
             Runnable second = () -> {
             };
             listeners.add(first);
             listeners.add(second);
+            // Register cleanup immediately after attachment. This keeps the
+            // ownership rule local: whoever adds a listener also records how to
+            // remove it.
             scope.onClose(() -> listeners.remove(first));
             scope.onClose(() -> listeners.remove(second));
         }
+        // Leaving the try block closes the scope and proves no listener remains
+        // registered after the owner is disposed.
         return listeners.size();
     }
 }

@@ -10,13 +10,13 @@ class TypedKeyExampleTest {
     void exampleShowsAllBaselineKeyFamilies() {
         assertThat(TypedKeyExample.diagnostics())
                 .containsExactly(
-                        "TextFieldKey[CustomerEdit#customer.name:String]",
-                        "FieldKey[CustomerEdit#customer.name:String]",
-                        "FieldKey[CustomerEdit#customer.creditLimit:BigDecimal]",
-                        "ResourceKey[customer.name.label:String]",
-                        "ActionKey[customer.save]",
-                        "HelpTopic[customer.name]",
-                        "ComponentKey[customer.nameField:TextInput]"
+                        "TextFieldKey[CustomerEdit#customer/name:String]",
+                        "FieldKey[CustomerEdit#customer/name:String]",
+                        "FieldKey[CustomerEdit#customer/credit-limit:BigDecimal]",
+                        "ResourceKey[customer/name/label:String]",
+                        "ActionKey[customer/save]",
+                        "HelpTopic[customer/name]",
+                        "ComponentKey[customer/name-field:TextInput]"
                 );
     }
 }

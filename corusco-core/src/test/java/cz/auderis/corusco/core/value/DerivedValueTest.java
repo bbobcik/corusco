@@ -73,4 +73,17 @@ class DerivedValueTest {
         assertThat(length.value()).isZero();
         assertThat(observed).containsExactly(4, 0);
     }
+
+    @Test
+    void mappedValueEventsUseMappedValueAsSource() {
+        SimpleValue<String> name = SimpleValue.of("corusco");
+        MappedValue<String, Integer> length = MappedValue.of(name, String::length);
+        List<ValueChangeEvent<Integer>> events = new ArrayList<>();
+        length.subscribe(events::add);
+
+        name.setValue("core", ChangeOrigin.MODEL);
+
+        assertThat(events).hasSize(1);
+        assertThat(events.getFirst().source()).isSameAs(length);
+    }
 }
