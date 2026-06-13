@@ -111,6 +111,7 @@ commit has been created.
 | [COR-080](COR-080-add-preview-publication-artifacts.md) | `COR-080 Add preview publication artifacts` | Stage 21, local Maven publication and documentation artifacts slice |
 | [COR-081](COR-081-add-release-policy-and-changelog.md) | `COR-081 Add release policy and changelog` | Stage 21, semantic versioning, compatibility policy, and changelog slice |
 | [COR-082](COR-082-add-jpms-module-descriptors.md) | `COR-082 Add JPMS module descriptors` | Stage 21, JPMS descriptors and module-name contract slice |
+| [COR-083](COR-083-add-published-examples-check.md) | `COR-083 Add published examples check` | Stage 21, examples compile against Maven-local artifacts slice |
 
 ## Stage Completion Rule
 

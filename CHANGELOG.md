@@ -12,6 +12,8 @@ preview compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 - `verifyMavenLocalPublication` to verify local publication artifacts.
 - Release policy covering preview semantic versioning and compatibility rules.
 - JPMS module descriptors for published library modules.
+- `verifyExamplesAgainstPublishedArtifacts` to compile examples from
+  Maven-local Corusco artifacts.
 
 ### Changed
 
