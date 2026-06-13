@@ -59,6 +59,7 @@ commit has been created.
 | [COR-028](COR-028-add-generated-table-resources.md) | `COR-028 Add generated table resources` | Stage 13, generated table resources/help slice |
 | [COR-029](COR-029-add-generated-column-persistence-metadata.md) | `COR-029 Add generated column persistence metadata` | Stage 13, generated column persistence metadata slice |
 | [COR-030](COR-030-add-generated-table-bindings.md) | `COR-030 Add generated table bindings` | Stage 13, generated table binding helper slice |
+| [COR-031](COR-031-add-table-state-core.md) | `COR-031 Add table state core` | Stage 14, table state model and merge slice |
 
 ## Stage Completion Rule
 
