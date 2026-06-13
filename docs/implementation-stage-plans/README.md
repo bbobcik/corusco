@@ -65,6 +65,7 @@ commit has been created.
 | [COR-034](COR-034-add-debounced-table-state-saves.md) | `COR-034 Add debounced table state saves` | Stage 14, table state debounce/flush slice |
 | [COR-035](COR-035-add-table-header-visibility-menu.md) | `COR-035 Add table header visibility menu` | Stage 14, table header visibility menu slice |
 | [COR-036](COR-036-add-table-state-schema-migration.md) | `COR-036 Add table state schema migration` | Stage 14, schema version and migration hook slice |
+| [COR-037](COR-037-add-resource-lookup-core.md) | `COR-037 Add resource lookup core` | Stage 15, typed resource lookup slice |
 
 ## Stage Completion Rule
 
