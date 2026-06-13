@@ -1,3 +1,4 @@
 dependencies {
     implementation project(':corusco-annotations')
+    testImplementation project(':corusco-core')
 }

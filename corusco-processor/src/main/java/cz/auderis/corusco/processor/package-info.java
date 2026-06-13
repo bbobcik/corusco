@@ -1,8 +1,8 @@
 /**
  * Annotation processor package for Auderis Corusco.
  *
- * <p>The processor implementation is intentionally deferred beyond the
- * repository bootstrap stage. This package establishes the future source root
- * without registering any processors yet.</p>
+ * <p>Processors use {@code javax.lang.model} compile-time APIs and generate
+ * deterministic Java source. Runtime reflection is intentionally outside this
+ * module's supported path.</p>
  */
 package cz.auderis.corusco.processor;
