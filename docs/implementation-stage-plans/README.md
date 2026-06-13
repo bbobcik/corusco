@@ -77,6 +77,7 @@ commit has been created.
 | [COR-046](COR-046-add-detachable-value-core.md) | `COR-046 Add detachable value core` | Stage 16, detachable value foundation slice |
 | [COR-047](COR-047-add-loadable-observable-list.md) | `COR-047 Add loadable observable list` | Stage 16, loadable observable-list slice |
 | [COR-048](COR-048-add-detachable-lifecycle-scope.md) | `COR-048 Add detachable lifecycle scope` | Stage 16, attach/detach lifecycle integration slice |
+| [COR-049](COR-049-add-master-detail-loadable-value.md) | `COR-049 Add master-detail loadable value` | Stage 16, master-detail loadable value slice |
 
 ## Stage Completion Rule
 
