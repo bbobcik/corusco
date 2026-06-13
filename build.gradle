@@ -1,6 +1,6 @@
 allprojects {
     group = 'cz.auderis.corusco'
-    version = '0.1.0-SNAPSHOT'
+    version = '0.1.0-preview'
 }
 
 configure(subprojects.findAll { it.buildFile.exists() }) {
@@ -224,17 +224,21 @@ tasks.register('verifyPublishedModuleMetadata') {
     }
 }
 
+tasks.register('compileExamplesAgainstPublishedArtifacts', Exec) {
+    group = 'verification'
+    description = 'Compiles example sources against artifacts already published to Maven local.'
+    dependsOn publishableProjects.collect { it.tasks.named('publishToMavenLocal') }
+    workingDir projectRootPath
+    commandLine new File(projectRootPath, 'gradlew.bat').absolutePath,
+            ':corusco-examples:compilePublishedArtifactsJava',
+            '--quiet',
+            '--stacktrace'
+}
+
 tasks.register('verifyExamplesAgainstPublishedArtifacts') {
     group = 'verification'
     description = 'Publishes Corusco locally, then compiles example sources against Maven-local artifacts.'
-    dependsOn publishableProjects.collect { it.tasks.named('publishToMavenLocal') }
-    dependsOn ':corusco-examples:compilePublishedArtifactsJava'
-}
-
-gradle.projectsEvaluated {
-    project(':corusco-examples').tasks.named('compilePublishedArtifactsJava') {
-        dependsOn publishableProjects.collect { it.tasks.named('publishToMavenLocal') }
-    }
+    dependsOn tasks.named('compileExamplesAgainstPublishedArtifacts')
 }
 
 tasks.register('verifyPreviewPackageSurface') {

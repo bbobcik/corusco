@@ -186,11 +186,10 @@ tests, example regression tests, and local verification commands.
 
 ## Current Limits
 
-The project is still pre-preview. The following areas are intentionally still
-being finalized:
+The project is in its first preview line. The following areas are intentionally
+still being finalized:
 
 - automated binary compatibility checks;
-- final preview release tagging;
 - any optional legacy reflection adapter.
 
 Local Maven publication, source/Javadoc artifacts, JPMS module names, and the

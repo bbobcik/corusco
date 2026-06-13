@@ -5,6 +5,10 @@ preview compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
 ## Unreleased
 
+- No changes yet.
+
+## 0.1.0-preview - 2026-06-14
+
 ### Added
 
 - Maven-local publication wiring for library modules with source and Javadoc
@@ -27,9 +31,7 @@ preview compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
 ### Breaking Changes
 
-- None since the preview release line has not been tagged yet.
-
-## 0.1.0-preview - Planned
+- None.
 
 ### Scope
 
