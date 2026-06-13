@@ -58,6 +58,7 @@ For a full verification pass:
 - [Table guide](docs/tables.md)
 - [Command and action guide](docs/commands.md)
 - [Dialog guide](docs/dialogs.md)
+- [Testing guide](docs/testing.md)
 - [Implementation stage plans](docs/implementation-stage-plans/README.md)
 - [Architecture decision records](docs/adr/README.md)
 
