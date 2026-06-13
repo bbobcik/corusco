@@ -5,6 +5,7 @@ import cz.auderis.corusco.core.table.InMemoryTableStateStore;
 import cz.auderis.corusco.core.table.SortDirection;
 import cz.auderis.corusco.core.table.SortState;
 import cz.auderis.corusco.core.table.TableState;
+import cz.auderis.corusco.core.table.TableStateMigration;
 import cz.auderis.corusco.core.table.TableStateStore;
 import java.util.List;
 
@@ -25,11 +26,12 @@ public final class TableStateExample {
     public static List<String> runScenario() {
         TableStateStore store = new InMemoryTableStateStore();
         TableState stored = new TableState(
+                0,
                 GeneratedCustomerRowColumns.TABLE.id(),
                 List.of(
                         new ColumnState("legacy/removed", 90, 0, true),
                         new ColumnState("generated-customer-table/orders", 70, 1, false),
-                        new ColumnState("generated-customer-table/customer-name", 500, 2, true)
+                        new ColumnState("generated-customer-table/old-name", 500, 2, true)
                 ),
                 List.of(
                         new SortState("legacy/removed", SortDirection.ASCENDING, 0),
@@ -41,10 +43,26 @@ public final class TableStateExample {
         // Controllers load by stable generated table id before merging. Missing
         // entries intentionally flow through the same merge path as old data.
         TableState loaded = store.load(GeneratedCustomerRowColumns.TABLE.id()).orElse(null);
+        TableStateMigration<GeneratedCustomerRow> migration = (descriptor, state) -> new TableState(
+                TableState.DEFAULT_SCHEMA_VERSION,
+                state.tableId(),
+                state.columns().stream()
+                        .map(column -> column.id().equals("generated-customer-table/old-name")
+                                ? new ColumnState(
+                                        "generated-customer-table/customer-name",
+                                        column.width(),
+                                        column.order(),
+                                        column.visible()
+                                )
+                                : column)
+                        .toList(),
+                state.sort()
+        );
 
-        // The descriptor decides which stored columns are still known. Unknown
-        // old columns disappear and known widths are clamped to current bounds.
-        TableState merged = TableState.merge(GeneratedCustomerRowTableDescriptor.DESCRIPTOR, loaded);
+        // The migration hook handles known schema changes first. The
+        // descriptor merge then drops truly unknown old columns and clamps
+        // migrated widths to current generated bounds.
+        TableState merged = TableState.merge(GeneratedCustomerRowTableDescriptor.DESCRIPTOR, loaded, migration);
         store.save(merged);
         store.flush();
 
@@ -56,6 +74,7 @@ public final class TableStateExample {
         return List.of(
                 first.id() + ":" + first.width() + ":" + first.visible(),
                 second.id() + ":" + second.width() + ":" + second.visible(),
+                Integer.toString(merged.schemaVersion()),
                 merged.sort().getFirst().columnId() + ":" + merged.sort().getFirst().priority()
         );
     }

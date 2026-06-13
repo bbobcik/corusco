@@ -11,6 +11,7 @@ class TableStateExampleTest {
         assertThat(TableStateExample.runScenario()).containsExactly(
                 "generated-customer-table/orders:70:false",
                 "generated-customer-table/customer-name:320:true",
+                "1",
                 "generated-customer-table/orders:0"
         );
     }

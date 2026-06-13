@@ -18,20 +18,41 @@ import java.util.Set;
  * reconcile stored state with the current descriptor after generated columns
  * are added, removed, reordered, or have new width bounds.</p>
  *
+ * @param schemaVersion application table-state schema version
  * @param tableId stable table id
  * @param columns immutable visual column states
  * @param sort immutable sort states
  */
-public record TableState(String tableId, List<ColumnState> columns, List<SortState> sort) {
+public record TableState(int schemaVersion, String tableId, List<ColumnState> columns, List<SortState> sort) {
 
     /**
-     * Creates table state.
+     * Default application table-state schema version.
+     */
+    public static final int DEFAULT_SCHEMA_VERSION = 1;
+
+    /**
+     * Creates table state with the default schema version.
      *
      * @param tableId stable table id
      * @param columns visual column states
      * @param sort sort states
      */
+    public TableState(String tableId, List<ColumnState> columns, List<SortState> sort) {
+        this(DEFAULT_SCHEMA_VERSION, tableId, columns, sort);
+    }
+
+    /**
+     * Creates table state.
+     *
+     * @param schemaVersion application table-state schema version
+     * @param tableId stable table id
+     * @param columns visual column states
+     * @param sort sort states
+     */
     public TableState {
+        if (schemaVersion < 0) {
+            throw new IllegalArgumentException("schemaVersion must not be negative");
+        }
         tableId = TableIds.requireId(tableId);
         columns = List.copyOf(Objects.requireNonNull(columns, "columns"));
         sort = List.copyOf(Objects.requireNonNull(sort, "sort"));
@@ -56,6 +77,28 @@ public record TableState(String tableId, List<ColumnState> columns, List<SortSta
                 .sorted(Comparator.comparingInt(ColumnState::order))
                 .toList();
         return new TableState(descriptor.key().id(), normalizeOrder(states), List.of());
+    }
+
+    /**
+     * Merges stored state after applying a migration hook.
+     *
+     * @param descriptor current table descriptor
+     * @param stored optional stored state, may be {@code null}
+     * @param migration migration hook
+     * @param <R> row type
+     * @return merged state
+     */
+    public static <R> TableState merge(
+            TableDescriptor<R> descriptor,
+            TableState stored,
+            TableStateMigration<R> migration
+    ) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        Objects.requireNonNull(migration, "migration");
+        if (stored == null) {
+            return defaults(descriptor);
+        }
+        return merge(descriptor, migration.migrate(descriptor, stored));
     }
 
     /**
@@ -106,7 +149,17 @@ public record TableState(String tableId, List<ColumnState> columns, List<SortSta
                 .sorted(Comparator.comparingInt(SortState::priority))
                 .map(sortState -> new SortState(sortState.columnId(), sortState.direction(), sortState.priority()))
                 .toList();
-        return new TableState(descriptor.key().id(), normalizedColumns, normalizeSort(retainedSort));
+        return new TableState(stored.schemaVersion(), descriptor.key().id(), normalizedColumns, normalizeSort(retainedSort));
+    }
+
+    /**
+     * Returns a copy with a different schema version.
+     *
+     * @param schemaVersion new schema version
+     * @return copied state
+     */
+    public TableState withSchemaVersion(int schemaVersion) {
+        return new TableState(schemaVersion, tableId, columns, sort);
     }
 
     private static ColumnState defaultColumnState(Column<?, ?> column) {

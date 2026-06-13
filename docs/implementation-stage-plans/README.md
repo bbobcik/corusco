@@ -64,6 +64,7 @@ commit has been created.
 | [COR-033](COR-033-add-table-state-controller.md) | `COR-033 Add table state controller` | Stage 14, Swing table state controller slice |
 | [COR-034](COR-034-add-debounced-table-state-saves.md) | `COR-034 Add debounced table state saves` | Stage 14, table state debounce/flush slice |
 | [COR-035](COR-035-add-table-header-visibility-menu.md) | `COR-035 Add table header visibility menu` | Stage 14, table header visibility menu slice |
+| [COR-036](COR-036-add-table-state-schema-migration.md) | `COR-036 Add table state schema migration` | Stage 14, schema version and migration hook slice |
 
 ## Stage Completion Rule
 

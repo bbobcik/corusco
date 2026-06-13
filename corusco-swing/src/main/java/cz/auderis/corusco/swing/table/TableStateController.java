@@ -7,6 +7,7 @@ import cz.auderis.corusco.core.table.SortDirection;
 import cz.auderis.corusco.core.table.SortState;
 import cz.auderis.corusco.core.table.TableDescriptor;
 import cz.auderis.corusco.core.table.TableState;
+import cz.auderis.corusco.core.table.TableStateMigration;
 import cz.auderis.corusco.core.table.TableStateStore;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
@@ -84,6 +85,25 @@ public final class TableStateController<R> implements Binding {
     }
 
     /**
+     * Installs a controller with a migration hook for loaded state.
+     *
+     * @param table Swing table to restore and observe
+     * @param model descriptor-backed table model installed in the table
+     * @param store table state store
+     * @param migration migration hook applied before descriptor merge
+     * @param <R> row type
+     * @return installed controller
+     */
+    public static <R> TableStateController<R> install(
+            JTable table,
+            ObservableTableModel<R> model,
+            TableStateStore store,
+            TableStateMigration<R> migration
+    ) {
+        return new TableStateController<>(table, model, store, migration);
+    }
+
+    /**
      * Installs a controller with an explicit event-save debounce interval.
      *
      * @param table Swing table to restore and observe
@@ -103,6 +123,27 @@ public final class TableStateController<R> implements Binding {
     }
 
     /**
+     * Installs a controller with a migration hook and explicit debounce.
+     *
+     * @param table Swing table to restore and observe
+     * @param model descriptor-backed table model installed in the table
+     * @param store table state store
+     * @param migration migration hook applied before descriptor merge
+     * @param saveDelayMillis debounce delay for event-triggered saves
+     * @param <R> row type
+     * @return installed controller
+     */
+    public static <R> TableStateController<R> install(
+            JTable table,
+            ObservableTableModel<R> model,
+            TableStateStore store,
+            TableStateMigration<R> migration,
+            int saveDelayMillis
+    ) {
+        return new TableStateController<>(table, model, store, migration, saveDelayMillis);
+    }
+
+    /**
      * Creates and installs a controller.
      *
      * @param table Swing table to restore and observe
@@ -111,6 +152,23 @@ public final class TableStateController<R> implements Binding {
      */
     public TableStateController(JTable table, ObservableTableModel<R> model, TableStateStore store) {
         this(table, model, store, DEFAULT_SAVE_DELAY_MILLIS);
+    }
+
+    /**
+     * Creates and installs a controller with a migration hook.
+     *
+     * @param table Swing table to restore and observe
+     * @param model descriptor-backed table model installed in the table
+     * @param store table state store
+     * @param migration migration hook applied before descriptor merge
+     */
+    public TableStateController(
+            JTable table,
+            ObservableTableModel<R> model,
+            TableStateStore store,
+            TableStateMigration<R> migration
+    ) {
+        this(table, model, store, migration, DEFAULT_SAVE_DELAY_MILLIS);
     }
 
     /**
@@ -127,10 +185,30 @@ public final class TableStateController<R> implements Binding {
             TableStateStore store,
             int saveDelayMillis
     ) {
+        this(table, model, store, TableStateMigration.none(), saveDelayMillis);
+    }
+
+    /**
+     * Creates and installs a controller with a migration hook and debounce.
+     *
+     * @param table Swing table to restore and observe
+     * @param model descriptor-backed table model installed in the table
+     * @param store table state store
+     * @param migration migration hook applied before descriptor merge
+     * @param saveDelayMillis debounce delay for event-triggered saves
+     */
+    public TableStateController(
+            JTable table,
+            ObservableTableModel<R> model,
+            TableStateStore store,
+            TableStateMigration<R> migration,
+            int saveDelayMillis
+    ) {
         SwingEdt.requireEdt();
         this.table = Objects.requireNonNull(table, "table");
         this.model = Objects.requireNonNull(model, "model");
         this.store = Objects.requireNonNull(store, "store");
+        Objects.requireNonNull(migration, "migration");
         if (table.getModel() != model) {
             throw new IllegalArgumentException("table must use the supplied model");
         }
@@ -140,7 +218,7 @@ public final class TableStateController<R> implements Binding {
         this.tableColumnsById = discoverTableColumns();
         this.saveScheduler = new TableStateSaveScheduler(saveDelayMillis, this::writeCurrentState);
 
-        applyState(TableState.merge(descriptor, store.load(descriptor.key().id()).orElse(null)));
+        applyState(TableState.merge(descriptor, store.load(descriptor.key().id()).orElse(null), migration));
         columnModel.addColumnModelListener(columnListener);
         if (table.getRowSorter() != null) {
             table.getRowSorter().addRowSorterListener(sorterListener);

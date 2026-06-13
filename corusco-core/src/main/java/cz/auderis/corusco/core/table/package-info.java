@@ -5,6 +5,7 @@
  * public string property paths. Generated code should emit stable table and
  * column key constants plus explicit extractor/updater functions. Table state
  * stores persist immutable state snapshots and do not apply anything directly
- * to Swing components.</p>
+ * to Swing components. Schema migration hooks transform loaded state before
+ * descriptor merge, keeping old persistence ids out of live table code.</p>
  */
 package cz.auderis.corusco.core.table;
