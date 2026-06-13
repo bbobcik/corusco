@@ -34,6 +34,9 @@ The owner type parameter `O` is usually the edit record type. It exists so keys
 such as `TextFieldKey<CustomerEdit, BigDecimal>` cannot be accidentally applied
 to another form.
 
+See [Dialog Guide](dialogs.md) for the OK/Apply/Cancel controller layer that
+turns committable form models into typed dialog results.
+
 ## Text Fields Preserve Invalid Input
 
 Text fields keep raw text and semantic value separate. Invalid user input is a
