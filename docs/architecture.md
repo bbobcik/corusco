@@ -76,6 +76,9 @@ example, a decimal field may contain unparseable text while the previous valid
 `BigDecimal` remains available. That distinction belongs in the form model, not
 in ad hoc Swing listeners.
 
+See [Form Model Guide](forms.md) for handwritten and generated form model
+patterns, validation rules, reset, baseline acceptance, and testing.
+
 ## Generated Contracts
 
 The processor currently generates companion classes for three source shapes:

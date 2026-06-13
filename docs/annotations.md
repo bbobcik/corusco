@@ -111,6 +111,9 @@ Generated form models install runtime validation rules for required, length,
 regex, decimal range, and integer range constraints. More complex validation
 belongs in the typed Java validation DSL.
 
+See [Form Model Guide](forms.md) for how generated models use fields, parse
+state, validation rules, and guarded result creation.
+
 ## Table Annotations
 
 ### `@SwingTable`
