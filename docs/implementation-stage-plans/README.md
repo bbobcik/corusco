@@ -101,6 +101,7 @@ commit has been created.
 | [COR-070](COR-070-add-architecture-overview.md) | `COR-070 Add architecture overview` | Stage 20, architecture overview slice |
 | [COR-071](COR-071-add-annotation-reference.md) | `COR-071 Add annotation reference` | Stage 20, annotation reference slice |
 | [COR-072](COR-072-add-behavior-authoring-guide.md) | `COR-072 Add behavior authoring guide` | Stage 20, behavior authoring guide slice |
+| [COR-073](COR-073-add-form-model-guide.md) | `COR-073 Add form model guide` | Stage 20, form model guide slice |
 
 ## Stage Completion Rule
 
