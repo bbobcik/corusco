@@ -6,7 +6,10 @@ import cz.auderis.corusco.glazedlists.GlazedListsAdapters;
 import cz.auderis.corusco.glazedlists.GlazedObservableList;
 import cz.auderis.corusco.swing.binding.BindingScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
+import cz.auderis.corusco.core.table.InMemoryTableStateStore;
+import cz.auderis.corusco.core.table.TableStateStore;
 import cz.auderis.corusco.swing.table.ObservableTableModel;
+import cz.auderis.corusco.swing.table.TableStateController;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JTable;
@@ -33,6 +36,7 @@ public final class GeneratedTableColumnsExample {
                     new GeneratedCustomerRow("Globex", 5)
             )));
             GlazedObservableList<GeneratedCustomerRow> rows = GlazedListsAdapters.observableList(eventList);
+            TableStateStore tableStateStore = new InMemoryTableStateStore();
 
             // Generated binding helpers install the descriptor-backed model and
             // put model cleanup under the same lifecycle as other Swing bindings.
@@ -40,6 +44,9 @@ public final class GeneratedTableColumnsExample {
             try (BindingScope scope = new BindingScope()) {
                 ObservableTableModel<GeneratedCustomerRow> model =
                         GeneratedCustomerRowTableBindings.installModel(table, rows, scope);
+                TableStateController<GeneratedCustomerRow> stateController = scope.add(
+                        TableStateController.install(table, model, tableStateStore)
+                );
 
                 result.add(GeneratedCustomerRowColumns.NAME_KEY.id());
                 result.add(model.getColumnName(0));
@@ -55,6 +62,16 @@ public final class GeneratedTableColumnsExample {
                 // widths.
                 result.add(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().id());
                 result.add(Integer.toString(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().maxWidth()));
+
+                // The state controller bridges JTable's mutable TableColumn
+                // model back to generated persistence ids before saving.
+                table.getColumnModel().moveColumn(1, 0);
+                stateController.saveNow();
+                result.add(tableStateStore.load(GeneratedCustomerRowColumns.TABLE.id())
+                        .orElseThrow()
+                        .columns()
+                        .getFirst()
+                        .id());
 
                 // Primitive record components are exposed through boxed column
                 // key classes, while row values still come from direct accessor
