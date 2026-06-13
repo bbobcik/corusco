@@ -187,5 +187,6 @@ directory layout, compiler diagnostics, or platform-specific line endings.
 - `docs/architecture.md`
 - `docs/behaviors.md`
 - `docs/forms.md`
+- `docs/tables.md`
 - `docs/corusco-roadmap.md`
 - `docs/implementation-stage-plans/README.md`
