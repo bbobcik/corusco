@@ -74,6 +74,7 @@ commit has been created.
 | [COR-043](COR-043-add-accessible-text-behavior.md) | `COR-043 Add accessible text behavior` | Stage 15, accessible name/description behavior slice |
 | [COR-044](COR-044-add-table-header-tooltips.md) | `COR-044 Add table header tooltips` | Stage 15, table header tooltip behavior slice |
 | [COR-045](COR-045-add-table-cell-tooltips.md) | `COR-045 Add table cell tooltips` | Stage 15, table cell tooltip behavior slice |
+| [COR-046](COR-046-add-detachable-value-core.md) | `COR-046 Add detachable value core` | Stage 16, detachable value foundation slice |
 
 ## Stage Completion Rule
 
