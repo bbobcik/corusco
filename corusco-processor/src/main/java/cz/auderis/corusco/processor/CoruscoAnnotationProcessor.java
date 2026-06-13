@@ -2,6 +2,7 @@ package cz.auderis.corusco.processor;
 
 import cz.auderis.corusco.annotations.CheckBox;
 import cz.auderis.corusco.annotations.ComboBox;
+import cz.auderis.corusco.annotations.Column;
 import cz.auderis.corusco.annotations.DecimalRange;
 import cz.auderis.corusco.annotations.DateField;
 import cz.auderis.corusco.annotations.Help;
@@ -10,6 +11,7 @@ import cz.auderis.corusco.annotations.Length;
 import cz.auderis.corusco.annotations.Required;
 import cz.auderis.corusco.annotations.Regex;
 import cz.auderis.corusco.annotations.SwingForm;
+import cz.auderis.corusco.annotations.SwingTable;
 import cz.auderis.corusco.annotations.TextField;
 import cz.auderis.corusco.annotations.UiAction;
 import java.math.BigDecimal;
@@ -48,6 +50,7 @@ import javax.tools.Diagnostic;
  */
 @SupportedAnnotationTypes({
         "cz.auderis.corusco.annotations.SwingForm",
+        "cz.auderis.corusco.annotations.SwingTable",
         "cz.auderis.corusco.annotations.UiAction"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
@@ -74,8 +77,123 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 processForm(typeElement);
             }
         }
+        for (Element element : roundEnv.getElementsAnnotatedWith(SwingTable.class)) {
+            if (element instanceof TypeElement typeElement) {
+                processTable(typeElement);
+            }
+        }
         processActions(roundEnv);
         return true;
+    }
+
+    private void processTable(TypeElement tableType) {
+        SwingTable annotation = tableType.getAnnotation(SwingTable.class);
+        if (tableType.getKind() != ElementKind.RECORD) {
+            error(tableType, "@SwingTable is supported only on records");
+            return;
+        }
+        if (annotation.id().isBlank()) {
+            error(tableType, "@SwingTable id must not be blank");
+            return;
+        }
+        if (!isStableId(annotation.id())) {
+            error(tableType, "@SwingTable id must contain only letters, digits, dots, underscores, dashes, or slashes");
+            return;
+        }
+        if (!tableType.getTypeParameters().isEmpty()) {
+            error(tableType, "@SwingTable generic records are not supported by this processor stage");
+            return;
+        }
+
+        List<TableColumnSpec> columns = new ArrayList<>();
+        Set<String> ids = new java.util.LinkedHashSet<>();
+        boolean failed = false;
+        for (RecordComponentElement component : tableType.getRecordComponents()) {
+            Column annotationColumn = component.getAnnotation(Column.class);
+            if (annotationColumn == null) {
+                continue;
+            }
+            if (!isSupportedValueType(component.asType())) {
+                error(component, "@Column requires primitive or declared component types");
+                failed = true;
+                continue;
+            }
+            if (annotationColumn.editable()) {
+                error(component, "@Column editable=true is deferred until generated row updater support");
+                failed = true;
+                continue;
+            }
+            String id = annotationColumn.id().isBlank()
+                    ? annotation.id() + "/" + kebab(component.getSimpleName().toString())
+                    : annotationColumn.id();
+            if (!isStableId(id)) {
+                error(component, "@Column id must contain only letters, digits, dots, underscores, dashes, or slashes");
+                failed = true;
+                continue;
+            }
+            if (!ids.add(id)) {
+                error(component, "Duplicate @Column id in " + tableType.getSimpleName() + ": " + id);
+                failed = true;
+                continue;
+            }
+            if (annotationColumn.width() <= 0) {
+                error(component, "@Column width must be greater than zero");
+                failed = true;
+                continue;
+            }
+            if (!annotationColumn.header().isBlank() && !isStableId(annotationColumn.header())) {
+                error(component, "@Column header must contain only letters, digits, dots, underscores, dashes, or slashes");
+                failed = true;
+                continue;
+            }
+            if (!annotationColumn.tooltip().isBlank() && !isStableId(annotationColumn.tooltip())) {
+                error(component, "@Column tooltip must contain only letters, digits, dots, underscores, dashes, or slashes");
+                failed = true;
+                continue;
+            }
+            columns.add(tableColumnSpec(tableType, component, annotationColumn, id, columns.size()));
+        }
+        if (columns.isEmpty() && !failed) {
+            error(tableType, "@SwingTable record must contain at least one @Column component");
+            return;
+        }
+        if (failed) {
+            return;
+        }
+        new TableSourceWriter(elements, filer, messager)
+                .writeTableSources(tableType, new TableSpec(annotation.id(), tableType.getSimpleName().toString(), columns));
+    }
+
+    private TableColumnSpec tableColumnSpec(
+            TypeElement tableType,
+            RecordComponentElement component,
+            Column column,
+            String keyId,
+            int componentOrder
+    ) {
+        String componentName = component.getSimpleName().toString();
+        String constantName = constantName(componentName);
+        String headerId = column.header().isBlank() ? keyId + "/header" : column.header();
+        String tooltipId = column.tooltip().isBlank() ? null : column.tooltip();
+        int order = column.order() < 0 ? componentOrder : column.order();
+        return new TableColumnSpec(
+                constantName,
+                keyId,
+                componentName,
+                tableType.getSimpleName().toString(),
+                genericType(component.asType()),
+                classLiteral(component.asType()),
+                constantName + "_HEADER",
+                headerId,
+                tooltipId == null ? null : constantName + "_TOOLTIP",
+                tooltipId,
+                column.width(),
+                order,
+                column.visible(),
+                column.sortable(),
+                column.filterable(),
+                column.hideable()
+        );
     }
 
     private void processActions(RoundEnvironment roundEnv) {
