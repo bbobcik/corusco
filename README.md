@@ -50,6 +50,8 @@ For a full verification pass:
 ## Documentation
 
 - [Roadmap](docs/corusco-roadmap.md)
+- [Architecture overview](docs/architecture.md)
+- [Quickstart](docs/quickstart.md)
 - [Implementation stage plans](docs/implementation-stage-plans/README.md)
 - [Architecture decision records](docs/adr/README.md)
 
