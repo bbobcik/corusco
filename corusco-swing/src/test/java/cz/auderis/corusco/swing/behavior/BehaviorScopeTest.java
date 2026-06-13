@@ -45,12 +45,21 @@ class BehaviorScopeTest {
         SwingEdt.runAndWait(() -> {
             List<String> events = new ArrayList<>();
             BehaviorScope scope = new BehaviorScope();
+            JTextField field = new JTextField();
 
-            scope.install(new JTextField(), List.of(
+            scope.install(field, List.of(
                     tracked("interaction", BehaviorPhase.INTERACTION, events),
                     tracked("binding", BehaviorPhase.BINDING, events),
                     tracked("decoration", BehaviorPhase.DECORATION, events)
             ));
+
+            assertThat(scope.installedBehaviorKeys(field)).containsExactly(
+                    BehaviorKey.of("test/binding"),
+                    BehaviorKey.of("test/decoration"),
+                    BehaviorKey.of("test/interaction")
+            );
+            assertThat(scope.hasBehavior(field, BehaviorKey.of("test/decoration"))).isTrue();
+
             scope.close();
 
             assertThat(events).containsExactly(
@@ -61,6 +70,8 @@ class BehaviorScopeTest {
                     "close:decoration",
                     "close:binding"
             );
+            assertThat(scope.installedBehaviorKeys(field)).isEmpty();
+            assertThat(scope.hasBehavior(field, BehaviorKey.of("test/decoration"))).isFalse();
         });
     }
 

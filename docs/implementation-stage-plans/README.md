@@ -94,6 +94,7 @@ commit has been created.
 | [COR-063](COR-063-add-tester-field-input-helpers.md) | `COR-063 Add tester field input helpers` | Stage 19, field input helper slice |
 | [COR-064](COR-064-add-tester-table-selection-helpers.md) | `COR-064 Add tester table selection helpers` | Stage 19, table selection helper slice |
 | [COR-065](COR-065-add-tester-problem-assertions.md) | `COR-065 Add tester problem assertions` | Stage 19, problem assertion helper slice |
+| [COR-066](COR-066-add-tester-behavior-assertions.md) | `COR-066 Add tester behavior assertions` | Stage 19, behavior-installed assertion helper slice |
 
 ## Stage Completion Rule
 

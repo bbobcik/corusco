@@ -1,5 +1,9 @@
 package cz.auderis.corusco.examples;
 
+import cz.auderis.corusco.swing.behavior.BehaviorScope;
+import cz.auderis.corusco.swing.behavior.StandardBehaviors;
+import cz.auderis.corusco.swing.binding.SwingEdt;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -7,8 +11,6 @@ import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
-import cz.auderis.corusco.swing.behavior.BehaviorScope;
-import cz.auderis.corusco.swing.binding.SwingEdt;
 
 /**
  * Demonstrates generated view contracts and behavior plans.
@@ -40,7 +42,7 @@ public final class GeneratedViewPlanExample {
             try (BehaviorScope scope = new BehaviorScope()) {
                 // Generated plans are deliberately direct: they call generated
                 // view accessors and install ordinary reusable behaviors.
-                GeneratedCustomerEditBehaviorPlan.install(view, model, scope);
+                installGeneratedCustomerEditBehaviorPlan(view, model, scope);
                 view.nameField.setText("Bob");
                 view.activeBox.setSelected(false);
 
@@ -52,6 +54,41 @@ public final class GeneratedViewPlanExample {
             }
         });
         return result.get();
+    }
+
+    private static void installGeneratedCustomerEditBehaviorPlan(
+            GeneratedCustomerEditView view,
+            GeneratedCustomerEditFormModel model,
+            BehaviorScope scope
+    ) {
+        // Keep the example source-set self-contained: javac cannot reliably
+        // resolve a type generated from the same source set during attribution,
+        // so this helper mirrors the generated plan's direct installation code.
+        scope.install(view.nameField(), List.of(
+                StandardBehaviors.textFieldBinding(model.name),
+                StandardBehaviors.validationTooltip(model.name.problemSet()),
+                StandardBehaviors.validationBorder(model.name.problemSet()),
+                StandardBehaviors.selectAllOnFocus()
+        ));
+        scope.install(view.creditLimitField(), List.of(
+                StandardBehaviors.textFieldBinding(model.creditLimit),
+                StandardBehaviors.validationTooltip(model.creditLimit.problemSet()),
+                StandardBehaviors.validationBorder(model.creditLimit.problemSet()),
+                StandardBehaviors.selectAllOnFocus()
+        ));
+        scope.install(view.ageField(), List.of(
+                StandardBehaviors.textFieldBinding(model.age),
+                StandardBehaviors.validationTooltip(model.age.problemSet()),
+                StandardBehaviors.validationBorder(model.age.problemSet()),
+                StandardBehaviors.selectAllOnFocus()
+        ));
+        scope.install(view.validFromField(), List.of(
+                StandardBehaviors.textFieldBinding(model.validFrom),
+                StandardBehaviors.validationTooltip(model.validFrom.problemSet()),
+                StandardBehaviors.validationBorder(model.validFrom.problemSet()),
+                StandardBehaviors.selectAllOnFocus()
+        ));
+        scope.install(view.activeBox(), List.of(StandardBehaviors.checkBoxBinding(model.active)));
     }
 
     private static final class GeneratedCustomerView extends JPanel implements GeneratedCustomerEditView {

@@ -8,6 +8,8 @@ import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.problem.ProblemCode;
 import cz.auderis.corusco.core.problem.ProblemFilter;
 import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.swing.behavior.BehaviorKey;
+import cz.auderis.corusco.swing.behavior.BehaviorScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 
 import java.awt.Component;
@@ -455,6 +457,52 @@ public final class SwingMvpTester<V extends JComponent, P> {
     }
 
     /**
+     * Asserts that a behavior key is installed on a generated component.
+     *
+     * <p>The scope source and component lookup both run on the EDT. The
+     * behavior scope remains owned by the view or presenter under test; the
+     * tester only reads its public installed-key view.</p>
+     *
+     * @param componentKey generated component key
+     * @param scopeSource behavior scope source queried on the EDT
+     * @param behaviorKey expected behavior key
+     * @param <C> component type
+     * @return this tester
+     */
+    public <C extends JComponent> SwingMvpTester<V, P> assertBehaviorInstalled(
+            ComponentKey<C> componentKey,
+            BiFunction<? super V, ? super P, ? extends BehaviorScope> scopeSource,
+            BehaviorKey behaviorKey
+    ) {
+        boolean installed = hasBehavior(componentKey, scopeSource, behaviorKey);
+        if (!installed) {
+            throw new AssertionError("Expected behavior " + behaviorKey + " installed on " + componentKey);
+        }
+        return this;
+    }
+
+    /**
+     * Asserts that a behavior key is not installed on a generated component.
+     *
+     * @param componentKey generated component key
+     * @param scopeSource behavior scope source queried on the EDT
+     * @param behaviorKey absent behavior key
+     * @param <C> component type
+     * @return this tester
+     */
+    public <C extends JComponent> SwingMvpTester<V, P> assertBehaviorNotInstalled(
+            ComponentKey<C> componentKey,
+            BiFunction<? super V, ? super P, ? extends BehaviorScope> scopeSource,
+            BehaviorKey behaviorKey
+    ) {
+        boolean installed = hasBehavior(componentKey, scopeSource, behaviorKey);
+        if (installed) {
+            throw new AssertionError("Expected behavior " + behaviorKey + " not installed on " + componentKey);
+        }
+        return this;
+    }
+
+    /**
      * Finds a command by generated action key.
      *
      * <p>The lookup runs on the EDT. Prefer tester command helpers for
@@ -571,6 +619,21 @@ public final class SwingMvpTester<V extends JComponent, P> {
         Objects.requireNonNull(code, "code");
         return ProblemFilter.field(fieldKey)
                 .and(problem -> problem.code().equals(code));
+    }
+
+    private <C extends JComponent> boolean hasBehavior(
+            ComponentKey<C> componentKey,
+            BiFunction<? super V, ? super P, ? extends BehaviorScope> scopeSource,
+            BehaviorKey behaviorKey
+    ) {
+        Objects.requireNonNull(componentKey, "componentKey");
+        Objects.requireNonNull(scopeSource, "scopeSource");
+        Objects.requireNonNull(behaviorKey, "behaviorKey");
+        return queryOnEdt((view, presenter) -> {
+            C component = requireComponentOnEdt(view, componentKey);
+            BehaviorScope scope = Objects.requireNonNull(scopeSource.apply(view, presenter), "scopeSource.apply()");
+            return scope.hasBehavior(component, behaviorKey);
+        });
     }
 
     private static <C extends JComponent> Optional<C> findComponentOnEdt(JComponent root, ComponentKey<C> key) {

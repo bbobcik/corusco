@@ -17,6 +17,9 @@ import cz.auderis.corusco.core.problem.ProblemSeverity;
 import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.SimpleValue;
+import cz.auderis.corusco.swing.behavior.BehaviorScope;
+import cz.auderis.corusco.swing.behavior.StandardBehaviorKeys;
+import cz.auderis.corusco.swing.behavior.StandardBehaviors;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -454,6 +457,100 @@ class SwingMvpTesterTest {
     }
 
     @Test
+    void behaviorAssertionsMatchInstalledGeneratedComponentBehavior() {
+        SwingMvpTester<CustomerView, BehaviorPresenter> tester =
+                SwingMvpTester.create(CustomerView::new, BehaviorPresenter::new);
+
+        tester.assertBehaviorInstalled(
+                        NAME_FIELD,
+                        (view, presenter) -> presenter.scope(),
+                        StandardBehaviorKeys.SELECT_ALL_ON_FOCUS)
+                .assertBehaviorInstalled(
+                        NAME_FIELD,
+                        (view, presenter) -> presenter.scope(),
+                        StandardBehaviorKeys.VALIDATION_BORDER)
+                .assertBehaviorNotInstalled(
+                        NAME_FIELD,
+                        (view, presenter) -> presenter.scope(),
+                        StandardBehaviorKeys.HELP_ON_F1);
+    }
+
+    @Test
+    void behaviorAssertionsReadScopeOnEdt() {
+        SwingMvpTester<CustomerView, BehaviorPresenter> tester =
+                SwingMvpTester.create(CustomerView::new, BehaviorPresenter::new);
+
+        tester.assertBehaviorInstalled(
+                NAME_FIELD,
+                (view, presenter) -> presenter.scope(),
+                StandardBehaviorKeys.SELECT_ALL_ON_FOCUS);
+
+        Boolean scopeReadOnEdt = tester.queryOnEdt((view, presenter) -> presenter.scopeReadOnEdt);
+        assertThat(scopeReadOnEdt).isTrue();
+    }
+
+    @Test
+    void behaviorAssertionsObserveScopeCleanup() {
+        SwingMvpTester<CustomerView, BehaviorPresenter> tester =
+                SwingMvpTester.create(CustomerView::new, BehaviorPresenter::new);
+
+        tester.runOnEdt((view, presenter) -> presenter.scope().close())
+                .assertBehaviorNotInstalled(
+                        NAME_FIELD,
+                        (view, presenter) -> presenter.scope(),
+                        StandardBehaviorKeys.SELECT_ALL_ON_FOCUS);
+    }
+
+    @Test
+    void behaviorAssertionFailuresAreReadable() {
+        SwingMvpTester<CustomerView, BehaviorPresenter> tester =
+                SwingMvpTester.create(CustomerView::new, BehaviorPresenter::new);
+
+        Throwable missingFailure = catchThrowable(() -> tester.assertBehaviorInstalled(
+                NAME_FIELD,
+                (view, presenter) -> presenter.scope(),
+                StandardBehaviorKeys.HELP_ON_F1));
+        assertThat(missingFailure)
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("interaction/help-on-f1")
+                .hasMessageContaining("ComponentKey[customer/name-field:JTextField]");
+
+        Throwable presentFailure = catchThrowable(() -> tester.assertBehaviorNotInstalled(
+                NAME_FIELD,
+                (view, presenter) -> presenter.scope(),
+                StandardBehaviorKeys.SELECT_ALL_ON_FOCUS));
+        assertThat(presentFailure)
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("interaction/select-all-on-focus")
+                .hasMessageContaining("not installed");
+    }
+
+    @Test
+    void behaviorAssertionsRejectNullInputs() {
+        SwingMvpTester<CustomerView, BehaviorPresenter> tester =
+                SwingMvpTester.create(CustomerView::new, BehaviorPresenter::new);
+
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertBehaviorInstalled(
+                        null,
+                        (view, presenter) -> presenter.scope(),
+                        StandardBehaviorKeys.SELECT_ALL_ON_FOCUS))
+                .withMessageContaining("componentKey");
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertBehaviorInstalled(NAME_FIELD, null, StandardBehaviorKeys.SELECT_ALL_ON_FOCUS))
+                .withMessageContaining("scopeSource");
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertBehaviorInstalled(NAME_FIELD, (view, presenter) -> presenter.scope(), null))
+                .withMessageContaining("behaviorKey");
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertBehaviorInstalled(
+                        NAME_FIELD,
+                        (view, presenter) -> null,
+                        StandardBehaviorKeys.SELECT_ALL_ON_FOCUS))
+                .withMessageContaining("scopeSource.apply()");
+    }
+
+    @Test
     void missingCommandFailsClearly() {
         SwingMvpTester<CustomerView, CustomerPresenter> tester = testerWithCommands(new CommandSet(java.util.List.of()));
 
@@ -744,6 +841,24 @@ class SwingMvpTesterTest {
         private ProblemSet problems() {
             problemsReadOnEdt = SwingUtilities.isEventDispatchThread();
             return problems;
+        }
+    }
+
+    private static final class BehaviorPresenter {
+
+        private final BehaviorScope scope = new BehaviorScope();
+        private boolean scopeReadOnEdt;
+
+        private BehaviorPresenter(CustomerView view) {
+            scope.install(view.nameField, java.util.List.of(
+                    StandardBehaviors.validationBorder(SimpleValue.of(ProblemSet.empty())),
+                    StandardBehaviors.selectAllOnFocus()
+            ));
+        }
+
+        private BehaviorScope scope() {
+            scopeReadOnEdt = SwingUtilities.isEventDispatchThread();
+            return scope;
         }
     }
 }

@@ -28,6 +28,7 @@ public final class BehaviorScope implements Binding {
     private final BindingScope bindings = new BindingScope();
     private final HelpService helpService;
     private final Map<JComponent, Set<BehaviorKey>> installedSingleKeys = new IdentityHashMap<>();
+    private final Map<JComponent, List<BehaviorKey>> installedKeys = new IdentityHashMap<>();
     private final Set<JComponent> primaryBindingComponents = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /**
@@ -96,10 +97,43 @@ public final class BehaviorScope implements Binding {
         return bindings.isClosed();
     }
 
+    /**
+     * Returns installed behavior keys for a component in installation order.
+     *
+     * <p>The query must run on the EDT because behavior installation and
+     * disposal are UI-lifecycle operations. The returned list is immutable and
+     * does not expose behavior instances or disposable handles.</p>
+     *
+     * @param component component to inspect
+     * @return installed behavior keys, or an empty list
+     */
+    public List<BehaviorKey> installedBehaviorKeys(JComponent component) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(component, "component");
+        return List.copyOf(installedKeys.getOrDefault(component, List.of()));
+    }
+
+    /**
+     * Indicates whether a behavior key is currently installed on a component.
+     *
+     * @param component component to inspect
+     * @param key behavior key
+     * @return {@code true} if the key is installed
+     */
+    public boolean hasBehavior(JComponent component, BehaviorKey key) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(component, "component");
+        Objects.requireNonNull(key, "key");
+        return installedKeys.getOrDefault(component, List.of()).contains(key);
+    }
+
     @Override
     public void close() {
         SwingEdt.requireEdt();
         bindings.close();
+        installedSingleKeys.clear();
+        installedKeys.clear();
+        primaryBindingComponents.clear();
     }
 
     private <C extends JComponent> void installOne(C component, ViewBehavior<? super C> behavior) {
@@ -117,6 +151,8 @@ public final class BehaviorScope implements Binding {
         ViewBehavior<C> typedBehavior = (ViewBehavior<C>) behavior;
         Binding installed = typedBehavior.install(new BehaviorContext<>(component, this, helpService));
         bindings.add(installed);
+        installedKeys.computeIfAbsent(component, ignored -> new ArrayList<>())
+                .add(descriptor.key());
         if (descriptor.conflictsWithPrimaryBinding()) {
             primaryBindingComponents.add(component);
         }
