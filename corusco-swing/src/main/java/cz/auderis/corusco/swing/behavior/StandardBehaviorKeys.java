@@ -35,6 +35,11 @@ public final class StandardBehaviorKeys {
      */
     public static final BehaviorKey COMMIT_ON_ENTER = BehaviorKey.of("interaction/commit-on-enter");
 
+    /**
+     * F1 help dispatch behavior.
+     */
+    public static final BehaviorKey HELP_ON_F1 = BehaviorKey.of("interaction/help-on-f1");
+
     private StandardBehaviorKeys() {
     }
 }

@@ -1,5 +1,6 @@
 package cz.auderis.corusco.swing.behavior;
 
+import cz.auderis.corusco.core.help.HelpService;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.BindingScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
@@ -10,6 +11,7 @@ import java.util.EnumMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import javax.swing.JComponent;
 
@@ -24,8 +26,25 @@ import javax.swing.JComponent;
 public final class BehaviorScope implements Binding {
 
     private final BindingScope bindings = new BindingScope();
+    private final HelpService helpService;
     private final Map<JComponent, Set<BehaviorKey>> installedSingleKeys = new IdentityHashMap<>();
     private final Set<JComponent> primaryBindingComponents = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /**
+     * Creates a behavior scope without optional application services.
+     */
+    public BehaviorScope() {
+        this.helpService = null;
+    }
+
+    /**
+     * Creates a behavior scope with a help service available to help behaviors.
+     *
+     * @param helpService help service
+     */
+    public BehaviorScope(HelpService helpService) {
+        this.helpService = Objects.requireNonNull(helpService, "helpService");
+    }
 
     /**
      * Installs behaviors on a component.
@@ -96,7 +115,7 @@ public final class BehaviorScope implements Binding {
         }
         @SuppressWarnings("unchecked")
         ViewBehavior<C> typedBehavior = (ViewBehavior<C>) behavior;
-        Binding installed = typedBehavior.install(new BehaviorContext<>(component, this));
+        Binding installed = typedBehavior.install(new BehaviorContext<>(component, this, helpService));
         bindings.add(installed);
         if (descriptor.conflictsWithPrimaryBinding()) {
             primaryBindingComponents.add(component);

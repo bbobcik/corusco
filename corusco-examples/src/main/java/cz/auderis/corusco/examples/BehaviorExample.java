@@ -3,13 +3,20 @@ package cz.auderis.corusco.examples;
 import cz.auderis.corusco.core.convert.Converters;
 import cz.auderis.corusco.core.convert.EmptyTextPolicy;
 import cz.auderis.corusco.core.form.TextFieldModel;
+import cz.auderis.corusco.core.help.DefaultHelpService;
+import cz.auderis.corusco.core.help.HelpRequest;
 import cz.auderis.corusco.core.key.TextFieldKey;
 import cz.auderis.corusco.swing.behavior.BehaviorScope;
 import cz.auderis.corusco.swing.behavior.StandardBehaviors;
 import cz.auderis.corusco.swing.binding.SwingEdt;
+import java.awt.event.ActionEvent;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
+import javax.swing.Action;
+import javax.swing.JComponent;
 import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 
 /**
  * Demonstrates behavior-based Swing component extension.
@@ -34,8 +41,10 @@ public final class BehaviorExample {
             TextFieldModel<CustomerEdit, BigDecimal> creditLimit =
                     new TextFieldModel<>(CREDIT_LIMIT, BigDecimal.TEN, Converters.bigDecimal(EmptyTextPolicy.REJECT));
             JTextField field = new JTextField();
+            List<HelpRequest> helpRequests = new ArrayList<>();
+            DefaultHelpService helpService = new DefaultHelpService(helpRequests::add);
 
-            try (BehaviorScope scope = new BehaviorScope()) {
+            try (BehaviorScope scope = new BehaviorScope(helpService)) {
                 // Generated behavior plans should eventually emit this kind of
                 // ordered behavior list. The scope performs ordering, conflict
                 // checks, and deterministic cleanup.
@@ -43,18 +52,30 @@ public final class BehaviorExample {
                         StandardBehaviors.textFieldBinding(creditLimit),
                         StandardBehaviors.validationTooltip(creditLimit.problemSet()),
                         StandardBehaviors.validationBorder(creditLimit.problemSet()),
-                        StandardBehaviors.selectAllOnFocus()
+                        StandardBehaviors.selectAllOnFocus(),
+                        StandardBehaviors.helpOnF1(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.helpTopic())
                 ));
 
                 field.setText("bad");
+                // Help behavior uses Swing input/action maps, so generated
+                // help topics can be dispatched without raw key listeners.
+                triggerF1(field);
                 result.set(List.of(
                         creditLimit.rawText().value(),
                         creditLimit.value().toPlainString(),
-                        field.getToolTipText()
+                        field.getToolTipText(),
+                        helpRequests.getFirst().topic().id()
                 ));
             }
         });
         return result.get();
+    }
+
+    private static void triggerF1(JTextField field) {
+        KeyStroke f1 = KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_F1, 0);
+        Object actionKey = field.getInputMap(JComponent.WHEN_FOCUSED).get(f1);
+        Action action = field.getActionMap().get(actionKey);
+        action.actionPerformed(new ActionEvent(field, ActionEvent.ACTION_PERFORMED, "help"));
     }
 
     private record CustomerEdit(BigDecimal creditLimit) {
