@@ -7,7 +7,14 @@ import cz.auderis.corusco.core.command.CommandSet;
 import cz.auderis.corusco.core.command.MutableCommand;
 import cz.auderis.corusco.core.key.ActionKey;
 import cz.auderis.corusco.core.key.ComponentKey;
+import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.key.ResourceKey;
+import cz.auderis.corusco.core.problem.Problem;
+import cz.auderis.corusco.core.problem.ProblemCode;
+import cz.auderis.corusco.core.problem.ProblemFilter;
+import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.problem.ProblemSeverity;
+import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.SimpleValue;
 
@@ -53,6 +60,10 @@ class SwingMvpTesterTest {
             ComponentKey.of("customer/alias-field", JTextField.class);
     private static final ComponentKey<JTable> CUSTOMER_TABLE =
             ComponentKey.of("customer/table", JTable.class);
+    private static final FieldKey<CustomerEdit, String> NAME =
+            FieldKey.of("customer/name", CustomerEdit.class, String.class);
+    private static final ProblemCode REQUIRED = ProblemCode.of("validation/required");
+    private static final ProblemCode RANGE = ProblemCode.of("validation/range");
 
     @Test
     void createsViewAndPresenterOnEdt() {
@@ -366,6 +377,83 @@ class SwingMvpTesterTest {
     }
 
     @Test
+    void problemAssertionsMatchTypedFieldAndCode() {
+        ProblemSet problems = ProblemSet.of(problem(REQUIRED, ProblemSeverity.ERROR, "Name is required"));
+        SwingMvpTester<CustomerView, ProblemPresenter> tester = testerWithProblems(problems);
+
+        tester.assertProblem((view, presenter) -> presenter.problems(), NAME, REQUIRED)
+                .assertNoProblem((view, presenter) -> presenter.problems(), NAME, RANGE)
+                .assertProblemCount((view, presenter) -> presenter.problems(), ProblemFilter.field(NAME), 1);
+    }
+
+    @Test
+    void problemAssertionsReadProblemsOnEdt() {
+        ProblemPresenter presenter = new ProblemPresenter(ProblemSet.of(
+                problem(REQUIRED, ProblemSeverity.ERROR, "Name is required")
+        ));
+        SwingMvpTester<CustomerView, ProblemPresenter> tester =
+                SwingMvpTester.create(CustomerView::new, view -> presenter);
+
+        tester.assertProblem((view, problemPresenter) -> problemPresenter.problems(), NAME, REQUIRED);
+
+        assertThat(presenter.problemsReadOnEdt).isTrue();
+    }
+
+    @Test
+    void problemAssertionsSupportGenericFilters() {
+        ProblemSet problems = ProblemSet.of(
+                problem(REQUIRED, ProblemSeverity.ERROR, "Name is required"),
+                problem(RANGE, ProblemSeverity.WARNING, "Name is unusually long")
+        );
+        SwingMvpTester<CustomerView, ProblemPresenter> tester = testerWithProblems(problems);
+
+        tester.assertProblem((view, presenter) -> presenter.problems(), ProblemFilter.severity(ProblemSeverity.WARNING))
+                .assertProblemCount((view, presenter) -> presenter.problems(),
+                        ProblemFilter.severityAtLeast(ProblemSeverity.WARNING), 2)
+                .assertNoProblem((view, presenter) -> presenter.problems(), ProblemFilter.form());
+    }
+
+    @Test
+    void problemAssertionFailuresAreReadable() {
+        ProblemSet problems = ProblemSet.of(problem(REQUIRED, ProblemSeverity.ERROR, "Name is required"));
+        SwingMvpTester<CustomerView, ProblemPresenter> tester = testerWithProblems(problems);
+
+        Throwable missingFailure = catchThrowable(() ->
+                tester.assertProblem((view, presenter) -> presenter.problems(), NAME, RANGE));
+        assertThat(missingFailure)
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("validation/range")
+                .hasMessageContaining("FieldKey[CustomerEdit#customer/name:String]")
+                .hasMessageContaining("found 0");
+
+        Throwable countFailure = catchThrowable(() ->
+                tester.assertProblemCount((view, presenter) -> presenter.problems(), ProblemFilter.field(NAME), 2));
+        assertThat(countFailure)
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("Expected 2 matching problems")
+                .hasMessageContaining("found 1");
+    }
+
+    @Test
+    void problemAssertionsRejectNullInputs() {
+        SwingMvpTester<CustomerView, ProblemPresenter> tester = testerWithProblems(ProblemSet.empty());
+
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertProblem(null, ProblemFilter.ALL))
+                .withMessageContaining("problemSource");
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertProblem((view, presenter) -> presenter.problems(), null))
+                .withMessageContaining("filter");
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.assertProblem((view, presenter) -> null, ProblemFilter.ALL))
+                .withMessageContaining("problemSource.apply()");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> tester.assertProblemCount(
+                        (view, presenter) -> presenter.problems(), ProblemFilter.ALL, -1))
+                .withMessageContaining("expectedCount");
+    }
+
+    @Test
     void missingCommandFailsClearly() {
         SwingMvpTester<CustomerView, CustomerPresenter> tester = testerWithCommands(new CommandSet(java.util.List.of()));
 
@@ -396,6 +484,14 @@ class SwingMvpTesterTest {
                 CustomerPresenter::new,
                 (view, presenter) -> commands
         );
+    }
+
+    private static SwingMvpTester<CustomerView, ProblemPresenter> testerWithProblems(ProblemSet problems) {
+        return SwingMvpTester.create(CustomerView::new, view -> new ProblemPresenter(problems));
+    }
+
+    private static Problem problem(ProblemCode code, ProblemSeverity severity, String message) {
+        return Problem.validation(code, severity, ProblemTarget.field(NAME), message);
     }
 
     private static MutableCommand command(
@@ -626,10 +722,28 @@ class SwingMvpTesterTest {
         }
     }
 
+    private record CustomerEdit(String name) {
+    }
+
     private record CustomerPresenter(CustomerView view) {
 
         private CommandSet commands() {
             return CommandSet.of(command(SAVE, SAVE_TEXT, true, command -> { }));
+        }
+    }
+
+    private static final class ProblemPresenter {
+
+        private final ProblemSet problems;
+        private boolean problemsReadOnEdt;
+
+        private ProblemPresenter(ProblemSet problems) {
+            this.problems = problems;
+        }
+
+        private ProblemSet problems() {
+            problemsReadOnEdt = SwingUtilities.isEventDispatchThread();
+            return problems;
         }
     }
 }

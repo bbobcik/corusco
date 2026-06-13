@@ -4,6 +4,10 @@ import cz.auderis.corusco.core.command.Command;
 import cz.auderis.corusco.core.command.CommandSet;
 import cz.auderis.corusco.core.key.ActionKey;
 import cz.auderis.corusco.core.key.ComponentKey;
+import cz.auderis.corusco.core.key.FieldKey;
+import cz.auderis.corusco.core.problem.ProblemCode;
+import cz.auderis.corusco.core.problem.ProblemFilter;
+import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 
 import java.awt.Component;
@@ -344,6 +348,113 @@ public final class SwingMvpTester<V extends JComponent, P> {
     }
 
     /**
+     * Asserts that an EDT-read problem set contains at least one matching
+     * problem.
+     *
+     * <p>The source function runs on the EDT and can read a form model, field
+     * model, presenter, or any other UI-owned problem source. Matching uses the
+     * typed {@link ProblemFilter} API instead of string paths.</p>
+     *
+     * @param problemSource source queried on the EDT
+     * @param filter filter describing the expected problem
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertProblem(
+            BiFunction<? super V, ? super P, ? extends ProblemSet> problemSource,
+            ProblemFilter filter
+    ) {
+        int count = countProblems(problemSource, filter);
+        if (count == 0) {
+            throw new AssertionError("Expected at least one matching problem but found 0");
+        }
+        return this;
+    }
+
+    /**
+     * Asserts that an EDT-read problem set contains no matching problem.
+     *
+     * @param problemSource source queried on the EDT
+     * @param filter filter describing the absent problem
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertNoProblem(
+            BiFunction<? super V, ? super P, ? extends ProblemSet> problemSource,
+            ProblemFilter filter
+    ) {
+        return assertProblemCount(problemSource, filter, 0);
+    }
+
+    /**
+     * Asserts the number of problems matching a filter.
+     *
+     * @param problemSource source queried on the EDT
+     * @param filter filter describing the counted problems
+     * @param expectedCount expected matching count
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertProblemCount(
+            BiFunction<? super V, ? super P, ? extends ProblemSet> problemSource,
+            ProblemFilter filter,
+            int expectedCount
+    ) {
+        if (expectedCount < 0) {
+            throw new IllegalArgumentException("expectedCount must not be negative");
+        }
+        int count = countProblems(problemSource, filter);
+        if (count != expectedCount) {
+            throw new AssertionError("Expected " + expectedCount + " matching problems but found " + count);
+        }
+        return this;
+    }
+
+    /**
+     * Asserts that an EDT-read problem set contains a validation or parse
+     * problem for a typed field key and problem code.
+     *
+     * @param problemSource source queried on the EDT
+     * @param fieldKey typed field key
+     * @param code stable problem code
+     * @param <O> owner/model type
+     * @param <T> field value type
+     * @return this tester
+     */
+    public <O, T> SwingMvpTester<V, P> assertProblem(
+            BiFunction<? super V, ? super P, ? extends ProblemSet> problemSource,
+            FieldKey<O, T> fieldKey,
+            ProblemCode code
+    ) {
+        int count = countProblems(problemSource, fieldProblemFilter(fieldKey, code));
+        if (count == 0) {
+            throw new AssertionError("Expected problem " + code + " for field " + fieldKey + " but found 0");
+        }
+        return this;
+    }
+
+    /**
+     * Asserts that an EDT-read problem set contains no problem for a typed
+     * field key and problem code.
+     *
+     * @param problemSource source queried on the EDT
+     * @param fieldKey typed field key
+     * @param code stable problem code
+     * @param <O> owner/model type
+     * @param <T> field value type
+     * @return this tester
+     */
+    public <O, T> SwingMvpTester<V, P> assertNoProblem(
+            BiFunction<? super V, ? super P, ? extends ProblemSet> problemSource,
+            FieldKey<O, T> fieldKey,
+            ProblemCode code
+    ) {
+        int count = countProblems(problemSource, fieldProblemFilter(fieldKey, code));
+        if (count != 0) {
+            throw new AssertionError("Expected no problem " + code + " for field " + fieldKey
+                    + " but found " + count);
+        }
+        return this;
+    }
+
+    /**
      * Finds a command by generated action key.
      *
      * <p>The lookup runs on the EDT. Prefer tester command helpers for
@@ -441,6 +552,25 @@ public final class SwingMvpTester<V extends JComponent, P> {
         if (modelRow < 0 || modelRow >= table.getModel().getRowCount()) {
             throw new IndexOutOfBoundsException("Table model row out of bounds: " + modelRow);
         }
+    }
+
+    private int countProblems(
+            BiFunction<? super V, ? super P, ? extends ProblemSet> problemSource,
+            ProblemFilter filter
+    ) {
+        Objects.requireNonNull(problemSource, "problemSource");
+        Objects.requireNonNull(filter, "filter");
+        return queryOnEdt((view, presenter) ->
+                Objects.requireNonNull(problemSource.apply(view, presenter), "problemSource.apply()")
+                        .filter(filter)
+                        .size());
+    }
+
+    private static <O, T> ProblemFilter fieldProblemFilter(FieldKey<O, T> fieldKey, ProblemCode code) {
+        Objects.requireNonNull(fieldKey, "fieldKey");
+        Objects.requireNonNull(code, "code");
+        return ProblemFilter.field(fieldKey)
+                .and(problem -> problem.code().equals(code));
     }
 
     private static <C extends JComponent> Optional<C> findComponentOnEdt(JComponent root, ComponentKey<C> key) {
