@@ -9,6 +9,7 @@
  * are available under {@link cz.auderis.corusco.core.problem}. Conversion and
  * form model primitives are available under
  * {@link cz.auderis.corusco.core.convert} and
- * {@link cz.auderis.corusco.core.form}.</p>
+ * {@link cz.auderis.corusco.core.form}. Validation primitives are available
+ * under {@link cz.auderis.corusco.core.validation}.</p>
  */
 package cz.auderis.corusco.core;

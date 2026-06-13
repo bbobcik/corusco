@@ -9,8 +9,9 @@ import java.util.Objects;
  * Base class for handwritten and generated form models.
  *
  * <p>Subclasses register fields in their constructor. This base aggregates
- * parse problems, provides reset and baseline acceptance, and blocks
- * {@link #toResult()} when any aggregated problem has error severity.</p>
+ * parse and validation problems, provides reset and baseline acceptance, and
+ * blocks {@link #toResult()} when any aggregated problem has error
+ * severity.</p>
  *
  * @param <R> committed result type
  */
@@ -51,7 +52,7 @@ public abstract class AbstractFormModel<R> implements FormModel<R> {
         for (TextFieldModel<?, ?> field : textFields) {
             result = result.addAll(field.problems());
         }
-        return result;
+        return result.addAll(validationProblems());
     }
 
     @Override
@@ -92,6 +93,19 @@ public abstract class AbstractFormModel<R> implements FormModel<R> {
      * @return committed result
      */
     protected abstract R createResult();
+
+    /**
+     * Returns validation problems for this form.
+     *
+     * <p>Subclasses can override this hook to evaluate a
+     * {@link cz.auderis.corusco.core.validation.RuleSet}. Parse problems are
+     * aggregated by this base class before these validation problems are added.</p>
+     *
+     * @return validation problem set
+     */
+    protected ProblemSet validationProblems() {
+        return ProblemSet.empty();
+    }
 
     private boolean isOwnedByTextField(FieldModel<?, ?> candidate) {
         for (TextFieldModel<?, ?> textField : textFields) {
