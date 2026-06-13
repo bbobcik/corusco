@@ -308,3 +308,45 @@ tasks.register('verifyPreviewApiAudit') {
     dependsOn 'verifyPreviewPackageSurface'
     dependsOn 'verifyRuntimeReflectionPolicy'
 }
+
+tasks.register('verifyGeneratedJavadocs') {
+    group = 'verification'
+    description = 'Verifies generated Javadocs include indexes and package pages for the preview API surface.'
+    dependsOn publishableProjects.collect { it.tasks.named('javadoc') }
+
+    doLast {
+        previewPackageSurface.each { projectName, expectedPackages ->
+            def javadocDir = new File(projectRootPath, "${projectName}/build/docs/javadoc")
+            def indexFile = new File(javadocDir, 'index.html')
+            if (!indexFile.isFile()) {
+                throw new GradleException("Missing Javadoc index: ${indexFile}")
+            }
+
+            expectedPackages.each { packageName ->
+                def packagePath = "${packageName.replace('.', '/')}/package-summary.html"
+                def directPackageSummary = new File(javadocDir, packagePath)
+                def modularPackageSummary = new File(
+                        javadocDir,
+                        "${publishedModuleChecks[projectName].moduleName}/${packagePath}"
+                )
+                if (!directPackageSummary.isFile() && !modularPackageSummary.isFile()) {
+                    throw new GradleException(
+                            "Missing Javadoc package summary for ${packageName}: "
+                                    + "${directPackageSummary} or ${modularPackageSummary}"
+                    )
+                }
+            }
+        }
+    }
+}
+
+tasks.register('verifyPreviewReleaseReadiness') {
+    group = 'verification'
+    description = 'Runs the local preview release readiness gate before tagging.'
+    dependsOn subprojects.findAll { it.buildFile.exists() }.collect { it.tasks.named('build') }
+    dependsOn 'verifyMavenLocalPublication'
+    dependsOn 'verifyPublishedModuleMetadata'
+    dependsOn 'verifyExamplesAgainstPublishedArtifacts'
+    dependsOn 'verifyPreviewApiAudit'
+    dependsOn 'verifyGeneratedJavadocs'
+}

@@ -41,6 +41,7 @@ To exercise the preview-style artifacts locally:
 ./gradlew publishToMavenLocal --quiet --stacktrace
 ./gradlew verifyMavenLocalPublication --quiet --stacktrace
 ./gradlew verifyExamplesAgainstPublishedArtifacts --quiet --stacktrace
+./gradlew verifyPreviewReleaseReadiness --quiet --stacktrace
 ```
 
 This publishes the library modules with source and Javadoc jars under the

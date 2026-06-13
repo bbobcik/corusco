@@ -16,6 +16,8 @@ preview compatibility rules in [docs/release-policy.md](docs/release-policy.md).
   Maven-local Corusco artifacts.
 - Preview API/package review gates for published packages and runtime
   reflection policy.
+- `verifyGeneratedJavadocs` and `verifyPreviewReleaseReadiness` for local
+  preview release checks.
 
 ### Changed
 
