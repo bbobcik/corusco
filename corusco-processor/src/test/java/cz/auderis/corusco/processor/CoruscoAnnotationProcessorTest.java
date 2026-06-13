@@ -386,7 +386,7 @@ class CoruscoAnnotationProcessorTest {
 
                 @SwingTable(id = "customer/search")
                 public record CustomerEdit(
-                        @Column(width = 180, tooltip = "customer/search/name/help") String name,
+                        @Column(width = 180, tooltip = "customer/search/name/help", editable = true) String name,
                         String ignored,
                         @Column(
                                 id = "customer/search/orders",
@@ -415,8 +415,13 @@ class CoruscoAnnotationProcessorTest {
                 "ResourceKey.of(\"customer/search/name/header\", String.class)",
                 "ResourceKey.of(\"customer/search/name/help\", String.class)",
                 "new ColumnDefaults(180, 0, true)",
-                "new ColumnCapabilities(true, true, false, true)",
-                "Column.readOnly(NAME_DESCRIPTOR, CustomerEdit::name)",
+                "new ColumnCapabilities(true, true, true, true)",
+                "Column.editable(NAME_DESCRIPTOR, CustomerEdit::name, CustomerEditColumns::updateName)",
+                "private static CustomerEdit updateName(CustomerEdit row, java.lang.String value)",
+                "return new CustomerEdit(",
+                "value",
+                "row.ignored()",
+                "row.orders()",
                 "public static final ColumnKey<CustomerEdit, java.lang.Integer> ORDERS_KEY",
                 "ColumnKey.of(\"customer/search/orders\", CustomerEdit.class, java.lang.Integer.class)",
                 "ResourceKey.of(\"customer/search/orders/title\", String.class)",
@@ -476,7 +481,7 @@ class CoruscoAnnotationProcessorTest {
     }
 
     @Test
-    void rejectsEditableTableColumnsUntilGeneratedUpdatersExist() throws Exception {
+    void rejectsInvalidTableColumnWidth() throws Exception {
         CompilationResult result = compile("""
                 package demo;
 
@@ -484,12 +489,12 @@ class CoruscoAnnotationProcessorTest {
                 import cz.auderis.corusco.annotations.SwingTable;
 
                 @SwingTable(id = "customer/search")
-                public record CustomerEdit(@Column(editable = true) String name) {
+                public record CustomerEdit(@Column(width = 0) String name) {
                 }
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("@Column editable=true is deferred until generated row updater support");
+        assertThat(result.messages()).contains("@Column width must be greater than zero");
     }
 
     @Test

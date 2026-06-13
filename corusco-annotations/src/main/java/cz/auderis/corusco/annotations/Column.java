@@ -9,8 +9,9 @@ import java.lang.annotation.Target;
  * Marks a record component as a generated table column.
  *
  * <p>Generated column ids, resource keys, defaults, and capabilities are
- * derived from this source-retained annotation. This processor slice supports
- * read-only columns; editable generated updaters are deliberately deferred.</p>
+ * derived from this source-retained annotation. Editable columns use generated
+ * record-constructor updaters so table edits replace immutable row records
+ * without reflection.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)
@@ -81,8 +82,9 @@ public @interface Column {
     boolean hideable() default true;
 
     /**
-     * Edit capability. Editable generated row updaters are deferred in the
-     * first table-processor slice, so setting this to true is rejected for now.
+     * Edit capability. For record rows, generated code creates an explicit
+     * updater that calls the record constructor with the edited component value
+     * and existing values from the remaining components.
      *
      * @return true when editable
      */

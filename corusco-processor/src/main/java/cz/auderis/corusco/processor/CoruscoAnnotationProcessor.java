@@ -105,6 +105,10 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             return;
         }
 
+        List<TableComponentSpec> components = new ArrayList<>();
+        for (RecordComponentElement component : tableType.getRecordComponents()) {
+            components.add(new TableComponentSpec(component.getSimpleName().toString()));
+        }
         List<TableColumnSpec> columns = new ArrayList<>();
         Set<String> ids = new java.util.LinkedHashSet<>();
         boolean failed = false;
@@ -115,11 +119,6 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             }
             if (!isSupportedValueType(component.asType())) {
                 error(component, "@Column requires primitive or declared component types");
-                failed = true;
-                continue;
-            }
-            if (annotationColumn.editable()) {
-                error(component, "@Column editable=true is deferred until generated row updater support");
                 failed = true;
                 continue;
             }
@@ -161,7 +160,12 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             return;
         }
         new TableSourceWriter(elements, filer, messager)
-                .writeTableSources(tableType, new TableSpec(annotation.id(), tableType.getSimpleName().toString(), columns));
+                .writeTableSources(tableType, new TableSpec(
+                        annotation.id(),
+                        tableType.getSimpleName().toString(),
+                        components,
+                        columns
+                ));
     }
 
     private TableColumnSpec tableColumnSpec(
@@ -192,7 +196,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 column.visible(),
                 column.sortable(),
                 column.filterable(),
-                column.hideable()
+                column.hideable(),
+                column.editable()
         );
     }
 

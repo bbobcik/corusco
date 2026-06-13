@@ -57,7 +57,7 @@ final class TableSourceWriter {
 
                 """.formatted(table.id, table.ownerType, stringLiteralOrNull(table.id), table.ownerType));
         for (TableColumnSpec column : table.columns) {
-            source.append(columnSource(column));
+            source.append(columnSource(table, column));
         }
         source.append("}\n");
         writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table columns");
@@ -113,8 +113,9 @@ final class TableSourceWriter {
         writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table descriptor");
     }
 
-    private String columnSource(TableColumnSpec column) {
+    private String columnSource(TableSpec table, TableColumnSpec column) {
         String tooltip = column.tooltipConstant == null ? "null" : column.tooltipConstant;
+        String columnFactory = column.editable ? editableColumnSource(column) : readOnlyColumnSource(column);
         return """
                     /**
                      * Column key for {@code %s}.
@@ -138,15 +139,10 @@ final class TableSourceWriter {
                                     %s,
                                     %s,
                                     new ColumnDefaults(%d, %d, %s),
-                                    new ColumnCapabilities(%s, %s, false, %s)
+                                    new ColumnCapabilities(%s, %s, %s, %s)
                             );
 
-                    /**
-                     * Read-only column for {@code %s}.
-                     */
-                    public static final Column<%s, %s> %s =
-                            Column.readOnly(%s_DESCRIPTOR, %s::%s);
-
+                %s\
                 """.formatted(
                 column.keyId,
                 column.ownerType,
@@ -171,7 +167,21 @@ final class TableSourceWriter {
                 Boolean.toString(column.visible),
                 Boolean.toString(column.sortable),
                 Boolean.toString(column.filterable),
+                Boolean.toString(column.editable),
                 Boolean.toString(column.hideable),
+                columnFactory
+        ) + updaterSource(table, column);
+    }
+
+    private String readOnlyColumnSource(TableColumnSpec column) {
+        return """
+                    /**
+                     * Read-only column for {@code %s}.
+                     */
+                    public static final Column<%s, %s> %s =
+                            Column.readOnly(%s_DESCRIPTOR, %s::%s);
+
+                """.formatted(
                 column.keyId,
                 column.ownerType,
                 column.valueType,
@@ -179,6 +189,57 @@ final class TableSourceWriter {
                 column.constantName,
                 column.ownerType,
                 column.componentName
+        );
+    }
+
+    private String editableColumnSource(TableColumnSpec column) {
+        return """
+                    /**
+                     * Editable column for {@code %s}.
+                     */
+                    public static final Column<%s, %s> %s =
+                            Column.editable(%s_DESCRIPTOR, %s::%s, %s::%s);
+
+                """.formatted(
+                column.keyId,
+                column.ownerType,
+                column.valueType,
+                column.constantName,
+                column.constantName,
+                column.ownerType,
+                column.componentName,
+                column.ownerType + "Columns",
+                updaterName(column)
+        );
+    }
+
+    private String updaterSource(TableSpec table, TableColumnSpec column) {
+        if (!column.editable) {
+            return "";
+        }
+        StringBuilder arguments = new StringBuilder();
+        for (int i = 0; i < table.components.size(); i++) {
+            TableComponentSpec component = table.components.get(i);
+            String suffix = i == table.components.size() - 1 ? "\n" : ",\n";
+            String expression = component.name.equals(column.componentName)
+                    ? "value"
+                    : "row." + component.name + "()";
+            arguments.append("                ").append(expression).append(suffix);
+        }
+        return """
+                    private static %s %s(%s row, %s value) {
+                        return new %s(
+                %s\
+                        );
+                    }
+
+                """.formatted(
+                column.ownerType,
+                updaterName(column),
+                column.ownerType,
+                column.valueType,
+                column.ownerType,
+                arguments
         );
     }
 
@@ -211,6 +272,14 @@ final class TableSourceWriter {
                     }
 
                 """.formatted(generatedType);
+    }
+
+    private static String updaterName(TableColumnSpec column) {
+        StringBuilder result = new StringBuilder("update");
+        for (String part : column.constantName.split("_")) {
+            result.append(part.charAt(0)).append(part.substring(1).toLowerCase(java.util.Locale.ROOT));
+        }
+        return result.toString();
     }
 
     private void writeSource(TypeElement originatingType, String qualifiedName, String source, String errorPrefix) {

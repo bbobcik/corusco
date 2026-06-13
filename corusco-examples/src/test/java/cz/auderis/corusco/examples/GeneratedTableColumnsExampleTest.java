@@ -13,7 +13,8 @@ class GeneratedTableColumnsExampleTest {
                 "generated-customer-table/name/header",
                 "Integer",
                 "5",
-                "false",
+                "true",
+                "Acme Corp",
                 "3"
         );
     }
