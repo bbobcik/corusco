@@ -107,6 +107,7 @@ commit has been created.
 | [COR-076](COR-076-add-dialog-guide.md) | `COR-076 Add dialog guide` | Stage 20, dialog guide slice |
 | [COR-077](COR-077-add-testing-guide.md) | `COR-077 Add testing guide` | Stage 20, testing guide slice |
 | [COR-078](COR-078-add-generated-code-examples-guide.md) | `COR-078 Add generated code examples guide` | Stage 20, generated code examples slice |
+| [COR-079](COR-079-add-customer-management-example.md) | `COR-079 Add customer management example` | Stage 20, integrated customer-management example slice |
 
 ## Stage Completion Rule
 
