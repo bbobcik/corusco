@@ -1,7 +1,8 @@
 /**
  * Swing integration package for Auderis Corusco.
  *
- * <p>Future stages add Swing bindings, behaviors, adapters, and EDT-aware
- * utilities here. The bootstrap stage only establishes the package root.</p>
+ * <p>Basic Swing bindings are available under
+ * {@link cz.auderis.corusco.swing.binding}. Future stages add behaviors,
+ * adapters, and richer EDT-aware utilities here.</p>
  */
 package cz.auderis.corusco.swing;
