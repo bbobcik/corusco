@@ -183,5 +183,7 @@ directory layout, compiler diagnostics, or platform-specific line endings.
 ## Next References
 
 - `corusco-examples/src/main/java/cz/auderis/corusco/examples`
+- `docs/annotations.md`
+- `docs/architecture.md`
 - `docs/corusco-roadmap.md`
 - `docs/implementation-stage-plans/README.md`
