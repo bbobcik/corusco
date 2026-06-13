@@ -9,6 +9,7 @@ import cz.auderis.corusco.swing.binding.SwingEdt;
 import cz.auderis.corusco.core.table.InMemoryTableStateStore;
 import cz.auderis.corusco.core.table.TableStateStore;
 import cz.auderis.corusco.swing.table.ObservableTableModel;
+import cz.auderis.corusco.swing.table.TableHeaderColumnVisibilityMenu;
 import cz.auderis.corusco.swing.table.TableStateController;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +48,9 @@ public final class GeneratedTableColumnsExample {
                 TableStateController<GeneratedCustomerRow> stateController = scope.add(
                         TableStateController.install(table, model, tableStateStore)
                 );
+                TableHeaderColumnVisibilityMenu<GeneratedCustomerRow> visibilityMenu = scope.add(
+                        TableHeaderColumnVisibilityMenu.install(table, model, stateController)
+                );
 
                 result.add(GeneratedCustomerRowColumns.NAME_KEY.id());
                 result.add(model.getColumnName(0));
@@ -74,6 +78,11 @@ public final class GeneratedTableColumnsExample {
                         .columns()
                         .getFirst()
                         .id());
+
+                // Header visibility menus are lifecycle bindings too. They
+                // rebuild checkbox items from the generated descriptor and
+                // delegate toggles back through the state controller.
+                result.add(Integer.toString(visibilityMenu.createMenu().getComponentCount()));
 
                 // Primitive record components are exposed through boxed column
                 // key classes, while row values still come from direct accessor
