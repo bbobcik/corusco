@@ -21,6 +21,7 @@ stages.
 | Module | Purpose |
 | --- | --- |
 | `corusco-core` | Core runtime primitives such as lifecycle, values, keys, forms, and problems. |
+| `corusco-glazedlists` | Optional Glazed Lists interop adapters for existing `EventList` models. |
 | `corusco-swing` | Swing/AWT integration built on the core module. |
 | `corusco-annotations` | Compile-time annotation API. |
 | `corusco-processor` | Annotation processor implementation. |

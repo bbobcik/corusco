@@ -1,5 +1,6 @@
 dependencies {
     implementation project(':corusco-core')
+    implementation project(':corusco-glazedlists')
     implementation project(':corusco-swing')
     implementation project(':corusco-annotations')
     annotationProcessor project(':corusco-processor')
