@@ -1,7 +1,7 @@
 /**
  * Shared testing support package for Auderis Corusco.
  *
- * <p>Reusable test harness APIs are introduced in later stages. The bootstrap
- * stage only establishes the module and package root.</p>
+ * <p>The package includes processor-oriented generated-source helpers and
+ * Swing MVP test harness APIs.</p>
  */
 package cz.auderis.corusco.test;

@@ -1,16 +1,8 @@
 package cz.auderis.corusco.processor;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Locale;
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
+import cz.auderis.corusco.test.GeneratedSourceCompilation;
+import cz.auderis.corusco.test.GeneratedSourceCompiler;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,7 +15,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void generatesTypedFieldKeysForAnnotatedRecord() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.CheckBox;
@@ -57,11 +49,7 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isTrue();
-        String generated = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditFields.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(generated).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditFields.java",
                 "public final class CustomerEditFields",
                 "public static final TextFieldKey<CustomerEdit, java.lang.String> NAME",
                 "TextFieldKey.of(\"customer/name\", CustomerEdit.class, java.lang.String.class)",
@@ -76,31 +64,19 @@ class CoruscoAnnotationProcessorTest {
                 "public static final FieldKey<CustomerEdit, java.lang.Boolean> ACTIVE",
                 "FieldKey.of(\"customer/active\", CustomerEdit.class, java.lang.Boolean.class)"
         );
-        String resources = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditResources.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(resources).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditResources.java",
                 "ResourceKey.of(\"customer/name/label\", String.class)",
                 "ResourceKey.of(\"customer/name/tooltip\", String.class)",
                 "ResourceKey.of(\"customer/credit-limit/label\", String.class)"
         );
-        String problems = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditProblems.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(problems).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditProblems.java",
                 "ProblemCode.of(\"customer/name/required\")",
                 "ProblemCode.of(\"customer/name/length\")",
                 "ProblemCode.of(\"customer/name/regex\")",
                 "ProblemCode.of(\"customer/credit-limit/decimal-range\")",
                 "ProblemCode.of(\"customer/age/int-range\")"
         );
-        String descriptors = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditDescriptors.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(descriptors).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditDescriptors.java",
                 "public static final FieldDescriptor<CustomerEdit, java.lang.String> NAME",
                 "\"customer/name\"",
                 "\"name\"",
@@ -120,11 +96,7 @@ class CoruscoAnnotationProcessorTest {
                 "public static final FieldDescriptor<CustomerEdit, java.lang.Boolean> ACTIVE",
                 "FieldKind.CHECK_BOX"
         );
-        String formModel = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditFormModel.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(formModel).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
                 "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>",
                 "public final TextFieldModel<CustomerEdit, java.lang.String> name;",
                 "public final TextFieldModel<CustomerEdit, java.math.BigDecimal> creditLimit;",
@@ -139,22 +111,14 @@ class CoruscoAnnotationProcessorTest {
                 "name.value()",
                 "active.value().value()"
         );
-        String view = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditView.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(view).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditView.java",
                 "public interface CustomerEditView",
                 "JTextField nameField();",
                 "JTextField validFromField();",
                 "JComboBox<demo.CustomerType> typeCombo();",
                 "JCheckBox activeBox();"
         );
-        String behaviorPlan = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditBehaviorPlan.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(behaviorPlan).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditBehaviorPlan.java",
                 "public final class CustomerEditBehaviorPlan",
                 "public static void install(CustomerEditView view, CustomerEditFormModel model, BehaviorScope scope)",
                 "StandardBehaviors.textFieldBinding(model.name)",
@@ -166,7 +130,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsNonRecordSwingForm() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.SwingForm;
@@ -182,7 +146,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsConflictingComponentAnnotations() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.CheckBox;
@@ -200,7 +164,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsNonBooleanCheckbox() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.CheckBox;
@@ -217,7 +181,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsGenericSwingFormRecordInInitialProcessorStage() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.SwingForm;
@@ -234,7 +198,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsLengthOnNonStringTextField() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.Length;
@@ -253,7 +217,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsInvalidDecimalRange() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.DecimalRange;
@@ -272,7 +236,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsMetadataOnUnannotatedRecordComponent() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.Required;
@@ -289,7 +253,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsUnstableGeneratedIds() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.SwingForm;
@@ -307,7 +271,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsDateFieldOnNonLocalDate() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.DateField;
@@ -324,7 +288,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsRegexOnNonStringTextField() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.Regex;
@@ -342,7 +306,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsInvalidIntRange() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.IntRange;
@@ -360,7 +324,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsUnsupportedTextFieldTypeForGeneratedFormModel() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.SwingForm;
@@ -378,7 +342,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void generatesTableColumnsAndDescriptorForAnnotatedRecord() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.Column;
@@ -411,11 +375,7 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isTrue();
-        String columns = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditColumns.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(columns).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditColumns.java",
                 "public final class CustomerEditColumns",
                 "public static final TableKey<CustomerEdit> TABLE",
                 "TableKey.of(\"customer/search\", CustomerEdit.class)",
@@ -441,21 +401,13 @@ class CoruscoAnnotationProcessorTest {
                 "new ColumnCapabilities(false, false, false, false)",
                 "Column.readOnly(ORDERS_DESCRIPTOR, CustomerEdit::orders)"
         );
-        String resources = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditTableResources.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(resources).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditTableResources.java",
                 "public final class CustomerEditTableResources",
                 "ResourceKey.of(\"customer/search/name/header\", String.class)",
                 "ResourceKey.of(\"customer/search/name/help\", String.class)",
                 "ResourceKey.of(\"customer/search/orders/title\", String.class)"
         );
-        String descriptor = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditTableDescriptor.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(descriptor).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditTableDescriptor.java",
                 "public final class CustomerEditTableDescriptor",
                 "public static final cz.auderis.corusco.core.table.TableDescriptor<CustomerEdit> DESCRIPTOR",
                 "CustomerEditColumns.TABLE",
@@ -464,11 +416,7 @@ class CoruscoAnnotationProcessorTest {
                 "CustomerEditColumns.ORDERS",
                 "public static ObservableTableModel<CustomerEdit> tableModel(ObservableList<CustomerEdit> rows)"
         );
-        String bindings = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditTableBindings.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(bindings).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditTableBindings.java",
                 "public final class CustomerEditTableBindings",
                 "public static ObservableTableModel<CustomerEdit> installModel(",
                 "ObservableList<CustomerEdit> rows",
@@ -485,7 +433,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsNonRecordSwingTable() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.SwingTable;
@@ -501,7 +449,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsDuplicateTableColumnIds() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.Column;
@@ -521,7 +469,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsInvalidTableColumnWidth() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.Column;
@@ -538,7 +486,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsInvalidTableColumnPersistenceMetadata() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.Column;
@@ -555,7 +503,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsConflictingTableColumnTooltipDeclarations() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.Column;
@@ -578,7 +526,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void generatesActionDescriptorsForUiActionMethods() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.UiAction;
@@ -602,11 +550,7 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isTrue();
-        String generated = Files.readString(
-                result.generatedSources().resolve("demo/CustomerEditActions.java"),
-                StandardCharsets.UTF_8
-        );
-        assertThat(generated).contains(
+        result.assertGeneratedSourceContains("demo/CustomerEditActions.java",
                 "public final class CustomerEditActions",
                 "public static final ActionKey SAVE_KEY",
                 "ActionKey.of(\"customer/save\")",
@@ -621,7 +565,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsUiActionMethodsWithParameters() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.UiAction;
@@ -639,7 +583,7 @@ class CoruscoAnnotationProcessorTest {
 
     @Test
     void rejectsDuplicateUiActionIdsPerOwner() throws Exception {
-        CompilationResult result = compile("""
+        GeneratedSourceCompilation result = compile("""
                 package demo;
 
                 import cz.auderis.corusco.annotations.UiAction;
@@ -659,48 +603,9 @@ class CoruscoAnnotationProcessorTest {
         assertThat(result.messages()).contains("Duplicate @UiAction id in CustomerEdit: customer/save");
     }
 
-    private CompilationResult compile(String source) throws Exception {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        assertThat(compiler).as("system Java compiler").isNotNull();
-        Path sourceDir = tempDir.resolve("src");
-        Path classesDir = tempDir.resolve("classes");
-        Path generatedSources = tempDir.resolve("generated");
-        Files.createDirectories(sourceDir.resolve("demo"));
-        Files.createDirectories(classesDir);
-        Files.createDirectories(generatedSources);
-        Path sourceFile = sourceDir.resolve("demo/CustomerEdit.java");
-        Files.writeString(sourceFile, source, StandardCharsets.UTF_8);
-
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(
-                diagnostics,
-                Locale.ROOT,
-                StandardCharsets.UTF_8
-        )) {
-            Iterable<? extends JavaFileObject> sources = fileManager.getJavaFileObjects(sourceFile);
-            List<String> options = List.of(
-                    "--release", "25",
-                    "-classpath", System.getProperty("java.class.path"),
-                    "-d", classesDir.toString(),
-                    "-s", generatedSources.toString()
-            );
-            JavaCompiler.CompilationTask task = compiler.getTask(
-                    null,
-                    fileManager,
-                    diagnostics,
-                    options,
-                    null,
-                    sources
-            );
-            task.setProcessors(List.of(new CoruscoAnnotationProcessor()));
-            boolean success = Boolean.TRUE.equals(task.call());
-            String messages = diagnostics.getDiagnostics().stream()
-                    .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
-                    .reduce("", (left, right) -> left + right + "\n");
-            return new CompilationResult(success, generatedSources, messages);
-        }
-    }
-
-    private record CompilationResult(boolean success, Path generatedSources, String messages) {
+    private GeneratedSourceCompilation compile(String source) throws Exception {
+        return GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile("demo/CustomerEdit.java", source);
     }
 }
