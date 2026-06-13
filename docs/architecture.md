@@ -162,6 +162,9 @@ cleanup rules, and custom behavior examples.
 See [Command and Action Guide](commands.md) for generated action descriptors,
 presenter-owned command state, Swing action adapters, and command testing
 patterns.
+See [Dialog Guide](dialogs.md) for transactional form-dialog controllers,
+typed results, dirty-cancel confirmation, validation summaries, keyboard
+bindings, and dialog lifecycle ownership.
 
 ## Testing Strategy
 
