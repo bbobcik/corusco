@@ -35,6 +35,17 @@ For a full verification pass:
 ./gradlew build --quiet --stacktrace
 ```
 
+To exercise the preview-style artifacts locally:
+
+```bash
+./gradlew publishToMavenLocal --quiet --stacktrace
+./gradlew verifyMavenLocalPublication --quiet --stacktrace
+```
+
+This publishes the library modules with source and Javadoc jars under the
+`cz.auderis.corusco` group. The examples module remains an in-repository
+consumer and is not published as a reusable artifact.
+
 ## Modules
 
 | Module | Purpose |
