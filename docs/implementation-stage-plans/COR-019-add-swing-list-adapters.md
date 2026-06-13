@@ -42,8 +42,9 @@ Required behavior:
 - translate moves to the smallest affected `contentsChanged` range because
   `ListDataEvent` has no move event;
 - close source subscriptions deterministically;
-- document that construction and source mutations observed by the adapter must
-  happen on the EDT until a later explicit EDT-dispatch adapter exists.
+- document that construction and source mutations observed directly by the
+  adapter must happen on the EDT unless callers place the explicit COR-022 EDT
+  dispatcher between the source list and Swing model.
 
 ## Required Deliverables
 

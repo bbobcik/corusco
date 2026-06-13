@@ -50,6 +50,7 @@ commit has been created.
 | [COR-019](COR-019-add-swing-list-adapters.md) | `COR-019 Add Swing list adapters` | Stage 11, Swing list/combo adapter slice |
 | [COR-020](COR-020-add-filtered-observable-list.md) | `COR-020 Add filtered observable list` | Stage 11, filtered list view slice |
 | [COR-021](COR-021-add-glazed-lists-interop.md) | `COR-021 Add Glazed Lists interop` | Stage 11, Glazed Lists interop slice |
+| [COR-022](COR-022-add-edt-observable-list-dispatcher.md) | `COR-022 Add EDT observable list dispatcher` | Stage 11, EDT dispatch slice |
 
 ## Stage Completion Rule
 

@@ -12,11 +12,11 @@ import javax.swing.AbstractListModel;
 /**
  * Swing {@link javax.swing.ListModel} backed by an {@link ObservableList}.
  *
- * <p>The adapter is EDT-confined. Construct it on the EDT and mutate the source
- * list on the EDT while this adapter is subscribed. A later explicit
- * EDT-dispatch adapter can marshal background-originated list changes; this
- * class intentionally fails fast instead of firing Swing events on a background
- * thread.</p>
+ * <p>The adapter is EDT-confined. Construct it on the EDT and either mutate the
+ * source list on the EDT while this adapter is subscribed, or wrap the source
+ * with {@link EdtObservableList} before creating this model. Without an
+ * explicit dispatcher, this class intentionally fails fast instead of firing
+ * Swing events on a background thread.</p>
  *
  * <p>Closing the adapter removes its source-list subscription. Closing is
  * idempotent, and a closed adapter still exposes the source's current contents
