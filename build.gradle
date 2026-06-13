@@ -32,3 +32,89 @@ configure(subprojects.findAll { it.buildFile.exists() }) {
         testRuntimeOnly libs.bundles.testPlatformRuntime
     }
 }
+
+def publishableProjects = subprojects.findAll {
+    it.buildFile.exists() && it.name != 'corusco-examples'
+}
+def publishableProjectNames = publishableProjects.collect { it.name }
+def publicationGroupPath = group.toString().replace('.', File.separator)
+def publicationVersion = version.toString()
+
+configure(publishableProjects) {
+    apply plugin: 'maven-publish'
+
+    java {
+        withSourcesJar()
+        withJavadocJar()
+    }
+
+    tasks.withType(Javadoc).configureEach {
+        options.encoding = 'UTF-8'
+        options.addBooleanOption('Xdoclint:all,-missing', true)
+    }
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                from components.java
+
+                pom {
+                    name = "Auderis Corusco ${project.name}"
+                    description = 'Typed Swing presentation-model, binding, table, behavior, and annotation-processing framework.'
+                    url = 'https://github.com/auderis/corusco'
+
+                    licenses {
+                        license {
+                            name = 'Apache License, Version 2.0'
+                            url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id = 'auderis'
+                            name = 'Auderis'
+                        }
+                    }
+
+                    scm {
+                        connection = 'scm:git:https://github.com/auderis/corusco.git'
+                        developerConnection = 'scm:git:https://github.com/auderis/corusco.git'
+                        url = 'https://github.com/auderis/corusco'
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.register('verifyMavenLocalPublication') {
+    group = 'verification'
+    description = 'Verifies that publishable Corusco modules are present in Maven local with source and Javadoc jars.'
+    dependsOn publishableProjects.collect { it.tasks.named('publishToMavenLocal') }
+
+    doLast {
+        def repository = new File(System.getProperty('user.home'), '.m2/repository')
+
+        publishableProjectNames.each { publishedProjectName ->
+            def artifactDir = new File(repository, "${publicationGroupPath}/${publishedProjectName}/${publicationVersion}")
+            def requiredFiles = [
+                "${publishedProjectName}-${publicationVersion}.pom",
+                "${publishedProjectName}-${publicationVersion}.jar",
+                "${publishedProjectName}-${publicationVersion}-sources.jar",
+                "${publishedProjectName}-${publicationVersion}-javadoc.jar"
+            ]
+
+            requiredFiles.each { fileName ->
+                if (!new File(artifactDir, fileName).isFile()) {
+                    throw new GradleException("Missing Maven-local publication artifact: ${artifactDir}/${fileName}")
+                }
+            }
+        }
+
+        def examplesDir = new File(repository, "${publicationGroupPath}/corusco-examples/${publicationVersion}")
+        if (examplesDir.exists()) {
+            throw new GradleException("corusco-examples must remain unpublished, but ${examplesDir} exists")
+        }
+    }
+}

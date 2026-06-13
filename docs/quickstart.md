@@ -19,6 +19,24 @@ dependencies {
 }
 ```
 
+After `./gradlew publishToMavenLocal`, an external consumer can use the same
+modules from `mavenLocal()`:
+
+```groovy
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'cz.auderis.corusco:corusco-core:0.1.0-SNAPSHOT'
+    implementation 'cz.auderis.corusco:corusco-glazedlists:0.1.0-SNAPSHOT'
+    implementation 'cz.auderis.corusco:corusco-swing:0.1.0-SNAPSHOT'
+    implementation 'cz.auderis.corusco:corusco-annotations:0.1.0-SNAPSHOT'
+    annotationProcessor 'cz.auderis.corusco:corusco-processor:0.1.0-SNAPSHOT'
+}
+```
+
 `corusco-glazedlists` is optional, but it is useful when existing screens
 already use mature `EventList` pipelines for sorting, filtering, or live row
 updates.
