@@ -37,14 +37,20 @@ import javax.swing.table.TableModel;
  *
  * <p>The controller owns no table model data. It reads stable persistence ids
  * from the {@link ObservableTableModel} descriptor, restores the saved
- * {@link TableState}, and then listens for Swing column/sort changes. Saves are
- * immediate in this first controller slice; later debounce work can wrap the
- * same {@link #captureState()} and store boundary. Close the controller with
- * the surrounding view lifecycle to remove listeners and flush the store.</p>
+ * {@link TableState}, and then listens for Swing column/sort changes. Event
+ * saves are debounced on the EDT so resize and drag gestures coalesce into one
+ * write. Close the controller with the surrounding view lifecycle to remove
+ * listeners, write pending state, and flush the store.</p>
  *
  * @param <R> row type
  */
 public final class TableStateController<R> implements Binding {
+
+    /**
+     * Default debounce interval for table state writes triggered by Swing
+     * column and sorter events.
+     */
+    public static final int DEFAULT_SAVE_DELAY_MILLIS = 250;
 
     private final JTable table;
     private final ObservableTableModel<R> model;
@@ -55,6 +61,7 @@ public final class TableStateController<R> implements Binding {
     private final Map<String, TableColumn> tableColumnsById;
     private final TableColumnModelListener columnListener = new PersistingColumnListener();
     private final RowSorterListener sorterListener = this::sorterChanged;
+    private final TableStateSaveScheduler saveScheduler;
 
     private boolean applying;
     private boolean closed;
@@ -77,6 +84,25 @@ public final class TableStateController<R> implements Binding {
     }
 
     /**
+     * Installs a controller with an explicit event-save debounce interval.
+     *
+     * @param table Swing table to restore and observe
+     * @param model descriptor-backed table model installed in the table
+     * @param store table state store
+     * @param saveDelayMillis debounce delay for event-triggered saves
+     * @param <R> row type
+     * @return installed controller
+     */
+    public static <R> TableStateController<R> install(
+            JTable table,
+            ObservableTableModel<R> model,
+            TableStateStore store,
+            int saveDelayMillis
+    ) {
+        return new TableStateController<>(table, model, store, saveDelayMillis);
+    }
+
+    /**
      * Creates and installs a controller.
      *
      * @param table Swing table to restore and observe
@@ -84,6 +110,23 @@ public final class TableStateController<R> implements Binding {
      * @param store table state store
      */
     public TableStateController(JTable table, ObservableTableModel<R> model, TableStateStore store) {
+        this(table, model, store, DEFAULT_SAVE_DELAY_MILLIS);
+    }
+
+    /**
+     * Creates and installs a controller with an explicit debounce interval.
+     *
+     * @param table Swing table to restore and observe
+     * @param model descriptor-backed table model installed in the table
+     * @param store table state store
+     * @param saveDelayMillis debounce delay for event-triggered saves
+     */
+    public TableStateController(
+            JTable table,
+            ObservableTableModel<R> model,
+            TableStateStore store,
+            int saveDelayMillis
+    ) {
         SwingEdt.requireEdt();
         this.table = Objects.requireNonNull(table, "table");
         this.model = Objects.requireNonNull(model, "model");
@@ -95,6 +138,7 @@ public final class TableStateController<R> implements Binding {
         this.columnModel = table.getColumnModel();
         this.columnsById = descriptorColumns(descriptor);
         this.tableColumnsById = discoverTableColumns();
+        this.saveScheduler = new TableStateSaveScheduler(saveDelayMillis, this::writeCurrentState);
 
         applyState(TableState.merge(descriptor, store.load(descriptor.key().id()).orElse(null)));
         columnModel.addColumnModelListener(columnListener);
@@ -144,16 +188,29 @@ public final class TableStateController<R> implements Binding {
         } finally {
             applying = false;
         }
-        saveNow();
+        scheduleSave();
     }
 
     /**
-     * Saves the currently captured state.
+     * Saves the currently captured state immediately.
+     *
+     * <p>This cancels any pending delayed save. Event-triggered saves use the
+     * configured debounce interval; call this method for explicit user actions
+     * or tests that need deterministic persistence at that point.</p>
      */
     public void saveNow() {
         SwingEdt.requireEdt();
         requireOpen();
-        store.save(captureState());
+        saveScheduler.saveNow();
+    }
+
+    /**
+     * Writes any delayed save that has been scheduled but not yet fired.
+     */
+    public void flushPendingSaves() {
+        SwingEdt.requireEdt();
+        requireOpen();
+        saveScheduler.flushPending();
     }
 
     @Override
@@ -166,6 +223,7 @@ public final class TableStateController<R> implements Binding {
         if (table.getRowSorter() != null) {
             table.getRowSorter().removeRowSorterListener(sorterListener);
         }
+        saveScheduler.flushPending();
         store.flush();
         closed = true;
     }
@@ -340,8 +398,18 @@ public final class TableStateController<R> implements Binding {
 
     private void sorterChanged(RowSorterEvent event) {
         if (!applying && !closed) {
-            saveNow();
+            scheduleSave();
         }
+    }
+
+    private void scheduleSave() {
+        SwingEdt.requireEdt();
+        requireOpen();
+        saveScheduler.schedule();
+    }
+
+    private void writeCurrentState() {
+        store.save(captureState());
     }
 
     private void requireOpen() {
@@ -407,7 +475,7 @@ public final class TableStateController<R> implements Binding {
 
         private void persistIfReady() {
             if (!applying && !closed) {
-                saveNow();
+                scheduleSave();
             }
         }
     }
