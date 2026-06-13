@@ -109,6 +109,7 @@ commit has been created.
 | [COR-078](COR-078-add-generated-code-examples-guide.md) | `COR-078 Add generated code examples guide` | Stage 20, generated code examples slice |
 | [COR-079](COR-079-add-customer-management-example.md) | `COR-079 Add customer management example` | Stage 20, integrated customer-management example slice |
 | [COR-080](COR-080-add-preview-publication-artifacts.md) | `COR-080 Add preview publication artifacts` | Stage 21, local Maven publication and documentation artifacts slice |
+| [COR-081](COR-081-add-release-policy-and-changelog.md) | `COR-081 Add release policy and changelog` | Stage 21, semantic versioning, compatibility policy, and changelog slice |
 
 ## Stage Completion Rule
 

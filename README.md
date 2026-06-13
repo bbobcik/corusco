@@ -71,9 +71,10 @@ consumer and is not published as a reusable artifact.
 - [Dialog guide](docs/dialogs.md)
 - [Testing guide](docs/testing.md)
 - [Generated code examples](docs/generated-code-examples.md)
+- [Release policy](docs/release-policy.md)
+- [Changelog](CHANGELOG.md)
 - [Implementation stage plans](docs/implementation-stage-plans/README.md)
 - [Architecture decision records](docs/adr/README.md)
 
-Stage 20 is expanding the user-facing guides. Until the full guide set is
-complete, the examples module is the most precise reference because it compiles
-against the current APIs.
+The examples module remains the most precise executable reference because it
+compiles against the current APIs and generated code on every build.
