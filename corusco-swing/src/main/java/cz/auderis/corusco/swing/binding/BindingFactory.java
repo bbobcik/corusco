@@ -5,6 +5,8 @@ import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import cz.auderis.corusco.core.lifecycle.SubscriptionScope;
 import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.tooltip.TooltipContent;
+import cz.auderis.corusco.core.tooltip.TooltipPolicy;
 import cz.auderis.corusco.core.value.ChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
 import java.awt.Color;
@@ -141,24 +143,102 @@ public final class BindingFactory {
     }
 
     /**
-     * Binds component tooltip text to the first problem message.
+     * Binds component tooltip text to the most severe problem message.
+     *
+     * <p>This is a validation-only compatibility wrapper over
+     * {@link #composedTooltip(javax.swing.JComponent, ReadableValue, ReadableValue, String, boolean, TooltipPolicy)}.
+     * It uses the same problem ordering as the core tooltip policy and restores
+     * the component's previous tooltip when closed.</p>
      *
      * @param component component tooltip target
      * @param problems readable problem set
      * @return binding
      */
     public static Binding validationTooltip(javax.swing.JComponent component, ReadableValue<ProblemSet> problems) {
+        return composedTooltip(
+                component,
+                problems,
+                null,
+                "",
+                false,
+                TooltipPolicy.withoutHelpIndicator()
+        );
+    }
+
+    /**
+     * Binds component tooltip text to composed dynamic/static tooltip content.
+     *
+     * <p>The binding owns the Swing tooltip while installed. It restores the
+     * tooltip text that was present at installation time when closed.</p>
+     *
+     * @param component component tooltip target
+     * @param problems readable problem set
+     * @param disabledReason readable disabled reason, or {@code null}
+     * @param staticHelp static help text
+     * @param helpAvailable whether F1/context help is available
+     * @return binding
+     */
+    public static Binding composedTooltip(
+            javax.swing.JComponent component,
+            ReadableValue<ProblemSet> problems,
+            ReadableValue<String> disabledReason,
+            String staticHelp,
+            boolean helpAvailable
+    ) {
+        return composedTooltip(
+                component,
+                problems,
+                disabledReason,
+                staticHelp,
+                helpAvailable,
+                TooltipPolicy.standard()
+        );
+    }
+
+    /**
+     * Binds component tooltip text to composed dynamic/static tooltip content.
+     *
+     * @param component component tooltip target
+     * @param problems readable problem set
+     * @param disabledReason readable disabled reason, or {@code null}
+     * @param staticHelp static help text
+     * @param helpAvailable whether F1/context help is available
+     * @param policy tooltip policy
+     * @return binding
+     */
+    public static Binding composedTooltip(
+            javax.swing.JComponent component,
+            ReadableValue<ProblemSet> problems,
+            ReadableValue<String> disabledReason,
+            String staticHelp,
+            boolean helpAvailable,
+            TooltipPolicy policy
+    ) {
         SwingEdt.requireEdt();
         Objects.requireNonNull(component, "component");
         Objects.requireNonNull(problems, "problems");
-        updateTooltip(component, problems.value());
-        Subscription subscription = problems.subscribe(event -> {
+        Objects.requireNonNull(policy, "policy");
+        String originalTooltip = component.getToolTipText();
+        updateTooltip(component, problems.value(), disabledReasonValue(disabledReason), staticHelp, helpAvailable, policy);
+
+        SubscriptionScope scope = new SubscriptionScope();
+        scope.add(problems.subscribe(event -> {
             SwingEdt.requireEdt();
-            updateTooltip(component, event.newValue());
-        });
+            updateTooltip(component, event.newValue(), disabledReasonValue(disabledReason), staticHelp, helpAvailable, policy);
+        }));
+        if (disabledReason != null) {
+            scope.add(disabledReason.subscribe(event -> {
+                SwingEdt.requireEdt();
+                updateTooltip(component, problems.value(), event.newValue(), staticHelp, helpAvailable, policy);
+            }));
+        }
         return () -> {
             SwingEdt.requireEdt();
-            subscription.close();
+            try {
+                scope.close();
+            } finally {
+                component.setToolTipText(originalTooltip);
+            }
         };
     }
 
@@ -239,11 +319,20 @@ public final class BindingFactory {
         };
     }
 
-    private static void updateTooltip(javax.swing.JComponent component, ProblemSet problems) {
-        String tooltip = problems.problems().stream()
-                .findFirst()
-                .map(problem -> problem.message())
-                .orElse(null);
+    private static String disabledReasonValue(ReadableValue<String> disabledReason) {
+        return (disabledReason == null) ? "" : disabledReason.value();
+    }
+
+    private static void updateTooltip(
+            javax.swing.JComponent component,
+            ProblemSet problems,
+            String disabledReason,
+            String staticHelp,
+            boolean helpAvailable,
+            TooltipPolicy policy
+    ) {
+        TooltipContent content = new TooltipContent(problems, disabledReason, staticHelp, helpAvailable);
+        String tooltip = policy.compose(content).orElse(null);
         component.setToolTipText(tooltip);
     }
 

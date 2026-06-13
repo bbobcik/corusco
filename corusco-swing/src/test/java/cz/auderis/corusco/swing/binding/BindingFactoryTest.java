@@ -6,7 +6,11 @@ import cz.auderis.corusco.core.form.FieldModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.key.TextFieldKey;
+import cz.auderis.corusco.core.problem.Problem;
+import cz.auderis.corusco.core.problem.ProblemCode;
 import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.problem.ProblemSeverity;
+import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.value.ChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import java.math.BigDecimal;
@@ -30,6 +34,8 @@ class BindingFactoryTest {
             TextFieldKey.of("customer/notes", CustomerEdit.class, String.class);
     private static final FieldKey<CustomerEdit, Boolean> ACTIVE =
             FieldKey.of("customer/active", CustomerEdit.class, Boolean.class);
+    private static final ProblemCode REQUIRED = ProblemCode.of("required");
+    private static final ProblemCode RANGE = ProblemCode.of("range");
 
     @Test
     void textFieldEditUpdatesRawTextSemanticValueAndProblemState() {
@@ -141,6 +147,46 @@ class BindingFactoryTest {
             border.close();
             tooltip.close();
             assertThat(field.getBorder()).isSameAs(original);
+            assertThat(field.getToolTipText()).isNull();
+        });
+    }
+
+    @Test
+    void composedTooltipUsesPolicyOrderingAndRestoresPreviousTooltip() {
+        SwingEdt.runAndWait(() -> {
+            JTextField field = new JTextField();
+            field.setToolTipText("original");
+            SimpleValue<ProblemSet> problems = SimpleValue.of(ProblemSet.of(
+                    problem(RANGE, ProblemSeverity.WARNING, "Credit limit should be reviewed"),
+                    problem(REQUIRED, ProblemSeverity.ERROR, "Name is required")
+            ));
+            SimpleValue<String> disabledReason = SimpleValue.of("Save is disabled");
+
+            Binding tooltip = BindingFactory.composedTooltip(
+                    field,
+                    problems,
+                    disabledReason,
+                    "Customer display name",
+                    true
+            );
+
+            assertThat(field.getToolTipText()).isEqualTo("""
+                    Name is required
+                    Save is disabled
+                    Customer display name
+                    Press F1 for help""");
+
+            disabledReason.setValue("Save waits for validation", ChangeOrigin.MODEL);
+            assertThat(field.getToolTipText()).contains("Save waits for validation");
+
+            problems.setValue(ProblemSet.empty(), ChangeOrigin.MODEL);
+            assertThat(field.getToolTipText()).isEqualTo("""
+                    Save waits for validation
+                    Customer display name
+                    Press F1 for help""");
+
+            tooltip.close();
+            assertThat(field.getToolTipText()).isEqualTo("original");
         });
     }
 
@@ -178,5 +224,9 @@ class BindingFactoryTest {
     }
 
     private record CustomerEdit(BigDecimal creditLimit, String notes, boolean active) {
+    }
+
+    private static Problem problem(ProblemCode code, ProblemSeverity severity, String message) {
+        return Problem.validation(code, severity, ProblemTarget.form(), message);
     }
 }

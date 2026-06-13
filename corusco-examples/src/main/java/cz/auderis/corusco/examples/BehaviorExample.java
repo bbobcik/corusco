@@ -6,6 +6,8 @@ import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.help.DefaultHelpService;
 import cz.auderis.corusco.core.help.HelpRequest;
 import cz.auderis.corusco.core.key.TextFieldKey;
+import cz.auderis.corusco.core.resource.Resources;
+import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.behavior.BehaviorScope;
 import cz.auderis.corusco.swing.behavior.StandardBehaviors;
 import cz.auderis.corusco.swing.binding.SwingEdt;
@@ -13,6 +15,7 @@ import java.awt.event.ActionEvent;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import javax.swing.Action;
 import javax.swing.JComponent;
 import javax.swing.JTextField;
@@ -43,6 +46,10 @@ public final class BehaviorExample {
             JTextField field = new JTextField();
             List<HelpRequest> helpRequests = new ArrayList<>();
             DefaultHelpService helpService = new DefaultHelpService(helpRequests::add);
+            Resources resources = Resources.of(Map.of(
+                    GeneratedCustomerRowTableResources.NAME_TOOLTIP.id(), "Customer display name"
+            ));
+            SimpleValue<String> disabledReason = SimpleValue.of("Save is disabled until the field is valid");
 
             try (BehaviorScope scope = new BehaviorScope(helpService)) {
                 // Generated behavior plans should eventually emit this kind of
@@ -50,7 +57,12 @@ public final class BehaviorExample {
                 // checks, and deterministic cleanup.
                 scope.install(field, List.of(
                         StandardBehaviors.textFieldBinding(creditLimit),
-                        StandardBehaviors.validationTooltip(creditLimit.problemSet()),
+                        StandardBehaviors.composedTooltip(
+                                creditLimit.problemSet(),
+                                disabledReason,
+                                resources.resolve(GeneratedCustomerRowTableResources.NAME_TOOLTIP, ""),
+                                GeneratedCustomerRowColumns.NAME_DESCRIPTOR.helpTopic() != null
+                        ),
                         StandardBehaviors.validationBorder(creditLimit.problemSet()),
                         StandardBehaviors.selectAllOnFocus(),
                         StandardBehaviors.helpOnF1(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.helpTopic())
