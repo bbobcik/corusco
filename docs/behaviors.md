@@ -77,6 +77,10 @@ Common built-ins:
 | `commandMenuItem` | `AbstractButton` | Bind a shared command to a menu item. |
 | `commandKeyBinding` | `JComponent` | Install a command accelerator in input/action maps. |
 
+See [Command and Action Guide](commands.md) for command state ownership,
+generated action descriptors, resource resolution, and direct Swing action
+adapter behavior.
+
 ## Write a Custom Behavior
 
 A behavior has two responsibilities:

@@ -159,6 +159,9 @@ command instance instead of maintaining parallel enabled/selected state.
 
 See [Behavior Authoring Guide](behaviors.md) for behavior phases, descriptors,
 cleanup rules, and custom behavior examples.
+See [Command and Action Guide](commands.md) for generated action descriptors,
+presenter-owned command state, Swing action adapters, and command testing
+patterns.
 
 ## Testing Strategy
 

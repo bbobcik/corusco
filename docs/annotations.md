@@ -240,6 +240,9 @@ Processor checks include:
 Generated action descriptors describe commands; they do not invoke annotated
 methods by reflection.
 
+See [Command and Action Guide](commands.md) for how generated action descriptors
+become presenter-owned commands and Swing entry points.
+
 ## Generated Names
 
 Generated type names are deterministic and live in the same package as the
