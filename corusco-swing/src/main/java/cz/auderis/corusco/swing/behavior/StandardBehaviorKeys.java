@@ -54,6 +54,11 @@ public final class StandardBehaviorKeys {
      */
     public static final BehaviorKey STATUS_TEXT = BehaviorKey.of("interaction/status-text");
 
+    /**
+     * Accessible name/description decoration behavior.
+     */
+    public static final BehaviorKey ACCESSIBLE_TEXT = BehaviorKey.of("decoration/accessible-text");
+
     private StandardBehaviorKeys() {
     }
 }

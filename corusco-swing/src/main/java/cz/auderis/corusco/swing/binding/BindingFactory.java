@@ -20,6 +20,7 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.accessibility.AccessibleContext;
 import javax.swing.border.Border;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -185,6 +186,35 @@ public final class BindingFactory {
             } finally {
                 restoreStatus(statusLabel, active, previousText);
             }
+        };
+    }
+
+    /**
+     * Sets accessible name and description while preserving previous values.
+     *
+     * @param component component whose accessible context is updated
+     * @param accessibleName accessible name, or {@code null} for blank
+     * @param accessibleDescription accessible description, or {@code null} for blank
+     * @return binding
+     */
+    public static Binding accessibleText(
+            JComponent component,
+            String accessibleName,
+            String accessibleDescription
+    ) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(component, "component");
+        AccessibleContext accessibleContext = component.getAccessibleContext();
+        String previousName = accessibleContext.getAccessibleName();
+        String previousDescription = accessibleContext.getAccessibleDescription();
+
+        accessibleContext.setAccessibleName(normalizeAccessibleText(accessibleName));
+        accessibleContext.setAccessibleDescription(normalizeAccessibleText(accessibleDescription));
+
+        return () -> {
+            SwingEdt.requireEdt();
+            accessibleContext.setAccessibleName(previousName);
+            accessibleContext.setAccessibleDescription(previousDescription);
         };
     }
 
@@ -417,6 +447,10 @@ public final class BindingFactory {
     }
 
     private static String normalizeStatusText(String text) {
+        return (text == null) ? "" : text;
+    }
+
+    private static String normalizeAccessibleText(String text) {
         return (text == null) ? "" : text;
     }
 

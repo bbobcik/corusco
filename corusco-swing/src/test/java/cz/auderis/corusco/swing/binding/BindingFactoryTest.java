@@ -170,6 +170,24 @@ class BindingFactoryTest {
     }
 
     @Test
+    void accessibleTextSetsAndRestoresAccessibleContextValues() {
+        SwingEdt.runAndWait(() -> {
+            JTextField field = new JTextField();
+            field.getAccessibleContext().setAccessibleName("previous-name");
+            field.getAccessibleContext().setAccessibleDescription("previous-description");
+
+            Binding binding = BindingFactory.accessibleText(field, "Customer name", "Enter the display name");
+
+            assertThat(field.getAccessibleContext().getAccessibleName()).isEqualTo("Customer name");
+            assertThat(field.getAccessibleContext().getAccessibleDescription()).isEqualTo("Enter the display name");
+
+            binding.close();
+            assertThat(field.getAccessibleContext().getAccessibleName()).isEqualTo("previous-name");
+            assertThat(field.getAccessibleContext().getAccessibleDescription()).isEqualTo("previous-description");
+        });
+    }
+
+    @Test
     void validationTooltipAndBorderReflectProblemStateAndRestoreOnClose() {
         SwingEdt.runAndWait(() -> {
             TextFieldModel<CustomerEdit, BigDecimal> model =
