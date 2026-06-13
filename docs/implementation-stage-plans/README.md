@@ -35,6 +35,7 @@ commit has been created.
 | [COR-004](COR-004-add-typed-key-skeletons.md) | `COR-004 Add typed key skeletons` | Stage 2, key part |
 | [COR-005](COR-005-add-problem-model.md) | `COR-005 Add problem model` | Stage 2, problem part |
 | [COR-006](COR-006-add-field-model-core.md) | `COR-006 Add field model core` | Stage 3, non-Swing form core |
+| [COR-007](COR-007-add-validation-rule-core.md) | `COR-007 Add validation rule core` | Stage 4, non-Swing validation core |
 
 ## Stage Completion Rule
 
