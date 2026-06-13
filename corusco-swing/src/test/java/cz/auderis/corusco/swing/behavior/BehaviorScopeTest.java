@@ -113,6 +113,35 @@ class BehaviorScopeTest {
     }
 
     @Test
+    void primaryBindingsAreScopedPerComponent() {
+        SwingEdt.runAndWait(() -> {
+            TextFieldModel<CustomerEdit, BigDecimal> first =
+                    new TextFieldModel<>(CREDIT_LIMIT, BigDecimal.TEN, Converters.bigDecimal(EmptyTextPolicy.REJECT));
+            TextFieldModel<CustomerEdit, BigDecimal> second =
+                    new TextFieldModel<>(CREDIT_LIMIT, BigDecimal.ONE, Converters.bigDecimal(EmptyTextPolicy.REJECT));
+            BehaviorScope scope = new BehaviorScope();
+            JTextField firstField = new JTextField();
+            JTextField secondField = new JTextField();
+
+            scope.install(firstField, List.of(
+                    StandardBehaviors.textFieldBinding(first),
+                    StandardBehaviors.validationTooltip(first.problemSet())
+            ));
+            scope.install(secondField, List.of(
+                    StandardBehaviors.textFieldBinding(second),
+                    StandardBehaviors.validationTooltip(second.problemSet())
+            ));
+
+            firstField.setText("11");
+            secondField.setText("22");
+
+            assertThat(first.value()).isEqualByComparingTo("11");
+            assertThat(second.value()).isEqualByComparingTo("22");
+            scope.close();
+        });
+    }
+
+    @Test
     void textBindingBehaviorMatchesDirectBindingBehavior() {
         SwingEdt.runAndWait(() -> {
             TextFieldModel<CustomerEdit, BigDecimal> model =

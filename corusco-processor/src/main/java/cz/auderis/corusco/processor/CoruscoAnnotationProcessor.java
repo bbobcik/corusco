@@ -245,6 +245,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         writeProblemsClass(formType, fields);
         writeDescriptorsClass(formType, fields);
         writeFormModelClass(formType, fields);
+        writeViewClass(formType, fields);
+        writeBehaviorPlanClass(formType, fields);
     }
 
     private FieldSpec fieldSpec(
@@ -266,6 +268,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         boolean textKey = textField || dateField;
         String modelType = textKey ? "TextFieldModel" : "FieldModel";
         String converterExpression = converterExpression(component.asType(), textField, dateField);
+        String viewComponentType = viewComponentType(textField, checkBox, comboBox, dateField, valueType);
+        String viewMethodName = viewMethodName(componentName, textField, checkBox, comboBox, dateField);
         Help help = component.getAnnotation(Help.class);
         String tooltipId = null;
         String helpTopicId = null;
@@ -289,6 +293,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 textKey,
                 modelType,
                 converterExpression,
+                viewComponentType,
+                viewMethodName,
                 constraints
         );
     }
@@ -646,6 +652,94 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         }
     }
 
+    private void writeViewClass(TypeElement formType, List<FieldSpec> fields) {
+        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+        String ownerType = formType.getSimpleName().toString();
+        String generatedType = ownerType + "View";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        try {
+            JavaFileObject sourceFile = filer.createSourceFile(qualifiedName, formType);
+            try (Writer writer = sourceFile.openWriter()) {
+                writePackage(writer, packageName);
+                writer.write("import javax.swing.JCheckBox;\n");
+                writer.write("import javax.swing.JComboBox;\n");
+                writer.write("import javax.swing.JTextField;\n\n");
+                writer.write("/**\n");
+                writer.write(" * Generated Swing view contract for {@link " + ownerType + "}.\n");
+                writer.write(" */\n");
+                writer.write("public interface " + generatedType + " {\n\n");
+                for (FieldSpec field : fields) {
+                    writer.write("    /**\n");
+                    writer.write("     * Returns the Swing component for {@code " + field.keyId + "}.\n");
+                    writer.write("     *\n");
+                    writer.write("     * @return component\n");
+                    writer.write("     */\n");
+                    writer.write("    " + field.viewComponentType + " " + field.viewMethodName + "();\n\n");
+                }
+                writer.write("}\n");
+            }
+        } catch (IOException e) {
+            error(formType, "Could not write generated view contract: " + e.getMessage());
+        }
+    }
+
+    private void writeBehaviorPlanClass(TypeElement formType, List<FieldSpec> fields) {
+        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+        String ownerType = formType.getSimpleName().toString();
+        String generatedType = ownerType + "BehaviorPlan";
+        String viewType = ownerType + "View";
+        String formModelType = ownerType + "FormModel";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        try {
+            JavaFileObject sourceFile = filer.createSourceFile(qualifiedName, formType);
+            try (Writer writer = sourceFile.openWriter()) {
+                writePackage(writer, packageName);
+                writer.write("import cz.auderis.corusco.swing.behavior.BehaviorScope;\n");
+                writer.write("import cz.auderis.corusco.swing.behavior.StandardBehaviors;\n");
+                writer.write("import java.util.List;\n\n");
+                writer.write("/**\n");
+                writer.write(" * Generated behavior installation plan for {@link " + ownerType + "}.\n");
+                writer.write(" */\n");
+                writer.write("public final class " + generatedType + " {\n\n");
+                writePrivateConstructor(writer, generatedType);
+                writer.write("    /**\n");
+                writer.write("     * Installs supported generated behaviors.\n");
+                writer.write("     *\n");
+                writer.write("     * @param view generated view contract\n");
+                writer.write("     * @param model generated form model\n");
+                writer.write("     * @param scope owning behavior scope\n");
+                writer.write("     */\n");
+                writer.write("    public static void install(" + viewType + " view, " + formModelType
+                        + " model, BehaviorScope scope) {\n");
+                writer.write("        java.util.Objects.requireNonNull(view, \"view\");\n");
+                writer.write("        java.util.Objects.requireNonNull(model, \"model\");\n");
+                writer.write("        java.util.Objects.requireNonNull(scope, \"scope\");\n");
+                for (FieldSpec field : fields) {
+                    writeBehaviorInstall(writer, field);
+                }
+                writer.write("    }\n");
+                writer.write("}\n");
+            }
+        } catch (IOException e) {
+            error(formType, "Could not write generated behavior plan: " + e.getMessage());
+        }
+    }
+
+    private void writeBehaviorInstall(Writer writer, FieldSpec field) throws IOException {
+        if ("TextFieldModel".equals(field.modelType)) {
+            writer.write("        scope.install(view." + field.viewMethodName + "(), List.of(\n");
+            writer.write("                StandardBehaviors.textFieldBinding(model." + field.componentName + "),\n");
+            writer.write("                StandardBehaviors.validationTooltip(model." + field.componentName + ".problemSet()),\n");
+            writer.write("                StandardBehaviors.validationBorder(model." + field.componentName + ".problemSet()),\n");
+            writer.write("                StandardBehaviors.selectAllOnFocus()\n");
+            writer.write("        ));\n");
+        } else if ("CHECK_BOX".equals(field.kind)) {
+            writer.write("        scope.install(view." + field.viewMethodName + "(), List.of(\n");
+            writer.write("                StandardBehaviors.checkBoxBinding(model." + field.componentName + ")\n");
+            writer.write("        ));\n");
+        }
+    }
+
     private void writeFieldModelInitialization(Writer writer, FieldSpec field, String fieldsType) throws IOException {
         if ("TextFieldModel".equals(field.modelType)) {
             writer.write("        this." + field.componentName + " = register(new TextFieldModel<>(\n");
@@ -948,6 +1042,44 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         throw new IllegalArgumentException("No field kind selected");
     }
 
+    private static String viewComponentType(
+            boolean textField,
+            boolean checkBox,
+            boolean comboBox,
+            boolean dateField,
+            String valueType
+    ) {
+        if (textField || dateField) {
+            return "JTextField";
+        }
+        if (checkBox) {
+            return "JCheckBox";
+        }
+        if (comboBox) {
+            return "JComboBox<" + valueType + ">";
+        }
+        throw new IllegalArgumentException("No field kind selected");
+    }
+
+    private static String viewMethodName(
+            String componentName,
+            boolean textField,
+            boolean checkBox,
+            boolean comboBox,
+            boolean dateField
+    ) {
+        if (textField || dateField) {
+            return componentName + "Field";
+        }
+        if (checkBox) {
+            return componentName + "Box";
+        }
+        if (comboBox) {
+            return componentName + "Combo";
+        }
+        throw new IllegalArgumentException("No field kind selected");
+    }
+
     private static boolean isStableId(String value) {
         return value.matches("[A-Za-z0-9][A-Za-z0-9._/-]*");
     }
@@ -1003,6 +1135,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             boolean textField,
             String modelType,
             String converterExpression,
+            String viewComponentType,
+            String viewMethodName,
             List<ConstraintSpec> constraints
     ) {
     }
