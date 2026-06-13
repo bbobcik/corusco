@@ -90,6 +90,7 @@ commit has been created.
 | [COR-059](COR-059-add-dialog-lifecycle-scope.md) | `COR-059 Add dialog lifecycle scope` | Stage 18, dialog lifecycle integration slice |
 | [COR-060](COR-060-commit-dialog-active-editors.md) | `COR-060 Commit dialog active editors` | Stage 18, active-editor commit hardening slice |
 | [COR-061](COR-061-add-swing-mvp-tester-core.md) | `COR-061 Add Swing MVP tester core` | Stage 19, tester shell and component lookup slice |
+| [COR-062](COR-062-add-tester-command-invocation.md) | `COR-062 Add tester command invocation` | Stage 19, action invocation by `ActionKey` slice |
 
 ## Stage Completion Rule
 

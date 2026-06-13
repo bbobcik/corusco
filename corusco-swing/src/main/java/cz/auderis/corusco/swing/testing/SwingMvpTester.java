@@ -1,5 +1,8 @@
 package cz.auderis.corusco.swing.testing;
 
+import cz.auderis.corusco.core.command.Command;
+import cz.auderis.corusco.core.command.CommandSet;
+import cz.auderis.corusco.core.key.ActionKey;
 import cz.auderis.corusco.core.key.ComponentKey;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 
@@ -33,10 +36,12 @@ public final class SwingMvpTester<V extends JComponent, P> {
 
     private final V view;
     private final P presenter;
+    private final CommandSet commands;
 
-    private SwingMvpTester(V view, P presenter) {
+    private SwingMvpTester(V view, P presenter, CommandSet commands) {
         this.view = Objects.requireNonNull(view, "view");
         this.presenter = presenter;
+        this.commands = Objects.requireNonNull(commands, "commands");
     }
 
     /**
@@ -63,13 +68,34 @@ public final class SwingMvpTester<V extends JComponent, P> {
             Supplier<? extends V> viewFactory,
             Function<? super V, ? extends P> presenterFactory
     ) {
+        return create(viewFactory, presenterFactory, (view, presenter) -> new CommandSet(List.of()));
+    }
+
+    /**
+     * Creates a tester with a presenter and command-set factory.
+     *
+     * @param viewFactory view factory executed on the EDT
+     * @param presenterFactory presenter factory executed on the EDT
+     * @param commandSetFactory command-set factory executed on the EDT after
+     *         presenter creation
+     * @param <V> root view type
+     * @param <P> presenter type
+     * @return tester
+     */
+    public static <V extends JComponent, P> SwingMvpTester<V, P> create(
+            Supplier<? extends V> viewFactory,
+            Function<? super V, ? extends P> presenterFactory,
+            BiFunction<? super V, ? super P, ? extends CommandSet> commandSetFactory
+    ) {
         Objects.requireNonNull(viewFactory, "viewFactory");
         Objects.requireNonNull(presenterFactory, "presenterFactory");
+        Objects.requireNonNull(commandSetFactory, "commandSetFactory");
         AtomicReference<SwingMvpTester<V, P>> tester = new AtomicReference<>();
         runAndWaitUnchecked(() -> {
             V view = Objects.requireNonNull(viewFactory.get(), "viewFactory.get()");
             P presenter = presenterFactory.apply(view);
-            tester.set(new SwingMvpTester<>(view, presenter));
+            CommandSet commands = Objects.requireNonNull(commandSetFactory.apply(view, presenter), "commandSetFactory.apply()");
+            tester.set(new SwingMvpTester<>(view, presenter, commands));
         });
         return tester.get();
     }
@@ -92,6 +118,19 @@ public final class SwingMvpTester<V extends JComponent, P> {
      */
     public Optional<P> presenter() {
         return Optional.ofNullable(presenter);
+    }
+
+    /**
+     * Returns the command set supplied when the tester was created.
+     *
+     * <p>The set is immutable, but command state is still UI-owned. Prefer
+     * tester command helpers for invocation and assertions so command state is
+     * touched on the EDT.</p>
+     *
+     * @return command set
+     */
+    public CommandSet commands() {
+        return commands;
     }
 
     /**
@@ -149,6 +188,81 @@ public final class SwingMvpTester<V extends JComponent, P> {
      */
     public <C extends JComponent> C requireComponent(ComponentKey<C> key) {
         return findComponent(key).orElseThrow(() -> new IllegalArgumentException("Missing component: " + key));
+    }
+
+    /**
+     * Finds a command by generated action key.
+     *
+     * <p>The lookup runs on the EDT. Prefer tester command helpers for
+     * invocation and assertions so command state is touched on the EDT.</p>
+     *
+     * @param key action key
+     * @return optional command
+     */
+    public Optional<Command> findCommand(ActionKey key) {
+        Objects.requireNonNull(key, "key");
+        return queryOnEdt((view, presenter) -> commands.find(key));
+    }
+
+    /**
+     * Requires a command by generated action key.
+     *
+     * <p>The lookup runs on the EDT. Prefer tester command helpers for
+     * invocation and assertions so command state is touched on the EDT.</p>
+     *
+     * @param key action key
+     * @return command
+     */
+    public Command requireCommand(ActionKey key) {
+        return findCommand(key).orElseThrow(() -> new IllegalArgumentException("Missing command: " + key));
+    }
+
+    /**
+     * Executes a command by generated action key on the EDT.
+     *
+     * @param key action key
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> executeCommand(ActionKey key) {
+        Objects.requireNonNull(key, "key");
+        runAndWaitUnchecked(() -> requireCommandOnEdt(key).execute());
+        return this;
+    }
+
+    /**
+     * Asserts a command's enabled state on the EDT.
+     *
+     * @param key action key
+     * @param expected expected enabled state
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertCommandEnabled(ActionKey key, boolean expected) {
+        Objects.requireNonNull(key, "key");
+        boolean actual = queryOnEdt((view, presenter) -> requireCommandOnEdt(key).isEnabled());
+        if (actual != expected) {
+            throw new AssertionError("Expected command " + key + " enabled=" + expected + " but was " + actual);
+        }
+        return this;
+    }
+
+    /**
+     * Asserts a command's selected state on the EDT.
+     *
+     * @param key action key
+     * @param expected expected selected state
+     * @return this tester
+     */
+    public SwingMvpTester<V, P> assertCommandSelected(ActionKey key, boolean expected) {
+        Objects.requireNonNull(key, "key");
+        boolean actual = queryOnEdt((view, presenter) -> requireCommandOnEdt(key).isSelected());
+        if (actual != expected) {
+            throw new AssertionError("Expected command " + key + " selected=" + expected + " but was " + actual);
+        }
+        return this;
+    }
+
+    private Command requireCommandOnEdt(ActionKey key) {
+        return commands.find(key).orElseThrow(() -> new IllegalArgumentException("Missing command: " + key));
     }
 
     private static <C extends JComponent> Optional<C> findComponentOnEdt(JComponent root, ComponentKey<C> key) {

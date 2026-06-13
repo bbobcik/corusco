@@ -1,10 +1,17 @@
 package cz.auderis.corusco.examples;
 
+import cz.auderis.corusco.core.command.ActionDescriptor;
+import cz.auderis.corusco.core.command.CommandFactory;
+import cz.auderis.corusco.core.command.CommandSet;
+import cz.auderis.corusco.core.command.MutableCommand;
+import cz.auderis.corusco.core.key.ActionKey;
 import cz.auderis.corusco.core.key.ComponentKey;
+import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.swing.testing.SwingComponentKeys;
 import cz.auderis.corusco.swing.testing.SwingMvpTester;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
@@ -18,6 +25,8 @@ public final class SwingMvpTesterExample {
             ComponentKey.of("customer/name-field", JTextField.class);
     private static final ComponentKey<JButton> SAVE_BUTTON =
             ComponentKey.of("customer/save-button", JButton.class);
+    private static final ActionKey SAVE = ActionKey.of("customer/save");
+    private static final ResourceKey<String> SAVE_TEXT = ResourceKey.of("customer/save/text", String.class);
 
     private SwingMvpTesterExample() {
         throw new AssertionError("No instances");
@@ -31,7 +40,8 @@ public final class SwingMvpTesterExample {
     public static List<String> runScenario() {
         SwingMvpTester<CustomerView, CustomerPresenter> tester = SwingMvpTester.create(
                 CustomerView::new,
-                CustomerPresenter::new
+                CustomerPresenter::new,
+                (view, presenter) -> presenter.commands()
         );
 
         // Generated views can mark real Swing components with ComponentKey
@@ -47,9 +57,16 @@ public final class SwingMvpTesterExample {
             save.setEnabled(presenter.canSave(name.getText()));
         });
 
+        // Commands stay presenter-owned and are invoked by generated ActionKey
+        // constants, so tests exercise the same command model as buttons and
+        // key bindings without depending on Swing action plumbing.
+        tester.assertCommandEnabled(SAVE, true)
+                .executeCommand(SAVE);
+
         return tester.queryOnEdt((view, presenter) -> List.of(
                 name.getText(),
                 Boolean.toString(save.isEnabled()),
+                Integer.toString(presenter.saveCalls()),
                 Boolean.toString(tester.presenter().isPresent())
         ));
     }
@@ -67,10 +84,29 @@ public final class SwingMvpTesterExample {
         }
     }
 
-    private record CustomerPresenter(CustomerView view) {
+    private static final class CustomerPresenter {
+
+        private final CustomerView view;
+        private final AtomicInteger saveCalls = new AtomicInteger();
+
+        private CustomerPresenter(CustomerView view) {
+            this.view = view;
+        }
 
         private boolean canSave(String name) {
             return !name.isBlank();
+        }
+
+        private CommandSet commands() {
+            MutableCommand save = CommandFactory.command(
+                    ActionDescriptor.action(SAVE, SAVE_TEXT),
+                    command -> saveCalls.incrementAndGet()
+            );
+            return CommandSet.of(save);
+        }
+
+        private int saveCalls() {
+            return saveCalls.get();
         }
     }
 }
