@@ -44,6 +44,7 @@ class FormDialogTest {
             assertThat(dialog.isClosed()).isTrue();
             assertThat(form.toResultCalls).isZero();
             assertThat(form.acceptCalls).isZero();
+            assertThat(form.resetCalls).isEqualTo(1);
         });
     }
 
@@ -75,6 +76,119 @@ class FormDialogTest {
 
             assertThat(dialog.result().acceptedValue()).contains("saved");
             assertThat(dialog.isClosed()).isTrue();
+        });
+    }
+
+    @Test
+    void cleanCancelDoesNotAskConfirmationButResetsForm() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("ignored");
+            Counter confirmationCalls = new Counter();
+            FormDialog<TestForm, String> dialog = new FormDialog<>(
+                    form,
+                    new JPanel(),
+                    () -> false,
+                    () -> {
+                        confirmationCalls.increment();
+                        return true;
+                    }
+            );
+
+            assertThat(dialog.cancel()).isTrue();
+
+            assertThat(confirmationCalls.value()).isZero();
+            assertThat(form.resetCalls).isEqualTo(1);
+            assertThat(dialog.isClosed()).isTrue();
+        });
+    }
+
+    @Test
+    void dirtyCancelRejectedKeepsDialogOpenAndDoesNotReset() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("ignored");
+            Counter confirmationCalls = new Counter();
+            FormDialog<TestForm, String> dialog = new FormDialog<>(
+                    form,
+                    new JPanel(),
+                    () -> true,
+                    () -> {
+                        confirmationCalls.increment();
+                        return false;
+                    }
+            );
+
+            assertThat(dialog.cancel()).isFalse();
+
+            assertThat(confirmationCalls.value()).isEqualTo(1);
+            assertThat(form.resetCalls).isZero();
+            assertThat(dialog.isClosed()).isFalse();
+            assertThat(dialog.cancelCommand().isEnabled()).isTrue();
+        });
+    }
+
+    @Test
+    void dirtyCancelConfirmedClosesAndResets() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("ignored");
+            Counter confirmationCalls = new Counter();
+            FormDialog<TestForm, String> dialog = new FormDialog<>(
+                    form,
+                    new JPanel(),
+                    () -> true,
+                    () -> {
+                        confirmationCalls.increment();
+                        return true;
+                    }
+            );
+
+            assertThat(dialog.cancel()).isTrue();
+            assertThat(dialog.cancel()).isTrue();
+
+            assertThat(confirmationCalls.value()).isEqualTo(1);
+            assertThat(form.resetCalls).isEqualTo(1);
+            assertThat(dialog.result().isAccepted()).isFalse();
+            assertThat(dialog.isClosed()).isTrue();
+        });
+    }
+
+    @Test
+    void cancelCommandHonorsDirtyConfirmation() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("ignored");
+            FormDialog<TestForm, String> dialog = new FormDialog<>(
+                    form,
+                    new JPanel(),
+                    () -> true,
+                    () -> false
+            );
+
+            dialog.cancelCommand().execute();
+
+            assertThat(dialog.isClosed()).isFalse();
+            assertThat(form.resetCalls).isZero();
+        });
+    }
+
+    @Test
+    void closeForcesCleanupWithoutDirtyConfirmation() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("ignored");
+            Counter confirmationCalls = new Counter();
+            FormDialog<TestForm, String> dialog = new FormDialog<>(
+                    form,
+                    new JPanel(),
+                    () -> true,
+                    () -> {
+                        confirmationCalls.increment();
+                        return false;
+                    }
+            );
+
+            dialog.close();
+
+            assertThat(dialog.isClosed()).isTrue();
+            assertThat(form.resetCalls).isEqualTo(1);
+            assertThat(confirmationCalls.value()).isZero();
         });
     }
 
@@ -165,6 +279,7 @@ class FormDialogTest {
         private boolean committable = true;
         private int toResultCalls;
         private int acceptCalls;
+        private int resetCalls;
 
         private TestForm(String result) {
             this.result = result;
@@ -182,6 +297,7 @@ class FormDialogTest {
 
         @Override
         public void reset() {
+            resetCalls++;
         }
 
         @Override
@@ -193,6 +309,19 @@ class FormDialogTest {
         public String toResult() {
             toResultCalls++;
             return result;
+        }
+    }
+
+    private static final class Counter {
+
+        private int value;
+
+        private void increment() {
+            value++;
+        }
+
+        private int value() {
+            return value;
         }
     }
 }
