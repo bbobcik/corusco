@@ -97,6 +97,7 @@ commit has been created.
 | [COR-066](COR-066-add-tester-behavior-assertions.md) | `COR-066 Add tester behavior assertions` | Stage 19, behavior-installed assertion helper slice |
 | [COR-067](COR-067-add-tester-table-state-assertions.md) | `COR-067 Add tester table-state assertions` | Stage 19, table-state assertion helper slice |
 | [COR-068](COR-068-add-generated-source-test-helpers.md) | `COR-068 Add generated-source test helpers` | Stage 19, generated-source test helper slice |
+| [COR-069](COR-069-add-readme-quickstart.md) | `COR-069 Add README quickstart` | Stage 20, README quickstart slice |
 
 ## Stage Completion Rule
 
