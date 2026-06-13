@@ -83,6 +83,7 @@ commit has been created.
 | [COR-052](COR-052-add-generation-counter-helper.md) | `COR-052 Add generation counter helper` | Stage 17, stale-result generation counter helper slice |
 | [COR-053](COR-053-add-async-field-validation.md) | `COR-053 Add async field validation` | Stage 17, async field validation API slice |
 | [COR-054](COR-054-add-swing-busy-overlay.md) | `COR-054 Add Swing busy overlay` | Stage 17, Swing `JLayer` busy overlay slice |
+| [COR-055](COR-055-add-dialog-result-and-form-controller.md) | `COR-055 Add dialog result and form controller` | Stage 18, dialog result and form controller foundation slice |
 
 ## Stage Completion Rule
 
