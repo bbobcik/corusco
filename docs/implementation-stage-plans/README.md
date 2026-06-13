@@ -37,6 +37,7 @@ commit has been created.
 | [COR-006](COR-006-add-field-model-core.md) | `COR-006 Add field model core` | Stage 3, non-Swing form core |
 | [COR-007](COR-007-add-validation-rule-core.md) | `COR-007 Add validation rule core` | Stage 4, non-Swing validation core |
 | [COR-008](COR-008-add-basic-swing-bindings.md) | `COR-008 Add basic Swing bindings` | Stage 5 |
+| [COR-009](COR-009-add-behavior-core.md) | `COR-009 Add behavior core` | Stage 6 |
 
 ## Stage Completion Rule
 
