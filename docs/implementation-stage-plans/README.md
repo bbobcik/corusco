@@ -45,6 +45,7 @@ commit has been created.
 | [COR-014](COR-014-add-generated-action-descriptors.md) | `COR-014 Add generated action descriptors` | Stage 8, action metadata slice |
 | [COR-015](COR-015-add-generated-record-form-models.md) | `COR-015 Add generated record form models` | Stage 9, first generated form-model slice |
 | [COR-016](COR-016-add-generated-view-contracts.md) | `COR-016 Add generated view contracts` | Stage 10, initial view/behavior plan slice |
+| [COR-017](COR-017-add-observable-list-core.md) | `COR-017 Add observable list core` | Stage 11, observable list core slice |
 
 ## Stage Completion Rule
 
