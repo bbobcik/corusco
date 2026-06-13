@@ -15,6 +15,7 @@ dependencyResolutionManagement {
 rootProject.name = 'corusco'
 
 include 'corusco-core'
+include 'corusco-glazedlists'
 include 'corusco-swing'
 include 'corusco-annotations'
 include 'corusco-processor'

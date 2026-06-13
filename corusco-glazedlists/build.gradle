@@ -1,0 +1,4 @@
+dependencies {
+    api project(':corusco-core')
+    api libs.glazedlists
+}
