@@ -16,6 +16,7 @@ class GeneratedTableColumnsExampleTest {
                 "generated-customer-table/customer-name",
                 "320",
                 "generated-customer-table/orders",
+                "2",
                 "Integer",
                 "5",
                 "true",

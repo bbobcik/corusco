@@ -1,5 +1,6 @@
 /**
- * Swing table models and table state controllers for Corusco typed descriptors.
+ * Swing table models, table state controllers, and header menus for Corusco
+ * typed descriptors.
  *
  * <p>Models and controllers in this package are EDT-confined and use explicit
  * typed column descriptors rather than JavaBeans reflection or public property
