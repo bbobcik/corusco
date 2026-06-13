@@ -16,7 +16,7 @@ import java.util.Objects;
  *
  * @param <T> value type
  */
-public class SimpleValue<T> implements WritableValue<T> {
+public final class SimpleValue<T> implements WritableValue<T> {
 
     private final List<ValueChangeListener<T>> listeners = new ArrayList<>();
     private T value;
@@ -81,7 +81,7 @@ public class SimpleValue<T> implements WritableValue<T> {
      * @param newValue new value
      * @param origin change origin
      */
-    protected final void fireChanged(T oldValue, T newValue, ChangeOrigin origin) {
+    private void fireChanged(T oldValue, T newValue, ChangeOrigin origin) {
         ValueChangeEvent<T> event = new ValueChangeEvent<>(this, oldValue, newValue, origin);
         List<ValueChangeListener<T>> snapshot = List.copyOf(listeners);
         for (ValueChangeListener<T> listener : snapshot) {

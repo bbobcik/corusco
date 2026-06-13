@@ -15,8 +15,8 @@ commit has been created.
 
 ## Roadmap Review Notes
 
-- The roadmap still uses the earlier `swingmvp-*` module names in some places.
-  The repository uses `corusco-*`; these plans use the repository names.
+- The roadmap uses repository module names (`corusco-*`) and should be kept in
+  sync with the stage plans when module boundaries change.
 - The roadmap's high-level stages are useful milestones, but some are too broad
   for one clean commit. These plans split early work into smaller commits where
   that keeps review and rollback practical.
@@ -48,7 +48,9 @@ A stage is complete only when:
 3. It adds or updates appropriate examples. Early low-level stages may use
    small focused examples; later user-facing stages should add richer examples.
    Existing examples must be revisited and refactored when a new stage changes
-   the recommended usage pattern.
+   the recommended usage pattern. Example methods should include a few
+   well-placed body comments where they clarify ownership, cleanup, threading,
+   or generated-code conventions better than method-level Javadoc alone.
 4. Its acceptance checks pass.
 5. AudEnv has been queried for the relevant commands. Before test commands, run
    `audenv recommend test --project .` and prefer `project-compact:` when

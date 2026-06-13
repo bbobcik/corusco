@@ -24,6 +24,8 @@ public final class TypedKeyExample {
      * @return key diagnostics
      */
     public static List<String> diagnostics() {
+        // Generated code will normally expose constants like these. The example
+        // shows the diagnostic shape without requiring an annotation processor.
         return List.of(
                 CustomerKeys.NAME.toString(),
                 CustomerKeys.NAME.asFieldKey().toString(),
@@ -44,17 +46,17 @@ public final class TypedKeyExample {
     private static final class CustomerKeys {
 
         static final TextFieldKey<CustomerEdit, String> NAME =
-                TextFieldKey.of("customer.name", CustomerEdit.class, String.class);
+                TextFieldKey.of("customer/name", CustomerEdit.class, String.class);
         static final FieldKey<CustomerEdit, BigDecimal> CREDIT_LIMIT =
-                FieldKey.of("customer.creditLimit", CustomerEdit.class, BigDecimal.class);
+                FieldKey.of("customer/credit-limit", CustomerEdit.class, BigDecimal.class);
         static final ResourceKey<String> NAME_LABEL =
-                ResourceKey.of("customer.name.label", String.class);
+                ResourceKey.of("customer/name/label", String.class);
         static final ActionKey SAVE =
-                ActionKey.of("customer.save");
+                ActionKey.of("customer/save");
         static final HelpTopic NAME_HELP =
-                HelpTopic.of("customer.name");
+                HelpTopic.of("customer/name");
         static final ComponentKey<TextInput> NAME_COMPONENT =
-                ComponentKey.of("customer.nameField", TextInput.class);
+                ComponentKey.of("customer/name-field", TextInput.class);
 
         private CustomerKeys() {
         }

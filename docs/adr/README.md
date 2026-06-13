@@ -7,9 +7,12 @@ code strategy.
 Use one Markdown file per decision:
 
 ```text
-NNNN-short-decision-title.md
+YYYYMM.NNN-short-decision-title.md
 ```
 
-Start numbering at `0001`. Keep each ADR focused on one decision, include the
-context, the decision, and the consequences, and prefer superseding older ADRs
-over rewriting their history.
+Prefix `YYYYMM` represents the year and month when the decision is accepted.
+Sequential numbering `NNN` starts at `000` and resets when `YYYYMM` changes.
+
+Keep each ADR focused on one decision, include the context, the decision, and
+the consequences, and prefer superseding older ADRs over rewriting their
+history.

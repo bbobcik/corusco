@@ -132,6 +132,10 @@ Application code should not write property paths such as:
 "customer.address.city"
 ```
 
+Generated key ids should use stable identity tokens that do not masquerade as
+Java bean paths. For example, prefer generated constants backed by ids such as
+`customer/name` or `customer/credit-limit` over hand-written property paths.
+
 ### 4.4 EDT Confinement by Default
 
 All Swing-observed mutable state is EDT-confined unless explicitly documented otherwise.
@@ -218,7 +222,7 @@ The library should be understandable by an advanced Swing developer by reading t
 
 #### Optional Escape Hatch
 
-A future `swingmvp-reflect` module may provide legacy adapters, but it must not be a dependency of the core modules.
+A future `corusco-reflect` module may provide legacy adapters, but it must not be a dependency of the core modules.
 
 ### 5.2 Annotation Processing Constraints
 
@@ -388,20 +392,20 @@ Every stage must include:
 Initial multi-project Gradle layout:
 
 ```text
-swing-mvp/
+corusco/
   settings.gradle
   build.gradle
   gradle.properties
 
-  swingmvp-core/
-  swingmvp-swing/
-  swingmvp-annotations/
-  swingmvp-processor/
-  swingmvp-test/
-  swingmvp-examples/
+  corusco-core/
+  corusco-swing/
+  corusco-annotations/
+  corusco-processor/
+  corusco-test/
+  corusco-examples/
 ```
 
-### 6.1 `swingmvp-core`
+### 6.1 `corusco-core`
 
 Runtime without Swing dependency where possible.
 
@@ -418,7 +422,7 @@ Responsibilities:
 - detachable values;
 - task abstractions, if not split later.
 
-### 6.2 `swingmvp-swing`
+### 6.2 `corusco-swing`
 
 Swing/AWT integration.
 
@@ -436,7 +440,7 @@ Responsibilities:
 
 Requires `java.desktop`.
 
-### 6.3 `swingmvp-annotations`
+### 6.3 `corusco-annotations`
 
 Compile-time annotation API.
 
@@ -457,7 +461,7 @@ Responsibilities:
 
 Annotations should have minimal runtime retention, preferably `SOURCE` or `CLASS` depending on needs.
 
-### 6.4 `swingmvp-processor`
+### 6.4 `corusco-processor`
 
 Annotation processor.
 
@@ -473,7 +477,7 @@ Responsibilities:
 - generate view contracts and behavior plans where enabled;
 - provide helpful compile-time errors.
 
-### 6.5 `swingmvp-test`
+### 6.5 `corusco-test`
 
 Testing utilities.
 
@@ -487,7 +491,7 @@ Responsibilities:
 - annotation processor test helpers;
 - generated source normalization utilities.
 
-### 6.6 `swingmvp-examples`
+### 6.6 `corusco-examples`
 
 Runnable examples and regression playground.
 
@@ -516,7 +520,7 @@ plugins {
 subprojects {
     apply plugin: 'java-library'
 
-    group = 'dev.example.swingmvp'
+    group = 'cz.auderis.corusco'
     version = '0.1.0-SNAPSHOT'
 
     repositories {
@@ -554,13 +558,13 @@ Version numbers should be pinned in a version catalog or dependency constraints 
 Processor module descriptor for Gradle incremental AP:
 
 ```text
-swingmvp-processor/src/main/resources/META-INF/gradle/incremental.annotation.processors
+corusco-processor/src/main/resources/META-INF/gradle/incremental.annotation.processors
 ```
 
 Initial content:
 
 ```text
-dev.example.swingmvp.processor.SwingMvpProcessor,isolating
+cz.auderis.corusco.processor.CoruscoProcessor,isolating
 ```
 
 If later global registries are generated, split that into a separate aggregating processor or make it opt-in.
@@ -577,13 +581,17 @@ TextFieldKey<O, T>
 ColumnKey<R, V>
 TableKey<R>
 ActionKey
-ComponentKey<C extends JComponent>
+ComponentKey<C>
 ResourceKey<T>
 HelpTopic
 ProblemCode
 BehaviorKey
 MetaKey<T>
 ```
+
+`ComponentKey<C>` is intentionally generic in core. Swing-specific type bounds,
+such as `ComponentKey<JTextField>`, belong in Swing integration code and should
+not make `corusco-core` depend on `java.desktop`.
 
 ### 8.2 Lifecycle
 
@@ -715,8 +723,8 @@ Build the small runtime foundation that every later feature uses.
 7. `DerivedValue<T>`
 8. `MappedValue<A, B>`
 9. `ChangeOrigin`
-10. `ValueChangeEvent<T>` as record/sealed event type
-11. EDT assertion utilities in `swingmvp-swing`
+10. `ValueChangeEvent<T>` as an immutable record event type
+11. EDT assertion utilities in `corusco-swing`
 
 ## Design Notes
 
@@ -1715,20 +1723,20 @@ A feature is done when:
 
 ---
 
-## 14. Immediate First Tasks
+## 14. Immediate Task Sequence
 
-1. Create repository and Gradle multi-project build.
-2. Implement `Subscription`, `SubscriptionScope`, and `Disposable`.
-3. Implement `ReadableValue`, `WritableValue`, and `SimpleValue`.
-4. Implement typed key skeletons.
-5. Implement `Problem`, `ProblemSet`, and `ProblemFilter`.
-6. Implement `FieldModel` and `TextFieldModel` without Swing.
-7. Implement `JTextField` binding manually.
-8. Implement `ViewBehavior`, `BehaviorScope`, and `ValidationBorderBehavior`.
-9. Add the first annotation: `@SwingForm`.
-10. Generate only `CustomerEditFields` for the first processor spike.
-11. Build a tiny `CustomerEdit` example using a mix of generated keys and handwritten model.
-12. Expand generation only after the handwritten APIs feel stable.
+The initial repository, lifecycle, observable value, and typed key tasks are
+complete. The next implementation tasks should proceed in this order:
+
+1. Implement `Problem`, `ProblemSet`, and `ProblemFilter`.
+2. Implement `FieldModel` and `TextFieldModel` without Swing.
+3. Implement `JTextField` binding manually.
+4. Implement `ViewBehavior`, `BehaviorScope`, and `ValidationBorderBehavior`.
+5. Add the first annotation: `@SwingForm`.
+6. Generate only `CustomerEditFields` for the first processor spike.
+7. Build a tiny `CustomerEdit` example using a mix of generated keys and
+   handwritten model.
+8. Expand generation only after the handwritten APIs feel stable.
 
 ---
 

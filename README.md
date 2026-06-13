@@ -4,9 +4,10 @@ Auderis Corusco is an early-stage Swing presentation framework for business
 applications. The project is being built around typed presentation models,
 generated metadata, lifecycle-aware Swing behaviors, and testable UI wiring.
 
-The repository currently contains the engineering baseline only. Runtime APIs,
-annotation processing, bindings, validation, and table support will be added in
-later implementation stages.
+The repository currently contains the engineering baseline plus the first core
+runtime primitives: lifecycle subscriptions, observable values, and typed
+identity keys. Annotation processing, bindings, validation, and table support
+will be added in later implementation stages.
 
 ## Requirements
 
@@ -17,7 +18,7 @@ later implementation stages.
 
 | Module | Purpose |
 | --- | --- |
-| `corusco-core` | Core runtime primitives, introduced in later stages. |
+| `corusco-core` | Core runtime primitives such as lifecycle, values, keys, forms, and problems. |
 | `corusco-swing` | Swing/AWT integration built on the core module. |
 | `corusco-annotations` | Compile-time annotation API. |
 | `corusco-processor` | Annotation processor implementation. |
