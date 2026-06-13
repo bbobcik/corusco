@@ -66,6 +66,7 @@ final class TableSourceWriter {
                 import cz.auderis.corusco.core.table.ColumnDefaults;
                 import cz.auderis.corusco.core.table.ColumnDescriptor;
                 import cz.auderis.corusco.core.table.ColumnKey;
+                import cz.auderis.corusco.core.table.ColumnPersistence;
                 import cz.auderis.corusco.core.table.TableKey;
 
                 /**
@@ -160,6 +161,7 @@ final class TableSourceWriter {
                                     %s.%s,
                                     %s,
                                     %s,
+                                    ColumnPersistence.of(%s, %d, %s),
                                     new ColumnDefaults(%d, %d, %s),
                                     new ColumnCapabilities(%s, %s, %s, %s)
                             );
@@ -182,6 +184,9 @@ final class TableSourceWriter {
                 column.headerConstant,
                 tooltip,
                 helpTopic,
+                stringLiteralOrNull(column.persistenceId),
+                column.minWidth,
+                intLiteral(column.maxWidth),
                 column.width,
                 column.order,
                 Boolean.toString(column.visible),
@@ -312,6 +317,10 @@ final class TableSourceWriter {
 
     private static String stringLiteralOrNull(String value) {
         return value == null ? "null" : "\"" + escape(value) + "\"";
+    }
+
+    private static String intLiteral(int value) {
+        return value == Integer.MAX_VALUE ? "Integer.MAX_VALUE" : Integer.toString(value);
     }
 
     private static String escape(String value) {

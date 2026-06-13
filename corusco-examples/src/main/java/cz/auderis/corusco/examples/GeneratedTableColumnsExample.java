@@ -42,6 +42,11 @@ public final class GeneratedTableColumnsExample {
             result.add(GeneratedCustomerRowTableResources.NAME_TOOLTIP.id());
             result.add(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.helpTopic().id());
 
+            // Persistence metadata is still declarative here. The next table
+            // state stage can use it to map stored state and clamp widths.
+            result.add(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().id());
+            result.add(Integer.toString(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().maxWidth()));
+
             // Primitive record components are exposed through boxed column key
             // classes, while row values still come from direct accessor calls.
             result.add(model.getColumnClass(1).getSimpleName());

@@ -13,7 +13,10 @@ final class TableColumnSpec {
     final String tooltipConstant;
     final String tooltipId;
     final String helpTopicId;
+    final String persistenceId;
     final int width;
+    final int minWidth;
+    final int maxWidth;
     final int order;
     final boolean visible;
     final boolean sortable;
@@ -33,7 +36,10 @@ final class TableColumnSpec {
             String tooltipConstant,
             String tooltipId,
             String helpTopicId,
+            String persistenceId,
             int width,
+            int minWidth,
+            int maxWidth,
             int order,
             boolean visible,
             boolean sortable,
@@ -52,7 +58,10 @@ final class TableColumnSpec {
         this.tooltipConstant = tooltipConstant;
         this.tooltipId = tooltipId;
         this.helpTopicId = helpTopicId;
+        this.persistenceId = persistenceId;
         this.width = width;
+        this.minWidth = minWidth;
+        this.maxWidth = maxWidth;
         this.order = order;
         this.visible = visible;
         this.sortable = sortable;

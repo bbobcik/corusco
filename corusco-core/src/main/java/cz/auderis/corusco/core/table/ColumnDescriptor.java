@@ -15,6 +15,7 @@ import java.util.Objects;
  * @param headerKey header text resource key
  * @param tooltipKey optional header/cell tooltip resource key
  * @param helpTopic optional column help topic
+ * @param persistence persistence metadata
  * @param defaults default presentation state
  * @param capabilities declared column capabilities
  * @param <R> row type
@@ -25,6 +26,7 @@ public record ColumnDescriptor<R, V>(
         ResourceKey<String> headerKey,
         ResourceKey<String> tooltipKey,
         HelpTopic helpTopic,
+        ColumnPersistence persistence,
         ColumnDefaults defaults,
         ColumnCapabilities capabilities
 ) {
@@ -45,7 +47,29 @@ public record ColumnDescriptor<R, V>(
             ColumnDefaults defaults,
             ColumnCapabilities capabilities
     ) {
-        this(key, headerKey, tooltipKey, null, defaults, capabilities);
+        this(key, headerKey, tooltipKey, null, defaultPersistence(key, defaults), defaults, capabilities);
+    }
+
+    /**
+     * Creates column metadata with help-topic metadata and default persistence
+     * metadata derived from the column key and default width.
+     *
+     * @param key typed column key
+     * @param headerKey header text resource key
+     * @param tooltipKey optional tooltip resource key
+     * @param helpTopic optional help topic
+     * @param defaults default presentation state
+     * @param capabilities declared capabilities
+     */
+    public ColumnDescriptor(
+            ColumnKey<R, V> key,
+            ResourceKey<String> headerKey,
+            ResourceKey<String> tooltipKey,
+            HelpTopic helpTopic,
+            ColumnDefaults defaults,
+            ColumnCapabilities capabilities
+    ) {
+        this(key, headerKey, tooltipKey, helpTopic, defaultPersistence(key, defaults), defaults, capabilities);
     }
 
     /**
@@ -55,13 +79,21 @@ public record ColumnDescriptor<R, V>(
      * @param headerKey header text resource key
      * @param tooltipKey optional tooltip resource key
      * @param helpTopic optional help topic
+     * @param persistence persistence metadata
      * @param defaults default presentation state
      * @param capabilities declared capabilities
      */
     public ColumnDescriptor {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(headerKey, "headerKey");
+        Objects.requireNonNull(persistence, "persistence");
         Objects.requireNonNull(defaults, "defaults");
         Objects.requireNonNull(capabilities, "capabilities");
+    }
+
+    private static <R, V> ColumnPersistence defaultPersistence(ColumnKey<R, V> key, ColumnDefaults defaults) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(defaults, "defaults");
+        return ColumnPersistence.of(key.id(), defaults.width(), Integer.MAX_VALUE);
     }
 }

@@ -13,6 +13,8 @@ class GeneratedTableColumnsExampleTest {
                 "generated-customer-table/name/header",
                 "generated-customer-table/name/help",
                 "generated-customer-table/name",
+                "generated-customer-table/customer-name",
+                "320",
                 "Integer",
                 "5",
                 "true",

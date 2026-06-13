@@ -140,6 +140,26 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 failed = true;
                 continue;
             }
+            if (annotationColumn.minWidth() <= 0) {
+                error(component, "@Column minWidth must be greater than zero");
+                failed = true;
+                continue;
+            }
+            if (annotationColumn.minWidth() > annotationColumn.width()) {
+                error(component, "@Column requires minWidth <= width");
+                failed = true;
+                continue;
+            }
+            if (annotationColumn.maxWidth() < annotationColumn.width()) {
+                error(component, "@Column requires width <= maxWidth");
+                failed = true;
+                continue;
+            }
+            if (!annotationColumn.persistenceId().isBlank() && !isStableId(annotationColumn.persistenceId())) {
+                error(component, "@Column persistenceId must contain only letters, digits, dots, underscores, dashes, or slashes");
+                failed = true;
+                continue;
+            }
             if (!annotationColumn.header().isBlank() && !isStableId(annotationColumn.header())) {
                 error(component, "@Column header must contain only letters, digits, dots, underscores, dashes, or slashes");
                 failed = true;
@@ -201,6 +221,7 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         String tooltipId = !column.tooltip().isBlank() ? column.tooltip() : helpTooltip;
         String helpTopicId = help == null || help.topic().isBlank() ? null : help.topic();
         tooltipId = tooltipId.isBlank() ? null : tooltipId;
+        String persistenceId = column.persistenceId().isBlank() ? keyId : column.persistenceId();
         int order = column.order() < 0 ? componentOrder : column.order();
         return new TableColumnSpec(
                 constantName,
@@ -214,7 +235,10 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 tooltipId == null ? null : constantName + "_TOOLTIP",
                 tooltipId,
                 helpTopicId,
+                persistenceId,
                 column.width(),
+                column.minWidth(),
+                column.maxWidth(),
                 order,
                 column.visible(),
                 column.sortable(),
