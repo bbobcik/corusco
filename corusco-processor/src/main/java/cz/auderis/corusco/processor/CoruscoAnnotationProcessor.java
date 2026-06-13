@@ -244,6 +244,7 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         writeResourcesClass(formType, fields);
         writeProblemsClass(formType, fields);
         writeDescriptorsClass(formType, fields);
+        writeFormModelClass(formType, fields);
     }
 
     private FieldSpec fieldSpec(
@@ -263,6 +264,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         String valueClass = classLiteral(component.asType());
         String kind = fieldKind(textField, checkBox, comboBox, dateField);
         boolean textKey = textField || dateField;
+        String modelType = textKey ? "TextFieldModel" : "FieldModel";
+        String converterExpression = converterExpression(component.asType(), textField, dateField);
         Help help = component.getAnnotation(Help.class);
         String tooltipId = null;
         String helpTopicId = null;
@@ -284,6 +287,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 tooltipId,
                 helpTopicId,
                 textKey,
+                modelType,
+                converterExpression,
                 constraints
         );
     }
@@ -296,6 +301,10 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         }
         if (component.getAnnotation(DecimalRange.class) != null && (!field.textField || !isBigDecimal(component.asType()))) {
             error(component, "@DecimalRange is supported only on @TextField BigDecimal components");
+            valid = false;
+        }
+        if (field.textField && field.converterExpression == null) {
+            error(component, "@TextField supports String, Integer, BigDecimal, and LocalDate in this processor stage");
             valid = false;
         }
         if (component.getAnnotation(IntRange.class) != null && (!field.textField || !isInteger(component.asType()))) {
@@ -337,6 +346,26 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             }
         }
         return valid;
+    }
+
+    private String converterExpression(TypeMirror type, boolean textField, boolean dateField) {
+        if (dateField) {
+            return "Converters.localDate(EmptyTextPolicy.NULL_VALUE)";
+        }
+        if (!textField) {
+            return null;
+        }
+        String erased = types.erasure(type).toString();
+        if (type.getKind() == TypeKind.INT) {
+            return "Converters.integer(EmptyTextPolicy.NULL_VALUE)";
+        }
+        return switch (erased) {
+            case "java.lang.String" -> "Converters.string()";
+            case "java.lang.Integer" -> "Converters.integer(EmptyTextPolicy.NULL_VALUE)";
+            case "java.math.BigDecimal" -> "Converters.bigDecimal(EmptyTextPolicy.NULL_VALUE)";
+            case "java.time.LocalDate" -> "Converters.localDate(EmptyTextPolicy.NULL_VALUE)";
+            default -> null;
+        };
     }
 
     private List<ConstraintSpec> constraints(RecordComponentElement component, String keyId, String constantName) {
@@ -545,6 +574,164 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         } catch (IOException e) {
             error(ownerType, "Could not write generated action descriptors: " + e.getMessage());
         }
+    }
+
+    private void writeFormModelClass(TypeElement formType, List<FieldSpec> fields) {
+        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+        String ownerType = formType.getSimpleName().toString();
+        String generatedType = ownerType + "FormModel";
+        String fieldsType = ownerType + "Fields";
+        String descriptorsType = ownerType + "Descriptors";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        try {
+            JavaFileObject sourceFile = filer.createSourceFile(qualifiedName, formType);
+            try (Writer writer = sourceFile.openWriter()) {
+                writePackage(writer, packageName);
+                writer.write("import cz.auderis.corusco.core.convert.Converters;\n");
+                writer.write("import cz.auderis.corusco.core.convert.EmptyTextPolicy;\n");
+                writer.write("import cz.auderis.corusco.core.form.AbstractFormModel;\n");
+                writer.write("import cz.auderis.corusco.core.form.FieldModel;\n");
+                writer.write("import cz.auderis.corusco.core.form.TextFieldModel;\n");
+                writer.write("import cz.auderis.corusco.core.meta.FieldDescriptor;\n");
+                writer.write("import cz.auderis.corusco.core.problem.ProblemSet;\n");
+                writer.write("import cz.auderis.corusco.core.validation.RuleSet;\n");
+                writer.write("import cz.auderis.corusco.core.validation.Validators;\n");
+                writer.write("import java.math.BigDecimal;\n");
+                writer.write("import java.util.List;\n");
+                writer.write("import java.util.regex.Pattern;\n\n");
+                writer.write("/**\n");
+                writer.write(" * Generated form model for {@link " + ownerType + "}.\n");
+                writer.write(" */\n");
+                writer.write("public final class " + generatedType + " extends AbstractFormModel<" + ownerType + "> {\n\n");
+                for (FieldSpec field : fields) {
+                    writer.write("    /**\n");
+                    writer.write("     * Field model for {@code " + field.keyId + "}.\n");
+                    writer.write("     */\n");
+                    writer.write("    public final " + field.modelType + "<" + field.ownerType + ", " + field.valueType + "> "
+                            + field.componentName + ";\n\n");
+                }
+                writer.write("    private final RuleSet<" + generatedType + "> rules;\n\n");
+                writer.write("    /**\n");
+                writer.write("     * Creates a generated form model.\n");
+                writer.write("     *\n");
+                writer.write("     * @param original original immutable record\n");
+                writer.write("     */\n");
+                writer.write("    public " + generatedType + "(" + ownerType + " original) {\n");
+                writer.write("        java.util.Objects.requireNonNull(original, \"original\");\n");
+                for (FieldSpec field : fields) {
+                    writeFieldModelInitialization(writer, field, fieldsType);
+                }
+                writer.write("        this.rules = buildRules();\n");
+                writer.write("    }\n\n");
+                writeDescriptorList(writer, fields, descriptorsType);
+                writeBuildRules(writer, fields, generatedType, fieldsType);
+                writer.write("    @Override\n");
+                writer.write("    protected ProblemSet validationProblems() {\n");
+                writer.write("        return rules.validateAll(this);\n");
+                writer.write("    }\n\n");
+                writer.write("    @Override\n");
+                writer.write("    protected " + ownerType + " createResult() {\n");
+                writer.write("        return new " + ownerType + "(\n");
+                for (int i = 0; i < fields.size(); i++) {
+                    FieldSpec field = fields.get(i);
+                    String suffix = i == fields.size() - 1 ? "\n" : ",\n";
+                    writer.write("                " + resultValueExpression(field) + suffix);
+                }
+                writer.write("        );\n");
+                writer.write("    }\n");
+                writer.write("}\n");
+            }
+        } catch (IOException e) {
+            error(formType, "Could not write generated form model: " + e.getMessage());
+        }
+    }
+
+    private void writeFieldModelInitialization(Writer writer, FieldSpec field, String fieldsType) throws IOException {
+        if ("TextFieldModel".equals(field.modelType)) {
+            writer.write("        this." + field.componentName + " = register(new TextFieldModel<>(\n");
+            writer.write("                " + fieldsType + "." + field.constantName + ",\n");
+            writer.write("                original." + field.componentName + "(),\n");
+            writer.write("                " + field.converterExpression + "\n");
+            writer.write("        ));\n");
+        } else {
+            writer.write("        this." + field.componentName + " = register(new FieldModel<>(\n");
+            writer.write("                " + fieldsType + "." + field.constantName + ",\n");
+            writer.write("                original." + field.componentName + "()\n");
+            writer.write("        ));\n");
+        }
+    }
+
+    private void writeDescriptorList(Writer writer, List<FieldSpec> fields, String descriptorsType) throws IOException {
+        writer.write("    /**\n");
+        writer.write("     * Returns generated field descriptors in record component order.\n");
+        writer.write("     *\n");
+        writer.write("     * @return descriptor list\n");
+        writer.write("     */\n");
+        writer.write("    public List<FieldDescriptor<?, ?>> descriptors() {\n");
+        writer.write("        return List.of(\n");
+        for (int i = 0; i < fields.size(); i++) {
+            String suffix = i == fields.size() - 1 ? "\n" : ",\n";
+            writer.write("                " + descriptorsType + "." + fields.get(i).constantName + suffix);
+        }
+        writer.write("        );\n");
+        writer.write("    }\n\n");
+    }
+
+    private void writeBuildRules(
+            Writer writer,
+            List<FieldSpec> fields,
+            String generatedType,
+            String fieldsType
+    ) throws IOException {
+        writer.write("    private static RuleSet<" + generatedType + "> buildRules() {\n");
+        writer.write("        RuleSet.Builder<" + generatedType + "> rules = RuleSet.builder();\n");
+        for (FieldSpec field : fields) {
+            for (ConstraintSpec constraint : field.constraints) {
+                writeRule(writer, field, constraint, fieldsType);
+            }
+        }
+        writer.write("        return rules.build();\n");
+        writer.write("    }\n\n");
+    }
+
+    private void writeRule(
+            Writer writer,
+            FieldSpec field,
+            ConstraintSpec constraint,
+            String fieldsType
+    ) throws IOException {
+        String keyExpression = "TextFieldModel".equals(field.modelType)
+                ? fieldsType + "." + field.constantName + ".asFieldKey()"
+                : fieldsType + "." + field.constantName;
+        String accessor = "model -> model." + field.componentName;
+        String validator = validatorExpression(constraint);
+        if ("TextFieldModel".equals(field.modelType)) {
+            writer.write("        rules.field(" + keyExpression + ", " + accessor + ", " + validator + ");\n");
+        } else {
+            writer.write("        rules.semanticField(" + keyExpression + ", " + accessor + ", " + validator + ");\n");
+        }
+    }
+
+    private String validatorExpression(ConstraintSpec constraint) {
+        String message = stringLiteralOrNull(constraint.problemId);
+        return switch (constraint.kind) {
+            case "REQUIRED" -> "Validators.required(" + message + ")";
+            case "LENGTH" -> "Validators.length(" + constraint.min + ", " + constraint.max + ", " + message + ")";
+            case "DECIMAL_RANGE" -> "Validators.decimalRange("
+                    + bigDecimalOrNull(constraint.min) + ", " + bigDecimalOrNull(constraint.max) + ", " + message + ")";
+            case "INT_RANGE" -> "Validators.integerRange("
+                    + constraint.min + ", " + constraint.max + ", " + message + ")";
+            case "REGEX" -> "Validators.regex(Pattern.compile("
+                    + stringLiteralOrNull(constraint.min) + "), " + message + ")";
+            default -> throw new IllegalStateException("Unknown constraint kind: " + constraint.kind);
+        };
+    }
+
+    private String resultValueExpression(FieldSpec field) {
+        if ("TextFieldModel".equals(field.modelType)) {
+            return field.componentName + ".value()";
+        }
+        return field.componentName + ".value().value()";
     }
 
     private void writeAction(Writer writer, ActionSpec action) throws IOException {
@@ -797,6 +984,10 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private static String bigDecimalOrNull(String value) {
+        return value == null ? "null" : "new BigDecimal(" + stringLiteralOrNull(value) + ")";
+    }
+
     private record FieldSpec(
             String constantName,
             String keyId,
@@ -810,6 +1001,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             String tooltipId,
             String helpTopicId,
             boolean textField,
+            String modelType,
+            String converterExpression,
             List<ConstraintSpec> constraints
     ) {
     }

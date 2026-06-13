@@ -120,6 +120,25 @@ class CoruscoAnnotationProcessorTest {
                 "public static final FieldDescriptor<CustomerEdit, java.lang.Boolean> ACTIVE",
                 "FieldKind.CHECK_BOX"
         );
+        String formModel = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditFormModel.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(formModel).contains(
+                "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>",
+                "public final TextFieldModel<CustomerEdit, java.lang.String> name;",
+                "public final TextFieldModel<CustomerEdit, java.math.BigDecimal> creditLimit;",
+                "public final FieldModel<CustomerEdit, demo.CustomerType> type;",
+                "this.name = register(new TextFieldModel<>(",
+                "Converters.string()",
+                "Converters.bigDecimal(EmptyTextPolicy.NULL_VALUE)",
+                "Converters.localDate(EmptyTextPolicy.NULL_VALUE)",
+                "rules.field(CustomerEditFields.NAME.asFieldKey(), model -> model.name, Validators.required(\"customer/name/required\"));",
+                "rules.field(CustomerEditFields.AGE.asFieldKey(), model -> model.age, Validators.integerRange(0, 120, \"customer/age/int-range\"));",
+                "return new CustomerEdit(",
+                "name.value()",
+                "active.value().value()"
+        );
     }
 
     @Test
@@ -314,6 +333,24 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages()).contains("@IntRange requires min <= max");
+    }
+
+    @Test
+    void rejectsUnsupportedTextFieldTypeForGeneratedFormModel() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.TextField;
+
+                @SwingForm(id = "customer")
+                public record CustomerEdit(@TextField Double score) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages())
+                .contains("@TextField supports String, Integer, BigDecimal, and LocalDate in this processor stage");
     }
 
     @Test
