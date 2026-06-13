@@ -49,6 +49,11 @@ public final class StandardBehaviorKeys {
      */
     public static final BehaviorKey HELP_ON_F1 = BehaviorKey.of("interaction/help-on-f1");
 
+    /**
+     * Focus-scoped status-bar text behavior.
+     */
+    public static final BehaviorKey STATUS_TEXT = BehaviorKey.of("interaction/status-text");
+
     private StandardBehaviorKeys() {
     }
 }

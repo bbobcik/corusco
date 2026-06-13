@@ -13,6 +13,7 @@ import cz.auderis.corusco.core.problem.ProblemSeverity;
 import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.value.ChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
+import java.awt.event.FocusEvent;
 import java.math.BigDecimal;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -125,6 +126,50 @@ class BindingFactoryTest {
     }
 
     @Test
+    void statusTextPublishesWhileFocusedAndRestoresPreviousText() {
+        SwingEdt.runAndWait(() -> {
+            JTextField field = new JTextField();
+            JLabel status = new JLabel("Ready");
+            int initialFocusListenerCount = field.getFocusListeners().length;
+            Binding binding = BindingFactory.statusText(field, status, "Enter customer name");
+
+            focusGained(field);
+            assertThat(status.getText()).isEqualTo("Enter customer name");
+
+            focusLost(field);
+            assertThat(status.getText()).isEqualTo("Ready");
+
+            binding.close();
+            assertThat(field.getFocusListeners()).hasSize(initialFocusListenerCount);
+        });
+    }
+
+    @Test
+    void observableStatusTextUpdatesOnlyWhileFocusedAndRestoresOnClose() {
+        SwingEdt.runAndWait(() -> {
+            JTextField field = new JTextField();
+            JLabel status = new JLabel("Idle");
+            SimpleValue<String> statusText = SimpleValue.of("Initial guidance");
+            Binding binding = BindingFactory.statusText(field, status, statusText);
+
+            statusText.setValue("Changed before focus", ChangeOrigin.MODEL);
+            assertThat(status.getText()).isEqualTo("Idle");
+
+            focusGained(field);
+            assertThat(status.getText()).isEqualTo("Changed before focus");
+
+            statusText.setValue("Changed while focused", ChangeOrigin.MODEL);
+            assertThat(status.getText()).isEqualTo("Changed while focused");
+
+            binding.close();
+            assertThat(status.getText()).isEqualTo("Idle");
+
+            statusText.setValue("Ignored after close", ChangeOrigin.MODEL);
+            assertThat(status.getText()).isEqualTo("Idle");
+        });
+    }
+
+    @Test
     void validationTooltipAndBorderReflectProblemStateAndRestoreOnClose() {
         SwingEdt.runAndWait(() -> {
             TextFieldModel<CustomerEdit, BigDecimal> model =
@@ -228,5 +273,15 @@ class BindingFactoryTest {
 
     private static Problem problem(ProblemCode code, ProblemSeverity severity, String message) {
         return Problem.validation(code, severity, ProblemTarget.form(), message);
+    }
+
+    private static void focusGained(JTextField field) {
+        field.getFocusListeners()[field.getFocusListeners().length - 1]
+                .focusGained(new FocusEvent(field, FocusEvent.FOCUS_GAINED));
+    }
+
+    private static void focusLost(JTextField field) {
+        field.getFocusListeners()[field.getFocusListeners().length - 1]
+                .focusLost(new FocusEvent(field, FocusEvent.FOCUS_LOST));
     }
 }
