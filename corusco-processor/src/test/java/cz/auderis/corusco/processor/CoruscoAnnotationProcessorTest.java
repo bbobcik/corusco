@@ -316,6 +316,89 @@ class CoruscoAnnotationProcessorTest {
         assertThat(result.messages()).contains("@IntRange requires min <= max");
     }
 
+    @Test
+    void generatesActionDescriptorsForUiActionMethods() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.UiAction;
+
+                public final class CustomerEdit {
+                    @UiAction(
+                            id = "customer/save",
+                            text = "customer/save/text",
+                            tooltip = "customer/save/tooltip",
+                            mnemonic = 83,
+                            acceleratorKey = 83,
+                            acceleratorModifiers = 128
+                    )
+                    public void save() {
+                    }
+
+                    @UiAction(id = "customer/active", selectable = true)
+                    void toggleActive() {
+                    }
+                }
+                """);
+
+        assertThat(result.success()).isTrue();
+        String generated = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditActions.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(generated).contains(
+                "public final class CustomerEditActions",
+                "public static final ActionKey SAVE_KEY",
+                "ActionKey.of(\"customer/save\")",
+                "ResourceKey.of(\"customer/save/text\", String.class)",
+                "ResourceKey.of(\"customer/save/tooltip\", String.class)",
+                "ActionDescriptor.action(SAVE_KEY, SAVE_TEXT).withTooltip(SAVE_TOOLTIP).withMnemonic(83)"
+                        + ".withAccelerator(AcceleratorDescriptor.of(83, 128))",
+                "public static final ActionKey TOGGLE_ACTIVE_KEY",
+                "ActionDescriptor.toggle(TOGGLE_ACTIVE_KEY, TOGGLE_ACTIVE_TEXT)"
+        );
+    }
+
+    @Test
+    void rejectsUiActionMethodsWithParameters() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.UiAction;
+
+                public final class CustomerEdit {
+                    @UiAction(id = "customer/save")
+                    void save(String name) {
+                    }
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@UiAction methods must not declare parameters");
+    }
+
+    @Test
+    void rejectsDuplicateUiActionIdsPerOwner() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.UiAction;
+
+                public final class CustomerEdit {
+                    @UiAction(id = "customer/save")
+                    void save() {
+                    }
+
+                    @UiAction(id = "customer/save")
+                    void saveAgain() {
+                    }
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Duplicate @UiAction id in CustomerEdit: customer/save");
+    }
+
     private CompilationResult compile(String source) throws Exception {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         assertThat(compiler).as("system Java compiler").isNotNull();
