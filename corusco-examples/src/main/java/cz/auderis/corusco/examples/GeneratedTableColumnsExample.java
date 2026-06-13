@@ -1,12 +1,15 @@
 package cz.auderis.corusco.examples;
 
 import ca.odell.glazedlists.BasicEventList;
+import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.glazedlists.GlazedListsAdapters;
 import cz.auderis.corusco.glazedlists.GlazedObservableList;
+import cz.auderis.corusco.swing.binding.BindingScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import cz.auderis.corusco.swing.table.ObservableTableModel;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.JTable;
 
 /**
  * Demonstrates generated table column metadata from annotations.
@@ -31,39 +34,56 @@ public final class GeneratedTableColumnsExample {
             )));
             GlazedObservableList<GeneratedCustomerRow> rows = GlazedListsAdapters.observableList(eventList);
 
-            // The generated descriptor keeps table identity, visual defaults,
-            // and typed row accessors together without JavaBeans property names.
-            ObservableTableModel<GeneratedCustomerRow> model = GeneratedCustomerRowTableDescriptor.tableModel(rows);
-            result.add(GeneratedCustomerRowColumns.NAME_KEY.id());
-            result.add(model.getColumnName(0));
+            // Generated binding helpers install the descriptor-backed model and
+            // put model cleanup under the same lifecycle as other Swing bindings.
+            JTable table = new JTable();
+            try (BindingScope scope = new BindingScope()) {
+                ObservableTableModel<GeneratedCustomerRow> model =
+                        GeneratedCustomerRowTableBindings.installModel(table, rows, scope);
 
-            // Table resource keys live in a generated companion class, while
-            // help topics travel with the descriptor for later help behaviors.
-            result.add(GeneratedCustomerRowTableResources.NAME_TOOLTIP.id());
-            result.add(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.helpTopic().id());
+                result.add(GeneratedCustomerRowColumns.NAME_KEY.id());
+                result.add(model.getColumnName(0));
 
-            // Persistence metadata is still declarative here. The next table
-            // state stage can use it to map stored state and clamp widths.
-            result.add(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().id());
-            result.add(Integer.toString(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().maxWidth()));
+                // Table resource keys live in a generated companion class,
+                // while help topics travel with the descriptor for later help
+                // behaviors.
+                result.add(GeneratedCustomerRowTableResources.NAME_TOOLTIP.id());
+                result.add(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.helpTopic().id());
 
-            // Primitive record components are exposed through boxed column key
-            // classes, while row values still come from direct accessor calls.
-            result.add(model.getColumnClass(1).getSimpleName());
-            result.add(model.getValueAt(1, 1).toString());
+                // Persistence metadata is still declarative here. The next
+                // table state stage can use it to map stored state and clamp
+                // widths.
+                result.add(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().id());
+                result.add(Integer.toString(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.persistence().maxWidth()));
 
-            // Editing a generated column calls a generated updater helper that
-            // creates a replacement record with the edited component value.
-            result.add(Boolean.toString(model.isCellEditable(0, 0)));
-            model.setValueAt("Acme Corp", 0, 0);
-            result.add(eventList.get(0).name());
+                // Primitive record components are exposed through boxed column
+                // key classes, while row values still come from direct accessor
+                // calls.
+                result.add(model.getColumnClass(1).getSimpleName());
+                result.add(model.getValueAt(1, 1).toString());
 
-            // A Glazed Lists EventList is a first-class row source because the
-            // adapter implements ObservableList; generated descriptors do not
-            // need a separate table-model path for mature EventList pipelines.
-            eventList.add(new GeneratedCustomerRow("Initech", 1));
-            result.add(Integer.toString(model.getRowCount()));
-            model.close();
+                // Editing a generated column calls a generated updater helper
+                // that creates a replacement record with the edited component
+                // value.
+                result.add(Boolean.toString(model.isCellEditable(0, 0)));
+                model.setValueAt("Acme Corp", 0, 0);
+                result.add(eventList.get(0).name());
+
+                // Selection helpers delegate to the runtime binding so sorted
+                // JTable view rows still map back to stable model-row values.
+                SimpleValue<Integer> selectedModelRow = SimpleValue.empty();
+                SimpleValue<GeneratedCustomerRow> selectedRow = SimpleValue.empty();
+                GeneratedCustomerRowTableBindings.bindSelection(table, model, selectedModelRow, selectedRow, scope);
+                table.getSelectionModel().setSelectionInterval(1, 1);
+                result.add(selectedModelRow.value() + ":" + selectedRow.value().name());
+
+                // A Glazed Lists EventList is a first-class row source because
+                // the adapter implements ObservableList; generated descriptors
+                // do not need a separate table-model path for mature EventList
+                // pipelines.
+                eventList.add(new GeneratedCustomerRow("Initech", 1));
+                result.add(Integer.toString(model.getRowCount()));
+            }
             rows.close();
         });
         return List.copyOf(result);

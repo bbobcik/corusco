@@ -464,6 +464,23 @@ class CoruscoAnnotationProcessorTest {
                 "CustomerEditColumns.ORDERS",
                 "public static ObservableTableModel<CustomerEdit> tableModel(ObservableList<CustomerEdit> rows)"
         );
+        String bindings = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditTableBindings.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(bindings).contains(
+                "public final class CustomerEditTableBindings",
+                "public static ObservableTableModel<CustomerEdit> installModel(",
+                "ObservableList<CustomerEdit> rows",
+                "BindingScope scope",
+                "ObservableTableModel<CustomerEdit> model = CustomerEditTableDescriptor.tableModel(rows)",
+                "table.setModel(model)",
+                "scope.add(model)",
+                "public static TableSelectionBinding<CustomerEdit> bindSelection(",
+                "WritableValue<Integer> selectedModelRow",
+                "WritableValue<CustomerEdit> selectedRow",
+                "TableSelectionBinding.bind(table, model, selectedModelRow, selectedRow)"
+        );
     }
 
     @Test
