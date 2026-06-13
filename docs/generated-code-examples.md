@@ -25,6 +25,11 @@ Each runtime example has a matching test under `corusco-examples/src/test`.
 Those tests assert behavior through public APIs, not private generated
 implementation details.
 
+`CustomerManagementExample` composes the generated form/table/action pieces
+with dialog controllers, table state, validation summary, invoice-line editing,
+an address sub-dialog, and async VAT validation into one headless miniature
+business flow.
+
 ## Form Metadata
 
 `GeneratedCustomerEdit` is a compact annotated record:
