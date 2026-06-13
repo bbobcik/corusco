@@ -1,0 +1,91 @@
+package cz.auderis.corusco.core.value;
+
+import cz.auderis.corusco.core.lifecycle.Subscription;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Basic mutable {@link WritableValue} implementation.
+ *
+ * <p>Mutation and listener dispatch are synchronous. This class is not
+ * synchronized and is intended for single-owner presentation state. Equal
+ * values, including equal {@code null} values, do not emit events. Listener
+ * dispatch uses a snapshot so removing a listener during dispatch does not skip
+ * or duplicate unrelated listeners.</p>
+ *
+ * @param <T> value type
+ */
+public class SimpleValue<T> implements WritableValue<T> {
+
+    private final List<ValueChangeListener<T>> listeners = new ArrayList<>();
+    private T value;
+
+    /**
+     * Creates a value with an initial value.
+     *
+     * @param initialValue initial value, possibly {@code null}
+     */
+    public SimpleValue(T initialValue) {
+        this.value = initialValue;
+    }
+
+    /**
+     * Creates a value with a {@code null} initial value.
+     *
+     * @param <T> value type
+     * @return a value initialized to {@code null}
+     */
+    public static <T> SimpleValue<T> empty() {
+        return new SimpleValue<>(null);
+    }
+
+    /**
+     * Creates a value with an initial value.
+     *
+     * @param initialValue initial value, possibly {@code null}
+     * @param <T> value type
+     * @return a value initialized to {@code initialValue}
+     */
+    public static <T> SimpleValue<T> of(T initialValue) {
+        return new SimpleValue<>(initialValue);
+    }
+
+    @Override
+    public T value() {
+        return value;
+    }
+
+    @Override
+    public void setValue(T newValue, ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
+        T oldValue = value;
+        if (Objects.equals(oldValue, newValue)) {
+            return;
+        }
+        value = newValue;
+        fireChanged(oldValue, newValue, origin);
+    }
+
+    @Override
+    public Subscription subscribe(ValueChangeListener<T> listener) {
+        Objects.requireNonNull(listener, "listener");
+        listeners.add(listener);
+        return Subscription.of(() -> listeners.remove(listener));
+    }
+
+    /**
+     * Emits an already accepted value change to current listeners.
+     *
+     * @param oldValue previous value
+     * @param newValue new value
+     * @param origin change origin
+     */
+    protected final void fireChanged(T oldValue, T newValue, ChangeOrigin origin) {
+        ValueChangeEvent<T> event = new ValueChangeEvent<>(this, oldValue, newValue, origin);
+        List<ValueChangeListener<T>> snapshot = List.copyOf(listeners);
+        for (ValueChangeListener<T> listener : snapshot) {
+            listener.valueChanged(event);
+        }
+    }
+}
