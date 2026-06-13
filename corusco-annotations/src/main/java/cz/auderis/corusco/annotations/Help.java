@@ -6,15 +6,18 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Declares optional help metadata for a generated field descriptor.
+ * Declares optional help metadata for generated field and table-column
+ * descriptors.
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)
 public @interface Help {
 
     /**
-     * Stable tooltip resource id. Empty means use the default generated tooltip
-     * id when a descriptor needs tooltip metadata.
+     * Stable tooltip resource id. For generated form fields, empty means use
+     * the default generated tooltip id when a descriptor needs tooltip
+     * metadata. For generated table columns, empty means no tooltip unless
+     * {@link Column#tooltip()} declares one.
      *
      * @return tooltip resource id
      */

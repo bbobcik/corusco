@@ -56,6 +56,7 @@ commit has been created.
 | [COR-025](COR-025-add-table-cell-problem-decoration.md) | `COR-025 Add table cell problem decoration` | Stage 12, table cell problem/decorator slice |
 | [COR-026](COR-026-add-generated-table-columns.md) | `COR-026 Add generated table columns` | Stage 13, generated table column metadata slice |
 | [COR-027](COR-027-add-generated-table-row-updaters.md) | `COR-027 Add generated table row updaters` | Stage 13, editable generated table column slice |
+| [COR-028](COR-028-add-generated-table-resources.md) | `COR-028 Add generated table resources` | Stage 13, generated table resources/help slice |
 
 ## Stage Completion Rule
 

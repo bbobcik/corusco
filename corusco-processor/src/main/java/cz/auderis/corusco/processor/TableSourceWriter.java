@@ -23,17 +23,44 @@ final class TableSourceWriter {
     }
 
     void writeTableSources(TypeElement tableType, TableSpec table) {
+        writeTableResourcesClass(tableType, table);
         writeColumnsClass(tableType, table);
         writeTableDescriptorClass(tableType, table);
+    }
+
+    private void writeTableResourcesClass(TypeElement tableType, TableSpec table) {
+        String packageName = elements.getPackageOf(tableType).getQualifiedName().toString();
+        String generatedType = table.ownerType + "TableResources";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        StringBuilder source = sourceBuilder(packageName);
+        source.append("""
+                import cz.auderis.corusco.core.key.ResourceKey;
+
+                /**
+                 * Generated table resource keys for {@link %s}.
+                 */
+                public final class %s {
+
+                """.formatted(table.ownerType, generatedType));
+        source.append(privateConstructorSource(generatedType));
+        for (TableColumnSpec column : table.columns) {
+            source.append(resourceKeySource(column.headerConstant, column.headerId));
+            if (column.tooltipConstant != null) {
+                source.append(resourceKeySource(column.tooltipConstant, column.tooltipId));
+            }
+        }
+        source.append("}\n");
+        writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table resource keys");
     }
 
     private void writeColumnsClass(TypeElement tableType, TableSpec table) {
         String packageName = elements.getPackageOf(tableType).getQualifiedName().toString();
         String generatedType = table.ownerType + "Columns";
+        String resourcesType = table.ownerType + "TableResources";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         StringBuilder source = sourceBuilder(packageName);
         source.append("""
-                import cz.auderis.corusco.core.key.ResourceKey;
+                import cz.auderis.corusco.core.key.HelpTopic;
                 import cz.auderis.corusco.core.table.Column;
                 import cz.auderis.corusco.core.table.ColumnCapabilities;
                 import cz.auderis.corusco.core.table.ColumnDefaults;
@@ -57,7 +84,7 @@ final class TableSourceWriter {
 
                 """.formatted(table.id, table.ownerType, stringLiteralOrNull(table.id), table.ownerType));
         for (TableColumnSpec column : table.columns) {
-            source.append(columnSource(table, column));
+            source.append(columnSource(table, resourcesType, column));
         }
         source.append("}\n");
         writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table columns");
@@ -113,8 +140,9 @@ final class TableSourceWriter {
         writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table descriptor");
     }
 
-    private String columnSource(TableSpec table, TableColumnSpec column) {
-        String tooltip = column.tooltipConstant == null ? "null" : column.tooltipConstant;
+    private String columnSource(TableSpec table, String resourcesType, TableColumnSpec column) {
+        String tooltip = column.tooltipConstant == null ? "null" : resourcesType + "." + column.tooltipConstant;
+        String helpTopic = column.helpTopicId == null ? "null" : "HelpTopic.of(" + stringLiteralOrNull(column.helpTopicId) + ")";
         String columnFactory = column.editable ? editableColumnSource(column) : readOnlyColumnSource(column);
         return """
                     /**
@@ -124,18 +152,12 @@ final class TableSourceWriter {
                             ColumnKey.of(%s, %s.class, %s);
 
                     /**
-                     * Header resource key for {@code %s}.
-                     */
-                    public static final ResourceKey<String> %s =
-                            ResourceKey.of(%s, String.class);
-
-                %s\
-                    /**
                      * Column descriptor for {@code %s}.
                      */
                     public static final ColumnDescriptor<%s, %s> %s_DESCRIPTOR =
                             new ColumnDescriptor<>(
                                     %s_KEY,
+                                    %s.%s,
                                     %s,
                                     %s,
                                     new ColumnDefaults(%d, %d, %s),
@@ -151,17 +173,15 @@ final class TableSourceWriter {
                 stringLiteralOrNull(column.keyId),
                 column.ownerType,
                 column.valueClass,
-                column.headerId,
-                column.headerConstant,
-                stringLiteralOrNull(column.headerId),
-                tooltipSource(column),
                 column.keyId,
                 column.ownerType,
                 column.valueType,
                 column.constantName,
                 column.constantName,
+                resourcesType,
                 column.headerConstant,
                 tooltip,
+                helpTopic,
                 column.width,
                 column.order,
                 Boolean.toString(column.visible),
@@ -243,18 +263,15 @@ final class TableSourceWriter {
         );
     }
 
-    private String tooltipSource(TableColumnSpec column) {
-        if (column.tooltipConstant == null) {
-            return "";
-        }
+    private static String resourceKeySource(String constantName, String resourceId) {
         return """
                     /**
-                     * Tooltip resource key for {@code %s}.
+                     * Resource key for {@code %s}.
                      */
                     public static final ResourceKey<String> %s =
                             ResourceKey.of(%s, String.class);
 
-                """.formatted(column.tooltipId, column.tooltipConstant, stringLiteralOrNull(column.tooltipId));
+                """.formatted(resourceId, constantName, stringLiteralOrNull(resourceId));
     }
 
     private static StringBuilder sourceBuilder(String packageName) {
