@@ -285,4 +285,7 @@ source records, generated companion classes, and review checklist.
 - No generated option-source metadata for combo boxes yet.
 - No generated command method invocation; actions currently generate
   descriptors.
-- No JPMS module descriptors or published artifact contract yet.
+- No JPMS module descriptors yet.
+- Generated class names, annotation members, generated key ids, and generated
+  descriptor shapes are part of the preview compatibility surface described in
+  [Release Policy](release-policy.md).

@@ -186,14 +186,16 @@ tests, example regression tests, and local verification commands.
 
 ## Current Limits
 
-The project is still pre-preview. The following areas are intentionally not
-settled yet:
+The project is still pre-preview. The following areas are intentionally still
+being finalized:
 
-- JPMS module descriptors and publishing metadata;
-- full user-facing guide set;
-- binary compatibility policy;
-- preview release packaging;
+- JPMS module descriptors;
+- automated binary compatibility checks;
+- final preview release tagging;
 - any optional legacy reflection adapter.
+
+Local Maven publication, source/Javadoc artifacts, and the preview
+compatibility policy are now documented in [Release Policy](release-policy.md).
 
 The active rule remains the same: keep runtime APIs typed and explicit, keep
 generated code readable, and keep Swing behavior observable to an experienced
