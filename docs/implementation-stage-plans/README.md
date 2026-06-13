@@ -86,6 +86,7 @@ commit has been created.
 | [COR-055](COR-055-add-dialog-result-and-form-controller.md) | `COR-055 Add dialog result and form controller` | Stage 18, dialog result and form controller foundation slice |
 | [COR-056](COR-056-add-dirty-cancel-confirmation.md) | `COR-056 Add dirty-cancel confirmation` | Stage 18, dirty-cancel confirmation hook slice |
 | [COR-057](COR-057-add-dialog-keyboard-bindings.md) | `COR-057 Add dialog keyboard bindings` | Stage 18, ESC and default-button handling slice |
+| [COR-058](COR-058-add-dialog-validation-summary.md) | `COR-058 Add dialog validation summary` | Stage 18, validation summary and focus-first-problem slice |
 
 ## Stage Completion Rule
 
