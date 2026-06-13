@@ -1,5 +1,6 @@
 package cz.auderis.corusco.core.table;
 
+import cz.auderis.corusco.core.key.HelpTopic;
 import cz.auderis.corusco.core.key.ResourceKey;
 import java.util.Objects;
 
@@ -13,6 +14,7 @@ import java.util.Objects;
  * @param key typed column key
  * @param headerKey header text resource key
  * @param tooltipKey optional header/cell tooltip resource key
+ * @param helpTopic optional column help topic
  * @param defaults default presentation state
  * @param capabilities declared column capabilities
  * @param <R> row type
@@ -22,9 +24,29 @@ public record ColumnDescriptor<R, V>(
         ColumnKey<R, V> key,
         ResourceKey<String> headerKey,
         ResourceKey<String> tooltipKey,
+        HelpTopic helpTopic,
         ColumnDefaults defaults,
         ColumnCapabilities capabilities
 ) {
+
+    /**
+     * Creates column metadata without help-topic metadata.
+     *
+     * @param key typed column key
+     * @param headerKey header text resource key
+     * @param tooltipKey optional tooltip resource key
+     * @param defaults default presentation state
+     * @param capabilities declared capabilities
+     */
+    public ColumnDescriptor(
+            ColumnKey<R, V> key,
+            ResourceKey<String> headerKey,
+            ResourceKey<String> tooltipKey,
+            ColumnDefaults defaults,
+            ColumnCapabilities capabilities
+    ) {
+        this(key, headerKey, tooltipKey, null, defaults, capabilities);
+    }
 
     /**
      * Creates column metadata.
@@ -32,6 +54,7 @@ public record ColumnDescriptor<R, V>(
      * @param key typed column key
      * @param headerKey header text resource key
      * @param tooltipKey optional tooltip resource key
+     * @param helpTopic optional help topic
      * @param defaults default presentation state
      * @param capabilities declared capabilities
      */

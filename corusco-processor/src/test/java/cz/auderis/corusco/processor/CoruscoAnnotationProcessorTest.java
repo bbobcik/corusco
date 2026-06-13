@@ -382,11 +382,14 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.Column;
+                import cz.auderis.corusco.annotations.Help;
                 import cz.auderis.corusco.annotations.SwingTable;
 
                 @SwingTable(id = "customer/search")
                 public record CustomerEdit(
-                        @Column(width = 180, tooltip = "customer/search/name/help", editable = true) String name,
+                        @Column(width = 180, editable = true)
+                        @Help(tooltip = "customer/search/name/help", topic = "customer/search/name")
+                        String name,
                         String ignored,
                         @Column(
                                 id = "customer/search/orders",
@@ -412,8 +415,9 @@ class CoruscoAnnotationProcessorTest {
                 "TableKey.of(\"customer/search\", CustomerEdit.class)",
                 "public static final ColumnKey<CustomerEdit, java.lang.String> NAME_KEY",
                 "ColumnKey.of(\"customer/search/name\", CustomerEdit.class, java.lang.String.class)",
-                "ResourceKey.of(\"customer/search/name/header\", String.class)",
-                "ResourceKey.of(\"customer/search/name/help\", String.class)",
+                "CustomerEditTableResources.NAME_HEADER",
+                "CustomerEditTableResources.NAME_TOOLTIP",
+                "HelpTopic.of(\"customer/search/name\")",
                 "new ColumnDefaults(180, 0, true)",
                 "new ColumnCapabilities(true, true, true, true)",
                 "Column.editable(NAME_DESCRIPTOR, CustomerEdit::name, CustomerEditColumns::updateName)",
@@ -424,10 +428,20 @@ class CoruscoAnnotationProcessorTest {
                 "row.orders()",
                 "public static final ColumnKey<CustomerEdit, java.lang.Integer> ORDERS_KEY",
                 "ColumnKey.of(\"customer/search/orders\", CustomerEdit.class, java.lang.Integer.class)",
-                "ResourceKey.of(\"customer/search/orders/title\", String.class)",
+                "CustomerEditTableResources.ORDERS_HEADER",
                 "new ColumnDefaults(80, 3, true)",
                 "new ColumnCapabilities(false, false, false, false)",
                 "Column.readOnly(ORDERS_DESCRIPTOR, CustomerEdit::orders)"
+        );
+        String resources = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditTableResources.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(resources).contains(
+                "public final class CustomerEditTableResources",
+                "ResourceKey.of(\"customer/search/name/header\", String.class)",
+                "ResourceKey.of(\"customer/search/name/help\", String.class)",
+                "ResourceKey.of(\"customer/search/orders/title\", String.class)"
         );
         String descriptor = Files.readString(
                 result.generatedSources().resolve("demo/CustomerEditTableDescriptor.java"),
@@ -495,6 +509,29 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages()).contains("@Column width must be greater than zero");
+    }
+
+    @Test
+    void rejectsConflictingTableColumnTooltipDeclarations() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.Column;
+                import cz.auderis.corusco.annotations.Help;
+                import cz.auderis.corusco.annotations.SwingTable;
+
+                @SwingTable(id = "customer/search")
+                public record CustomerEdit(
+                        @Column(tooltip = "customer/search/name/help")
+                        @Help(tooltip = "customer/search/name/other-help")
+                        String name
+                ) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages())
+                .contains("Table column tooltip must be declared either on @Column or @Help, not both");
     }
 
     @Test

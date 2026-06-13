@@ -150,6 +150,24 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 failed = true;
                 continue;
             }
+            Help help = component.getAnnotation(Help.class);
+            if (help != null) {
+                if (!annotationColumn.tooltip().isBlank() && !help.tooltip().isBlank()) {
+                    error(component, "Table column tooltip must be declared either on @Column or @Help, not both");
+                    failed = true;
+                    continue;
+                }
+                if (!help.tooltip().isBlank() && !isStableId(help.tooltip())) {
+                    error(component, "@Help tooltip must contain only letters, digits, dots, underscores, dashes, or slashes");
+                    failed = true;
+                    continue;
+                }
+                if (!help.topic().isBlank() && !isStableId(help.topic())) {
+                    error(component, "@Help topic must contain only letters, digits, dots, underscores, dashes, or slashes");
+                    failed = true;
+                    continue;
+                }
+            }
             columns.add(tableColumnSpec(tableType, component, annotationColumn, id, columns.size()));
         }
         if (columns.isEmpty() && !failed) {
@@ -178,7 +196,11 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         String componentName = component.getSimpleName().toString();
         String constantName = constantName(componentName);
         String headerId = column.header().isBlank() ? keyId + "/header" : column.header();
-        String tooltipId = column.tooltip().isBlank() ? null : column.tooltip();
+        Help help = component.getAnnotation(Help.class);
+        String helpTooltip = help == null ? "" : help.tooltip();
+        String tooltipId = !column.tooltip().isBlank() ? column.tooltip() : helpTooltip;
+        String helpTopicId = help == null || help.topic().isBlank() ? null : help.topic();
+        tooltipId = tooltipId.isBlank() ? null : tooltipId;
         int order = column.order() < 0 ? componentOrder : column.order();
         return new TableColumnSpec(
                 constantName,
@@ -191,6 +213,7 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 headerId,
                 tooltipId == null ? null : constantName + "_TOOLTIP",
                 tooltipId,
+                helpTopicId,
                 column.width(),
                 order,
                 column.visible(),

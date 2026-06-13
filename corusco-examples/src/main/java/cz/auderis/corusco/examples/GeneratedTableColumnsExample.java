@@ -37,6 +37,11 @@ public final class GeneratedTableColumnsExample {
             result.add(GeneratedCustomerRowColumns.NAME_KEY.id());
             result.add(model.getColumnName(0));
 
+            // Table resource keys live in a generated companion class, while
+            // help topics travel with the descriptor for later help behaviors.
+            result.add(GeneratedCustomerRowTableResources.NAME_TOOLTIP.id());
+            result.add(GeneratedCustomerRowColumns.NAME_DESCRIPTOR.helpTopic().id());
+
             // Primitive record components are exposed through boxed column key
             // classes, while row values still come from direct accessor calls.
             result.add(model.getColumnClass(1).getSimpleName());

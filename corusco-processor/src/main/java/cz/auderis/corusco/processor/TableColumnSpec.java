@@ -12,6 +12,7 @@ final class TableColumnSpec {
     final String headerId;
     final String tooltipConstant;
     final String tooltipId;
+    final String helpTopicId;
     final int width;
     final int order;
     final boolean visible;
@@ -31,6 +32,7 @@ final class TableColumnSpec {
             String headerId,
             String tooltipConstant,
             String tooltipId,
+            String helpTopicId,
             int width,
             int order,
             boolean visible,
@@ -49,6 +51,7 @@ final class TableColumnSpec {
         this.headerId = headerId;
         this.tooltipConstant = tooltipConstant;
         this.tooltipId = tooltipId;
+        this.helpTopicId = helpTopicId;
         this.width = width;
         this.order = order;
         this.visible = visible;

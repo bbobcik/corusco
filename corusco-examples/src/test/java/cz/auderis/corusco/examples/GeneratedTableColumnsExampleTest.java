@@ -11,6 +11,8 @@ class GeneratedTableColumnsExampleTest {
         assertThat(GeneratedTableColumnsExample.runScenario()).containsExactly(
                 "generated-customer-table/name",
                 "generated-customer-table/name/header",
+                "generated-customer-table/name/help",
+                "generated-customer-table/name",
                 "Integer",
                 "5",
                 "true",
