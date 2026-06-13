@@ -107,13 +107,14 @@ API shapes where binary checking is not enough.
 Before tagging a preview release:
 
 1. Run the AudEnv-recommended test and build commands.
-2. Run `publishToMavenLocal`, `verifyMavenLocalPublication`, and
-   `verifyPublishedModuleMetadata`.
-3. Run `verifyExamplesAgainstPublishedArtifacts` to confirm examples compile
-   against Maven-local artifacts instead of project dependencies.
-4. Run `verifyPreviewApiAudit` and review [Preview API Review](api-review.md)
-   for public package boundaries and runtime reflection policy.
-5. Update `CHANGELOG.md` with additions, fixes, breaking changes, and migration
+2. Run `verifyPreviewReleaseReadiness`.
+3. Review [Preview API Review](api-review.md) for public package boundaries and
+   runtime reflection policy.
+4. Update `CHANGELOG.md` with additions, fixes, breaking changes, and migration
    notes.
-6. Confirm generated Javadocs are readable.
-7. Create the release tag only after the working tree is clean.
+5. Create the release tag only after the working tree is clean.
+
+`verifyPreviewReleaseReadiness` aggregates local publication, module metadata,
+published-artifact example compilation, API/package audit, and generated
+Javadoc checks. It is not a substitute for reading release notes and reviewing
+intentional API changes.
