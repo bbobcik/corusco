@@ -44,6 +44,17 @@ public record BehaviorDescriptor(
     }
 
     /**
+     * Creates a multiple behavior descriptor.
+     *
+     * @param key stable behavior key
+     * @param phase installation phase
+     * @return descriptor
+     */
+    public static BehaviorDescriptor multiple(BehaviorKey key, BehaviorPhase phase) {
+        return new BehaviorDescriptor(key, phase, BehaviorCardinality.MULTIPLE, false);
+    }
+
+    /**
      * Creates a primary binding descriptor.
      *
      * @param key stable behavior key
