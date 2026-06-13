@@ -51,6 +51,7 @@ commit has been created.
 | [COR-020](COR-020-add-filtered-observable-list.md) | `COR-020 Add filtered observable list` | Stage 11, filtered list view slice |
 | [COR-021](COR-021-add-glazed-lists-interop.md) | `COR-021 Add Glazed Lists interop` | Stage 11, Glazed Lists interop slice |
 | [COR-022](COR-022-add-edt-observable-list-dispatcher.md) | `COR-022 Add EDT observable list dispatcher` | Stage 11, EDT dispatch slice |
+| [COR-023](COR-023-add-observable-table-model-core.md) | `COR-023 Add observable table model core` | Stage 12, typed table model core slice |
 
 ## Stage Completion Rule
 
