@@ -14,6 +14,8 @@ import cz.auderis.corusco.core.value.SimpleValue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -38,6 +40,11 @@ class SwingMvpTesterTest {
             ComponentKey.of("customer/name-field", JTextField.class);
     private static final ComponentKey<JButton> SAVE_BUTTON =
             ComponentKey.of("customer/save-button", JButton.class);
+    private static final ComponentKey<JCheckBox> ACTIVE_BOX =
+            ComponentKey.of("customer/active-box", JCheckBox.class);
+    @SuppressWarnings("rawtypes")
+    private static final ComponentKey<JComboBox> TYPE_COMBO =
+            ComponentKey.of("customer/type-combo", JComboBox.class);
     private static final ComponentKey<JTextField> ALIAS_FIELD =
             ComponentKey.of("customer/alias-field", JTextField.class);
 
@@ -232,6 +239,57 @@ class SwingMvpTesterTest {
     }
 
     @Test
+    void fieldInputHelpersMutateComponentsOnEdt() {
+        SwingMvpTester<CustomerView, Void> tester = SwingMvpTester.create(CustomerView::new);
+
+        tester.enterText(NAME_FIELD, "Alice")
+                .setSelected(ACTIVE_BOX, true)
+                .selectItem(TYPE_COMBO, CustomerType.VIP);
+
+        tester.runOnEdt((view, presenter) -> {
+            assertThat(view.nameField.getText()).isEqualTo("Alice");
+            assertThat(view.activeBox.isSelected()).isTrue();
+            assertThat(view.typeCombo.getSelectedItem()).isEqualTo(CustomerType.VIP);
+        });
+    }
+
+    @Test
+    void fieldInputHelpersRunOnEdt() {
+        EdtCheckingTextField field = new EdtCheckingTextField();
+        EdtCheckingCheckBox checkBox = new EdtCheckingCheckBox();
+        EdtCheckingComboBox comboBox = new EdtCheckingComboBox();
+        SwingMvpTester<InputView, Void> tester = SwingMvpTester.create(() -> new InputView(field, checkBox, comboBox));
+
+        tester.enterText(NAME_FIELD, "Alice")
+                .setSelected(ACTIVE_BOX, true)
+                .selectItem(TYPE_COMBO, CustomerType.VIP);
+
+        assertThat(field.textSetOnEdt).isTrue();
+        assertThat(checkBox.selectedSetOnEdt).isTrue();
+        assertThat(comboBox.selectionSetOnEdt).isTrue();
+    }
+
+    @Test
+    void fieldInputMissingComponentFailsClearly() {
+        SwingMvpTester<CustomerView, Void> tester = SwingMvpTester.create(CustomerView::new);
+        ComponentKey<JTextField> missing = ComponentKey.of("customer/missing-field", JTextField.class);
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> tester.enterText(missing, "Alice"))
+                .withMessageContaining("Missing component")
+                .withMessageContaining("customer/missing-field");
+    }
+
+    @Test
+    void fieldInputRejectsNullText() {
+        SwingMvpTester<CustomerView, Void> tester = SwingMvpTester.create(CustomerView::new);
+
+        assertThatNullPointerException()
+                .isThrownBy(() -> tester.enterText(NAME_FIELD, null))
+                .withMessageContaining("text");
+    }
+
+    @Test
     void missingCommandFailsClearly() {
         SwingMvpTester<CustomerView, CustomerPresenter> tester = testerWithCommands(new CommandSet(java.util.List.of()));
 
@@ -318,10 +376,74 @@ class SwingMvpTesterTest {
 
         private final JTextField nameField = SwingComponentKeys.mark(new JTextField(), NAME_FIELD);
         private final JButton saveButton = SwingComponentKeys.mark(new JButton(), SAVE_BUTTON);
+        private final JCheckBox activeBox = SwingComponentKeys.mark(new JCheckBox(), ACTIVE_BOX);
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        private final JComboBox<CustomerType> typeCombo =
+                SwingComponentKeys.mark(new JComboBox<>(CustomerType.values()), TYPE_COMBO);
 
         private CustomerView() {
             add(nameField);
             add(saveButton);
+            add(activeBox);
+            add(typeCombo);
+        }
+    }
+
+    private static final class InputView extends JPanel {
+
+        private static final long serialVersionUID = 1L;
+
+        private InputView(EdtCheckingTextField field, EdtCheckingCheckBox checkBox, EdtCheckingComboBox comboBox) {
+            add(SwingComponentKeys.mark(field, NAME_FIELD));
+            add(SwingComponentKeys.mark(checkBox, ACTIVE_BOX));
+            @SuppressWarnings({ "unchecked", "rawtypes" })
+            JComboBox markedCombo = SwingComponentKeys.mark(comboBox, TYPE_COMBO);
+            add(markedCombo);
+        }
+    }
+
+    private enum CustomerType {
+        RETAIL,
+        VIP
+    }
+
+    private static final class EdtCheckingTextField extends JTextField {
+
+        private static final long serialVersionUID = 1L;
+        private boolean textSetOnEdt;
+
+        @Override
+        public void setText(String text) {
+            textSetOnEdt = SwingUtilities.isEventDispatchThread();
+            super.setText(text);
+        }
+    }
+
+    private static final class EdtCheckingCheckBox extends JCheckBox {
+
+        private static final long serialVersionUID = 1L;
+        private boolean selectedSetOnEdt;
+
+        @Override
+        public void setSelected(boolean selected) {
+            selectedSetOnEdt = SwingUtilities.isEventDispatchThread();
+            super.setSelected(selected);
+        }
+    }
+
+    private static final class EdtCheckingComboBox extends JComboBox<CustomerType> {
+
+        private static final long serialVersionUID = 1L;
+        private boolean selectionSetOnEdt;
+
+        private EdtCheckingComboBox() {
+            super(CustomerType.values());
+        }
+
+        @Override
+        public void setSelectedItem(Object item) {
+            selectionSetOnEdt = SwingUtilities.isEventDispatchThread();
+            super.setSelectedItem(item);
         }
     }
 

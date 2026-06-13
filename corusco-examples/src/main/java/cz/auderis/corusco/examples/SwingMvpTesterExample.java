@@ -13,6 +13,8 @@ import cz.auderis.corusco.swing.testing.SwingMvpTester;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 
@@ -25,6 +27,11 @@ public final class SwingMvpTesterExample {
             ComponentKey.of("customer/name-field", JTextField.class);
     private static final ComponentKey<JButton> SAVE_BUTTON =
             ComponentKey.of("customer/save-button", JButton.class);
+    private static final ComponentKey<JCheckBox> ACTIVE_BOX =
+            ComponentKey.of("customer/active-box", JCheckBox.class);
+    @SuppressWarnings("rawtypes")
+    private static final ComponentKey<JComboBox> TYPE_COMBO =
+            ComponentKey.of("customer/type-combo", JComboBox.class);
     private static final ActionKey SAVE = ActionKey.of("customer/save");
     private static final ResourceKey<String> SAVE_TEXT = ResourceKey.of("customer/save/text", String.class);
 
@@ -47,13 +54,16 @@ public final class SwingMvpTesterExample {
         // Generated views can mark real Swing components with ComponentKey
         // constants. Tests then locate components by typed ids instead of
         // brittle field names or reflection.
-        JTextField name = tester.requireComponent(NAME_FIELD);
         JButton save = tester.requireComponent(SAVE_BUTTON);
 
-        // Interactions still run on the EDT; the component references are just
-        // stable handles that make the test intent concise.
+        // Input helpers keep test bodies at the generated-key level while the
+        // actual Swing mutations still happen on the EDT.
+        tester.enterText(NAME_FIELD, "Alice")
+                .setSelected(ACTIVE_BOX, true)
+                .selectItem(TYPE_COMBO, CustomerType.VIP);
+
+        JTextField name = tester.requireComponent(NAME_FIELD);
         tester.runOnEdt((view, presenter) -> {
-            name.setText("Alice");
             save.setEnabled(presenter.canSave(name.getText()));
         });
 
@@ -65,6 +75,8 @@ public final class SwingMvpTesterExample {
 
         return tester.queryOnEdt((view, presenter) -> List.of(
                 name.getText(),
+                Boolean.toString(view.activeBox.isSelected()),
+                view.typeCombo.getSelectedItem().toString(),
                 Boolean.toString(save.isEnabled()),
                 Integer.toString(presenter.saveCalls()),
                 Boolean.toString(tester.presenter().isPresent())
@@ -77,11 +89,22 @@ public final class SwingMvpTesterExample {
 
         private final JTextField nameField = SwingComponentKeys.mark(new JTextField(), NAME_FIELD);
         private final JButton saveButton = SwingComponentKeys.mark(new JButton(), SAVE_BUTTON);
+        private final JCheckBox activeBox = SwingComponentKeys.mark(new JCheckBox(), ACTIVE_BOX);
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        private final JComboBox<CustomerType> typeCombo =
+                SwingComponentKeys.mark(new JComboBox<>(CustomerType.values()), TYPE_COMBO);
 
         private CustomerView() {
             add(nameField);
             add(saveButton);
+            add(activeBox);
+            add(typeCombo);
         }
+    }
+
+    private enum CustomerType {
+        RETAIL,
+        VIP
     }
 
     private static final class CustomerPresenter {
