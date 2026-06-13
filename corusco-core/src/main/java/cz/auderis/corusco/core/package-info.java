@@ -10,6 +10,7 @@
  * form model primitives are available under
  * {@link cz.auderis.corusco.core.convert} and
  * {@link cz.auderis.corusco.core.form}. Validation primitives are available
- * under {@link cz.auderis.corusco.core.validation}.</p>
+ * under {@link cz.auderis.corusco.core.validation}. Command primitives are
+ * available under {@link cz.auderis.corusco.core.command}.</p>
  */
 package cz.auderis.corusco.core;
