@@ -19,6 +19,7 @@ class GeneratedTableColumnsExampleTest {
                 "5",
                 "true",
                 "Acme Corp",
+                "1:Globex",
                 "3"
         );
     }

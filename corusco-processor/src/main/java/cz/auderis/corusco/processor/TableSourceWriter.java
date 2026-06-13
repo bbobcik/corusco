@@ -26,6 +26,7 @@ final class TableSourceWriter {
         writeTableResourcesClass(tableType, table);
         writeColumnsClass(tableType, table);
         writeTableDescriptorClass(tableType, table);
+        writeTableBindingsClass(tableType, table);
     }
 
     private void writeTableResourcesClass(TypeElement tableType, TableSpec table) {
@@ -139,6 +140,99 @@ final class TableSourceWriter {
                 }
                 """.formatted(table.ownerType, table.ownerType));
         writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table descriptor");
+    }
+
+    private void writeTableBindingsClass(TypeElement tableType, TableSpec table) {
+        String packageName = elements.getPackageOf(tableType).getQualifiedName().toString();
+        String generatedType = table.ownerType + "TableBindings";
+        String descriptorType = table.ownerType + "TableDescriptor";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        StringBuilder source = sourceBuilder(packageName);
+        source.append("""
+                import cz.auderis.corusco.core.collection.ObservableList;
+                import cz.auderis.corusco.core.value.WritableValue;
+                import cz.auderis.corusco.swing.binding.BindingScope;
+                import cz.auderis.corusco.swing.table.ObservableTableModel;
+                import cz.auderis.corusco.swing.table.TableSelectionBinding;
+                import javax.swing.JTable;
+
+                /**
+                 * Generated table binding helpers for {@link %s}.
+                 */
+                public final class %s {
+
+                """.formatted(table.ownerType, generatedType));
+        source.append(privateConstructorSource(generatedType));
+        source.append("""
+                    /**
+                     * Creates, installs, and scopes the generated table model.
+                     *
+                     * @param table Swing table receiving the generated model
+                     * @param rows observable row source
+                     * @param scope owner for model cleanup
+                     * @return installed table model
+                     */
+                    public static ObservableTableModel<%s> installModel(
+                            JTable table,
+                            ObservableList<%s> rows,
+                            BindingScope scope
+                    ) {
+                        ObservableTableModel<%s> model = %s.tableModel(rows);
+                        table.setModel(model);
+                        scope.add(model);
+                        return model;
+                    }
+
+                    /**
+                     * Binds table selection to a selected model-row value.
+                     *
+                     * @param table Swing table
+                     * @param model generated table model installed on the table
+                     * @param selectedModelRow selected model-row value
+                     * @param scope owner for binding cleanup
+                     * @return selection binding
+                     */
+                    public static TableSelectionBinding<%s> bindSelection(
+                            JTable table,
+                            ObservableTableModel<%s> model,
+                            WritableValue<Integer> selectedModelRow,
+                            BindingScope scope
+                    ) {
+                        return scope.add(TableSelectionBinding.bind(table, model, selectedModelRow));
+                    }
+
+                    /**
+                     * Binds table selection to selected model-row and row values.
+                     *
+                     * @param table Swing table
+                     * @param model generated table model installed on the table
+                     * @param selectedModelRow selected model-row value
+                     * @param selectedRow selected row value
+                     * @param scope owner for binding cleanup
+                     * @return selection binding
+                     */
+                    public static TableSelectionBinding<%s> bindSelection(
+                            JTable table,
+                            ObservableTableModel<%s> model,
+                            WritableValue<Integer> selectedModelRow,
+                            WritableValue<%s> selectedRow,
+                            BindingScope scope
+                    ) {
+                        return scope.add(TableSelectionBinding.bind(table, model, selectedModelRow, selectedRow));
+                    }
+                }
+                """.formatted(
+                table.ownerType,
+                table.ownerType,
+                table.ownerType,
+                descriptorType,
+                table.ownerType,
+                table.ownerType,
+                table.ownerType,
+                table.ownerType,
+                table.ownerType
+        ));
+        writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table bindings");
     }
 
     private String columnSource(TableSpec table, String resourcesType, TableColumnSpec column) {
