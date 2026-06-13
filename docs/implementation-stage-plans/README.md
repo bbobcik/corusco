@@ -84,6 +84,7 @@ commit has been created.
 | [COR-053](COR-053-add-async-field-validation.md) | `COR-053 Add async field validation` | Stage 17, async field validation API slice |
 | [COR-054](COR-054-add-swing-busy-overlay.md) | `COR-054 Add Swing busy overlay` | Stage 17, Swing `JLayer` busy overlay slice |
 | [COR-055](COR-055-add-dialog-result-and-form-controller.md) | `COR-055 Add dialog result and form controller` | Stage 18, dialog result and form controller foundation slice |
+| [COR-056](COR-056-add-dirty-cancel-confirmation.md) | `COR-056 Add dirty-cancel confirmation` | Stage 18, dirty-cancel confirmation hook slice |
 
 ## Stage Completion Rule
 

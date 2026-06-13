@@ -60,6 +60,8 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
 
     private final P formModel;
     private final JComponent root;
+    private final DirtyState dirtyState;
+    private final CancelConfirmation cancelConfirmation;
     private final MutableCommand okCommand;
     private final MutableCommand applyCommand;
     private final MutableCommand cancelCommand;
@@ -74,9 +76,28 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
      * @param root root component used for active-editor commit
      */
     public FormDialog(P formModel, JComponent root) {
+        this(formModel, root, DirtyState.CLEAN, CancelConfirmation.ALWAYS_CONFIRM);
+    }
+
+    /**
+     * Creates a form dialog controller.
+     *
+     * @param formModel form model
+     * @param root root component used for active-editor commit
+     * @param dirtyState aggregate dirty-state hook
+     * @param cancelConfirmation confirmation hook used for dirty cancellation
+     */
+    public FormDialog(
+            P formModel,
+            JComponent root,
+            DirtyState dirtyState,
+            CancelConfirmation cancelConfirmation
+    ) {
         SwingEdt.requireEdt();
         this.formModel = Objects.requireNonNull(formModel, "formModel");
         this.root = Objects.requireNonNull(root, "root");
+        this.dirtyState = Objects.requireNonNull(dirtyState, "dirtyState");
+        this.cancelConfirmation = Objects.requireNonNull(cancelConfirmation, "cancelConfirmation");
         this.okCommand = CommandFactory.command(ActionDescriptor.action(OK_KEY, OK_TEXT), command -> accept());
         this.applyCommand = CommandFactory.command(ActionDescriptor.action(APPLY_KEY, APPLY_TEXT), command -> apply());
         this.cancelCommand = CommandFactory.command(ActionDescriptor.action(CANCEL_KEY, CANCEL_TEXT), command -> cancel());
@@ -99,6 +120,24 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
      */
     public JComponent root() {
         return root;
+    }
+
+    /**
+     * Returns the dirty-state hook.
+     *
+     * @return dirty-state hook
+     */
+    public DirtyState dirtyState() {
+        return dirtyState;
+    }
+
+    /**
+     * Returns the dirty-cancel confirmation hook.
+     *
+     * @return cancel confirmation hook
+     */
+    public CancelConfirmation cancelConfirmation() {
+        return cancelConfirmation;
     }
 
     /**
@@ -205,20 +244,28 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
 
     /**
      * Performs Cancel semantics and closes the controller.
+     *
+     * @return {@code true} when cancellation closed the controller
      */
-    public void cancel() {
+    public boolean cancel() {
         SwingEdt.requireEdt();
         if (closed) {
-            return;
+            return true;
         }
-        result = DialogResult.cancelled();
-        closed = true;
-        refreshCommandState();
+        if (!confirmCancelIfDirty()) {
+            return false;
+        }
+        closeCancelled();
+        return true;
     }
 
     @Override
     public void close() {
-        cancel();
+        SwingEdt.requireEdt();
+        if (closed) {
+            return;
+        }
+        closeCancelled();
     }
 
     /**
@@ -228,6 +275,17 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
      */
     protected boolean commitActiveEditor() {
         return SwingEditors.commitActiveEditor(root);
+    }
+
+    private boolean confirmCancelIfDirty() {
+        return !dirtyState.isDirty() || cancelConfirmation.confirmCancel();
+    }
+
+    private void closeCancelled() {
+        result = DialogResult.cancelled();
+        formModel.reset();
+        closed = true;
+        refreshCommandState();
     }
 
     private boolean prepareCommit() {
