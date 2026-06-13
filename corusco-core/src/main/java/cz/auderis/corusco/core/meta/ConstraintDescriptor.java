@@ -68,4 +68,27 @@ public record ConstraintDescriptor(
     public static ConstraintDescriptor decimalRange(ProblemCode problemCode, String min, String max) {
         return new ConstraintDescriptor(ConstraintKind.DECIMAL_RANGE, problemCode, min, max);
     }
+
+    /**
+     * Creates integer range constraint metadata.
+     *
+     * @param problemCode problem code
+     * @param min minimum value
+     * @param max maximum value
+     * @return descriptor
+     */
+    public static ConstraintDescriptor intRange(ProblemCode problemCode, int min, int max) {
+        return new ConstraintDescriptor(ConstraintKind.INT_RANGE, problemCode, Integer.toString(min), Integer.toString(max));
+    }
+
+    /**
+     * Creates regular-expression constraint metadata.
+     *
+     * @param problemCode problem code
+     * @param pattern pattern text
+     * @return descriptor
+     */
+    public static ConstraintDescriptor regex(ProblemCode problemCode, String pattern) {
+        return new ConstraintDescriptor(ConstraintKind.REGEX, problemCode, Objects.requireNonNull(pattern, "pattern"), null);
+    }
 }

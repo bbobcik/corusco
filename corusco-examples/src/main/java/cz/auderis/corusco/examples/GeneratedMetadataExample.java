@@ -1,13 +1,18 @@
 package cz.auderis.corusco.examples;
 
 import cz.auderis.corusco.annotations.CheckBox;
+import cz.auderis.corusco.annotations.ComboBox;
 import cz.auderis.corusco.annotations.DecimalRange;
+import cz.auderis.corusco.annotations.DateField;
 import cz.auderis.corusco.annotations.Help;
+import cz.auderis.corusco.annotations.IntRange;
 import cz.auderis.corusco.annotations.Length;
 import cz.auderis.corusco.annotations.Required;
+import cz.auderis.corusco.annotations.Regex;
 import cz.auderis.corusco.annotations.SwingForm;
 import cz.auderis.corusco.annotations.TextField;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -34,6 +39,9 @@ public final class GeneratedMetadataExample {
                 GeneratedCustomerEditProblems.NAME_REQUIRED.id(),
                 GeneratedCustomerEditDescriptors.NAME.helpTopic().id(),
                 GeneratedCustomerEditDescriptors.CREDIT_LIMIT.constraints().getFirst().kind().name(),
+                GeneratedCustomerEditDescriptors.AGE.constraints().getFirst().kind().name(),
+                GeneratedCustomerEditDescriptors.VALID_FROM.kind().name(),
+                GeneratedCustomerEditDescriptors.TYPE.kind().name(),
                 GeneratedCustomerEditDescriptors.ACTIVE.kind().name()
         );
     }
@@ -41,8 +49,16 @@ public final class GeneratedMetadataExample {
 
 @SwingForm(id = "generated-customer")
 record GeneratedCustomerEdit(
-        @TextField @Required @Length(max = 80) @Help(topic = "generated-customer/name") String name,
+        @TextField @Required @Length(max = 80) @Regex("[A-Za-z ]+") @Help(topic = "generated-customer/name") String name,
         @TextField @DecimalRange(min = "0.00") BigDecimal creditLimit,
+        @TextField @IntRange(min = 0, max = 120) Integer age,
+        @DateField LocalDate validFrom,
+        @ComboBox GeneratedCustomerType type,
         @CheckBox boolean active
 ) {
+}
+
+enum GeneratedCustomerType {
+    RETAIL,
+    BUSINESS
 }

@@ -14,6 +14,9 @@ class GeneratedMetadataExampleTest {
                 "generated-customer/name/required",
                 "generated-customer/name",
                 "DECIMAL_RANGE",
+                "INT_RANGE",
+                "DATE",
+                "COMBO_BOX",
                 "CHECK_BOX"
         );
     }

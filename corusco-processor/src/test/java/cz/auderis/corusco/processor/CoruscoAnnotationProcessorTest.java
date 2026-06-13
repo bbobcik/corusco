@@ -27,20 +27,32 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.CheckBox;
+                import cz.auderis.corusco.annotations.ComboBox;
                 import cz.auderis.corusco.annotations.DecimalRange;
+                import cz.auderis.corusco.annotations.DateField;
                 import cz.auderis.corusco.annotations.Help;
+                import cz.auderis.corusco.annotations.IntRange;
                 import cz.auderis.corusco.annotations.Length;
                 import cz.auderis.corusco.annotations.Required;
+                import cz.auderis.corusco.annotations.Regex;
                 import cz.auderis.corusco.annotations.SwingForm;
                 import cz.auderis.corusco.annotations.TextField;
                 import java.math.BigDecimal;
+                import java.time.LocalDate;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(
-                        @TextField @Required @Length(max = 80) @Help(topic = "customer/name") String name,
+                        @TextField @Required @Length(max = 80) @Regex("[A-Za-z ]+") @Help(topic = "customer/name") String name,
                         @TextField @DecimalRange(min = "0.00") BigDecimal creditLimit,
+                        @TextField @IntRange(min = 0, max = 120) Integer age,
+                        @DateField LocalDate validFrom,
+                        @ComboBox CustomerType type,
                         @CheckBox boolean active
                 ) {
+                }
+
+                enum CustomerType {
+                    RETAIL, BUSINESS
                 }
                 """);
 
@@ -55,6 +67,12 @@ class CoruscoAnnotationProcessorTest {
                 "TextFieldKey.of(\"customer/name\", CustomerEdit.class, java.lang.String.class)",
                 "public static final TextFieldKey<CustomerEdit, java.math.BigDecimal> CREDIT_LIMIT",
                 "TextFieldKey.of(\"customer/credit-limit\", CustomerEdit.class, java.math.BigDecimal.class)",
+                "public static final TextFieldKey<CustomerEdit, java.lang.Integer> AGE",
+                "TextFieldKey.of(\"customer/age\", CustomerEdit.class, java.lang.Integer.class)",
+                "public static final TextFieldKey<CustomerEdit, java.time.LocalDate> VALID_FROM",
+                "TextFieldKey.of(\"customer/valid-from\", CustomerEdit.class, java.time.LocalDate.class)",
+                "public static final FieldKey<CustomerEdit, demo.CustomerType> TYPE",
+                "FieldKey.of(\"customer/type\", CustomerEdit.class, demo.CustomerType.class)",
                 "public static final FieldKey<CustomerEdit, java.lang.Boolean> ACTIVE",
                 "FieldKey.of(\"customer/active\", CustomerEdit.class, java.lang.Boolean.class)"
         );
@@ -74,7 +92,9 @@ class CoruscoAnnotationProcessorTest {
         assertThat(problems).contains(
                 "ProblemCode.of(\"customer/name/required\")",
                 "ProblemCode.of(\"customer/name/length\")",
-                "ProblemCode.of(\"customer/credit-limit/decimal-range\")"
+                "ProblemCode.of(\"customer/name/regex\")",
+                "ProblemCode.of(\"customer/credit-limit/decimal-range\")",
+                "ProblemCode.of(\"customer/age/int-range\")"
         );
         String descriptors = Files.readString(
                 result.generatedSources().resolve("demo/CustomerEditDescriptors.java"),
@@ -90,7 +110,13 @@ class CoruscoAnnotationProcessorTest {
                 "HelpTopic.of(\"customer/name\")",
                 "ConstraintDescriptor.required(CustomerEditProblems.NAME_REQUIRED)",
                 "ConstraintDescriptor.length(CustomerEditProblems.NAME_LENGTH, 0, 80)",
+                "ConstraintDescriptor.regex(CustomerEditProblems.NAME_REGEX, \"[A-Za-z ]+\")",
                 "ConstraintDescriptor.decimalRange(CustomerEditProblems.CREDIT_LIMIT_DECIMAL_RANGE, \"0.00\", null)",
+                "ConstraintDescriptor.intRange(CustomerEditProblems.AGE_INT_RANGE, 0, 120)",
+                "public static final FieldDescriptor<CustomerEdit, java.time.LocalDate> VALID_FROM",
+                "FieldKind.DATE",
+                "public static final FieldDescriptor<CustomerEdit, demo.CustomerType> TYPE",
+                "FieldKind.COMBO_BOX",
                 "public static final FieldDescriptor<CustomerEdit, java.lang.Boolean> ACTIVE",
                 "FieldKind.CHECK_BOX"
         );
@@ -127,7 +153,7 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("Record component cannot be both @TextField and @CheckBox");
+        assertThat(result.messages()).contains("Record component must have only one field kind annotation");
     }
 
     @Test
@@ -216,7 +242,7 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("Field metadata annotations require @TextField or @CheckBox");
+        assertThat(result.messages()).contains("Field metadata annotations require a field kind annotation");
     }
 
     @Test
@@ -235,6 +261,59 @@ class CoruscoAnnotationProcessorTest {
         assertThat(result.success()).isFalse();
         assertThat(result.messages())
                 .contains("@SwingForm id must contain only letters, digits, dots, underscores, dashes, or slashes");
+    }
+
+    @Test
+    void rejectsDateFieldOnNonLocalDate() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.DateField;
+                import cz.auderis.corusco.annotations.SwingForm;
+
+                @SwingForm(id = "customer")
+                public record CustomerEdit(@DateField String validFrom) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@DateField requires java.time.LocalDate component type");
+    }
+
+    @Test
+    void rejectsRegexOnNonStringTextField() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.Regex;
+                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.TextField;
+
+                @SwingForm(id = "customer")
+                public record CustomerEdit(@TextField @Regex("[0-9]+") Integer age) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@Regex is supported only on @TextField String components");
+    }
+
+    @Test
+    void rejectsInvalidIntRange() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.IntRange;
+                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.TextField;
+
+                @SwingForm(id = "customer")
+                public record CustomerEdit(@TextField @IntRange(min = 10, max = 1) Integer age) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@IntRange requires min <= max");
     }
 
     private CompilationResult compile(String source) throws Exception {
