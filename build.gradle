@@ -1,0 +1,39 @@
+allprojects {
+    group = 'cz.auderis.corusco'
+    version = '0.1.0-SNAPSHOT'
+}
+
+configure(subprojects.findAll { it.buildFile.exists() }) {
+    apply plugin: 'java-library'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 25
+        options.compilerArgs.addAll(['-Xlint:all', '-Xlint:-processing'])
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+        systemProperty 'java.awt.headless', 'true'
+        testLogging {
+            events 'failed'
+            exceptionFormat = 'full'
+        }
+    }
+
+    dependencies {
+        compileOnly libs.lombok
+        annotationProcessor libs.lombok
+        testCompileOnly libs.lombok
+        testAnnotationProcessor libs.lombok
+
+        testImplementation libs.bundles.testPlatform
+        testRuntimeOnly libs.bundles.testPlatformRuntime
+    }
+}
