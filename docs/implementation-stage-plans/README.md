@@ -81,6 +81,7 @@ commit has been created.
 | [COR-050](COR-050-add-async-task-core.md) | `COR-050 Add async task core` | Stage 17, core async task service slice |
 | [COR-051](COR-051-add-swing-task-callbacks.md) | `COR-051 Add Swing task callbacks` | Stage 17, Swing EDT callback delivery slice |
 | [COR-052](COR-052-add-generation-counter-helper.md) | `COR-052 Add generation counter helper` | Stage 17, stale-result generation counter helper slice |
+| [COR-053](COR-053-add-async-field-validation.md) | `COR-053 Add async field validation` | Stage 17, async field validation API slice |
 
 ## Stage Completion Rule
 
