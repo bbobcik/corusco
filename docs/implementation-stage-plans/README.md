@@ -48,6 +48,7 @@ commit has been created.
 | [COR-017](COR-017-add-observable-list-core.md) | `COR-017 Add observable list core` | Stage 11, observable list core slice |
 | [COR-018](COR-018-refactor-processor-source-templates.md) | `COR-018 Refactor processor source templates` | Stage 8-10 processor maintainability slice |
 | [COR-019](COR-019-add-swing-list-adapters.md) | `COR-019 Add Swing list adapters` | Stage 11, Swing list/combo adapter slice |
+| [COR-020](COR-020-add-filtered-observable-list.md) | `COR-020 Add filtered observable list` | Stage 11, filtered list view slice |
 
 ## Stage Completion Rule
 

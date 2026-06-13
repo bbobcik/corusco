@@ -1128,7 +1128,9 @@ Implement GlazedLists-inspired observable collections and Swing list/combo adapt
 8. `MappedList<S, T>`
 9. `ObservableListModel<E>`
 10. `ObservableComboBoxModel<E>`
-11. EDT proxy list or EDT event dispatcher
+11. first-class Glazed Lists interop adapters for mature `EventList`-based
+    applications
+12. EDT proxy list or EDT event dispatcher
 
 ## Acceptance Criteria
 
@@ -1136,6 +1138,8 @@ Implement GlazedLists-inspired observable collections and Swing list/combo adapt
 - Batch events are preserved.
 - Filtered and sorted views update correctly after source changes.
 - Swing adapters fire correct Swing events.
+- Glazed Lists can be adapted without treating it as a legacy/reflection escape
+  hatch or forcing lossy event conversion.
 - Background-originated changes can be marshalled to EDT through explicit adapter.
 
 ---
