@@ -189,13 +189,12 @@ tests, example regression tests, and local verification commands.
 The project is still pre-preview. The following areas are intentionally still
 being finalized:
 
-- JPMS module descriptors;
 - automated binary compatibility checks;
 - final preview release tagging;
 - any optional legacy reflection adapter.
 
-Local Maven publication, source/Javadoc artifacts, and the preview
-compatibility policy are now documented in [Release Policy](release-policy.md).
+Local Maven publication, source/Javadoc artifacts, JPMS module names, and the
+preview compatibility policy are now documented in [Release Policy](release-policy.md).
 
 The active rule remains the same: keep runtime APIs typed and explicit, keep
 generated code readable, and keep Swing behavior observable to an experienced

@@ -7,6 +7,8 @@ configure(subprojects.findAll { it.buildFile.exists() }) {
     apply plugin: 'java-library'
 
     java {
+        modularity.inferModulePath = true
+
         toolchain {
             languageVersion = JavaLanguageVersion.of(25)
         }
@@ -39,6 +41,13 @@ def publishableProjects = subprojects.findAll {
 def publishableProjectNames = publishableProjects.collect { it.name }
 def publicationGroupPath = group.toString().replace('.', File.separator)
 def publicationVersion = version.toString()
+def projectRootPath = rootDir.absolutePath
+def publishedModuleChecks = publishableProjectNames.collectEntries { projectName ->
+    [(projectName): [
+        jarPath: "${projectName}/build/libs/${projectName}-${publicationVersion}.jar",
+        moduleName: "cz.auderis.${projectName.replace('-', '.')}"
+    ]]
+}
 
 configure(publishableProjects) {
     apply plugin: 'maven-publish'
@@ -51,6 +60,12 @@ configure(publishableProjects) {
     tasks.withType(Javadoc).configureEach {
         options.encoding = 'UTF-8'
         options.addBooleanOption('Xdoclint:all,-missing', true)
+    }
+
+    tasks.named('jar').configure {
+        manifest {
+            attributes('Automatic-Module-Name': "cz.auderis.${project.name.replace('-', '.')}")
+        }
     }
 
     publishing {
@@ -115,6 +130,33 @@ tasks.register('verifyMavenLocalPublication') {
         def examplesDir = new File(repository, "${publicationGroupPath}/corusco-examples/${publicationVersion}")
         if (examplesDir.exists()) {
             throw new GradleException("corusco-examples must remain unpublished, but ${examplesDir} exists")
+        }
+    }
+}
+
+tasks.register('verifyPublishedModuleMetadata') {
+    group = 'verification'
+    description = 'Verifies JPMS or automatic module names in published Corusco jars.'
+    dependsOn publishableProjects.collect { it.tasks.named('jar') }
+
+    doLast {
+        publishedModuleChecks.each { projectName, metadata ->
+            def jarFile = new File(projectRootPath, metadata.jarPath)
+            def finder = java.lang.module.ModuleFinder.of(jarFile.toPath())
+            def descriptor = finder.find(metadata.moduleName)
+                    .orElseThrow {
+                        new GradleException("Missing module ${metadata.moduleName} in ${jarFile}")
+                    }
+                    .descriptor()
+            if (descriptor.name() != metadata.moduleName) {
+                throw new GradleException("Expected ${metadata.moduleName} in ${jarFile}, found ${descriptor.name()}")
+            }
+            if (projectName != 'corusco-glazedlists' && descriptor.isAutomatic()) {
+                throw new GradleException("${projectName} must publish an explicit module descriptor")
+            }
+            if (projectName == 'corusco-glazedlists' && !descriptor.isAutomatic()) {
+                throw new GradleException("corusco-glazedlists is expected to remain automatic until Glazed Lists is modular")
+            }
         }
     }
 }

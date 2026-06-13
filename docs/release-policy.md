@@ -34,6 +34,21 @@ The compatibility contract applies to published library modules:
 `corusco-examples` is a source consumer and regression suite. It is not a
 published compatibility surface.
 
+The preview JPMS module names are:
+
+| Artifact | JPMS module |
+| --- | --- |
+| `corusco-core` | `cz.auderis.corusco.core` |
+| `corusco-glazedlists` | `cz.auderis.corusco.glazedlists` |
+| `corusco-swing` | `cz.auderis.corusco.swing` |
+| `corusco-annotations` | `cz.auderis.corusco.annotations` |
+| `corusco-processor` | `cz.auderis.corusco.processor` |
+| `corusco-test` | `cz.auderis.corusco.test` |
+
+`corusco-glazedlists` currently publishes this name through
+`Automatic-Module-Name` rather than `module-info.java` because Glazed Lists
+1.11.0 does not provide a stable upstream JPMS module name.
+
 Public runtime APIs are the public and protected types, constructors, methods,
 fields, records, and sealed hierarchies in published artifacts. Annotation
 types are public API because application source code depends on their names,
@@ -67,6 +82,7 @@ first preview tag is cut. They must be recorded in `CHANGELOG.md` under
 Examples of breaking changes:
 
 - moving a public type to another package;
+- renaming a published JPMS module;
 - renaming typed keys, descriptor classes, generated form models, or generated
   table helpers;
 - changing public method signatures or record component types;
@@ -91,7 +107,8 @@ API shapes where binary checking is not enough.
 Before tagging a preview release:
 
 1. Run the AudEnv-recommended test and build commands.
-2. Run `publishToMavenLocal` and `verifyMavenLocalPublication`.
+2. Run `publishToMavenLocal`, `verifyMavenLocalPublication`, and
+   `verifyPublishedModuleMetadata`.
 3. Confirm examples compile against the published artifacts or an equivalent
    local published-artifact consumer build.
 4. Review public API names and package boundaries.
