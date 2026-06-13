@@ -4,7 +4,10 @@ import cz.auderis.corusco.core.form.FieldModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.help.HelpService;
 import cz.auderis.corusco.core.key.HelpTopic;
+import cz.auderis.corusco.core.key.ResourceKey;
+import cz.auderis.corusco.core.meta.FieldDescriptor;
 import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.resource.Resources;
 import cz.auderis.corusco.core.tooltip.TooltipPolicy;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.swing.binding.Binding;
@@ -326,6 +329,54 @@ public final class StandardBehaviors {
     }
 
     /**
+     * Creates a behavior that sets accessible name and description.
+     *
+     * @param accessibleName accessible name
+     * @param accessibleDescription accessible description
+     * @param <C> component type
+     * @return accessible text behavior
+     */
+    public static <C extends JComponent> DecorationBehavior<C> accessibleText(
+            String accessibleName,
+            String accessibleDescription
+    ) {
+        return new DecorationBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.single(StandardBehaviorKeys.ACCESSIBLE_TEXT, BehaviorPhase.DECORATION);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<C> context) {
+                return BindingFactory.accessibleText(context.component(), accessibleName, accessibleDescription);
+            }
+        };
+    }
+
+    /**
+     * Creates a behavior that derives accessible text from field metadata.
+     *
+     * <p>The accessible name is resolved from {@link FieldDescriptor#labelKey()}
+     * and the description is resolved from {@link FieldDescriptor#tooltipKey()}
+     * when present. Missing optional descriptions become blank descriptions.</p>
+     *
+     * @param descriptor field descriptor
+     * @param resources resource lookup
+     * @param <C> component type
+     * @return accessible text behavior
+     */
+    public static <C extends JComponent> DecorationBehavior<C> accessibleText(
+            FieldDescriptor<?, ?> descriptor,
+            Resources resources
+    ) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        Objects.requireNonNull(resources, "resources");
+        String accessibleName = resources.require(descriptor.labelKey());
+        String accessibleDescription = resolveOptional(resources, descriptor.tooltipKey());
+        return accessibleText(accessibleName, accessibleDescription);
+    }
+
+    /**
      * Creates a behavior that opens a help topic when F1 is pressed.
      *
      * @param topic help topic
@@ -378,5 +429,9 @@ public final class StandardBehaviors {
                 };
             }
         };
+    }
+
+    private static String resolveOptional(Resources resources, ResourceKey<String> key) {
+        return (key == null) ? "" : resources.resolve(key, "");
     }
 }

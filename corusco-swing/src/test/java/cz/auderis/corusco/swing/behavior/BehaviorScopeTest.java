@@ -6,8 +6,12 @@ import cz.auderis.corusco.core.form.FieldModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.help.DefaultHelpService;
 import cz.auderis.corusco.core.key.FieldKey;
+import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.key.TextFieldKey;
+import cz.auderis.corusco.core.meta.FieldDescriptor;
+import cz.auderis.corusco.core.meta.FieldKind;
 import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.resource.Resources;
 import cz.auderis.corusco.core.value.ChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.binding.Binding;
@@ -17,6 +21,7 @@ import java.awt.event.KeyEvent;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
@@ -32,6 +37,8 @@ class BehaviorScopeTest {
             TextFieldKey.of("customer/credit-limit", CustomerEdit.class, BigDecimal.class);
     private static final FieldKey<CustomerEdit, Boolean> ACTIVE =
             FieldKey.of("customer/active", CustomerEdit.class, Boolean.class);
+    private static final ResourceKey<String> NAME_LABEL = ResourceKey.of("customer/name/label", String.class);
+    private static final ResourceKey<String> NAME_TOOLTIP = ResourceKey.of("customer/name/tooltip", String.class);
 
     @Test
     void behaviorsInstallByPhaseAndCloseInReverseInstallationOrder() {
@@ -270,6 +277,43 @@ class BehaviorScopeTest {
         });
     }
 
+    @Test
+    void accessibleTextBehaviorUsesFieldDescriptorResources() {
+        SwingEdt.runAndWait(() -> {
+            JTextField field = new JTextField();
+            BehaviorScope scope = new BehaviorScope();
+            Resources resources = Resources.of(Map.of(
+                    NAME_LABEL.id(), "Customer name",
+                    NAME_TOOLTIP.id(), "Enter the customer display name"
+            ));
+
+            scope.install(field, List.of(StandardBehaviors.accessibleText(nameDescriptor(NAME_TOOLTIP), resources)));
+
+            assertThat(field.getAccessibleContext().getAccessibleName()).isEqualTo("Customer name");
+            assertThat(field.getAccessibleContext().getAccessibleDescription())
+                    .isEqualTo("Enter the customer display name");
+
+            scope.close();
+            assertThat(field.getAccessibleContext().getAccessibleName()).isNull();
+            assertThat(field.getAccessibleContext().getAccessibleDescription()).isNull();
+        });
+    }
+
+    @Test
+    void accessibleTextBehaviorAllowsMissingOptionalDescription() {
+        SwingEdt.runAndWait(() -> {
+            JTextField field = new JTextField();
+            BehaviorScope scope = new BehaviorScope();
+            Resources resources = Resources.of(Map.of(NAME_LABEL.id(), "Customer name"));
+
+            scope.install(field, List.of(StandardBehaviors.accessibleText(nameDescriptor(NAME_TOOLTIP), resources)));
+
+            assertThat(field.getAccessibleContext().getAccessibleName()).isEqualTo("Customer name");
+            assertThat(field.getAccessibleContext().getAccessibleDescription()).isEmpty();
+            scope.close();
+        });
+    }
+
     private static ViewBehavior<JTextField> tracked(String id, BehaviorPhase phase, List<String> events) {
         return new ViewBehavior<>() {
             @Override
@@ -286,5 +330,18 @@ class BehaviorScopeTest {
     }
 
     private record CustomerEdit(BigDecimal creditLimit, boolean active) {
+    }
+
+    private static FieldDescriptor<CustomerEdit, String> nameDescriptor(ResourceKey<String> tooltipKey) {
+        return new FieldDescriptor<>(
+                "customer/name",
+                "name",
+                FieldKind.TEXT,
+                String.class,
+                NAME_LABEL,
+                tooltipKey,
+                null,
+                List.of()
+        );
     }
 }
