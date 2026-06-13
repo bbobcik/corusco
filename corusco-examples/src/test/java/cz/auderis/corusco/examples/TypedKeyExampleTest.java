@@ -16,7 +16,8 @@ class TypedKeyExampleTest {
                         "ResourceKey[customer/name/label:String]",
                         "ActionKey[customer/save]",
                         "HelpTopic[customer/name]",
-                        "ComponentKey[customer/name-field:TextInput]"
+                        "ComponentKey[customer/name-field:TextInput]",
+                        "Field[key=FieldKey[CustomerEdit#customer/name:String]]"
                 );
     }
 }

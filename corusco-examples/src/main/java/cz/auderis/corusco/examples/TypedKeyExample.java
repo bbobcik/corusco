@@ -6,6 +6,7 @@ import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.key.HelpTopic;
 import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.key.TextFieldKey;
+import cz.auderis.corusco.core.problem.ProblemTarget;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -33,7 +34,8 @@ public final class TypedKeyExample {
                 CustomerKeys.NAME_LABEL.toString(),
                 CustomerKeys.SAVE.toString(),
                 CustomerKeys.NAME_HELP.toString(),
-                CustomerKeys.NAME_COMPONENT.toString()
+                CustomerKeys.NAME_COMPONENT.toString(),
+                ProblemTarget.field(CustomerKeys.NAME.asFieldKey()).toString()
         );
     }
 
