@@ -101,7 +101,15 @@ class CoruscoAnnotationProcessorTest {
                 "public final TextFieldModel<CustomerEdit, java.lang.String> name;",
                 "public final TextFieldModel<CustomerEdit, java.math.BigDecimal> creditLimit;",
                 "public final FieldModel<CustomerEdit, demo.CustomerType> type;",
-                "this.name = register(new TextFieldModel<>(",
+                """
+                            public CustomerEditFormModel(CustomerEdit original) {
+                                java.util.Objects.requireNonNull(original, "original");
+                                this.name = register(new TextFieldModel<>(
+                                        CustomerEditFields.NAME,
+                                        original.name(),
+                                        Converters.string()
+                                ));
+                        """,
                 "Converters.string()",
                 "Converters.bigDecimal(EmptyTextPolicy.NULL_VALUE)",
                 "Converters.localDate(EmptyTextPolicy.NULL_VALUE)",

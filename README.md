@@ -59,6 +59,7 @@ For a full verification pass:
 - [Command and action guide](docs/commands.md)
 - [Dialog guide](docs/dialogs.md)
 - [Testing guide](docs/testing.md)
+- [Generated code examples](docs/generated-code-examples.md)
 - [Implementation stage plans](docs/implementation-stage-plans/README.md)
 - [Architecture decision records](docs/adr/README.md)
 

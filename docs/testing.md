@@ -171,6 +171,10 @@ assertThat(result.messages()).contains("@UiAction methods must not declare param
 snippets and generated contracts instead of asserting a full file unless the
 whole generated source shape is the behavior being reviewed.
 
+See [Generated Code Examples](generated-code-examples.md) for the current
+annotated examples and generated companion classes that processor tests should
+keep readable.
+
 ## Example Regression Tests
 
 Examples expose `runScenario()` methods and tests assert their returned
