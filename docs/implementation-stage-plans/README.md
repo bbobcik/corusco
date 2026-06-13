@@ -112,6 +112,7 @@ commit has been created.
 | [COR-081](COR-081-add-release-policy-and-changelog.md) | `COR-081 Add release policy and changelog` | Stage 21, semantic versioning, compatibility policy, and changelog slice |
 | [COR-082](COR-082-add-jpms-module-descriptors.md) | `COR-082 Add JPMS module descriptors` | Stage 21, JPMS descriptors and module-name contract slice |
 | [COR-083](COR-083-add-published-examples-check.md) | `COR-083 Add published examples check` | Stage 21, examples compile against Maven-local artifacts slice |
+| [COR-084](COR-084-add-preview-api-audit-gates.md) | `COR-084 Add preview API audit gates` | Stage 21, API/package review and runtime reflection policy gates |
 
 ## Stage Completion Rule
 

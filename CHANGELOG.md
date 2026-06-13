@@ -14,6 +14,8 @@ preview compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 - JPMS module descriptors for published library modules.
 - `verifyExamplesAgainstPublishedArtifacts` to compile examples from
   Maven-local Corusco artifacts.
+- Preview API/package review gates for published packages and runtime
+  reflection policy.
 
 ### Changed
 

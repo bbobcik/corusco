@@ -111,7 +111,8 @@ Before tagging a preview release:
    `verifyPublishedModuleMetadata`.
 3. Run `verifyExamplesAgainstPublishedArtifacts` to confirm examples compile
    against Maven-local artifacts instead of project dependencies.
-4. Review public API names and package boundaries.
+4. Run `verifyPreviewApiAudit` and review [Preview API Review](api-review.md)
+   for public package boundaries and runtime reflection policy.
 5. Update `CHANGELOG.md` with additions, fixes, breaking changes, and migration
    notes.
 6. Confirm generated Javadocs are readable.
