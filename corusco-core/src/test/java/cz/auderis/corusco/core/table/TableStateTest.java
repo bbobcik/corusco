@@ -13,6 +13,7 @@ class TableStateTest {
     void defaultStateFollowsDescriptorDefaults() {
         TableState state = TableState.defaults(customerTable());
 
+        assertThat(state.schemaVersion()).isEqualTo(TableState.DEFAULT_SCHEMA_VERSION);
         assertThat(state.tableId()).isEqualTo("customers");
         assertThat(state.columns()).containsExactly(
                 new ColumnState("customers/name", 160, 0, true),
@@ -20,6 +21,48 @@ class TableStateTest {
                 new ColumnState("customers/status", 120, 2, false)
         );
         assertThat(state.sort()).isEmpty();
+    }
+
+    @Test
+    void mergeAppliesMigrationBeforeDescriptorFiltering() {
+        TableState stored = new TableState(
+                7,
+                "customers",
+                List.of(new ColumnState("customers/old-name", 200, 0, true)),
+                List.of(new SortState("customers/old-name", SortDirection.ASCENDING, 0))
+        );
+        TableStateMigration<CustomerRow> migration = (descriptor, state) -> new TableState(
+                TableState.DEFAULT_SCHEMA_VERSION,
+                state.tableId(),
+                state.columns().stream()
+                        .map(column -> column.id().equals("customers/old-name")
+                                ? new ColumnState("customers/name", column.width(), column.order(), column.visible())
+                                : column)
+                        .toList(),
+                state.sort().stream()
+                        .map(sort -> sort.columnId().equals("customers/old-name")
+                                ? new SortState("customers/name", sort.direction(), sort.priority())
+                                : sort)
+                        .toList()
+        );
+
+        TableState merged = TableState.merge(customerTable(), stored, migration);
+
+        assertThat(merged.schemaVersion()).isEqualTo(TableState.DEFAULT_SCHEMA_VERSION);
+        assertThat(merged.columns().getFirst()).isEqualTo(new ColumnState("customers/name", 200, 0, true));
+        assertThat(merged.sort()).containsExactly(new SortState("customers/name", SortDirection.ASCENDING, 0));
+    }
+
+    @Test
+    void rejectsNegativeSchemaVersion() {
+        assertThatThrownBy(() -> new TableState(
+                -1,
+                "customers",
+                List.of(new ColumnState("customers/name", 160, 0, true)),
+                List.of()
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("schemaVersion");
     }
 
     @Test

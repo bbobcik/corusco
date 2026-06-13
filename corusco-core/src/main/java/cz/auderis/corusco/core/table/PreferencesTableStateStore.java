@@ -15,14 +15,18 @@ import java.util.prefs.Preferences;
  * <p>Each table id is encoded into a child node under the configured root.
  * Column and sort entries are written as structured preference keys instead
  * of Java serialization, keeping the persisted form explicit and independent
- * of record binary compatibility. Instances are not synchronized; use one
- * instance from the UI/lifecycle owner that also calls {@link #flush()}.</p>
+ * of record binary compatibility. The internal store format version is
+ * separate from {@link TableState#schemaVersion()}, which belongs to the
+ * application's table schema and is available to migration hooks. Instances
+ * are not synchronized; use one instance from the UI/lifecycle owner that also
+ * calls {@link #flush()}.</p>
  */
 public final class PreferencesTableStateStore implements TableStateStore {
 
     private static final int FORMAT_VERSION = 1;
 
     private static final String KEY_VERSION = "version";
+    private static final String KEY_SCHEMA_VERSION = "schemaVersion";
     private static final String KEY_TABLE_ID = "tableId";
     private static final String KEY_COLUMN_COUNT = "columns.count";
     private static final String KEY_SORT_COUNT = "sort.count";
@@ -89,6 +93,7 @@ public final class PreferencesTableStateStore implements TableStateStore {
 
     private static void writeState(Preferences node, TableState state) {
         node.putInt(KEY_VERSION, FORMAT_VERSION);
+        node.putInt(KEY_SCHEMA_VERSION, state.schemaVersion());
         node.put(KEY_TABLE_ID, state.tableId());
         node.putInt(KEY_COLUMN_COUNT, state.columns().size());
         for (int i = 0; i < state.columns().size(); i++) {
@@ -120,6 +125,12 @@ public final class PreferencesTableStateStore implements TableStateStore {
         if (!requestedTableId.equals(storedTableId)) {
             throw malformed(requestedTableId, "stored table id does not match node");
         }
+        int schemaVersion = optionalNonNegative(
+                node,
+                requestedTableId,
+                KEY_SCHEMA_VERSION,
+                TableState.DEFAULT_SCHEMA_VERSION
+        );
 
         int columnCount = nonNegative(node, requestedTableId, KEY_COLUMN_COUNT);
         List<ColumnState> columns = new ArrayList<>(columnCount);
@@ -144,7 +155,7 @@ public final class PreferencesTableStateStore implements TableStateStore {
             ));
         }
         try {
-            return new TableState(storedTableId, columns, sort);
+            return new TableState(schemaVersion, storedTableId, columns, sort);
         } catch (IllegalArgumentException e) {
             throw malformed(requestedTableId, e.getMessage());
         }
@@ -156,6 +167,22 @@ public final class PreferencesTableStateStore implements TableStateStore {
             throw malformed(tableId, key + " must not be negative");
         }
         return value;
+    }
+
+    private static int optionalNonNegative(Preferences node, String tableId, String key, int defaultValue) {
+        String value = node.get(key, null);
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < 0) {
+                throw malformed(tableId, key + " must not be negative");
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw malformed(tableId, "invalid integer key " + key);
+        }
     }
 
     private static SortDirection readDirection(String tableId, Preferences node, String key) {

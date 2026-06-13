@@ -15,6 +15,7 @@ import cz.auderis.corusco.core.table.SortState;
 import cz.auderis.corusco.core.table.TableDescriptor;
 import cz.auderis.corusco.core.table.TableKey;
 import cz.auderis.corusco.core.table.TableState;
+import cz.auderis.corusco.core.table.TableStateMigration;
 import cz.auderis.corusco.core.table.TableStateStore;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.List;
@@ -59,6 +60,36 @@ class TableStateControllerTest {
                     new ColumnState("customers/name", 320, 1, true),
                     new ColumnState("customers/status", 120, 2, false)
             );
+            controller.close();
+            model.close();
+        });
+    }
+
+    @Test
+    void appliesMigrationHookBeforeRestoringState() {
+        SwingEdt.runAndWait(() -> {
+            InMemoryTableStateStore store = new InMemoryTableStateStore();
+            store.save(new TableState(
+                    2,
+                    "customers",
+                    List.of(new ColumnState("customers/old-name", 500, 0, true)),
+                    List.of(new SortState("customers/old-name", SortDirection.ASCENDING, 0))
+            ));
+            TableStateMigration<CustomerRow> migration = (descriptor, state) -> new TableState(
+                    TableState.DEFAULT_SCHEMA_VERSION,
+                    state.tableId(),
+                    List.of(new ColumnState("customers/name", state.columns().getFirst().width(), 0, true)),
+                    List.of(new SortState("customers/name", state.sort().getFirst().direction(), 0))
+            );
+            ObservableTableModel<CustomerRow> model = model();
+            JTable table = table(model);
+
+            TableStateController<CustomerRow> controller =
+                    TableStateController.install(table, model, store, migration);
+
+            assertThat(visibleColumnIds(table)).containsExactly("customers/name", "customers/orders", "customers/status");
+            assertThat(table.getColumnModel().getColumn(0).getWidth()).isEqualTo(320);
+            assertThat(controller.captureState().schemaVersion()).isEqualTo(TableState.DEFAULT_SCHEMA_VERSION);
             controller.close();
             model.close();
         });

@@ -51,7 +51,7 @@ class TableStateStoreTest {
     @Test
     void preferencesStoreRoundTripsAcrossStoreInstances() {
         Preferences root = preferencesRoot();
-        TableState state = customerState();
+        TableState state = customerState().withSchemaVersion(3);
         TableStateStore first = new PreferencesTableStateStore(root);
 
         first.save(state);
@@ -59,6 +59,25 @@ class TableStateStoreTest {
 
         TableStateStore second = new PreferencesTableStateStore(root);
         assertThat(second.load("customers")).contains(state);
+    }
+
+    @Test
+    void preferencesStoreDefaultsMissingSchemaVersionForLegacyRecords() {
+        Preferences root = preferencesRoot();
+        Preferences node = root.node(encodedNodeName("customers"));
+        node.putInt("version", 1);
+        node.put("tableId", "customers");
+        node.putInt("columns.count", 1);
+        node.put("columns.0.id", "customers/name");
+        node.putInt("columns.0.width", 180);
+        node.putInt("columns.0.order", 0);
+        node.putBoolean("columns.0.visible", true);
+        node.putInt("sort.count", 0);
+
+        TableStateStore store = new PreferencesTableStateStore(root);
+
+        assertThat(store.load("customers").orElseThrow().schemaVersion())
+                .isEqualTo(TableState.DEFAULT_SCHEMA_VERSION);
     }
 
     @Test
