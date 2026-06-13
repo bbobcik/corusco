@@ -12,6 +12,8 @@
  * {@link cz.auderis.corusco.core.form}. Validation primitives are available
  * under {@link cz.auderis.corusco.core.validation}. Command primitives are
  * available under {@link cz.auderis.corusco.core.command}. Generated metadata
- * descriptors are available under {@link cz.auderis.corusco.core.meta}.</p>
+ * descriptors are available under {@link cz.auderis.corusco.core.meta}.
+ * Observable collections are available under
+ * {@link cz.auderis.corusco.core.collection}.</p>
  */
 package cz.auderis.corusco.core;
