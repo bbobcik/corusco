@@ -377,6 +377,122 @@ class CoruscoAnnotationProcessorTest {
     }
 
     @Test
+    void generatesTableColumnsAndDescriptorForAnnotatedRecord() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.Column;
+                import cz.auderis.corusco.annotations.SwingTable;
+
+                @SwingTable(id = "customer/search")
+                public record CustomerEdit(
+                        @Column(width = 180, tooltip = "customer/search/name/help") String name,
+                        String ignored,
+                        @Column(
+                                id = "customer/search/orders",
+                                header = "customer/search/orders/title",
+                                width = 80,
+                                order = 3,
+                                sortable = false,
+                                filterable = false,
+                                hideable = false
+                        ) int orders
+                ) {
+                }
+                """);
+
+        assertThat(result.success()).isTrue();
+        String columns = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditColumns.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(columns).contains(
+                "public final class CustomerEditColumns",
+                "public static final TableKey<CustomerEdit> TABLE",
+                "TableKey.of(\"customer/search\", CustomerEdit.class)",
+                "public static final ColumnKey<CustomerEdit, java.lang.String> NAME_KEY",
+                "ColumnKey.of(\"customer/search/name\", CustomerEdit.class, java.lang.String.class)",
+                "ResourceKey.of(\"customer/search/name/header\", String.class)",
+                "ResourceKey.of(\"customer/search/name/help\", String.class)",
+                "new ColumnDefaults(180, 0, true)",
+                "new ColumnCapabilities(true, true, false, true)",
+                "Column.readOnly(NAME_DESCRIPTOR, CustomerEdit::name)",
+                "public static final ColumnKey<CustomerEdit, java.lang.Integer> ORDERS_KEY",
+                "ColumnKey.of(\"customer/search/orders\", CustomerEdit.class, java.lang.Integer.class)",
+                "ResourceKey.of(\"customer/search/orders/title\", String.class)",
+                "new ColumnDefaults(80, 3, true)",
+                "new ColumnCapabilities(false, false, false, false)",
+                "Column.readOnly(ORDERS_DESCRIPTOR, CustomerEdit::orders)"
+        );
+        String descriptor = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditTableDescriptor.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(descriptor).contains(
+                "public final class CustomerEditTableDescriptor",
+                "public static final cz.auderis.corusco.core.table.TableDescriptor<CustomerEdit> DESCRIPTOR",
+                "CustomerEditColumns.TABLE",
+                "List.of(",
+                "CustomerEditColumns.NAME",
+                "CustomerEditColumns.ORDERS",
+                "public static ObservableTableModel<CustomerEdit> tableModel(ObservableList<CustomerEdit> rows)"
+        );
+    }
+
+    @Test
+    void rejectsNonRecordSwingTable() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.SwingTable;
+
+                @SwingTable(id = "customer/search")
+                public final class CustomerEdit {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@SwingTable is supported only on records");
+    }
+
+    @Test
+    void rejectsDuplicateTableColumnIds() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.Column;
+                import cz.auderis.corusco.annotations.SwingTable;
+
+                @SwingTable(id = "customer/search")
+                public record CustomerEdit(
+                        @Column(id = "customer/search/name") String name,
+                        @Column(id = "customer/search/name") String displayName
+                ) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Duplicate @Column id in CustomerEdit: customer/search/name");
+    }
+
+    @Test
+    void rejectsEditableTableColumnsUntilGeneratedUpdatersExist() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.Column;
+                import cz.auderis.corusco.annotations.SwingTable;
+
+                @SwingTable(id = "customer/search")
+                public record CustomerEdit(@Column(editable = true) String name) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@Column editable=true is deferred until generated row updater support");
+    }
+
+    @Test
     void generatesActionDescriptorsForUiActionMethods() throws Exception {
         CompilationResult result = compile("""
                 package demo;

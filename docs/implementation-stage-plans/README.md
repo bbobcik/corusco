@@ -54,6 +54,7 @@ commit has been created.
 | [COR-023](COR-023-add-observable-table-model-core.md) | `COR-023 Add observable table model core` | Stage 12, typed table model core slice |
 | [COR-024](COR-024-add-table-selection-binding.md) | `COR-024 Add table selection binding` | Stage 12, table selection binding slice |
 | [COR-025](COR-025-add-table-cell-problem-decoration.md) | `COR-025 Add table cell problem decoration` | Stage 12, table cell problem/decorator slice |
+| [COR-026](COR-026-add-generated-table-columns.md) | `COR-026 Add generated table columns` | Stage 13, generated table column metadata slice |
 
 ## Stage Completion Rule
 
