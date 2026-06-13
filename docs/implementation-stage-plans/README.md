@@ -66,6 +66,7 @@ commit has been created.
 | [COR-035](COR-035-add-table-header-visibility-menu.md) | `COR-035 Add table header visibility menu` | Stage 14, table header visibility menu slice |
 | [COR-036](COR-036-add-table-state-schema-migration.md) | `COR-036 Add table state schema migration` | Stage 14, schema version and migration hook slice |
 | [COR-037](COR-037-add-resource-lookup-core.md) | `COR-037 Add resource lookup core` | Stage 15, typed resource lookup slice |
+| [COR-038](COR-038-add-help-service-core.md) | `COR-038 Add help service core` | Stage 15, core help service slice |
 
 ## Stage Completion Rule
 
