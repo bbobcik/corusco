@@ -53,6 +53,7 @@ commit has been created.
 | [COR-022](COR-022-add-edt-observable-list-dispatcher.md) | `COR-022 Add EDT observable list dispatcher` | Stage 11, EDT dispatch slice |
 | [COR-023](COR-023-add-observable-table-model-core.md) | `COR-023 Add observable table model core` | Stage 12, typed table model core slice |
 | [COR-024](COR-024-add-table-selection-binding.md) | `COR-024 Add table selection binding` | Stage 12, table selection binding slice |
+| [COR-025](COR-025-add-table-cell-problem-decoration.md) | `COR-025 Add table cell problem decoration` | Stage 12, table cell problem/decorator slice |
 
 ## Stage Completion Rule
 
