@@ -1,0 +1,22 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'corusco'
+
+include 'corusco-core'
+include 'corusco-swing'
+include 'corusco-annotations'
+include 'corusco-processor'
+include 'corusco-test'
+include 'corusco-examples'

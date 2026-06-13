@@ -1,0 +1,14 @@
+[versions]
+assertj = "3.27.7"
+junit = "6.1.0"
+lombok = "1.18.46"
+
+[libraries]
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit" }
+lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+
+[bundles]
+testPlatform = ["junit-jupiter", "assertj-core"]
+testPlatformRuntime = ["junit-platform-launcher"]
