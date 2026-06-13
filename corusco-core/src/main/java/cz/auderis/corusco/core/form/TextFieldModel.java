@@ -124,6 +124,15 @@ public final class TextFieldModel<O, T> {
     }
 
     /**
+     * Returns observable parse problems for this field.
+     *
+     * @return observable problem set
+     */
+    public ReadableValue<ProblemSet> problemSet() {
+        return problems;
+    }
+
+    /**
      * Sets raw text and parses it synchronously.
      *
      * @param newRawText new raw text
