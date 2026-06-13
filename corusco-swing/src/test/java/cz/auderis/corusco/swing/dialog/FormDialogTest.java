@@ -4,7 +4,11 @@ import cz.auderis.corusco.core.form.FormModel;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 
+import javax.swing.DefaultCellEditor;
 import javax.swing.JPanel;
+import javax.swing.JTable;
+import javax.swing.JTextField;
+import javax.swing.table.DefaultTableModel;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -228,6 +232,27 @@ class FormDialogTest {
     }
 
     @Test
+    void rejectingTableEditorBlocksAcceptAndKeepsDialogOpen() {
+        SwingEdt.runAndWait(() -> {
+            JPanel root = new JPanel();
+            DefaultTableModel model = new DefaultTableModel(new Object[][] { { "Alice" } }, new Object[] { "Name" });
+            JTable table = new JTable(model);
+            table.setDefaultEditor(Object.class, new RejectingCellEditor());
+            root.add(table);
+            table.editCellAt(0, 0);
+            ((JTextField) table.getEditorComponent()).setText("Alicia");
+            FormDialog<TestForm, String> dialog = new FormDialog<>(new TestForm("blocked"), root);
+
+            assertThat(dialog.accept()).isFalse();
+
+            assertThat(dialog.isClosed()).isFalse();
+            assertThat(dialog.result().isAccepted()).isFalse();
+            assertThat(table.isEditing()).isTrue();
+            assertThat(model.getValueAt(0, 0)).isEqualTo("Alice");
+        });
+    }
+
+    @Test
     void nullResultDoesNotAcceptBaseline() {
         SwingEdt.runAndWait(() -> {
             TestForm form = new TestForm(null);
@@ -270,6 +295,18 @@ class FormDialogTest {
         @Override
         protected boolean commitActiveEditor() {
             return editorCommit;
+        }
+    }
+
+    private static final class RejectingCellEditor extends DefaultCellEditor {
+
+        private RejectingCellEditor() {
+            super(new JTextField());
+        }
+
+        @Override
+        public boolean stopCellEditing() {
+            return false;
         }
     }
 
