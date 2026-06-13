@@ -185,6 +185,10 @@ Use `@Help(topic = "...")` on a column when the descriptor should carry a help
 topic. Use either `@Column(tooltip = "...")` or `@Help(tooltip = "...")`, not
 both.
 
+See [Table Guide](tables.md) for how generated column descriptors are installed
+in Swing, how Glazed Lists row sources are adapted, and how table-state
+persistence uses stable column ids.
+
 ## Action Annotations
 
 ### `@UiAction`

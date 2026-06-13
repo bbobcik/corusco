@@ -143,6 +143,10 @@ At runtime:
 - Glazed Lists interop can provide the observable row source when applications
   already use `EventList` pipelines.
 
+See [Table Guide](tables.md) for generated table records, Glazed Lists row
+sources, selection binding, table-state migration, visibility menus, and
+testing patterns.
+
 ## Behaviors and Commands
 
 Behaviors are attachable component extensions. They install listeners, input-map
