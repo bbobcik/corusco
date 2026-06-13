@@ -93,6 +93,7 @@ commit has been created.
 | [COR-062](COR-062-add-tester-command-invocation.md) | `COR-062 Add tester command invocation` | Stage 19, action invocation by `ActionKey` slice |
 | [COR-063](COR-063-add-tester-field-input-helpers.md) | `COR-063 Add tester field input helpers` | Stage 19, field input helper slice |
 | [COR-064](COR-064-add-tester-table-selection-helpers.md) | `COR-064 Add tester table selection helpers` | Stage 19, table selection helper slice |
+| [COR-065](COR-065-add-tester-problem-assertions.md) | `COR-065 Add tester problem assertions` | Stage 19, problem assertion helper slice |
 
 ## Stage Completion Rule
 
