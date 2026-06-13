@@ -15,6 +15,12 @@ package cz.auderis.corusco.core.lifecycle;
 public interface Detachable {
 
     /**
+     * No-op detachable useful as an optional placeholder.
+     */
+    Detachable EMPTY = () -> {
+    };
+
+    /**
      * Releases cached state that can be loaded again later.
      */
     void detach();

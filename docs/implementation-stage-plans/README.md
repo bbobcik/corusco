@@ -76,6 +76,7 @@ commit has been created.
 | [COR-045](COR-045-add-table-cell-tooltips.md) | `COR-045 Add table cell tooltips` | Stage 15, table cell tooltip behavior slice |
 | [COR-046](COR-046-add-detachable-value-core.md) | `COR-046 Add detachable value core` | Stage 16, detachable value foundation slice |
 | [COR-047](COR-047-add-loadable-observable-list.md) | `COR-047 Add loadable observable list` | Stage 16, loadable observable-list slice |
+| [COR-048](COR-048-add-detachable-lifecycle-scope.md) | `COR-048 Add detachable lifecycle scope` | Stage 16, attach/detach lifecycle integration slice |
 
 ## Stage Completion Rule
 
