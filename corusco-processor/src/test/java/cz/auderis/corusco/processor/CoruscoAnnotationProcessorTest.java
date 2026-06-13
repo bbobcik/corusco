@@ -27,14 +27,18 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.CheckBox;
+                import cz.auderis.corusco.annotations.DecimalRange;
+                import cz.auderis.corusco.annotations.Help;
+                import cz.auderis.corusco.annotations.Length;
+                import cz.auderis.corusco.annotations.Required;
                 import cz.auderis.corusco.annotations.SwingForm;
                 import cz.auderis.corusco.annotations.TextField;
                 import java.math.BigDecimal;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(
-                        @TextField String name,
-                        @TextField BigDecimal creditLimit,
+                        @TextField @Required @Length(max = 80) @Help(topic = "customer/name") String name,
+                        @TextField @DecimalRange(min = "0.00") BigDecimal creditLimit,
                         @CheckBox boolean active
                 ) {
                 }
@@ -53,6 +57,42 @@ class CoruscoAnnotationProcessorTest {
                 "TextFieldKey.of(\"customer/credit-limit\", CustomerEdit.class, java.math.BigDecimal.class)",
                 "public static final FieldKey<CustomerEdit, java.lang.Boolean> ACTIVE",
                 "FieldKey.of(\"customer/active\", CustomerEdit.class, java.lang.Boolean.class)"
+        );
+        String resources = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditResources.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(resources).contains(
+                "ResourceKey.of(\"customer/name/label\", String.class)",
+                "ResourceKey.of(\"customer/name/tooltip\", String.class)",
+                "ResourceKey.of(\"customer/credit-limit/label\", String.class)"
+        );
+        String problems = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditProblems.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(problems).contains(
+                "ProblemCode.of(\"customer/name/required\")",
+                "ProblemCode.of(\"customer/name/length\")",
+                "ProblemCode.of(\"customer/credit-limit/decimal-range\")"
+        );
+        String descriptors = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditDescriptors.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(descriptors).contains(
+                "public static final FieldDescriptor<CustomerEdit, java.lang.String> NAME",
+                "\"customer/name\"",
+                "\"name\"",
+                "FieldKind.TEXT",
+                "CustomerEditResources.NAME_LABEL",
+                "CustomerEditResources.NAME_TOOLTIP",
+                "HelpTopic.of(\"customer/name\")",
+                "ConstraintDescriptor.required(CustomerEditProblems.NAME_REQUIRED)",
+                "ConstraintDescriptor.length(CustomerEditProblems.NAME_LENGTH, 0, 80)",
+                "ConstraintDescriptor.decimalRange(CustomerEditProblems.CREDIT_LIMIT_DECIMAL_RANGE, \"0.00\", null)",
+                "public static final FieldDescriptor<CustomerEdit, java.lang.Boolean> ACTIVE",
+                "FieldKind.CHECK_BOX"
         );
     }
 
@@ -122,6 +162,79 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages()).contains("@SwingForm generic records are not supported by this processor stage");
+    }
+
+    @Test
+    void rejectsLengthOnNonStringTextField() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.Length;
+                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.TextField;
+                import java.math.BigDecimal;
+
+                @SwingForm(id = "customer")
+                public record CustomerEdit(@TextField @Length(max = 10) BigDecimal creditLimit) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@Length is supported only on @TextField String components");
+    }
+
+    @Test
+    void rejectsInvalidDecimalRange() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.DecimalRange;
+                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.TextField;
+                import java.math.BigDecimal;
+
+                @SwingForm(id = "customer")
+                public record CustomerEdit(@TextField @DecimalRange(min = "10", max = "1") BigDecimal creditLimit) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@DecimalRange requires min <= max");
+    }
+
+    @Test
+    void rejectsMetadataOnUnannotatedRecordComponent() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.Required;
+                import cz.auderis.corusco.annotations.SwingForm;
+
+                @SwingForm(id = "customer")
+                public record CustomerEdit(@Required String name) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Field metadata annotations require @TextField or @CheckBox");
+    }
+
+    @Test
+    void rejectsUnstableGeneratedIds() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.TextField;
+
+                @SwingForm(id = "customer name")
+                public record CustomerEdit(@TextField String name) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages())
+                .contains("@SwingForm id must contain only letters, digits, dots, underscores, dashes, or slashes");
     }
 
     private CompilationResult compile(String source) throws Exception {

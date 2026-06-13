@@ -11,6 +11,7 @@
  * {@link cz.auderis.corusco.core.convert} and
  * {@link cz.auderis.corusco.core.form}. Validation primitives are available
  * under {@link cz.auderis.corusco.core.validation}. Command primitives are
- * available under {@link cz.auderis.corusco.core.command}.</p>
+ * available under {@link cz.auderis.corusco.core.command}. Generated metadata
+ * descriptors are available under {@link cz.auderis.corusco.core.meta}.</p>
  */
 package cz.auderis.corusco.core;

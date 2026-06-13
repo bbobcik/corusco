@@ -40,6 +40,7 @@ commit has been created.
 | [COR-009](COR-009-add-behavior-core.md) | `COR-009 Add behavior core` | Stage 6 |
 | [COR-010](COR-010-add-command-action-core.md) | `COR-010 Add command action core` | Stage 7, command/action core |
 | [COR-011](COR-011-add-field-key-processor-spike.md) | `COR-011 Add field key processor spike` | Stage 8, first metamodel slice |
+| [COR-012](COR-012-add-generated-field-descriptors.md) | `COR-012 Add generated field descriptors` | Stage 8, descriptor/resource/problem slice |
 
 ## Stage Completion Rule
 
