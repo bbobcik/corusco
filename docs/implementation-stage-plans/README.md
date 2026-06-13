@@ -46,6 +46,7 @@ commit has been created.
 | [COR-015](COR-015-add-generated-record-form-models.md) | `COR-015 Add generated record form models` | Stage 9, first generated form-model slice |
 | [COR-016](COR-016-add-generated-view-contracts.md) | `COR-016 Add generated view contracts` | Stage 10, initial view/behavior plan slice |
 | [COR-017](COR-017-add-observable-list-core.md) | `COR-017 Add observable list core` | Stage 11, observable list core slice |
+| [COR-018](COR-018-refactor-processor-source-templates.md) | `COR-018 Refactor processor source templates` | Stage 8-10 processor maintainability slice |
 
 ## Stage Completion Rule
 

@@ -230,6 +230,10 @@ The processor shall:
 
 - use `javax.lang.model.*`, not reflection;
 - generate deterministic, readable Java source;
+- keep source-generation templates modular and readable; prefer a real template
+  engine such as Velocity when generation becomes broad enough to justify the
+  dependency, otherwise use Java text blocks rather than long sequences of
+  string writes;
 - report errors with exact source positions where possible;
 - favor isolating processor behavior for Gradle incremental compilation;
 - avoid global registries in early stages;
