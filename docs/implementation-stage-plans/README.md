@@ -103,6 +103,7 @@ commit has been created.
 | [COR-072](COR-072-add-behavior-authoring-guide.md) | `COR-072 Add behavior authoring guide` | Stage 20, behavior authoring guide slice |
 | [COR-073](COR-073-add-form-model-guide.md) | `COR-073 Add form model guide` | Stage 20, form model guide slice |
 | [COR-074](COR-074-add-table-guide.md) | `COR-074 Add table guide` | Stage 20, table guide slice |
+| [COR-075](COR-075-add-command-action-guide.md) | `COR-075 Add command action guide` | Stage 20, command/action guide slice |
 
 ## Stage Completion Rule
 

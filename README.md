@@ -56,6 +56,7 @@ For a full verification pass:
 - [Behavior authoring guide](docs/behaviors.md)
 - [Form model guide](docs/forms.md)
 - [Table guide](docs/tables.md)
+- [Command and action guide](docs/commands.md)
 - [Implementation stage plans](docs/implementation-stage-plans/README.md)
 - [Architecture decision records](docs/adr/README.md)
 
