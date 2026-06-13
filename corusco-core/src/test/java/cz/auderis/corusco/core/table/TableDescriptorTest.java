@@ -42,6 +42,9 @@ class TableDescriptorTest {
         assertThatThrownBy(() -> ColumnDefaults.visible(0, 0))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("width");
+        assertThatThrownBy(() -> ColumnPersistence.of("customers/name", 120, 80))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxWidth");
         assertThatThrownBy(() -> new TableDescriptor<>(TableKey.of("customers", CustomerRow.class), List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("columns");
@@ -54,6 +57,8 @@ class TableDescriptorTest {
 
         CustomerRow updated = name.update(original, "Globex");
 
+        assertThat(name.descriptor().persistence())
+                .isEqualTo(ColumnPersistence.of("name", 160, Integer.MAX_VALUE));
         assertThat(name.value(original)).isEqualTo("Acme");
         assertThat(updated).isEqualTo(new CustomerRow("Globex", 7));
     }

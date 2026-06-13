@@ -40,11 +40,32 @@ public @interface Column {
     String tooltip() default "";
 
     /**
+     * Stable persistence id. When blank, the generated column id is used.
+     *
+     * @return stable persistence id or blank for the default
+     */
+    String persistenceId() default "";
+
+    /**
      * Preferred default width in pixels.
      *
      * @return width greater than zero
      */
     int width() default 120;
+
+    /**
+     * Minimum restored width in pixels.
+     *
+     * @return width greater than zero and not greater than {@link #width()}
+     */
+    int minWidth() default 24;
+
+    /**
+     * Maximum restored width in pixels.
+     *
+     * @return width not less than {@link #width()}
+     */
+    int maxWidth() default Integer.MAX_VALUE;
 
     /**
      * Default visual order. Negative values mean record component order.

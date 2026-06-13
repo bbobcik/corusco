@@ -387,7 +387,13 @@ class CoruscoAnnotationProcessorTest {
 
                 @SwingTable(id = "customer/search")
                 public record CustomerEdit(
-                        @Column(width = 180, editable = true)
+                        @Column(
+                                persistenceId = "customer/search/main-name",
+                                width = 180,
+                                minWidth = 80,
+                                maxWidth = 320,
+                                editable = true
+                        )
                         @Help(tooltip = "customer/search/name/help", topic = "customer/search/name")
                         String name,
                         String ignored,
@@ -418,6 +424,7 @@ class CoruscoAnnotationProcessorTest {
                 "CustomerEditTableResources.NAME_HEADER",
                 "CustomerEditTableResources.NAME_TOOLTIP",
                 "HelpTopic.of(\"customer/search/name\")",
+                "ColumnPersistence.of(\"customer/search/main-name\", 80, 320)",
                 "new ColumnDefaults(180, 0, true)",
                 "new ColumnCapabilities(true, true, true, true)",
                 "Column.editable(NAME_DESCRIPTOR, CustomerEdit::name, CustomerEditColumns::updateName)",
@@ -429,6 +436,7 @@ class CoruscoAnnotationProcessorTest {
                 "public static final ColumnKey<CustomerEdit, java.lang.Integer> ORDERS_KEY",
                 "ColumnKey.of(\"customer/search/orders\", CustomerEdit.class, java.lang.Integer.class)",
                 "CustomerEditTableResources.ORDERS_HEADER",
+                "ColumnPersistence.of(\"customer/search/orders\", 24, Integer.MAX_VALUE)",
                 "new ColumnDefaults(80, 3, true)",
                 "new ColumnCapabilities(false, false, false, false)",
                 "Column.readOnly(ORDERS_DESCRIPTOR, CustomerEdit::orders)"
@@ -509,6 +517,23 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages()).contains("@Column width must be greater than zero");
+    }
+
+    @Test
+    void rejectsInvalidTableColumnPersistenceMetadata() throws Exception {
+        CompilationResult result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.Column;
+                import cz.auderis.corusco.annotations.SwingTable;
+
+                @SwingTable(id = "customer/search")
+                public record CustomerEdit(@Column(width = 80, minWidth = 100) String name) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@Column requires minWidth <= width");
     }
 
     @Test
