@@ -59,6 +59,11 @@ public final class StandardBehaviorKeys {
      */
     public static final BehaviorKey ACCESSIBLE_TEXT = BehaviorKey.of("decoration/accessible-text");
 
+    /**
+     * Busy overlay decoration behavior for {@code JLayer}-wrapped views.
+     */
+    public static final BehaviorKey BUSY_OVERLAY = BehaviorKey.of("decoration/busy-overlay");
+
     private StandardBehaviorKeys() {
     }
 }

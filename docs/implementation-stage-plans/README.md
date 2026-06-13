@@ -82,6 +82,7 @@ commit has been created.
 | [COR-051](COR-051-add-swing-task-callbacks.md) | `COR-051 Add Swing task callbacks` | Stage 17, Swing EDT callback delivery slice |
 | [COR-052](COR-052-add-generation-counter-helper.md) | `COR-052 Add generation counter helper` | Stage 17, stale-result generation counter helper slice |
 | [COR-053](COR-053-add-async-field-validation.md) | `COR-053 Add async field validation` | Stage 17, async field validation API slice |
+| [COR-054](COR-054-add-swing-busy-overlay.md) | `COR-054 Add Swing busy overlay` | Stage 17, Swing `JLayer` busy overlay slice |
 
 ## Stage Completion Rule
 
