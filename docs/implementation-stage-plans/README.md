@@ -44,6 +44,7 @@ commit has been created.
 | [COR-013](COR-013-add-remaining-field-metadata-annotations.md) | `COR-013 Add remaining field metadata annotations` | Stage 8, remaining field metadata slice |
 | [COR-014](COR-014-add-generated-action-descriptors.md) | `COR-014 Add generated action descriptors` | Stage 8, action metadata slice |
 | [COR-015](COR-015-add-generated-record-form-models.md) | `COR-015 Add generated record form models` | Stage 9, first generated form-model slice |
+| [COR-016](COR-016-add-generated-view-contracts.md) | `COR-016 Add generated view contracts` | Stage 10, initial view/behavior plan slice |
 
 ## Stage Completion Rule
 

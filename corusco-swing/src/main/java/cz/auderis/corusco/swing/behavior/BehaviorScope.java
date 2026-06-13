@@ -4,10 +4,12 @@ import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.BindingScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import javax.swing.JComponent;
 
@@ -17,13 +19,13 @@ import javax.swing.JComponent;
  * <p>Behaviors are sorted by {@link BehaviorPhase} before installation.
  * Installed handles are closed in reverse installation order through
  * {@link BindingScope}. Duplicate single-cardinality keys and multiple primary
- * binding behaviors fail fast.</p>
+ * binding behaviors fail fast per component.</p>
  */
 public final class BehaviorScope implements Binding {
 
     private final BindingScope bindings = new BindingScope();
-    private final Set<BehaviorKey> installedSingleKeys = new HashSet<>();
-    private boolean primaryBindingInstalled;
+    private final Map<JComponent, Set<BehaviorKey>> installedSingleKeys = new IdentityHashMap<>();
+    private final Set<JComponent> primaryBindingComponents = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /**
      * Installs behaviors on a component.
@@ -84,11 +86,12 @@ public final class BehaviorScope implements Binding {
     private <C extends JComponent> void installOne(C component, ViewBehavior<? super C> behavior) {
         BehaviorDescriptor descriptor = behavior.descriptor();
         if (descriptor.conflictsWithPrimaryBinding()) {
-            if (primaryBindingInstalled) {
+            if (primaryBindingComponents.contains(component)) {
                 throw new BehaviorConflictException("Primary binding behavior already installed");
             }
         }
-        if (descriptor.cardinality() == BehaviorCardinality.SINGLE && installedSingleKeys.contains(descriptor.key())) {
+        Set<BehaviorKey> componentKeys = installedSingleKeys.computeIfAbsent(component, ignored -> new java.util.HashSet<>());
+        if (descriptor.cardinality() == BehaviorCardinality.SINGLE && componentKeys.contains(descriptor.key())) {
             throw new BehaviorConflictException("Behavior already installed: " + descriptor.key());
         }
         @SuppressWarnings("unchecked")
@@ -96,10 +99,10 @@ public final class BehaviorScope implements Binding {
         Binding installed = typedBehavior.install(new BehaviorContext<>(component, this));
         bindings.add(installed);
         if (descriptor.conflictsWithPrimaryBinding()) {
-            primaryBindingInstalled = true;
+            primaryBindingComponents.add(component);
         }
         if (descriptor.cardinality() == BehaviorCardinality.SINGLE) {
-            installedSingleKeys.add(descriptor.key());
+            componentKeys.add(descriptor.key());
         }
     }
 }

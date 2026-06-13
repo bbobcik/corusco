@@ -139,6 +139,29 @@ class CoruscoAnnotationProcessorTest {
                 "name.value()",
                 "active.value().value()"
         );
+        String view = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditView.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(view).contains(
+                "public interface CustomerEditView",
+                "JTextField nameField();",
+                "JTextField validFromField();",
+                "JComboBox<demo.CustomerType> typeCombo();",
+                "JCheckBox activeBox();"
+        );
+        String behaviorPlan = Files.readString(
+                result.generatedSources().resolve("demo/CustomerEditBehaviorPlan.java"),
+                StandardCharsets.UTF_8
+        );
+        assertThat(behaviorPlan).contains(
+                "public final class CustomerEditBehaviorPlan",
+                "public static void install(CustomerEditView view, CustomerEditFormModel model, BehaviorScope scope)",
+                "StandardBehaviors.textFieldBinding(model.name)",
+                "StandardBehaviors.validationTooltip(model.name.problemSet())",
+                "StandardBehaviors.selectAllOnFocus()",
+                "StandardBehaviors.checkBoxBinding(model.active)"
+        );
     }
 
     @Test
