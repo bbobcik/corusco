@@ -68,6 +68,7 @@ commit has been created.
 | [COR-037](COR-037-add-resource-lookup-core.md) | `COR-037 Add resource lookup core` | Stage 15, typed resource lookup slice |
 | [COR-038](COR-038-add-help-service-core.md) | `COR-038 Add help service core` | Stage 15, core help service slice |
 | [COR-039](COR-039-add-swing-help-behavior.md) | `COR-039 Add Swing help behavior` | Stage 15, Swing F1 help behavior slice |
+| [COR-040](COR-040-add-tooltip-policy-core.md) | `COR-040 Add tooltip policy core` | Stage 15, core tooltip composition slice |
 
 ## Stage Completion Rule
 
