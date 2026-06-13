@@ -6,8 +6,10 @@ generated metadata, lifecycle-aware Swing behaviors, and testable UI wiring.
 
 The repository currently contains the engineering baseline plus the first core
 runtime primitives: lifecycle subscriptions, observable values, and typed
-identity keys. Annotation processing, bindings, validation, and table support
-will be added in later implementation stages.
+identity keys. The core also contains the first typed problem, conversion, and
+non-Swing form model primitives. Annotation processing, Swing bindings,
+validation rules, and table support will be added in later implementation
+stages.
 
 ## Requirements
 

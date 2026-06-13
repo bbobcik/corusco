@@ -6,7 +6,9 @@
  * {@link cz.auderis.corusco.core.lifecycle}. Observable value primitives are
  * available under {@link cz.auderis.corusco.core.value}. Typed identity keys
  * are available under {@link cz.auderis.corusco.core.key}. Problem primitives
- * are available under {@link cz.auderis.corusco.core.problem}. Later stages add
- * form model primitives.</p>
+ * are available under {@link cz.auderis.corusco.core.problem}. Conversion and
+ * form model primitives are available under
+ * {@link cz.auderis.corusco.core.convert} and
+ * {@link cz.auderis.corusco.core.form}.</p>
  */
 package cz.auderis.corusco.core;
