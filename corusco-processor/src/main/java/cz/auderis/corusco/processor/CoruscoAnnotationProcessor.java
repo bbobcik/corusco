@@ -11,12 +11,15 @@ import cz.auderis.corusco.annotations.Required;
 import cz.auderis.corusco.annotations.Regex;
 import cz.auderis.corusco.annotations.SwingForm;
 import cz.auderis.corusco.annotations.TextField;
+import cz.auderis.corusco.annotations.UiAction;
 import java.io.IOException;
 import java.io.Writer;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Filer;
@@ -28,6 +31,7 @@ import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.PrimitiveType;
@@ -45,7 +49,10 @@ import javax.tools.JavaFileObject;
  * It deliberately uses only {@code javax.lang.model} APIs; no runtime
  * reflection or annotation scanning is involved.</p>
  */
-@SupportedAnnotationTypes("cz.auderis.corusco.annotations.SwingForm")
+@SupportedAnnotationTypes({
+        "cz.auderis.corusco.annotations.SwingForm",
+        "cz.auderis.corusco.annotations.UiAction"
+})
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
 public final class CoruscoAnnotationProcessor extends AbstractProcessor {
 
@@ -70,7 +77,90 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 processForm(typeElement);
             }
         }
+        processActions(roundEnv);
         return true;
+    }
+
+    private void processActions(RoundEnvironment roundEnv) {
+        Map<TypeElement, List<ActionSpec>> actionsByOwner = new LinkedHashMap<>();
+        boolean failed = false;
+        for (Element element : roundEnv.getElementsAnnotatedWith(UiAction.class)) {
+            if (!(element instanceof ExecutableElement method)) {
+                error(element, "@UiAction is supported only on methods");
+                failed = true;
+                continue;
+            }
+            Element owner = method.getEnclosingElement();
+            if (!(owner instanceof TypeElement ownerType)) {
+                error(method, "@UiAction method must be enclosed by a type");
+                failed = true;
+                continue;
+            }
+            ActionSpec action = actionSpec(method);
+            if (action == null) {
+                failed = true;
+                continue;
+            }
+            List<ActionSpec> actions = actionsByOwner.computeIfAbsent(ownerType, ignored -> new ArrayList<>());
+            if (actions.stream().anyMatch(existing -> existing.id.equals(action.id))) {
+                error(method, "Duplicate @UiAction id in " + ownerType.getSimpleName() + ": " + action.id);
+                failed = true;
+                continue;
+            }
+            actions.add(action);
+        }
+        if (failed) {
+            return;
+        }
+        for (Map.Entry<TypeElement, List<ActionSpec>> entry : actionsByOwner.entrySet()) {
+            writeActionsClass(entry.getKey(), entry.getValue());
+        }
+    }
+
+    private ActionSpec actionSpec(ExecutableElement method) {
+        UiAction annotation = method.getAnnotation(UiAction.class);
+        if (!method.getParameters().isEmpty()) {
+            error(method, "@UiAction methods must not declare parameters");
+            return null;
+        }
+        if (method.getReturnType().getKind() != TypeKind.VOID) {
+            error(method, "@UiAction methods must return void");
+            return null;
+        }
+        if (annotation.id().isBlank()) {
+            error(method, "@UiAction id must not be blank");
+            return null;
+        }
+        if (!isStableId(annotation.id())) {
+            error(method, "@UiAction id must contain only letters, digits, dots, underscores, dashes, or slashes");
+            return null;
+        }
+        if (!annotation.text().isBlank() && !isStableId(annotation.text())) {
+            error(method, "@UiAction text must contain only letters, digits, dots, underscores, dashes, or slashes");
+            return null;
+        }
+        if (!annotation.tooltip().isBlank() && !isStableId(annotation.tooltip())) {
+            error(method, "@UiAction tooltip must contain only letters, digits, dots, underscores, dashes, or slashes");
+            return null;
+        }
+        if (annotation.acceleratorKey() == 0 && annotation.acceleratorModifiers() != 0) {
+            error(method, "@UiAction acceleratorModifiers require acceleratorKey");
+            return null;
+        }
+        String methodName = method.getSimpleName().toString();
+        String constantName = constantName(methodName);
+        String textId = annotation.text().isBlank() ? annotation.id() + "/text" : annotation.text();
+        String tooltipId = annotation.tooltip().isBlank() ? null : annotation.tooltip();
+        return new ActionSpec(
+                constantName,
+                annotation.id(),
+                textId,
+                tooltipId,
+                annotation.mnemonic(),
+                annotation.acceleratorKey(),
+                annotation.acceleratorModifiers(),
+                annotation.selectable()
+        );
     }
 
     private void processForm(TypeElement formType) {
@@ -429,6 +519,79 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         }
     }
 
+    private void writeActionsClass(TypeElement ownerType, List<ActionSpec> actions) {
+        String packageName = elements.getPackageOf(ownerType).getQualifiedName().toString();
+        String ownerName = ownerType.getSimpleName().toString();
+        String generatedType = ownerName + "Actions";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        try {
+            JavaFileObject sourceFile = filer.createSourceFile(qualifiedName, ownerType);
+            try (Writer writer = sourceFile.openWriter()) {
+                writePackage(writer, packageName);
+                writer.write("import cz.auderis.corusco.core.command.AcceleratorDescriptor;\n");
+                writer.write("import cz.auderis.corusco.core.command.ActionDescriptor;\n");
+                writer.write("import cz.auderis.corusco.core.key.ActionKey;\n");
+                writer.write("import cz.auderis.corusco.core.key.ResourceKey;\n\n");
+                writer.write("/**\n");
+                writer.write(" * Generated action descriptors for {@link " + ownerName + "}.\n");
+                writer.write(" */\n");
+                writer.write("public final class " + generatedType + " {\n\n");
+                writePrivateConstructor(writer, generatedType);
+                for (ActionSpec action : actions) {
+                    writeAction(writer, action);
+                }
+                writer.write("}\n");
+            }
+        } catch (IOException e) {
+            error(ownerType, "Could not write generated action descriptors: " + e.getMessage());
+        }
+    }
+
+    private void writeAction(Writer writer, ActionSpec action) throws IOException {
+        writer.write("    /**\n");
+        writer.write("     * Action key for {@code " + action.id + "}.\n");
+        writer.write("     */\n");
+        writer.write("    public static final ActionKey " + action.constantName + "_KEY =\n");
+        writer.write("            ActionKey.of(" + stringLiteralOrNull(action.id) + ");\n\n");
+
+        writer.write("    /**\n");
+        writer.write("     * Text resource key for {@code " + action.textId + "}.\n");
+        writer.write("     */\n");
+        writer.write("    public static final ResourceKey<String> " + action.constantName + "_TEXT =\n");
+        writer.write("            ResourceKey.of(" + stringLiteralOrNull(action.textId) + ", String.class);\n\n");
+
+        if (action.tooltipId != null) {
+            writer.write("    /**\n");
+            writer.write("     * Tooltip resource key for {@code " + action.tooltipId + "}.\n");
+            writer.write("     */\n");
+            writer.write("    public static final ResourceKey<String> " + action.constantName + "_TOOLTIP =\n");
+            writer.write("            ResourceKey.of(" + stringLiteralOrNull(action.tooltipId) + ", String.class);\n\n");
+        }
+
+        writer.write("    /**\n");
+        writer.write("     * Action descriptor for {@code " + action.id + "}.\n");
+        writer.write("     */\n");
+        writer.write("    public static final ActionDescriptor " + action.constantName + " =\n");
+        writer.write("            " + actionDescriptorExpression(action) + ";\n\n");
+    }
+
+    private String actionDescriptorExpression(ActionSpec action) {
+        String expression = action.selectable
+                ? "ActionDescriptor.toggle(" + action.constantName + "_KEY, " + action.constantName + "_TEXT)"
+                : "ActionDescriptor.action(" + action.constantName + "_KEY, " + action.constantName + "_TEXT)";
+        if (action.tooltipId != null) {
+            expression += ".withTooltip(" + action.constantName + "_TOOLTIP)";
+        }
+        if (action.mnemonic != 0) {
+            expression += ".withMnemonic(" + action.mnemonic + ")";
+        }
+        if (action.acceleratorKey != 0) {
+            expression += ".withAccelerator(AcceleratorDescriptor.of("
+                    + action.acceleratorKey + ", " + action.acceleratorModifiers + "))";
+        }
+        return expression;
+    }
+
     private void writeResourceKey(Writer writer, String constantName, String id) throws IOException {
         writer.write("    /**\n");
         writer.write("     * Resource key for {@code " + id + "}.\n");
@@ -657,6 +820,18 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             String problemId,
             String min,
             String max
+    ) {
+    }
+
+    private record ActionSpec(
+            String constantName,
+            String id,
+            String textId,
+            String tooltipId,
+            int mnemonic,
+            int acceleratorKey,
+            int acceleratorModifiers,
+            boolean selectable
     ) {
     }
 }
