@@ -47,6 +47,13 @@ import javax.swing.text.JTextComponent;
  * dispatch thread. Factories validate required collaborators eagerly where
  * possible; failures that depend on a component or context occur during
  * behavior installation.</p>
+ *
+ * <p>Generated {@code @SwingForm} behavior plans use these factories for
+ * supported component kinds: text/date fields install text binding,
+ * validation-tooltip, validation-border, and select-all-on-focus behaviors;
+ * checkbox fields install selected-state binding behavior. Applications can
+ * mix generated plans with additional handwritten behaviors in the same
+ * {@link BehaviorScope}.</p>
  */
 public final class StandardBehaviors {
 

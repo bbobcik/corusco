@@ -8,6 +8,10 @@ package cz.auderis.corusco.core.table;
  * a UI column must migrate independently from the row-value identity. Width
  * bounds are declarative clamp limits for later table-state restoration.</p>
  *
+ * <p>Generated {@code @Column} metadata creates {@code ColumnPersistence}
+ * instances inside {@code <Row>Columns} from {@code persistenceId},
+ * {@code minWidth}, and {@code maxWidth} annotation members.</p>
+ *
  * @param id stable persistence id
  * @param minWidth minimum restored width in pixels
  * @param maxWidth maximum restored width in pixels

@@ -1,9 +1,10 @@
 # Corusco Dialog Guide
 
-Corusco dialog support is a controller layer for transactional form editing. It
-does not create or show a native `JDialog`; application code chooses the modal
-shell, while Corusco owns OK, Apply, Cancel, validation-summary, keyboard,
-active-editor commit, and lifecycle semantics.
+Corusco dialog support is a controller layer for transactional form editing.
+`FormDialog` owns OK, Apply, Cancel, validation-summary, keyboard,
+active-editor commit, and lifecycle semantics. `FormDialogShell` can host that
+controller in a minimal native `JDialog` when an application wants the standard
+Swing shell without adopting a larger application framework.
 
 Use a form dialog when edits must remain transactional until the user accepts
 them:
@@ -28,6 +29,7 @@ domain value
 | `FormDialog<P, R>` | EDT-bound controller for OK, Apply, Cancel, active-editor commit, command state, and terminal result. |
 | `DirtyState` | Explicit aggregate dirty-state hook used before cancellation. |
 | `CancelConfirmation` | UI-policy hook for dirty-cancel confirmation. |
+| `FormDialogShell` | Minimal modal `JDialog` host for an existing `FormDialog` root component. |
 | `FormDialogKeyboardBinding` | Root-pane ESC and default-button binding. |
 | `FormDialogValidationBinding` | Pull-based validation summary and focus-first-problem binding. |
 | `ProblemFocusResolver` | Typed problem-to-component resolver. |
@@ -83,6 +85,28 @@ dialog.lastAppliedResult().ifPresent(this::saveDraft);
 Cancel checks dirty state before discarding edits. Clean forms cancel
 immediately. Dirty forms call `CancelConfirmation.confirmCancel()`; returning
 false leaves the controller open and preserves edits.
+
+## Native Dialog Shell
+
+Use `FormDialogShell` when the application wants a simple modal `JDialog` but
+still owns the root layout, buttons, resource lookup, and dirty-cancel UI:
+
+```java
+FormDialogShell<GeneratedCustomerEditFormModel, GeneratedCustomerEdit> shell =
+        FormDialogShell.create(ownerWindow, "Customer", dialog);
+
+okButton.addActionListener(event -> shell.accept());
+applyButton.addActionListener(event -> shell.apply());
+cancelButton.addActionListener(event -> shell.cancel());
+
+DialogResult<GeneratedCustomerEdit> result = shell.showModal();
+```
+
+The shell sets the controller root as the dialog content pane. Native window
+closing delegates to `dialog.cancel()`, so `CancelConfirmation` behavior is the
+same as a Cancel button. `shell.close()` is lifecycle cleanup and delegates to
+`FormDialog.close()`, bypassing dirty confirmation in the same way the
+controller does.
 
 ## Active Editor Commit
 
@@ -207,7 +231,6 @@ testing patterns used across examples.
 
 ## Current Limits
 
-- Corusco does not provide a native `JDialog` factory yet.
 - Dialog validation summary is refreshed explicitly; there is no observable
   problem-stream binding yet.
 - Dirty state is supplied by an explicit hook. Generated code should compose it

@@ -38,6 +38,12 @@ import javax.swing.JComponent;
  * Avoid installing competing model bindings directly on the same component
  * outside this scope, because the scope can only validate behaviors it knows
  * about.</p>
+ *
+ * <p>Generated {@code @SwingForm} records create a
+ * {@code <Form>BehaviorPlan} with direct calls to this scope, and a
+ * {@code <Form>Bindings} facade that delegates to that plan. Handwritten views
+ * may call {@link #install(JComponent, List)} directly when no generated form
+ * companion exists.</p>
  */
 public final class BehaviorScope implements Binding {
 

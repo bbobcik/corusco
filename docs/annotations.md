@@ -252,8 +252,9 @@ Processor checks include:
 - duplicate action IDs within one owner type are rejected;
 - nonzero `acceleratorModifiers` require nonzero `acceleratorKey`.
 
-Generated action descriptors describe commands; they do not invoke annotated
-methods by reflection.
+Generated action factories call annotated no-argument methods directly on an
+owner instance. Descriptor-only usage remains available when a presenter needs
+custom command construction.
 
 See [Command and Action Guide](commands.md) for how generated action descriptors
 become presenter-owned commands and Swing entry points.
@@ -265,7 +266,7 @@ annotated source type.
 
 | Source | Generated names |
 | --- | --- |
-| `@SwingForm CustomerEdit` | `CustomerEditFields`, `CustomerEditResources`, `CustomerEditProblems`, `CustomerEditDescriptors`, `CustomerEditFormModel`, `CustomerEditView`, `CustomerEditBehaviorPlan` |
+| `@SwingForm CustomerEdit` | `CustomerEditFields`, `CustomerEditResources`, `CustomerEditProblems`, `CustomerEditDescriptors`, `CustomerEditFormModel`, `CustomerEditView`, `CustomerEditBehaviorPlan`, `CustomerEditBindings`, `CustomerEditOptions` |
 | `@SwingTable CustomerRow` | `CustomerRowColumns`, `CustomerRowTableResources`, `CustomerRowTableDescriptor`, `CustomerRowTableBindings` |
 | `@UiAction` methods in `CustomerPresenter` | `CustomerPresenterActions` |
 
@@ -297,10 +298,10 @@ source records, generated companion classes, and review checklist.
 - No mutable JavaBean support.
 - No runtime reflection adapter in core modules.
 - No expression-language validation rules.
-- No generated option-source metadata for combo boxes yet.
-- No generated command method invocation; actions currently generate
-  descriptors.
-- No JPMS module descriptors yet.
+- Combo-box option metadata is generated only for enum-valued fields, using
+  enum declaration order. Non-enum option sources remain application-owned.
+- Generated action classes include descriptor metadata and command factories for
+  annotated no-argument owner methods.
 - Generated class names, annotation members, generated key ids, and generated
   descriptor shapes are part of the preview compatibility surface described in
   [Release Policy](release-policy.md).

@@ -27,6 +27,18 @@ import java.lang.annotation.Target;
  * <p>Non-boolean components are rejected by the processor so generated
  * bindings remain type-correct. Runtime code should consume the generated
  * descriptors and field models rather than scanning this annotation.</p>
+ *
+ * <p>The generated {@code <Form>Fields} companion exposes a
+ * {@code cz.auderis.corusco.core.key.FieldKey} constant for each
+ * {@code @CheckBox} component. Generated labels and tooltips use
+ * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants in
+ * {@code <Form>Resources}.</p>
+ *
+ * <p>The generated {@code <Form>FormModel} owns a
+ * {@code cz.auderis.corusco.core.form.FieldModel} for each checkbox. The
+ * generated descriptor is a
+ * {@code cz.auderis.corusco.core.meta.FieldDescriptor} with checkbox field
+ * kind, and generated behavior plans install checkbox binding behavior.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

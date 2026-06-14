@@ -11,6 +11,12 @@ import java.util.Objects;
  * capabilities. It does not know how to read or update row values; use
  * {@link Column} for executable row access.</p>
  *
+ * <p>Generated {@code @SwingTable} records create {@code ColumnDescriptor}
+ * constants in {@code <Row>Columns} from {@code @Column} and {@code @Help}
+ * metadata. Header and tooltip keys come from {@code <Row>TableResources};
+ * defaults, persistence metadata, and capabilities come from annotation
+ * members.</p>
+ *
  * @param key typed column key
  * @param headerKey header text resource key
  * @param tooltipKey optional header/cell tooltip resource key

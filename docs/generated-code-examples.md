@@ -17,7 +17,7 @@ corusco-examples/build/generated/sources/annotationProcessor/java/main/cz/auderi
 
 | Annotated source | Generated companions | Runtime example |
 | --- | --- | --- |
-| `examples.generated.GeneratedCustomerEdit` | `GeneratedCustomerEditFields`, `Resources`, `Problems`, `Descriptors`, `FormModel`, `View`, `BehaviorPlan` | `examples.generated.GeneratedMetadataExample`, `examples.forms.GeneratedFormModelExample`, `examples.generated.GeneratedViewPlanExample` |
+| `examples.generated.GeneratedCustomerEdit` | `GeneratedCustomerEditFields`, `Resources`, `Problems`, `Descriptors`, `FormModel`, `View`, `BehaviorPlan`, `Bindings`, `Options` | `examples.generated.GeneratedMetadataExample`, `examples.forms.GeneratedFormModelExample`, `examples.generated.GeneratedViewPlanExample` |
 | `examples.generated.GeneratedCustomerRow` | `GeneratedCustomerRowColumns`, `TableResources`, `TableDescriptor`, `TableBindings` | `examples.tables.GeneratedTableColumnsExample` |
 | `examples.generated.GeneratedActionMetadataExample` | `GeneratedActionMetadataExampleActions` | `examples.generated.GeneratedActionMetadataExample` |
 
@@ -104,6 +104,14 @@ public interface GeneratedCustomerEditView {
 `GeneratedCustomerEditBehaviorPlan` installs explicit behavior lists against
 that interface. The generated plan should be boring: direct accessor calls,
 direct model field references, and direct `StandardBehaviors` factory calls.
+`GeneratedCustomerEditBindings.install(view, model, scope)` is the public
+facade to call from application code; it delegates to the generated behavior
+plan so generated binding APIs have the same shape as table bindings.
+
+For enum-valued combo boxes, `GeneratedCustomerEditOptions` exposes a
+declaration-ordered immutable option list. Non-enum option sources remain
+application-owned because loading, localization, and disabled-option policy are
+outside the annotation model.
 
 `GeneratedViewPlanExample` mirrors the generated plan inside the example source
 set because javac cannot reliably resolve a type generated from the same source
@@ -146,7 +154,7 @@ uses the header visibility menu, edits a generated column, and binds selection.
 
 ## Action Metadata
 
-`@UiAction` methods generate action descriptors only:
+`@UiAction` methods generate action descriptors and optional command factories:
 
 ```java
 @UiAction(
@@ -159,9 +167,10 @@ void save() {
 ```
 
 `GeneratedActionMetadataExampleActions` exposes `ActionKey`,
-`ResourceKey<String>`, and `ActionDescriptor` constants. It does not invoke the
-annotated method. Presenter code creates command instances from descriptors and
-owns invocation.
+`ResourceKey<String>`, and `ActionDescriptor` constants, ordered descriptor
+lists for menu/toolbar assembly, and factories such as `saveCommand(owner)` and
+`commands(owner)`. The factories are additive: code that wants descriptor-only
+usage can still create commands manually.
 
 ## Review Checklist
 
@@ -180,9 +189,9 @@ When reviewing generated code, check that it:
 ## Current Limits
 
 - Generated forms and tables currently target non-generic records.
-- Generated action metadata does not generate method invocation glue.
-- Generated combo boxes do not yet include option-source metadata.
-- Generated dialog shells, menus, toolbars, and native-window factories are not
-  generated yet.
+- Generated combo-box option metadata is limited to enum-valued fields.
+- Generated menu and toolbar metadata is declaration-ordered action grouping,
+  not a full menu layout framework.
+- Native dialog shell support is runtime API, not generated source.
 - Example source sometimes mirrors generated code when same-source-set javac
   attribution would otherwise make examples brittle.

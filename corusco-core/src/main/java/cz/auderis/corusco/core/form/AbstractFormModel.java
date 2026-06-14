@@ -23,6 +23,13 @@ import java.util.Objects;
  * registration before the instance is passed to bindings, validators, or dialog
  * controllers.</p>
  *
+ * <p>Generated {@code @SwingForm} records create a concrete
+ * {@code <Form>FormModel} subclass. The generated subclass registers
+ * {@link TextFieldModel} instances for {@code @TextField}/{@code @DateField}
+ * components, {@link FieldModel} instances for {@code @CheckBox}/{@code
+ * @ComboBox} components, exposes generated descriptors, wires generated
+ * validation rules, and creates the immutable record result.</p>
+ *
  * <p>The class is synchronous and not synchronized. Swing callers normally use
  * it from the Event Dispatch Thread because component bindings and dialogs are
  * EDT-confined, but the core form model itself has no Swing dependency.</p>

@@ -1,6 +1,6 @@
 # Preview API Review
 
-This review freezes the package-level public surface for the `0.1.0-preview`
+This review freezes the package-level public surface for the `0.2.0-preview`
 line. Type and method-level compatibility is governed by
 [Release Policy](release-policy.md); this document records the package names and
 runtime policy decisions that are stable enough to guard in the build.
@@ -46,6 +46,11 @@ runtime policy decisions that are stable enough to guard in the build.
 ### Compile-Time and Test Modules
 
 - `cz.auderis.corusco.annotations`
+- `cz.auderis.corusco.annotations.command`
+- `cz.auderis.corusco.annotations.form`
+- `cz.auderis.corusco.annotations.help`
+- `cz.auderis.corusco.annotations.table`
+- `cz.auderis.corusco.annotations.validation`
 - `cz.auderis.corusco.processor`
 - `cz.auderis.corusco.test`
 

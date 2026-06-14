@@ -22,7 +22,9 @@ import java.lang.annotation.Target;
  *
  * <p>Applying this annotation to combo boxes, checkboxes, dates, numeric
  * fields, or non-form components is invalid or meaningless because those field
- * kinds do not expose string-pattern validation.</p>
+ * kinds do not expose string-pattern validation. Generated descriptors expose
+ * this rule as {@code cz.auderis.corusco.core.meta.ConstraintDescriptor}
+ * metadata and generated form models wire the matching validator.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

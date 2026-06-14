@@ -26,6 +26,14 @@ import java.lang.annotation.Target;
  * <p>Help ids are part of the user-facing metadata contract. They may appear in
  * resource maps, generated descriptors, tests, and help-system routing. Treat
  * changes as compatibility changes rather than cosmetic refactoring.</p>
+ *
+ * <p>Generated form and table companions use tooltip ids to create
+ * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants. Topic ids
+ * are embedded in generated descriptors as
+ * {@code cz.auderis.corusco.core.key.HelpTopic} values. Runtime code should
+ * read the generated {@code cz.auderis.corusco.core.meta.FieldDescriptor} or
+ * {@code cz.auderis.corusco.core.table.ColumnDescriptor} objects rather than
+ * scanning this annotation.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

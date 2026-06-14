@@ -8,6 +8,15 @@
  * required values, string length, regular expressions, decimal ranges, and
  * integer ranges.</p>
  *
+ * <p>Generated form companions expose the runtime side of these annotations.
+ * {@code <Form>Problems} contains
+ * {@code cz.auderis.corusco.core.problem.ProblemCode} constants. {@code
+ * <Form>Descriptors} contains
+ * {@code cz.auderis.corusco.core.meta.ConstraintDescriptor} metadata attached
+ * to each generated field descriptor. {@code <Form>FormModel} wires equivalent
+ * validator rules into the generated
+ * {@code cz.auderis.corusco.core.validation.RuleSet}.</p>
+ *
  * <p>Use these annotations for simple, local field constraints that belong in
  * generated metadata. Cross-field validation, asynchronous validation, and
  * business decisions should remain in ordinary Java validation code.</p>

@@ -29,6 +29,12 @@
  * cz.auderis.corusco.swing.behavior.StandardBehaviorKeys} contains shared keys
  * used by generated and handwritten plans.</p>
  *
+ * <p>Generated {@code @SwingForm} sources produce a
+ * {@code <Form>BehaviorPlan} and {@code <Form>Bindings} facade that install
+ * these behavior factories against the generated view contract. Those
+ * generated classes are the usual entry point for forms created from
+ * annotations; this package remains the handwritten extension point.</p>
+ *
  * <p>Behavior installation touches Swing components and should run on the Event
  * Dispatch Thread. The returned bindings own installed listeners, action-map
  * entries, input-map entries, component text, borders, or other modified state

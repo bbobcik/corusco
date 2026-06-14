@@ -45,6 +45,8 @@ final class GeneratedSourceWriter {
         writeFormModelClass(formType, fields);
         writeViewClass(formType, fields);
         writeBehaviorPlanClass(formType, fields);
+        writeBindingsClass(formType);
+        writeOptionsClass(formType, fields);
     }
 
     void writeActionsClass(TypeElement ownerType, List<ActionSpec> actions) {
@@ -56,11 +58,15 @@ final class GeneratedSourceWriter {
         source.append("""
                 import cz.auderis.corusco.core.command.AcceleratorDescriptor;
                 import cz.auderis.corusco.core.command.ActionDescriptor;
+                import cz.auderis.corusco.core.command.CommandFactory;
+                import cz.auderis.corusco.core.command.CommandSet;
+                import cz.auderis.corusco.core.command.MutableCommand;
                 import cz.auderis.corusco.core.key.ActionKey;
                 import cz.auderis.corusco.core.key.ResourceKey;
+                import java.util.List;
 
                 /**
-                 * Generated action descriptors for {@link %s}.
+                 * Generated action metadata and command factories for {@link %s}.
                  */
                 public final class %s {
 
@@ -69,6 +75,8 @@ final class GeneratedSourceWriter {
         for (ActionSpec action : actions) {
             source.append(actionSource(action));
         }
+        source.append(actionDescriptorListSource(actions));
+        source.append(commandFactorySource(ownerName, actions));
         source.append("}\n");
         writeSource(ownerType, qualifiedName, source.toString(), "Could not write generated action descriptors");
     }
@@ -319,6 +327,66 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated behavior plan");
     }
 
+    private void writeBindingsClass(TypeElement formType) {
+        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+        String ownerType = formType.getSimpleName().toString();
+        String generatedType = ownerType + "Bindings";
+        String viewType = ownerType + "View";
+        String formModelType = ownerType + "FormModel";
+        String behaviorPlanType = ownerType + "BehaviorPlan";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        StringBuilder source = sourceBuilder(packageName);
+        source.append("""
+                import cz.auderis.corusco.swing.behavior.BehaviorScope;
+
+                /**
+                 * Generated binding facade for {@link %s}.
+                 */
+                public final class %s {
+
+                """.formatted(ownerType, generatedType));
+        source.append(privateConstructorSource(generatedType));
+        source.append("""
+                    /**
+                     * Installs generated bindings for the form view and model.
+                     *
+                     * @param view generated view contract
+                     * @param model generated form model
+                     * @param scope owning behavior scope
+                     */
+                    public static void install(%s view, %s model, BehaviorScope scope) {
+                        %s.install(view, model, scope);
+                    }
+                }
+                """.formatted(viewType, formModelType, behaviorPlanType));
+        writeSource(formType, qualifiedName, source.toString(), "Could not write generated binding facade");
+    }
+
+    private void writeOptionsClass(TypeElement formType, List<FieldSpec> fields) {
+        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+        String ownerType = formType.getSimpleName().toString();
+        String generatedType = ownerType + "Options";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        StringBuilder source = sourceBuilder(packageName);
+        source.append("""
+                import java.util.List;
+
+                /**
+                 * Generated option metadata for enum combo-box fields in {@link %s}.
+                 */
+                public final class %s {
+
+                """.formatted(ownerType, generatedType));
+        source.append(privateConstructorSource(generatedType));
+        for (FieldSpec field : fields) {
+            if (!field.enumOptionConstants.isEmpty()) {
+                source.append(enumOptionSource(field));
+            }
+        }
+        source.append("}\n");
+        writeSource(formType, qualifiedName, source.toString(), "Could not write generated option metadata");
+    }
+
     private String fieldSource(FieldSpec field) {
         String keyType = field.textField ? "TextFieldKey" : "FieldKey";
         String factory = field.textField ? "TextFieldKey" : "FieldKey";
@@ -383,6 +451,113 @@ final class GeneratedSourceWriter {
 
                 """.formatted(action.id, action.constantName, actionDescriptorExpression(action)));
         return source.toString();
+    }
+
+    private String actionDescriptorListSource(List<ActionSpec> actions) {
+        StringBuilder source = new StringBuilder("""
+                    /**
+                     * Returns generated action descriptors in declaration order.
+                     *
+                     * @return descriptor list
+                     */
+                    public static List<ActionDescriptor> descriptors() {
+                        return List.of(
+                """);
+        for (int i = 0; i < actions.size(); i++) {
+            String suffix = i == actions.size() - 1 ? "\n" : ",\n";
+            source.append("                ").append(actions.get(i).constantName).append(suffix);
+        }
+        source.append("""
+                        );
+                    }
+
+                    /**
+                     * Returns menu action descriptors in declaration order.
+                     *
+                     * @return menu descriptor list
+                     */
+                    public static List<ActionDescriptor> menuDescriptors() {
+                        return descriptors();
+                    }
+
+                    /**
+                     * Returns toolbar action descriptors in declaration order.
+                     *
+                     * @return toolbar descriptor list
+                     */
+                    public static List<ActionDescriptor> toolbarDescriptors() {
+                        return descriptors();
+                    }
+
+                """);
+        return source.toString();
+    }
+
+    private String commandFactorySource(String ownerName, List<ActionSpec> actions) {
+        StringBuilder source = new StringBuilder();
+        for (ActionSpec action : actions) {
+            source.append(singleCommandFactorySource(ownerName, action));
+        }
+        source.append("""
+                    /**
+                     * Creates commands bound to an owner instance.
+                     *
+                     * @param owner action owner
+                     * @return command set in declaration order
+                     */
+                    public static CommandSet commands(%s owner) {
+                        java.util.Objects.requireNonNull(owner, "owner");
+                        return CommandSet.of(
+                """.formatted(ownerName));
+        for (int i = 0; i < actions.size(); i++) {
+            String suffix = i == actions.size() - 1 ? "\n" : ",\n";
+            source.append("                ").append(factoryMethodName(actions.get(i))).append("(owner)").append(suffix);
+        }
+        source.append("""
+                        );
+                    }
+                """);
+        return source.toString();
+    }
+
+    private String singleCommandFactorySource(String ownerName, ActionSpec action) {
+        String factory = action.selectable ? "toggle(" + action.constantName + ", false, command -> owner."
+                : "command(" + action.constantName + ", command -> owner.";
+        return """
+                    /**
+                     * Creates a command bound to {@link %s#%s()}.
+                     *
+                     * @param owner action owner
+                     * @return mutable command
+                     */
+                    public static MutableCommand %s(%s owner) {
+                        java.util.Objects.requireNonNull(owner, "owner");
+                        return CommandFactory.%s%s());
+                    }
+
+                """.formatted(
+                ownerName,
+                action.methodName,
+                factoryMethodName(action),
+                ownerName,
+                factory,
+                action.methodName
+        );
+    }
+
+    private String enumOptionSource(FieldSpec field) {
+        List<String> options = new ArrayList<>();
+        for (String enumConstant : field.enumOptionConstants) {
+            options.add(field.valueType + "." + enumConstant);
+        }
+        return """
+                    /**
+                     * Enum options for {@code %s} in declaration order.
+                     */
+                    public static final List<%s> %s =
+                            List.of(%s);
+
+                """.formatted(field.keyId, field.valueType, field.constantName, String.join(", ", options));
     }
 
     private String resourceKeySource(String constantName, String id) {
@@ -658,6 +833,10 @@ final class GeneratedSourceWriter {
                     }
 
                 """.formatted(generatedType);
+    }
+
+    private static String factoryMethodName(ActionSpec action) {
+        return action.methodName + "Command";
     }
 
     private void writeSource(TypeElement originatingType, String qualifiedName, String source, String errorPrefix) {

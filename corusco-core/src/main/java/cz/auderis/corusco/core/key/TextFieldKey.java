@@ -9,6 +9,12 @@ import java.util.Objects;
  * {@link FieldKey}. The stable id remains a boundary identity string for
  * generated descriptors and diagnostics, not an arbitrary property path.</p>
  *
+ * <p>Generated {@code @SwingForm} metadata creates {@code TextFieldKey}
+ * constants in {@code <Form>Fields} for {@code @TextField} and
+ * {@code @DateField} record components. Use generated constants for ordinary
+ * generated forms; use {@link #of(String, Class, Class)} for handwritten
+ * metadata and tests.</p>
+ *
  * @param id stable non-blank text field id
  * @param ownerType owner/model type that declares the field
  * @param valueType semantic field value type

@@ -18,7 +18,10 @@
  * annotated records and methods; generated Java source is an output artifact.</p>
  *
  * <p>Stable ids declared here become resource keys, field keys, action keys,
- * table ids, column ids, and sometimes persisted UI-state ids. Treat id changes
+ * table ids, column ids, and sometimes persisted UI-state ids. The runtime key
+ * instances are emitted by generated companion classes: form companions expose
+ * field and resource keys, table companions expose table/column and resource
+ * keys, and action companions expose action and resource keys. Treat id changes
  * as compatibility changes for generated code and saved table preferences.</p>
  */
 package cz.auderis.corusco.annotations;

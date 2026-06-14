@@ -18,6 +18,21 @@ import java.lang.annotation.Target;
  * the id is non-blank. Generated artifacts use the source type name and stable
  * ids rather than runtime reflection, so changing the id is a compatibility
  * change for saved table state.</p>
+ *
+ * <p>Generated table companions are the normal place to obtain runtime table
+ * metadata keys. {@code <Row>Columns} contains typed
+ * {@code cz.auderis.corusco.core.table.TableKey} and
+ * {@code cz.auderis.corusco.core.table.ColumnKey} constants. Column header and
+ * tooltip text use {@code cz.auderis.corusco.core.key.ResourceKey<String>}
+ * constants in {@code <Row>TableResources}.</p>
+ *
+ * <p>The same source also generates non-key runtime objects. {@code
+ * <Row>Columns} contains {@code cz.auderis.corusco.core.table.Column} and
+ * {@code cz.auderis.corusco.core.table.ColumnDescriptor} constants. {@code
+ * <Row>TableDescriptor} contains a
+ * {@code cz.auderis.corusco.core.table.TableDescriptor} constant and a Swing
+ * table-model factory. {@code <Row>TableBindings} installs table models and
+ * selection bindings into Swing views.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)

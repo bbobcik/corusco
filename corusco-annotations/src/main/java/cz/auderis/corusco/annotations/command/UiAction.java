@@ -15,6 +15,19 @@ import java.lang.annotation.Target;
  * {@code ActionDescriptor}; runtime code can then create commands without
  * scanning annotations reflectively.</p>
  *
+ * <p>The generated {@code <Owner>Actions} companion is the normal place to
+ * obtain runtime key instances. It exposes a
+ * {@code cz.auderis.corusco.core.key.ActionKey} constant, one or more
+ * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants, an action
+ * descriptor, and generated command factories for each annotated method.</p>
+ *
+ * <p>The generated action descriptor is a
+ * {@code cz.auderis.corusco.core.command.ActionDescriptor}. Generated command
+ * factories return {@code cz.auderis.corusco.core.command.MutableCommand}
+ * instances and {@code commands(owner)} returns a
+ * {@code cz.auderis.corusco.core.command.CommandSet}. Descriptor constants
+ * remain usable directly when a presenter needs custom command construction.</p>
+ *
  * <p>Mnemonic and accelerator values are metadata only. Swing adapters decide
  * how to install them on buttons, menu items, or input maps. A non-zero
  * accelerator modifier mask without an accelerator key is invalid. The

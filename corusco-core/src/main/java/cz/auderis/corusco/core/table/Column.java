@@ -27,6 +27,11 @@ import java.util.function.Function;
  * mutable row side effects inside getters or updaters; table adapters assume
  * the returned value or replacement row represents the model change.</p>
  *
+ * <p>Generated {@code @SwingTable} records create {@code Column} constants in
+ * {@code <Row>Columns}. Read-only generated columns call the record accessor;
+ * editable generated columns call the canonical record constructor to return a
+ * replacement row with the edited value.</p>
+ *
  * @param <R> row type
  * @param <V> cell value type
  */

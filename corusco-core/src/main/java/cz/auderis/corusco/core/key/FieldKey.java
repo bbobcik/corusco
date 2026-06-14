@@ -10,6 +10,14 @@ import java.util.Objects;
  * property-path contract. Equality and hash code include the id, owner type,
  * and value type, and are therefore stable for generated key constants.</p>
  *
+ * <p>Generated {@code @SwingForm} metadata creates {@code FieldKey} constants
+ * in {@code <Form>Fields} for non-text field kinds such as {@code @CheckBox}
+ * and {@code @ComboBox}. Text-editable field kinds use
+ * {@link TextFieldKey} and can be converted back to a general field key through
+ * {@link TextFieldKey#asFieldKey()}. Handwritten code can create equivalent
+ * keys with {@link #of(String, Class, Class)} when no generated constant
+ * exists.</p>
+ *
  * @param id stable non-blank field id
  * @param ownerType owner/model type that declares the field
  * @param valueType field value type

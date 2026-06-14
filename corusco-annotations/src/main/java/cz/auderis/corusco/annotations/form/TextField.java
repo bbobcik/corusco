@@ -30,6 +30,19 @@ import java.lang.annotation.Target;
  * <p>The annotation chooses the generated field/editor family only. It does not
  * create a Swing component at runtime and does not define resource text by
  * itself; generated descriptors and resources provide those details.</p>
+ *
+ * <p>The generated {@code <Form>Fields} companion exposes a
+ * {@code cz.auderis.corusco.core.key.TextFieldKey} constant for each
+ * {@code @TextField} component. The generated {@code <Form>Resources}
+ * companion exposes matching
+ * {@code cz.auderis.corusco.core.key.ResourceKey<String>} label and tooltip
+ * keys when metadata requires them.</p>
+ *
+ * <p>The generated {@code <Form>FormModel} owns a
+ * {@code cz.auderis.corusco.core.form.TextFieldModel} for each
+ * {@code @TextField}. The generated descriptor is a
+ * {@code cz.auderis.corusco.core.meta.FieldDescriptor} with text field kind and
+ * any supported {@code ConstraintDescriptor} metadata.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

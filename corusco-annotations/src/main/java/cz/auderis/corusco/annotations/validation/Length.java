@@ -22,7 +22,9 @@ import java.lang.annotation.Target;
  *
  * <p>Generated descriptors expose the length bounds as validation metadata, so
  * Swing bindings, tests, and generated documentation can describe the
- * constraint without inspecting source annotations.</p>
+ * constraint without inspecting source annotations. The generated metadata uses
+ * {@code cz.auderis.corusco.core.meta.ConstraintDescriptor}; the generated
+ * problem identity is exposed in {@code <Form>Problems}.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

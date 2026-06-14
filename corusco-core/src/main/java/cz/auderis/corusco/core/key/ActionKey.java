@@ -6,6 +6,12 @@ package cz.auderis.corusco.core.key;
  * <p>The id is intended for generated action descriptors, diagnostics, and UI
  * state boundaries. Equality and hash code are based on the id.</p>
  *
+ * <p>Generated {@code @UiAction} methods create {@code ActionKey} constants in
+ * {@code <Owner>Actions}. Those constants are the normal runtime handles for
+ * command lookup, Swing action binding, menu construction, toolbar
+ * construction, and tests. Use {@link #of(String)} for handwritten command
+ * metadata when no generated action companion exists.</p>
+ *
  * @param id stable non-blank action id
  */
 public record ActionKey(String id) {

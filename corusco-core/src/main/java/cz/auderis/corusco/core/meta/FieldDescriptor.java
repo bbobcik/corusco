@@ -13,6 +13,13 @@ import java.util.Objects;
  * lookup or validation itself; generated form-model and view-plan stages consume
  * this metadata later.</p>
  *
+ * <p>Generated {@code @SwingForm} records create {@code FieldDescriptor}
+ * constants in {@code <Form>Descriptors} for each record component annotated
+ * with {@code @TextField}, {@code @DateField}, {@code @CheckBox}, or
+ * {@code @ComboBox}. Handwritten forms may construct descriptors directly, but
+ * generated forms should use the generated constants so ids, resource keys,
+ * help topics, and constraints remain consistent.</p>
+ *
  * @param id stable field id
  * @param componentName source record component name
  * @param kind presentation kind

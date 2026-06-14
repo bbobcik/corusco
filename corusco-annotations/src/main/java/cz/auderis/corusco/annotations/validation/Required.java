@@ -25,6 +25,17 @@ import java.lang.annotation.Target;
  * Applying it to a component that is not part of generated form metadata is
  * invalid or meaningless and should be reported by the processor where the
  * surrounding source is processed.</p>
+ *
+ * <p>The generated form model attaches this rule to the generated field key
+ * from {@code <Form>Fields}. The generated {@code <Form>Problems} companion
+ * exposes the problem code used by the corresponding descriptor and validator.
+ * Field keys are instances of {@code cz.auderis.corusco.core.key.FieldKey} or
+ * {@code cz.auderis.corusco.core.key.TextFieldKey}, depending on the field
+ * kind annotation.</p>
+ *
+ * <p>Generated descriptors represent this rule with
+ * {@code cz.auderis.corusco.core.meta.ConstraintDescriptor}; generated
+ * validators are wired in {@code <Form>FormModel}.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

@@ -134,6 +134,16 @@ class CoruscoAnnotationProcessorTest {
                 "StandardBehaviors.selectAllOnFocus()",
                 "StandardBehaviors.checkBoxBinding(model.active)"
         );
+        result.assertGeneratedSourceContains("demo/CustomerEditBindings.java",
+                "public final class CustomerEditBindings",
+                "public static void install(CustomerEditView view, CustomerEditFormModel model, BehaviorScope scope)",
+                "CustomerEditBehaviorPlan.install(view, model, scope)"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditOptions.java",
+                "public final class CustomerEditOptions",
+                "public static final List<demo.CustomerType> TYPE",
+                "List.of(demo.CustomerType.RETAIL, demo.CustomerType.BUSINESS)"
+        );
     }
 
     @Test
@@ -168,6 +178,23 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages()).contains("Record component must have only one field kind annotation");
+    }
+
+    @Test
+    void rejectsOldRootAnnotationImports() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.TextField;
+
+                @SwingForm(id = "customer")
+                public record CustomerEdit(@TextField String name) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("cannot find symbol");
     }
 
     @Test
@@ -567,7 +594,17 @@ class CoruscoAnnotationProcessorTest {
                 "ActionDescriptor.action(SAVE_KEY, SAVE_TEXT).withTooltip(SAVE_TOOLTIP).withMnemonic(83)"
                         + ".withAccelerator(AcceleratorDescriptor.of(83, 128))",
                 "public static final ActionKey TOGGLE_ACTIVE_KEY",
-                "ActionDescriptor.toggle(TOGGLE_ACTIVE_KEY, TOGGLE_ACTIVE_TEXT)"
+                "ActionDescriptor.toggle(TOGGLE_ACTIVE_KEY, TOGGLE_ACTIVE_TEXT)",
+                "public static List<ActionDescriptor> descriptors()",
+                "public static List<ActionDescriptor> menuDescriptors()",
+                "public static List<ActionDescriptor> toolbarDescriptors()",
+                "public static MutableCommand saveCommand(CustomerEdit owner)",
+                "CommandFactory.command(SAVE, command -> owner.save())",
+                "public static MutableCommand toggleActiveCommand(CustomerEdit owner)",
+                "CommandFactory.toggle(TOGGLE_ACTIVE, false, command -> owner.toggleActive())",
+                "public static CommandSet commands(CustomerEdit owner)",
+                "saveCommand(owner)",
+                "toggleActiveCommand(owner)"
         );
     }
 

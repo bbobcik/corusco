@@ -20,6 +20,11 @@ import java.util.Objects;
  * handwritten table definitions from mixing unrelated row models. Keep table
  * and column ids stable when persisted state or tests depend on them.</p>
  *
+ * <p>Generated {@code @SwingTable} records create a {@code TableDescriptor}
+ * constant in {@code <Row>TableDescriptor}. That generated companion also
+ * exposes a factory for the Swing {@code ObservableTableModel}; applications
+ * can use the descriptor directly when they need custom table assembly.</p>
+ *
  * @param key typed table key
  * @param columns immutable ordered columns
  * @param <R> row type

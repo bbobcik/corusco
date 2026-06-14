@@ -11,6 +11,7 @@ package cz.auderis.corusco.processor;
 final class ActionSpec {
 
     final String constantName;
+    final String methodName;
     final String id;
     final String textId;
     final String tooltipId;
@@ -21,6 +22,7 @@ final class ActionSpec {
 
     ActionSpec(
             String constantName,
+            String methodName,
             String id,
             String textId,
             String tooltipId,
@@ -30,6 +32,7 @@ final class ActionSpec {
             boolean selectable
     ) {
         this.constantName = constantName;
+        this.methodName = methodName;
         this.id = id;
         this.textId = textId;
         this.tooltipId = tooltipId;

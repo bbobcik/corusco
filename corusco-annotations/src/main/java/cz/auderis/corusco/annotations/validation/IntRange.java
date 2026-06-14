@@ -22,7 +22,10 @@ import java.lang.annotation.Target;
  * {@link DecimalRange} for decimal text fields.</p>
  *
  * <p>Generated descriptors expose the range as validation metadata, so tools
- * and tests can inspect the constraint without re-reading source annotations.</p>
+ * and tests can inspect the constraint without re-reading source annotations.
+ * The generated metadata uses
+ * {@code cz.auderis.corusco.core.meta.ConstraintDescriptor}; the generated
+ * problem identity is exposed in {@code <Form>Problems}.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

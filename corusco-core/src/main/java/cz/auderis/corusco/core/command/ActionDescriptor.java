@@ -13,6 +13,13 @@ import java.util.Objects;
  * small resolver so this core descriptor remains independent from resource
  * bundle mechanics.</p>
  *
+ * <p>Generated {@code @UiAction} methods create {@code ActionDescriptor}
+ * constants in {@code <Owner>Actions}. The same generated companion also
+ * exposes descriptor lists for menu/toolbar assembly and command factories
+ * that bind descriptors to an owner instance. Handwritten presenters may build
+ * descriptors directly with {@link #action(ActionKey, ResourceKey)} or
+ * {@link #toggle(ActionKey, ResourceKey)}.</p>
+ *
  * @param key command/action identity
  * @param textKey optional resource key for visible text
  * @param tooltipKey optional resource key for tooltip text

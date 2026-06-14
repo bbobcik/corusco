@@ -5,7 +5,32 @@ preview compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
 ## Unreleased
 
-- No changes yet.
+### Added
+
+- `SortedList` and `MappedList` read-only observable collection views.
+- Generated `<Form>Bindings` facades for installing generated behavior plans.
+- Generated enum combo-box option metadata through `@ComboBox(enumOptions)`.
+- Generated command factories and ordered descriptor/menu/toolbar metadata for
+  `@UiAction` owners.
+- `FormDialogShell` as a minimal native `JDialog` host for `FormDialog`.
+- JApiCmp-based binary compatibility gate for runtime modules, with first-run
+  `v0.2.0` baseline establishment under `.machine_env/api-baselines`.
+
+### Changed
+
+- Development version is now `0.2.0-SNAPSHOT` after the already-tagged
+  `v0.1.0-preview`.
+- Preview package-surface review now includes the annotation subpackages:
+  `annotations.command`, `annotations.form`, `annotations.help`,
+  `annotations.table`, and `annotations.validation`.
+
+### Breaking Changes
+
+- Annotation imports are split by authoring area after `v0.1.0-preview`.
+  Replace root-package annotation imports with the focused subpackages:
+  form annotations from `cz.auderis.corusco.annotations.form`, table
+  annotations from `.table`, validation constraints from `.validation`,
+  command annotations from `.command`, and help metadata from `.help`.
 
 ## 0.1.0-preview - 2026-06-14
 

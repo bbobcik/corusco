@@ -10,6 +10,11 @@ import java.util.Objects;
  * on {@code java.desktop}. Equality and hash code include id and component
  * type.</p>
  *
+ * <p>Current annotation processors do not generate {@code ComponentKey}
+ * constants. Applications and tests create them with {@link #of(String, Class)}
+ * when they need explicit problem-to-component, help-to-component, or
+ * view-registry mappings.</p>
+ *
  * @param id stable non-blank component id
  * @param componentType component type
  * @param <C> component type

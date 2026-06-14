@@ -2,8 +2,8 @@
 
 Commands are typed presentation actions that can back buttons, menu items,
 toolbar items, and key bindings from one shared state owner. Action annotations
-generate metadata; presenter code creates command instances and implements the
-business workflow.
+generate metadata and optional factories; presenter code still owns enabled
+state, selected state, and business workflow.
 
 See [Dialog Guide](dialogs.md) for the built-in OK, Apply, and Cancel commands
 used by form-dialog controllers.
@@ -63,11 +63,15 @@ The processor generates a companion named after the enclosing type, for example
 - one `ActionKey` constant per action;
 - one text `ResourceKey<String>` constant per action;
 - an optional tooltip resource key when `tooltip` is set;
-- one `ActionDescriptor` constant per action.
+- one `ActionDescriptor` constant per action;
+- ordered descriptor lists for descriptor, menu, and toolbar assembly;
+- one `MutableCommand` factory per annotated method;
+- a `CommandSet commands(owner)` factory in declaration order.
 
-Generated action descriptors do not invoke annotated methods. This is
-intentional: invocation stays in presenter code and does not require runtime
-annotation scanning, reflection, or method-name strings.
+Generated factories invoke the annotated no-argument methods directly on an
+owner instance. They are additive: descriptor-only usage stays available when a
+presenter needs custom enabled-state initialization, selected-state
+synchronization, or a command handler that does more than call one method.
 
 ## Creating Commands
 
@@ -93,6 +97,19 @@ Use `CommandFactory.command(...)` for ordinary actions and
 `CommandFactory.toggle(...)` for descriptors whose `selectable` flag is true.
 The factory rejects mismatches so a selectable descriptor cannot silently become
 a non-toggle command.
+
+When the default owner-method invocation is enough, use the generated factory:
+
+```java
+CustomerPresenter presenter = new CustomerPresenter();
+CommandSet commands = CustomerPresenterActions.commands(presenter);
+
+commands.require(CustomerPresenterActions.SAVE_KEY).execute();
+```
+
+Selectable generated factories start with `selected == false`; presenters can
+update selected state on the returned `MutableCommand` before exposing the
+`CommandSet`.
 
 `execute()` is guarded by enabled state. Disabled commands ignore execution
 requests, so buttons, menu items, keyboard shortcuts, and tests can all invoke

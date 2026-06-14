@@ -19,9 +19,11 @@
  * registered until the returned
  * {@link cz.auderis.corusco.core.lifecycle.Subscription} is closed.</p>
  *
- * <p>Use {@link cz.auderis.corusco.core.collection.FilteredList} when a view
- * needs a read-only projection of another observable list, for example a search
- * result or filtered choice list. Use
+ * <p>Use {@link cz.auderis.corusco.core.collection.FilteredList},
+ * {@link cz.auderis.corusco.core.collection.SortedList}, and
+ * {@link cz.auderis.corusco.core.collection.MappedList} when a view needs a
+ * read-only projection of another observable list, for example a search result,
+ * sorted row list, filtered choice list, or display-object mapping. Use
  * {@link cz.auderis.corusco.core.collection.LoadableList} when a presenter owns
  * a row cache loaded from an external source and needs a
  * {@link cz.auderis.corusco.core.lifecycle.Detachable} cleanup boundary.</p>

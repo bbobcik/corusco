@@ -1,6 +1,10 @@
+plugins {
+    id 'me.champeau.gradle.japicmp' version '0.4.6'
+}
+
 allprojects {
     group = 'cz.auderis.corusco'
-    version = '0.1.0-preview'
+    version = '0.2.0-SNAPSHOT'
 }
 
 configure(subprojects.findAll { it.buildFile.exists() }) {
@@ -39,6 +43,14 @@ def publishableProjects = subprojects.findAll {
     it.buildFile.exists() && it.name != 'corusco-examples'
 }
 def publishableProjectNames = publishableProjects.collect { it.name }
+def binaryCompatibilityProjectNames = [
+    'corusco-core',
+    'corusco-glazedlists',
+    'corusco-swing'
+]
+def binaryCompatibilityProjects = publishableProjects.findAll { binaryCompatibilityProjectNames.contains(it.name) }
+def binaryCompatibilityBaselineVersion = 'v0.2.0'
+def binaryCompatibilityBaselineDir = new File(rootDir, ".machine_env/api-baselines/${binaryCompatibilityBaselineVersion}")
 def publicationGroupPath = group.toString().replace('.', File.separator)
 def publicationVersion = version.toString()
 def projectRootPath = rootDir.absolutePath
@@ -77,7 +89,12 @@ def previewPackageSurface = [
         'cz.auderis.corusco.swing.testing'
     ],
     'corusco-annotations': [
-        'cz.auderis.corusco.annotations'
+        'cz.auderis.corusco.annotations',
+        'cz.auderis.corusco.annotations.command',
+        'cz.auderis.corusco.annotations.form',
+        'cz.auderis.corusco.annotations.help',
+        'cz.auderis.corusco.annotations.table',
+        'cz.auderis.corusco.annotations.validation'
     ],
     'corusco-processor': [
         'cz.auderis.corusco.processor'
@@ -344,6 +361,61 @@ tasks.register('verifyGeneratedJavadocs') {
     }
 }
 
+def binaryCompatibilityTasks = binaryCompatibilityProjects.collect { comparedProject ->
+    def capitalizedName = comparedProject.name.split('-').collect { it.capitalize() }.join('')
+    def baselineJar = new File(binaryCompatibilityBaselineDir, "${comparedProject.name}-${binaryCompatibilityBaselineVersion}.jar")
+    tasks.register("japicmp${capitalizedName}", me.champeau.gradle.japicmp.JapicmpTask) {
+        group = 'verification'
+        description = "Checks binary compatibility for ${comparedProject.name} against ${binaryCompatibilityBaselineVersion}."
+        dependsOn comparedProject.tasks.named('jar')
+        oldClasspath.from(files(baselineJar))
+        newClasspath.from(comparedProject.tasks.named('jar'))
+        oldArchives.from(files(baselineJar))
+        newArchives.from(comparedProject.tasks.named('jar'))
+        onlyModified = true
+        onlyBinaryIncompatibleModified = true
+        failOnModification = true
+        ignoreMissingClasses = true
+        txtOutputFile = new File(
+                comparedProject.layout.buildDirectory.get().asFile,
+                "reports/japicmp/${comparedProject.name}.txt"
+        )
+        onlyIf {
+            baselineJar.isFile()
+        }
+    }
+}
+
+tasks.register('establishBinaryCompatibilityBaseline') {
+    group = 'verification'
+    description = 'Creates the v0.2.0 binary compatibility baseline jars when they do not exist yet.'
+    dependsOn binaryCompatibilityProjects.collect { it.tasks.named('jar') }
+
+    doLast {
+        binaryCompatibilityBaselineDir.mkdirs()
+        binaryCompatibilityProjectNames.each { projectName ->
+            def baselineJar = new File(binaryCompatibilityBaselineDir, "${projectName}-${binaryCompatibilityBaselineVersion}.jar")
+            if (!baselineJar.isFile()) {
+                def currentJar = new File(projectRootPath, "${projectName}/build/libs/${projectName}-${publicationVersion}.jar")
+                java.nio.file.Files.copy(currentJar.toPath(), baselineJar.toPath())
+            }
+        }
+    }
+}
+
+binaryCompatibilityTasks.each {
+    it.configure {
+        mustRunAfter tasks.named('establishBinaryCompatibilityBaseline')
+    }
+}
+
+tasks.register('verifyBinaryCompatibility') {
+    group = 'verification'
+    description = 'Checks binary compatibility of published runtime modules, establishing the v0.2.0 baseline on first run.'
+    dependsOn 'establishBinaryCompatibilityBaseline'
+    dependsOn binaryCompatibilityTasks
+}
+
 tasks.register('verifyPreviewReleaseReadiness') {
     group = 'verification'
     description = 'Runs the local preview release readiness gate before tagging.'
@@ -353,4 +425,5 @@ tasks.register('verifyPreviewReleaseReadiness') {
     dependsOn 'verifyExamplesAgainstPublishedArtifacts'
     dependsOn 'verifyPreviewApiAudit'
     dependsOn 'verifyGeneratedJavadocs'
+    dependsOn 'verifyBinaryCompatibility'
 }

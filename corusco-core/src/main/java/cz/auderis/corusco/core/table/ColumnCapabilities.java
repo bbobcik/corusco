@@ -7,6 +7,11 @@ package cz.auderis.corusco.core.table;
  * They do not install sorting, filtering, editing, or visibility UI by
  * themselves.</p>
  *
+ * <p>Generated {@code @Column} metadata creates {@code ColumnCapabilities}
+ * instances inside {@code <Row>Columns} from {@code sortable},
+ * {@code filterable}, {@code editable}, and {@code hideable} annotation
+ * members.</p>
+ *
  * @param sortable whether the column can participate in sorting
  * @param filterable whether the column can participate in filtering
  * @param editable whether the column can be edited through a row updater

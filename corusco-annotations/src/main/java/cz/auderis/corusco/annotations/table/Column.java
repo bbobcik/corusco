@@ -24,6 +24,23 @@ import java.lang.annotation.Target;
  * source. Stable ids and persistence ids can appear in generated code,
  * resources, diagnostics, and saved table preferences, so changing them is a
  * compatibility change for users with existing persisted layout state.</p>
+ *
+ * <p>The generated {@code <Row>Columns} companion exposes a typed
+ * {@code cz.auderis.corusco.core.table.ColumnKey} constant for each
+ * {@code @Column}. Header and tooltip ids become
+ * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants in
+ * {@code <Row>TableResources}. {@link
+ * cz.auderis.corusco.annotations.help.Help#topic()} metadata is embedded in
+ * generated descriptors as {@code cz.auderis.corusco.core.key.HelpTopic}
+ * values.</p>
+ *
+ * <p>Each generated column also has a
+ * {@code cz.auderis.corusco.core.table.ColumnDescriptor},
+ * {@code cz.auderis.corusco.core.table.ColumnDefaults},
+ * {@code cz.auderis.corusco.core.table.ColumnCapabilities}, and
+ * {@code cz.auderis.corusco.core.table.ColumnPersistence} value derived from
+ * this annotation. The executable {@code Column} constant uses direct record
+ * accessors and, for editable columns, a generated record-constructor updater.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

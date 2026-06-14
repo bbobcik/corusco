@@ -23,7 +23,9 @@ import java.lang.annotation.Target;
  *
  * <p>Applying decimal range metadata to integer, string, date, checkbox, or
  * combo-box fields is invalid or meaningless. Use {@link IntRange} for integer
- * text fields.</p>
+ * text fields. Generated descriptors expose this rule as
+ * {@code cz.auderis.corusco.core.meta.ConstraintDescriptor} metadata and
+ * generated form models wire the matching validator.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

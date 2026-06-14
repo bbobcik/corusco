@@ -329,6 +329,7 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         String tooltipId = annotation.tooltip().isBlank() ? null : annotation.tooltip();
         return new ActionSpec(
                 constantName,
+                methodName,
                 annotation.id(),
                 textId,
                 tooltipId,
@@ -440,6 +441,7 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         String converterExpression = converterExpression(component.asType(), textField, dateField);
         String viewComponentType = viewComponentType(textField, checkBox, comboBox, dateField, valueType);
         String viewMethodName = viewMethodName(componentName, textField, checkBox, comboBox, dateField);
+        List<String> enumOptionConstants = enumOptionConstants(component, comboBox);
         Help help = component.getAnnotation(Help.class);
         String tooltipId = null;
         String helpTopicId = null;
@@ -465,8 +467,30 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                 converterExpression,
                 viewComponentType,
                 viewMethodName,
+                enumOptionConstants,
                 constraints
         );
+    }
+
+    private List<String> enumOptionConstants(RecordComponentElement component, boolean comboBox) {
+        if (!comboBox) {
+            return List.of();
+        }
+        ComboBox annotation = component.getAnnotation(ComboBox.class);
+        if (annotation == null || !annotation.enumOptions()) {
+            return List.of();
+        }
+        Element typeElement = types.asElement(component.asType());
+        if (typeElement == null || typeElement.getKind() != ElementKind.ENUM) {
+            return List.of();
+        }
+        List<String> constants = new ArrayList<>();
+        for (Element enclosed : typeElement.getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.ENUM_CONSTANT) {
+                constants.add(enclosed.getSimpleName().toString());
+            }
+        }
+        return constants;
     }
 
     private boolean validateMetadata(RecordComponentElement component, FieldSpec field) {

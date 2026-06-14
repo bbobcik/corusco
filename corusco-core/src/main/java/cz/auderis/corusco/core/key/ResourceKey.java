@@ -9,6 +9,12 @@ import java.util.Objects;
  * descriptors or bundle lookups. Equality and hash code include both id and
  * resource value type so generated keys remain type-aware.</p>
  *
+ * <p>Generated form, table, help, and action metadata create
+ * {@code ResourceKey<String>} constants for labels, headers, command text, and
+ * tooltips. Form resources live in {@code <Form>Resources}, table resources in
+ * {@code <Row>TableResources}, and action resources in {@code <Owner>Actions}.
+ * Use {@link #of(String, Class)} for handwritten resource metadata and tests.</p>
+ *
  * @param id stable non-blank resource id
  * @param valueType resource value type
  * @param <T> resource value type

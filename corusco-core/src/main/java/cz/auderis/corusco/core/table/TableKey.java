@@ -9,6 +9,10 @@ import java.util.Objects;
  * diagnostics, and resource lookup. It is not a JavaBeans property path or a
  * user-facing title. Equality includes both the id and row type.</p>
  *
+ * <p>Generated {@code @SwingTable} records create a {@code TableKey} constant
+ * named {@code TABLE} in {@code <Row>Columns}. Handwritten table descriptors
+ * may create keys with {@link #of(String, Class)}.</p>
+ *
  * @param id stable non-blank table id
  * @param rowType table row type
  * @param <R> row type
