@@ -21,7 +21,10 @@
  * {@link cz.auderis.corusco.swing.dialog} for reusable modal form semantics.
  * The behavior package provides a higher-level way to install repeatable
  * component capabilities without coupling generated presenters to concrete
- * Swing helper classes.</p>
+ * Swing helper classes. Use {@link cz.auderis.corusco.swing.table.render} only
+ * for explicit, measured table-rendering hot paths such as dense timestamp or
+ * finite-state columns; ordinary tables should usually start with the standard
+ * renderer pipeline.</p>
  */
 module cz.auderis.corusco.swing {
     requires transitive java.desktop;
@@ -34,6 +37,7 @@ module cz.auderis.corusco.swing {
     exports cz.auderis.corusco.swing.command;
     exports cz.auderis.corusco.swing.dialog;
     exports cz.auderis.corusco.swing.table;
+    exports cz.auderis.corusco.swing.table.render;
     exports cz.auderis.corusco.swing.task;
     exports cz.auderis.corusco.swing.testing;
 }

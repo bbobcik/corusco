@@ -85,6 +85,7 @@ def previewPackageSurface = [
         'cz.auderis.corusco.swing.command',
         'cz.auderis.corusco.swing.dialog',
         'cz.auderis.corusco.swing.table',
+        'cz.auderis.corusco.swing.table.render',
         'cz.auderis.corusco.swing.task',
         'cz.auderis.corusco.swing.testing'
     ],

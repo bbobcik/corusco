@@ -133,6 +133,28 @@
  * selection synchronization, validation decoration, header tooltips, column
  * visibility menus, and saved table layout.</p>
  *
+ * <h2>Optimized Table Renderers</h2>
+ *
+ * <p>{@link cz.auderis.corusco.swing.table.render} provides optional renderer
+ * installers for measured table hot paths. It is separate from the main table
+ * package because rendering optimization is a Swing presentation concern, not
+ * table metadata, row data, selection state, or persisted layout state.</p>
+ *
+ * <p>Start with ordinary Swing renderers and the descriptor-backed table model.
+ * Use optimized renderers when profiling or workload knowledge shows that a
+ * table repeatedly repaints dense timestamp, boolean, or enum-state columns.
+ * The renderer package can install timestamp renderers for epoch {@code long}
+ * values and finite-state renderers for booleans or enums, either by value
+ * type or by a typed table {@code ColumnKey}. Returned bindings restore the
+ * previous renderer during cleanup.</p>
+ *
+ * <p>These renderers remain EDT-confined Swing objects. Their caches are owned
+ * by individual renderer instances and are deliberately bounded and
+ * conservative about visual invalidation. They are not a localization system,
+ * not generated metadata, and not a replacement for custom application
+ * renderers when a column needs icons, rich decoration, or domain-specific
+ * formatting.</p>
+ *
  * <h2>Dialogs</h2>
  *
  * <p>{@link cz.auderis.corusco.swing.dialog} coordinates modal form behavior.
