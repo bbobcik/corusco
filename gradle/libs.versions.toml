@@ -18,3 +18,6 @@ miglayout-swing = { module = "com.miglayout:miglayout-swing", version.ref = "mig
 [bundles]
 testPlatform = ["junit-jupiter", "assertj-core"]
 testPlatformRuntime = ["junit-platform-launcher"]
+
+[plugins]
+aggregateJavadoc = { id = "io.freefair.aggregate-javadoc", version = "9.5.0" }

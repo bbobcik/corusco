@@ -7,7 +7,7 @@ allprojects {
     version = '0.2.0-SNAPSHOT'
 }
 
-configure(subprojects.findAll { it.buildFile.exists() }) {
+configure(subprojects.findAll { it.buildFile.exists() && it.name != 'corusco-manual' }) {
     apply plugin: 'java-library'
 
     java {
@@ -40,7 +40,7 @@ configure(subprojects.findAll { it.buildFile.exists() }) {
 }
 
 def publishableProjects = subprojects.findAll {
-    it.buildFile.exists() && it.name != 'corusco-examples'
+    it.buildFile.exists() && !['corusco-examples', 'corusco-manual'].contains(it.name)
 }
 def publishableProjectNames = publishableProjects.collect { it.name }
 def binaryCompatibilityProjectNames = [
@@ -360,6 +360,12 @@ tasks.register('verifyGeneratedJavadocs') {
             }
         }
     }
+}
+
+tasks.register('aggregateJavadoc') {
+    group = 'documentation'
+    description = 'Generates aggregate Javadocs for explicit Corusco JPMS modules.'
+    dependsOn ':corusco-manual:javadoc'
 }
 
 def binaryCompatibilityTasks = binaryCompatibilityProjects.collect { comparedProject ->

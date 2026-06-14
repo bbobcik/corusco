@@ -7,8 +7,8 @@
  * form state, parsing and validation problems, table descriptors, and
  * asynchronous task contracts. Swing adapters in
  * {@code cz.auderis.corusco.swing} build on these contracts, but generated
- * presentation metadata and handwritten models can depend on this module
- * without depending on {@code java.desktop}.</p>
+ * presentation metadata and handwritten models can depend on this module while
+ * avoiding a dependency on {@code java.desktop}.</p>
  *
  * <p>Start with {@link cz.auderis.corusco.core.form} for form models,
  * {@link cz.auderis.corusco.core.table} for descriptor-backed table metadata,

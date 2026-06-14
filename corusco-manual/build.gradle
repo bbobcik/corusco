@@ -1,0 +1,148 @@
+plugins {
+    alias libs.plugins.aggregateJavadoc
+}
+
+def manualSources = fileTree(rootProject.file('docs')) {
+    include '**/*.md'
+}
+def docsRootPath = rootProject.file('docs').toPath()
+def generatedSiteDir = layout.buildDirectory.dir('docs')
+def generatedManualDir = generatedSiteDir.map { it.dir('manual') }
+
+dependencies {
+    rootProject.subprojects
+            .findAll {
+                it.buildFile.exists()
+                        && !['corusco-examples', 'corusco-manual'].contains(it.name)
+                        && it.file('src/main/java/module-info.java').isFile()
+            }
+            .each { javadoc it }
+}
+
+tasks.register('renderManualHtml') {
+    group = 'documentation'
+    description = 'Renders Markdown manuals from docs/ as standalone HTML pages.'
+    notCompatibleWithConfigurationCache('Invokes Pandoc for each manual page during task execution.')
+    inputs.files(manualSources)
+    outputs.dir(generatedManualDir)
+
+    doLast {
+        def outputRoot = generatedManualDir.get().asFile
+        outputRoot.mkdirs()
+
+        manualSources.files.sort { left, right -> left.path <=> right.path }.each { sourceFile ->
+            def relativePath = docsRootPath.relativize(sourceFile.toPath()).toString()
+            def outputFile = new File(outputRoot, relativePath.replaceAll(/\.md$/, '.html'))
+            outputFile.parentFile.mkdirs()
+            def stylesheetPath = outputFile.parentFile.toPath()
+                    .relativize(new File(outputRoot, 'site.css').toPath())
+                    .toString()
+                    .replace(File.separatorChar, '/' as char)
+
+            providers.exec {
+                commandLine 'pandoc',
+                        sourceFile.absolutePath,
+                        '--from=gfm',
+                        '--to=html5',
+                        '--standalone',
+                        "--metadata=pagetitle:${manualTitle(sourceFile)}",
+                        "--css=${stylesheetPath}",
+                        "--output=${outputFile.absolutePath}"
+            }.result.get().assertNormalExitValue()
+        }
+    }
+}
+
+tasks.register('writeSiteAssets') {
+    group = 'documentation'
+    description = 'Writes static assets and the generated documentation site index.'
+    notCompatibleWithConfigurationCache('Generates index content from the docs file tree at execution time.')
+    inputs.files(manualSources)
+    outputs.dir(generatedSiteDir)
+
+    doLast {
+        def siteDir = generatedSiteDir.get().asFile
+        def manualDir = generatedManualDir.get().asFile
+        siteDir.mkdirs()
+        manualDir.mkdirs()
+
+        new File(manualDir, 'site.css').text = '''\
+body {
+  color: #1f2933;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  line-height: 1.6;
+  margin: 0 auto;
+  max-width: 70rem;
+  padding: 2rem;
+}
+a {
+  color: #075985;
+}
+code, pre {
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+pre {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  overflow-x: auto;
+  padding: 1rem;
+}
+table {
+  border-collapse: collapse;
+}
+td, th {
+  border: 1px solid #d1d5db;
+  padding: 0.35rem 0.55rem;
+}
+'''.stripIndent()
+
+        def links = manualSources.files.sort { left, right -> left.path <=> right.path }.collect { sourceFile ->
+            def relativePath = docsRootPath.relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+            def htmlPath = "manual/${relativePath.replaceAll(/\.md$/, '.html')}"
+            "        <li><a href=\"${htmlPath}\">${escapeHtml(manualTitle(sourceFile))}</a></li>"
+        }.join('\n')
+
+        new File(siteDir, 'index.html').text = """\
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Corusco Documentation</title>
+  <link rel="stylesheet" href="manual/site.css">
+</head>
+<body>
+  <main>
+    <h1>Corusco Documentation</h1>
+    <p><a href="javadoc/index.html">Aggregate API Javadoc</a></p>
+    <h2>Manuals</h2>
+    <ul>
+${links}
+    </ul>
+  </main>
+</body>
+</html>
+""".stripIndent()
+    }
+}
+
+tasks.register('site') {
+    group = 'documentation'
+    description = 'Generates the documentation website with aggregate Javadoc and docs/ manuals.'
+    dependsOn tasks.named('javadoc')
+    dependsOn tasks.named('renderManualHtml')
+    dependsOn tasks.named('writeSiteAssets')
+}
+
+private static String manualTitle(File sourceFile) {
+    def heading = sourceFile.readLines('UTF-8').find { it.startsWith('# ') }
+    return heading == null ? sourceFile.name.replaceFirst(/\.md$/, '') : heading.substring(2).trim()
+}
+
+private static String escapeHtml(String text) {
+    return text
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('"', '&quot;')
+}
