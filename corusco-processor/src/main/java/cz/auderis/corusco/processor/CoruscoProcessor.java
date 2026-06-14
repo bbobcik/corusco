@@ -1,7 +1,13 @@
 package cz.auderis.corusco.processor;
 
 /**
- * Baseline marker for the Corusco annotation processor module.
+ * Identifies the Corusco annotation processor module in smoke tests and
+ * diagnostics.
+ *
+ * <p>This marker is separate from {@link CoruscoAnnotationProcessor}, which is
+ * the compiler-discovered processor implementation. Applications normally use
+ * this module through annotation-processor configuration rather than by calling
+ * this marker directly.</p>
  */
 public final class CoruscoProcessor {
 

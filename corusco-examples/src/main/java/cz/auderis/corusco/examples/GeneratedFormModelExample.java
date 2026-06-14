@@ -7,6 +7,10 @@ import java.util.List;
 
 /**
  * Demonstrates a generated form model for an annotated record.
+ *
+ * <p>The scenario uses annotation-processor output to create typed field
+ * models and commit a record result. It helps readers connect source
+ * annotations, generated metadata, validation, and the core form contract.</p>
  */
 public final class GeneratedFormModelExample {
 

@@ -4,6 +4,14 @@ import cz.auderis.corusco.annotations.Column;
 import cz.auderis.corusco.annotations.Help;
 import cz.auderis.corusco.annotations.SwingTable;
 
+/**
+ * Annotated sample row record used by generated table examples.
+ *
+ * <p>The record shows the split between row data and presentation metadata:
+ * components store ordinary values, while {@link SwingTable}, {@link Column},
+ * and {@link Help} provide stable table ids, column persistence ids, sizing,
+ * editability, and tooltip/help resources for generated descriptors.</p>
+ */
 @SwingTable(id = "generated-customer-table")
 record GeneratedCustomerRow(
         @Column(

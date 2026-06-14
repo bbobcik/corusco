@@ -16,12 +16,28 @@ import java.util.Set;
 import javax.swing.JComponent;
 
 /**
- * Installs and owns behaviors for one view lifecycle.
+ * Installs, orders, validates, and owns view behaviors for one Swing lifecycle.
  *
- * <p>Behaviors are sorted by {@link BehaviorPhase} before installation.
- * Installed handles are closed in reverse installation order through
- * {@link BindingScope}. Duplicate single-cardinality keys and multiple primary
- * binding behaviors fail fast per component.</p>
+ * <p>A behavior scope is the runtime counterpart of a generated view plan. Code
+ * creates a scope during view or presenter construction, asks it to install the
+ * {@link ViewBehavior behaviors} for each component, and closes it when the
+ * view is torn down. The scope gives a newcomer one place to understand how
+ * Corusco turns generated metadata and handwritten behavior factories into real
+ * Swing listeners, bindings, actions, and decorations.</p>
+ *
+ * <p>Installation is EDT-confined. The scope sorts behaviors by
+ * {@link BehaviorPhase}, detects duplicate {@link BehaviorCardinality#SINGLE}
+ * keys, prevents multiple primary bindings on the same component, and stores
+ * installed keys for tests through {@link #installedBehaviorKeys(JComponent)}.
+ * It owns only the {@link Binding} handles returned by behaviors; it does not
+ * own the target components, models, resources, or optional {@link HelpService}.
+ * Closing the scope is idempotent through {@link BindingScope} and closes
+ * installed bindings in reverse registration order.</p>
+ *
+ * <p>Use one scope for a view/dialog activation, not as a global singleton.
+ * Avoid installing competing model bindings directly on the same component
+ * outside this scope, because the scope can only validate behaviors it knows
+ * about.</p>
  */
 public final class BehaviorScope implements Binding {
 
@@ -50,9 +66,18 @@ public final class BehaviorScope implements Binding {
     /**
      * Installs behaviors on a component.
      *
+     * <p>The input list is copied and sorted by phase before any behavior is
+     * installed. If a behavior violates cardinality rules, installation stops
+     * with {@link BehaviorConflictException}; previously installed behaviors
+     * remain owned by this scope and will be closed when the scope closes.</p>
+     *
      * @param component target component
      * @param behaviors behaviors to install
      * @param <C> component type
+     * @throws IllegalStateException if called off the EDT or after an owned
+     *         binding rejects installation
+     * @throws BehaviorConflictException if a behavior conflicts with an
+     *         already installed behavior on the same component
      */
     public <C extends JComponent> void install(C component, List<? extends ViewBehavior<? super C>> behaviors) {
         SwingEdt.requireEdt();
@@ -64,8 +89,12 @@ public final class BehaviorScope implements Binding {
     }
 
     /**
-     * Installs behaviors grouped by phase. Useful in tests and generated plans
-     * that need to inspect ordering.
+     * Installs behaviors grouped by phase.
+     *
+     * <p>This method has the same ownership and conflict semantics as
+     * {@link #install(JComponent, List)} and additionally returns the installed
+     * keys grouped by installation phase. It is useful in tests and generated
+     * plans that need to inspect ordering without exposing behavior instances.</p>
      *
      * @param component target component
      * @param behaviors behaviors to install
@@ -89,7 +118,7 @@ public final class BehaviorScope implements Binding {
     }
 
     /**
-     * Indicates whether this scope is closed.
+     * Indicates whether this scope has been closed.
      *
      * @return closed flag
      */
@@ -127,6 +156,13 @@ public final class BehaviorScope implements Binding {
         return installedKeys.getOrDefault(component, List.of()).contains(key);
     }
 
+    /**
+     * Closes all installed behavior bindings and clears diagnostic state.
+     *
+     * <p>The call must run on the EDT. Repeated calls are allowed and do not
+     * close bindings more than once. The scope no longer reports installed
+     * behavior keys after it is closed.</p>
+     */
     @Override
     public void close() {
         SwingEdt.requireEdt();

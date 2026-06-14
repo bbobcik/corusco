@@ -18,7 +18,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Default {@link TaskService} implementation.
+ * Executes UI-initiated background work and delivers callbacks on a configured
+ * executor.
+ *
+ * <p>The service separates task execution from UI callback delivery. Task
+ * bodies run on a worker {@link ExecutorService}; success, failure,
+ * cancellation callbacks, and final busy-state updates run through the supplied
+ * callback executor. Swing applications should pass an executor that dispatches
+ * to the Event Dispatch Thread when callbacks update Swing state.</p>
+ *
+ * <p>The service owns the worker executor only when created through
+ * {@link #virtualThreads(Executor)}. Instances created with
+ * {@link #of(ExecutorService, Executor)} cancel outstanding handles on close
+ * but leave the caller-owned executor service open. Closing is idempotent and
+ * causes later submissions to fail with {@link IllegalStateException}.</p>
  */
 public final class DefaultTaskService implements TaskService {
 

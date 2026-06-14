@@ -7,6 +7,18 @@ import cz.auderis.corusco.core.task.CancellationToken;
 /**
  * Asynchronous validator for one typed field value.
  *
+ * <p>Implementations perform validation that may block or take long enough to
+ * run through a {@link cz.auderis.corusco.core.task.TaskService}. The caller
+ * supplies the field key, current semantic value, and cancellation token for
+ * the validation generation being evaluated. Validators should return a
+ * {@link ProblemSet} describing validation findings and should not mutate the
+ * owning form model directly.</p>
+ *
+ * <p>The interface does not prescribe a thread. Implementations that use
+ * external services, caches, or Swing state must follow those collaborators'
+ * threading rules and use the cancellation token to avoid publishing stale
+ * results after a newer field value supersedes the current validation.</p>
+ *
  * @param <O> owner/model type
  * @param <T> field value type
  */

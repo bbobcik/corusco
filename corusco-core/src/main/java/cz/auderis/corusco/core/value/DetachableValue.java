@@ -5,11 +5,18 @@ import cz.auderis.corusco.core.lifecycle.Detachable;
 /**
  * Readable value that can release and later rebuild its cached value.
  *
- * <p>The value contract remains synchronous: {@link #value()} returns the
- * current effective value and may load it on demand. Detaching or invalidating
- * releases cached data but does not by itself represent a user-visible value
- * change. {@link #refresh()} is the explicit operation for reloading and
- * notifying subscribers when the effective value changes.</p>
+ * <p>This interface is for presenter values backed by external or derived data
+ * that may be released while the owner remains reusable. The value contract
+ * remains synchronous: {@link #value()} returns the current effective value and
+ * may load it on demand. Detaching or invalidating releases cached data but
+ * does not by itself represent a user-visible value change. {@link #refresh()}
+ * is the explicit operation for reloading and notifying subscribers when the
+ * effective value changes.</p>
+ *
+ * <p>Implementors should make attachment state observable through
+ * {@link #isAttached()} and should document whether {@link #detach()} and
+ * {@link #invalidate()} are equivalent. Subscribers remain owned by the value
+ * implementation until their subscriptions are closed.</p>
  *
  * @param <T> value type
  */

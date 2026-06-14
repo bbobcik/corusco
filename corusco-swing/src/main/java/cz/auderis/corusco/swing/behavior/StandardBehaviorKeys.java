@@ -1,7 +1,13 @@
 package cz.auderis.corusco.swing.behavior;
 
 /**
- * Standard behavior keys used by built-in Swing behaviors.
+ * Shared keys used by built-in Swing behaviors.
+ *
+ * <p>Keys identify component responsibilities within a {@link BehaviorScope}.
+ * Generated view plans and handwritten scopes use the same constants so primary
+ * bindings, decorations, and interactions can detect conflicts consistently.
+ * The key ids are stable because they may appear in diagnostics and tests, but
+ * they are not a persistence format for application state.</p>
  */
 public final class StandardBehaviorKeys {
 

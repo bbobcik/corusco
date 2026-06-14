@@ -12,11 +12,20 @@ import javax.swing.SwingUtilities;
 import javax.swing.plaf.LayerUI;
 
 /**
- * Binds observable busy state to a {@code JLayer} overlay.
+ * Binding that connects an observable busy flag to a {@link JLayer} overlay.
  *
- * <p>Install and close must run on the EDT. Busy value changes may arrive from
- * another thread; the binding schedules the visual update onto the EDT and
- * ignores queued updates after close.</p>
+ * <p>Use this binding when a presenter or task service exposes busy state and a
+ * Swing view should block interaction while background work is active. The
+ * binding replaces the layer's current {@link LayerUI} with a
+ * {@link BusyOverlayLayerUI}, forwards the initial and subsequent busy values
+ * to that UI, and restores the previous UI when closed.</p>
+ *
+ * <p>Installation and close are EDT-confined because they mutate Swing
+ * component state. The observed {@link ReadableValue} may deliver changes from
+ * another thread; the binding schedules visual updates back onto the EDT and
+ * ignores queued updates after close. It owns only the subscription and the
+ * temporary layer UI installation, not the wrapped component, layer, or busy
+ * value itself.</p>
  *
  * @param <C> wrapped Swing component type
  */
@@ -59,11 +68,15 @@ public final class BusyOverlayBinding<C extends JComponent> implements Binding {
     /**
      * Installs a busy overlay binding with an explicit overlay UI.
      *
+     * <p>The overlay UI is installed immediately and retained until
+     * {@link #close()} restores the previous UI.</p>
+     *
      * @param layer target {@code JLayer}
      * @param busy observable busy state
      * @param overlayUi overlay UI
      * @param <C> wrapped Swing component type
      * @return installed binding
+     * @throws IllegalStateException if called off the EDT
      */
     public static <C extends JComponent> BusyOverlayBinding<C> install(
             JLayer<C> layer,
@@ -73,6 +86,12 @@ public final class BusyOverlayBinding<C extends JComponent> implements Binding {
         return new BusyOverlayBinding<>(layer, busy, overlayUi);
     }
 
+    /**
+     * Unsubscribes from busy changes and restores the layer's previous UI.
+     *
+     * <p>The call must run on the EDT and is idempotent. Close forces the
+     * overlay into the not-busy state before restoring the previous UI.</p>
+     */
     @Override
     public void close() {
         SwingEdt.requireEdt();

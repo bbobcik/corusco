@@ -18,7 +18,14 @@ import javax.swing.plaf.LayerUI;
  *
  * <p>When busy, the layer paints a translucent cover and consumes input events
  * before they reach the wrapped view. The UI is intentionally animation-free so
- * tests and generated views get deterministic lifecycle behavior.</p>
+ * tests and generated views get deterministic lifecycle behavior. It is used by
+ * {@link BusyOverlayBinding} and {@link cz.auderis.corusco.swing.behavior.StandardBehaviors#busyOverlay}
+ * to block interaction while background work is active.</p>
+ *
+ * <p>Instances are mutable Swing UI delegates and should be accessed on the
+ * event dispatch thread. The UI does not own the wrapped component or the
+ * {@code JLayer}; callers install and uninstall it through normal Swing
+ * component lifecycle.</p>
  */
 public final class BusyOverlayLayerUI extends LayerUI<JComponent> {
 
@@ -46,8 +53,10 @@ public final class BusyOverlayLayerUI extends LayerUI<JComponent> {
     /**
      * Creates a busy overlay UI.
      *
-     * @param overlayColor overlay paint color
+     * @param overlayColor overlay paint color, not {@code null}
      * @param alpha overlay opacity from 0.0 to 1.0
+     * @throws IllegalArgumentException if {@code alpha} is outside
+     *         {@code 0.0..1.0}
      */
     public BusyOverlayLayerUI(Color overlayColor, float alpha) {
         this.overlayColor = Objects.requireNonNull(overlayColor, "overlayColor");

@@ -22,6 +22,10 @@ import javax.swing.table.TableRowSorter;
 
 /**
  * Demonstrates binding sorted JTable selection to Corusco values.
+ *
+ * <p>The example keeps selected row state in a Corusco value while the JTable
+ * may be sorted or filtered. It focuses on converting between view rows and
+ * model rows so presenter state is not tied to transient table ordering.</p>
  */
 public final class TableSelectionBindingExample {
 

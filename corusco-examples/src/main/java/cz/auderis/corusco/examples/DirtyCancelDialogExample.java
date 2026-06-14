@@ -11,6 +11,10 @@ import javax.swing.JPanel;
 
 /**
  * Demonstrates dirty-cancel confirmation for form dialogs.
+ *
+ * <p>The scenario supplies dirty-state and confirmation hooks so cancellation
+ * can be blocked when user edits would be discarded. It is useful for readers
+ * deciding where application-specific confirmation UI belongs.</p>
  */
 public final class DirtyCancelDialogExample {
 

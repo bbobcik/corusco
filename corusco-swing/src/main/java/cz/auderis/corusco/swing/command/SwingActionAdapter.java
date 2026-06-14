@@ -21,6 +21,11 @@ import javax.swing.KeyStroke;
  * action properties on the EDT. For selectable mutable commands, user-originated
  * button state is copied back into the command before the handler runs so
  * buttons, menu items, and key bindings share one selected-state owner.</p>
+ *
+ * <p>The adapter owns only its subscriptions to the command. Closing it is
+ * idempotent through the underlying subscription scope and does not disable,
+ * reset, or dispose the command itself. Swing serialization is not part of this
+ * adapter's contract; use it as a live UI binding.</p>
  */
 public final class SwingActionAdapter extends AbstractAction implements Binding {
 
@@ -29,6 +34,10 @@ public final class SwingActionAdapter extends AbstractAction implements Binding 
 
     /**
      * Creates a Swing action adapter.
+     *
+     * <p>Action metadata is resolved once during construction. Later resource
+     * changes are not observed by this adapter. Command state changes are
+     * observed until {@link #close()} is called.</p>
      *
      * @param command command to adapt
      * @param resources resource resolver

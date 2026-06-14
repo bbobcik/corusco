@@ -7,6 +7,10 @@ import java.util.List;
 
 /**
  * Demonstrates a filtered observable-list view.
+ *
+ * <p>The scenario derives a visible list from a source observable list and
+ * updates it when source data or filter criteria change. It shows how list
+ * adapters keep derived presentation state separate from storage ownership.</p>
  */
 public final class FilteredListExample {
 
@@ -31,8 +35,8 @@ public final class FilteredListExample {
         source.set(1, "avocado");
         snapshots.add(String.join(",", filtered.snapshot()));
 
-        // Predicate replacement is useful for search boxes. This early slice
-        // reports it as a reset rather than trying to compute a tiny diff.
+        // Predicate replacement is useful for search boxes. The current
+        // FilteredList contract reports it as a reset.
         filtered.setPredicate(value -> value.length() > 5);
         snapshots.add(String.join(",", filtered.snapshot()));
 

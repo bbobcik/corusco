@@ -18,6 +18,10 @@ import java.util.List;
 
 /**
  * Demonstrates validation rules on handwritten form models.
+ *
+ * <p>The example applies required, length, range, and pattern validators to
+ * core field models and reports typed problems. It is the handwritten
+ * counterpart to generated validation metadata.</p>
  */
 public final class ValidationExample {
 

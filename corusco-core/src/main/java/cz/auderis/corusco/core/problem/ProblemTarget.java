@@ -9,7 +9,9 @@ import java.util.Objects;
  *
  * <p>The hierarchy is sealed so callers can pattern-match over the known target
  * kinds. Field and component targets carry typed keys instead of arbitrary
- * field-name strings.</p>
+ * field-name strings. Form, field, row, cell, and component targets let
+ * validation and UI code route feedback to the right part of a form or table
+ * without relying on reflection or naming conventions.</p>
  */
 public sealed interface ProblemTarget
         permits ProblemTarget.Form, ProblemTarget.Field, ProblemTarget.Row,

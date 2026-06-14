@@ -1,7 +1,12 @@
 package cz.auderis.corusco.core.convert;
 
 /**
- * Policy for parsing empty text in converters.
+ * Defines how text converters treat an empty input string.
+ *
+ * <p>The policy is used by converters whose target type cannot naturally
+ * represent an empty string, such as numbers and dates. It lets generated and
+ * handwritten form models distinguish optional fields from required fields
+ * without making the converter depend on validation rules.</p>
  */
 public enum EmptyTextPolicy {
 

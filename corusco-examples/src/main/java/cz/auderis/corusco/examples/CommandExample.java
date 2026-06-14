@@ -21,6 +21,11 @@ import javax.swing.JPanel;
 
 /**
  * Demonstrates command/action binding without showing a native window.
+ *
+ * <p>The example adapts a core command descriptor to Swing actions and key
+ * bindings, then exercises the binding lifecycle in a headless-safe way. It is
+ * intended for readers who want command metadata to drive buttons, menus, and
+ * accelerators consistently.</p>
  */
 public final class CommandExample {
 

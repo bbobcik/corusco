@@ -1,7 +1,13 @@
 package cz.auderis.corusco.annotations;
 
 /**
- * Baseline marker for the Corusco annotations module.
+ * Identifies the Corusco annotations module in smoke tests and diagnostics.
+ *
+ * <p>This class is not used by the annotation processor and does not describe
+ * annotated source elements. It only exposes the published module name. Users
+ * of the annotation API should start with {@link SwingForm},
+ * {@link SwingTable}, field-kind annotations, constraint annotations, and
+ * {@link UiAction}.</p>
  */
 public final class CoruscoAnnotations {
 

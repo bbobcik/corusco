@@ -14,6 +14,11 @@ import javax.swing.JTextField;
 
 /**
  * Demonstrates generated view contracts and behavior plans.
+ *
+ * <p>The example shows how generated metadata can describe a view in terms of
+ * typed components and behaviors, leaving actual Swing component instances to
+ * the view implementation. It is a bridge between annotation processing and the
+ * behavior-scope APIs.</p>
  */
 public final class GeneratedViewPlanExample {
 

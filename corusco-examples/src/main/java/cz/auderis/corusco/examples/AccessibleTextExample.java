@@ -10,7 +10,12 @@ import java.util.Map;
 import javax.swing.JTextField;
 
 /**
- * Demonstrates descriptor-derived accessible text.
+ * Demonstrates descriptor-derived accessible text for Swing components.
+ *
+ * <p>The example shows how generated field metadata and resources can populate
+ * a component's accessible name and description without duplicating labels in
+ * view code. It is intended as a small accessibility scenario for readers
+ * wiring generated descriptors into handwritten Swing screens.</p>
  */
 public final class AccessibleTextExample {
 

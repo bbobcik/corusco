@@ -5,7 +5,9 @@ package cz.auderis.corusco.core.resource;
  *
  * <p>Missing required resources and values whose runtime type does not match
  * the requested key type both use this exception so callers can distinguish
- * resource configuration failures from ordinary optional misses.</p>
+ * resource configuration failures from ordinary optional misses. Optional
+ * lookup methods return {@code Optional.empty()} for absent keys instead of
+ * throwing this exception.</p>
  */
 public class ResourceException extends RuntimeException {
 

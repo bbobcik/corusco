@@ -6,6 +6,15 @@ import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.core.key.ActionKey;
 import java.util.Objects;
 
+/**
+ * Standard mutable command implementation used by {@link CommandFactory}.
+ *
+ * <p>The implementation keeps descriptor identity immutable while exposing
+ * enabled and selected state as {@link SimpleValue} instances. It executes the
+ * supplied handler synchronously only when enabled and rejects selected-state
+ * mutation for non-selectable descriptors. It is package-private so the public
+ * API can remain the {@link Command} and {@link MutableCommand} contracts.</p>
+ */
 final class DefaultCommand implements MutableCommand {
 
     private final ActionDescriptor descriptor;

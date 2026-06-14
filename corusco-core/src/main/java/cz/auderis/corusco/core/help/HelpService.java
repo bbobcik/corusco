@@ -7,9 +7,17 @@ import java.util.Optional;
  * Service for opening help topics.
  *
  * <p>The service accepts stable generated {@link HelpTopic} descriptors and
- * dispatches immutable {@link HelpRequest} instances to an application-owned
- * {@link HelpHandler}. It is intentionally UI-toolkit neutral; Swing behavior
- * can adapt focus, F1 key events, and components to requests later.</p>
+ * opens the corresponding help content through application infrastructure.
+ * Implementations may delegate to a browser, embedded help panel, platform help
+ * system, telemetry recorder, or test double. The service is intentionally
+ * UI-toolkit neutral; Swing behavior adapts focus, F1 key events, and
+ * components to {@link HelpRequest} instances at the boundary.</p>
+ *
+ * <p>Callers should only invoke the service when metadata says help is
+ * available. Missing-topic decisions belong to descriptors, tooltip policy, or
+ * behavior installation. Implementors should throw {@link HelpServiceException}
+ * for configuration or dispatch failures that occur after a request is made.
+ * {@link #lastRequest()} is primarily a diagnostic and test-support hook.</p>
  */
 public interface HelpService {
 

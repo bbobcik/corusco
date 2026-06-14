@@ -7,6 +7,10 @@ import java.util.Map;
 
 /**
  * Demonstrates typed resource lookup with generated resource keys.
+ *
+ * <p>The scenario loads resource values from a map-backed resource service and
+ * retrieves them through typed keys. It is a small example for labels,
+ * tooltips, command text, and other metadata-driven presentation strings.</p>
  */
 public final class ResourcesExample {
 

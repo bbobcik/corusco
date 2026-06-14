@@ -3,11 +3,18 @@ package cz.auderis.corusco.core.convert;
 import java.util.Objects;
 
 /**
- * Result of parsing raw text into a semantic value.
+ * Sealed result of parsing raw text into a semantic value.
  *
- * <p>Successful results may contain {@code null}. Failed results carry a
- * diagnostic message; typed problem construction is handled by text field
- * models because they know the target field key.</p>
+ * <p>Converters use this type instead of throwing exceptions for ordinary user
+ * input failures. A {@link Success} carries the converted value, which may be
+ * {@code null} for optional fields. A {@link Failure} carries diagnostic text
+ * describing why the raw text could not be converted. Text field models turn
+ * failures into typed parse problems because they know the field key and the
+ * current parse/validation boundary.</p>
+ *
+ * <p>The result is immutable and Swing-free. It does not decide whether a
+ * value is required, in range, or semantically valid; those checks belong to
+ * validators after parsing succeeds.</p>
  *
  * @param <T> semantic value type
  */

@@ -6,12 +6,23 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a record component as a generated text field.
+ * Marks a record component as a generated text-entry field.
  *
- * <p>For the initial processor spike this produces a
- * {@code TextFieldKey<Owner, Value>} constant in the generated
- * {@code <Owner>Fields} class. Conversion and validation metadata are generated
- * by later stages.</p>
+ * <p>Use this annotation on a component of a {@link SwingForm} record when the
+ * value is edited through text. The processor accepts supported scalar types
+ * and emits typed field keys, descriptor metadata, a generated field backed by
+ * {@code TextFieldModel}, converter wiring, and a Swing text component entry in
+ * generated view plans.</p>
+ *
+ * <p>Text fields are the field kind that can carry text-oriented validation
+ * annotations such as {@link Length}, {@link Regex}, {@link IntRange}, and
+ * {@link DecimalRange}. {@link Required} and {@link Help} may also be combined
+ * with text fields. Applying text-only constraints to other field kinds is
+ * invalid and is reported by the processor where validation is implemented.</p>
+ *
+ * <p>The annotation chooses the generated field/editor family only. It does not
+ * create a Swing component at runtime and does not define resource text by
+ * itself; generated descriptors and resources provide those details.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

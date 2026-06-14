@@ -2,6 +2,16 @@ package cz.auderis.corusco.processor;
 
 import java.util.List;
 
+/**
+ * Normalized description of one generated form field.
+ *
+ * <p>The annotation processor builds this package-private model after
+ * validating annotation combinations and supported component types. Writers use
+ * it as the single source for generated field keys, resource keys, component
+ * factory methods, converter wiring, and validation descriptors. The values are
+ * already source-code fragments or stable ids; writer code should not reinterpret
+ * annotation defaults independently.</p>
+ */
 final class FieldSpec {
 
     final String constantName;

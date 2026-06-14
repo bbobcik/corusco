@@ -4,6 +4,15 @@ import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.Objects;
 import javax.swing.Timer;
 
+/**
+ * EDT-confined debounce helper for table-state saves.
+ *
+ * <p>{@link TableStateController} uses this scheduler to coalesce repeated
+ * column move, resize, visibility, and sort changes into one save action. A
+ * zero delay runs saves immediately; a positive delay uses a non-repeating
+ * Swing {@link Timer}. The scheduler does not know how state is captured or
+ * stored; it only owns pending-save timing.</p>
+ */
 final class TableStateSaveScheduler {
 
     private final Runnable saveAction;

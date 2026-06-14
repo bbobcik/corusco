@@ -9,10 +9,19 @@ import java.util.Optional;
  * Typed resource lookup boundary.
  *
  * <p>Generated descriptors expose stable {@link ResourceKey} instances; this
- * interface resolves those keys to runtime values. Implementations must return
- * values assignable to the key's declared value type. Missing values are
- * represented as {@link Optional#empty()} so tooltip/help composition can
- * decide its own fallback policy.</p>
+ * interface resolves those keys to runtime values such as labels, tooltips, or
+ * command presentation strings. It is the boundary between stable generated ids
+ * and application localization/resource infrastructure.</p>
+ *
+ * <p>Implementations must return values assignable to the key's declared value
+ * type. Missing optional values are represented as {@link Optional#empty()} so
+ * tooltip/help composition and Swing adapters can decide their own fallback
+ * policy. Required lookups use {@link #require(ResourceKey)} and fail with
+ * {@link ResourceException} when absent.</p>
+ *
+ * <p>The interface is Swing-free and does not prescribe resource bundle
+ * loading, caching, or locale switching. Implementations that support mutable
+ * resource sets should document their own threading and invalidation rules.</p>
  */
 public interface Resources {
 

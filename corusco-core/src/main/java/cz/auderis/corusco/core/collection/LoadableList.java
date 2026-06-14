@@ -14,11 +14,23 @@ import java.util.function.Supplier;
 /**
  * Supplier-backed observable list that loads lazily and detaches its cache.
  *
- * <p>The loader is invoked on the caller's thread. Loaded elements are copied
- * into an internal {@link ObservableArrayList}, so subsequent list mutations
- * affect the attached presentation cache rather than writing back through the
- * loader. This class is not synchronized and follows the collection package's
- * single-owner presentation-state convention.</p>
+ * <p>This class is useful when a presenter owns a row list whose data can be
+ * released between activations and reloaded later. The first read or mutation
+ * after construction or {@link #detach()} invokes the supplied loader, copies
+ * the loaded elements into an internal {@link ObservableArrayList}, and then
+ * serves list operations from that cache. Subsequent mutations affect the
+ * attached presentation cache; they do not write back through the loader.</p>
+ *
+ * <p>The loader is invoked on the caller's thread and must not return
+ * {@code null}. The list retains subscribers across detach/refresh operations.
+ * {@link #refresh()} reloads data and emits a reset-style change set only when
+ * a previously attached snapshot changes. {@link #detach()} and
+ * {@link #invalidate()} release cached rows without firing list changes.</p>
+ *
+ * <p>This class is not synchronized and follows the collection package's
+ * single-owner presentation-state convention. If the list is bound to Swing,
+ * perform load, refresh, and mutation work according to the Swing adapter's EDT
+ * rules.</p>
  *
  * @param <E> element type
  */

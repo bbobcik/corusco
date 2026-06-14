@@ -12,6 +12,10 @@ import java.util.List;
 
 /**
  * Demonstrates generated-style typed key constants.
+ *
+ * <p>The scenario uses typed keys for fields, components, resources, and help
+ * topics. It shows how stable ids can remain string-compatible while APIs keep
+ * owner and value types available to callers.</p>
  */
 public final class TypedKeyExample {
 

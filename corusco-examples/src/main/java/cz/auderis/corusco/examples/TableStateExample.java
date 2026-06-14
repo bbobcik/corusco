@@ -11,6 +11,10 @@ import java.util.List;
 
 /**
  * Demonstrates descriptor-based table state merge.
+ *
+ * <p>The scenario merges saved table state with a descriptor so unknown columns
+ * are ignored and new descriptor columns receive defaults. It is aimed at
+ * readers adding user-customizable table layouts.</p>
  */
 public final class TableStateExample {
 

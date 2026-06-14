@@ -3,6 +3,13 @@ package cz.auderis.corusco.core.task;
 /**
  * Blocking unit of work submitted through a {@link TaskService}.
  *
+ * <p>A task service executes this callback away from the caller's immediate
+ * control and reports the result through the {@link TaskHandle} returned from
+ * submission. Implementations should keep Swing component access out of the
+ * task body unless they explicitly marshal that access to the EDT. Long-running
+ * tasks are expected to cooperate with cancellation by checking the supplied
+ * {@link CancellationToken}.</p>
+ *
  * @param <T> result type
  */
 @FunctionalInterface

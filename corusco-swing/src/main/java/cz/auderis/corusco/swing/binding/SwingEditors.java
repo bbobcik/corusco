@@ -12,13 +12,20 @@ import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 
 /**
- * Utilities for committing active Swing editors before form submission.
+ * Utilities for flushing active Swing editor widgets before a form is submitted.
  *
- * <p>The helpers are EDT-bound. They commit the focus-owned formatted/spinner
- * editor when focus is inside the supplied root and also stop any actively
- * editing table below the root. The table pass matters for headless tests and
- * native focus edge cases where Swing may not expose the cell editor component
- * as the current focus owner.</p>
+ * <p>Swing components such as {@link JFormattedTextField}, {@link JSpinner},
+ * and {@link JTable} cell editors can hold a value that has not yet reached the
+ * presentation model. Dialog controllers use this helper before creating an
+ * accepted result so the committed domain value reflects what the user is
+ * currently editing, not just the last focus-lost update.</p>
+ *
+ * <p>The helpers are EDT-bound and do not own any component. They inspect only
+ * editors inside the supplied root, commit the focused formatted or spinner
+ * editor, and also stop actively editing tables below the root. A return value
+ * of {@code false} means at least one editor rejected the commit; callers
+ * should keep the dialog open and leave focus/error handling to the component
+ * or binding that rejected the value.</p>
  */
 public final class SwingEditors {
 
@@ -27,6 +34,10 @@ public final class SwingEditors {
 
     /**
      * Attempts to commit the active editor inside a root component.
+     *
+     * <p>The root is retained only for the duration of the call. The method
+     * mutates Swing editor state by committing or stopping active editing, but
+     * it does not install listeners or change component ownership.</p>
      *
      * @param root root component to inspect
      * @return {@code true} when no editor rejected the commit

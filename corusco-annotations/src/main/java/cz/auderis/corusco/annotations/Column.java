@@ -8,10 +8,22 @@ import java.lang.annotation.Target;
 /**
  * Marks a record component as a generated table column.
  *
- * <p>Generated column ids, resource keys, defaults, and capabilities are
- * derived from this source-retained annotation. Editable columns use generated
- * record-constructor updaters so table edits replace immutable row records
- * without reflection.</p>
+ * <p>Use this annotation on components of a record annotated with
+ * {@link SwingTable}. The processor turns each annotated component into a
+ * generated column descriptor with a typed column key, header/tooltip resource
+ * keys, default layout state, persistence id, capabilities, and row value
+ * accessors. Unannotated record components are ignored by table metadata
+ * generation.</p>
+ *
+ * <p>Editable columns use generated record-constructor updaters so table edits
+ * replace immutable row records without reflection or JavaBeans property paths.
+ * The annotation describes table presentation and editing metadata; it does not
+ * store row data and does not create a Swing {@code JTable} by itself.</p>
+ *
+ * <p>The processor validates ids, width bounds, and the surrounding table
+ * source. Stable ids and persistence ids can appear in generated code,
+ * resources, diagnostics, and saved table preferences, so changing them is a
+ * compatibility change for users with existing persisted layout state.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

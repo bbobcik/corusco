@@ -32,7 +32,21 @@ import javax.swing.JTextField;
 import javax.swing.text.JTextComponent;
 
 /**
- * Factory methods for built-in behaviors.
+ * Factory methods for the built-in Swing behaviors used by Corusco views.
+ *
+ * <p>These behaviors cover the common responsibilities around generated and
+ * handwritten forms: primary value bindings, validation feedback, composed
+ * tooltips, focus interactions, help dispatch, accessibility metadata, and
+ * busy overlays. The factories return behavior objects; the behavior does not
+ * touch Swing components until a {@link BehaviorScope} installs it with a
+ * {@link BehaviorContext}.</p>
+ *
+ * <p>Bindings and decorations retain the supplied models, observables, labels,
+ * resources, and help topics until the returned binding is closed. Installation
+ * happens against Swing components and should be performed on the event
+ * dispatch thread. Factories validate required collaborators eagerly where
+ * possible; failures that depend on a component or context occur during
+ * behavior installation.</p>
  */
 public final class StandardBehaviors {
 
@@ -41,6 +55,10 @@ public final class StandardBehaviors {
 
     /**
      * Creates a text field binding behavior.
+     *
+     * <p>The behavior installs a primary binding through
+     * {@link BindingFactory#textField(JTextField, TextFieldModel)} and closes
+     * that binding when removed from the scope.</p>
      *
      * @param model text field model
      * @param <O> owner/model type
@@ -65,6 +83,10 @@ public final class StandardBehaviors {
     /**
      * Creates a text area binding behavior.
      *
+     * <p>The behavior installs a primary binding through
+     * {@link BindingFactory#textArea(JTextArea, TextFieldModel)} and closes
+     * that binding when removed from the scope.</p>
+     *
      * @param model text field model
      * @param <O> owner/model type
      * @param <T> semantic value type
@@ -88,6 +110,9 @@ public final class StandardBehaviors {
     /**
      * Creates a checkbox selected-state binding behavior.
      *
+     * <p>The behavior installs a primary selected-state binding and removes its
+     * listeners when the returned binding is closed.</p>
+     *
      * @param model Boolean field model
      * @param <O> owner/model type
      * @return checkbox binding behavior
@@ -109,6 +134,10 @@ public final class StandardBehaviors {
 
     /**
      * Creates a validation tooltip decoration behavior.
+     *
+     * <p>The installed binding observes the problem value and writes the
+     * component tooltip text. It shares the same behavior key as composed
+     * tooltips because Swing components have one tooltip slot.</p>
      *
      * @param problems observable problems
      * @param <C> component type
@@ -155,6 +184,11 @@ public final class StandardBehaviors {
     /**
      * Creates a composed tooltip decoration behavior.
      *
+     * <p>The installed binding observes problem and disabled-reason values,
+     * combines them with static help according to the supplied policy, and
+     * writes the component tooltip. {@code disabledReason} may be {@code null}
+     * when disabled-state text is not part of the tooltip.</p>
+     *
      * @param problems observable problems
      * @param disabledReason observable disabled reason, or {@code null}
      * @param staticHelp static descriptor/resource help
@@ -195,6 +229,10 @@ public final class StandardBehaviors {
     /**
      * Creates a validation border decoration behavior.
      *
+     * <p>The installed binding observes the problem value and updates the
+     * component border to reflect validation state, restoring the original
+     * border when closed.</p>
+     *
      * @param problems observable problems
      * @param <C> component type
      * @return border behavior
@@ -216,6 +254,9 @@ public final class StandardBehaviors {
 
     /**
      * Creates a behavior that selects all text when a text component gains focus.
+     *
+     * <p>Installation adds a focus listener and cleanup removes the same
+     * listener. Both operations require the event dispatch thread.</p>
      *
      * @param <C> text component type
      * @return focus behavior
@@ -247,6 +288,10 @@ public final class StandardBehaviors {
 
     /**
      * Creates a behavior that runs a commit action when Enter is pressed.
+     *
+     * <p>Installation adds a key listener and cleanup removes it. The supplied
+     * action is retained and invoked synchronously from the key event on the
+     * event dispatch thread.</p>
      *
      * @param commitAction commit action
      * @param <C> text component type
@@ -283,6 +328,10 @@ public final class StandardBehaviors {
     /**
      * Creates a behavior that publishes static status-bar text while focused.
      *
+     * <p>The installed binding observes focus on the target component and writes
+     * to the shared status label while focused, restoring the previous label
+     * state according to the binding contract when closed.</p>
+     *
      * @param statusLabel shared status label
      * @param statusText status text to show while focused
      * @param <C> component type
@@ -305,6 +354,9 @@ public final class StandardBehaviors {
 
     /**
      * Creates a behavior that publishes observable status-bar text while focused.
+     *
+     * <p>The installed binding observes both focus and the status text value.
+     * The value subscription is retained until the binding is closed.</p>
      *
      * @param statusLabel shared status label
      * @param statusText observable status text
@@ -332,6 +384,9 @@ public final class StandardBehaviors {
 
     /**
      * Creates a behavior that sets accessible name and description.
+     *
+     * <p>The installed binding writes directly to the component's accessible
+     * context and restores the previous accessible text when closed.</p>
      *
      * @param accessibleName accessible name
      * @param accessibleDescription accessible description
@@ -382,6 +437,10 @@ public final class StandardBehaviors {
      * Creates a busy overlay decoration behavior for a {@code JLayer}-wrapped
      * view.
      *
+     * <p>The target component must be the {@link JLayer}, not the wrapped view.
+     * The installed binding observes the busy value and repaints the layer while
+     * active.</p>
+     *
      * @param busy observable busy state
      * @param <C> wrapped component type
      * @return busy overlay behavior
@@ -403,6 +462,11 @@ public final class StandardBehaviors {
 
     /**
      * Creates a behavior that opens a help topic when F1 is pressed.
+     *
+     * <p>Installation requires a help service in the behavior context, installs
+     * an F1 input/action-map entry, and restores previous entries during
+     * cleanup. The help service is invoked synchronously from the Swing action
+     * on the event dispatch thread.</p>
      *
      * @param topic help topic
      * @param <C> component type

@@ -12,6 +12,10 @@ import javax.swing.SwingUtilities;
 
 /**
  * Demonstrates marshaling observable-list notifications to the Swing EDT.
+ *
+ * <p>The example adapts list events so Swing-facing consumers receive changes
+ * on the event dispatch thread. It clarifies the boundary between the core
+ * observable-list contract and Swing's threading expectations.</p>
  */
 public final class EdtObservableListExample {
 

@@ -8,7 +8,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>Subscriptions are idempotent: closing a subscription more than once must
  * perform the underlying cleanup at most once. The factory method provided by
- * this interface enforces that behavior for callback-backed registrations.</p>
+ * this interface enforces that behavior for callback-backed registrations.
+ * Observable values, lists, Swing bindings, and behavior scopes use this type
+ * to return ownership of a registration to the caller.</p>
  */
 @FunctionalInterface
 public interface Subscription extends Disposable {

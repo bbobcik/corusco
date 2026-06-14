@@ -34,14 +34,29 @@ import javax.swing.table.TableColumnModel;
 import javax.swing.table.TableModel;
 
 /**
- * EDT-confined controller that persists a {@link JTable} column layout.
+ * EDT-confined controller that restores and persists a {@link JTable}'s view state.
  *
- * <p>The controller owns no table model data. It reads stable persistence ids
- * from the {@link ObservableTableModel} descriptor, restores the saved
- * {@link TableState}, and then listens for Swing column/sort changes. Event
- * saves are debounced on the EDT so resize and drag gestures coalesce into one
- * write. Close the controller with the surrounding view lifecycle to remove
- * listeners, write pending state, and flush the store.</p>
+ * <p>This type is the bridge between toolkit-neutral table metadata in
+ * {@link TableDescriptor}/{@link TableState} and Swing's mutable
+ * {@link TableColumnModel}. It does not own row data or cell values. Instead it
+ * reads stable column persistence ids from the {@link ObservableTableModel}
+ * descriptor, merges saved state with current descriptor defaults, applies
+ * column order, visibility, width bounds, and sorter keys to the JTable, then
+ * listens for Swing column and sort changes.</p>
+ *
+ * <p>State writes are debounced on the EDT so resize and drag gestures coalesce
+ * into one store write. Programmatic changes such as
+ * {@link #setColumnVisible(String, boolean)} also schedule persistence. The
+ * controller owns the Swing listeners and the save scheduler; it does not own
+ * the table, model, descriptor, or {@link TableStateStore}. Close it with the
+ * surrounding view lifecycle to remove listeners, write any pending state, and
+ * flush the store. After close, mutation and capture methods reject use.</p>
+ *
+ * <p>Use this controller only with an {@link ObservableTableModel} installed in
+ * the same table. Avoid modifying the column model behind the controller except
+ * through JTable gestures or documented controller methods, because direct
+ * changes may bypass the persistence assumptions around hidden columns and
+ * stable persistence ids.</p>
  *
  * @param <R> row type
  */
@@ -69,6 +84,10 @@ public final class TableStateController<R> implements Binding {
 
     /**
      * Installs a controller for an already configured table/model pair.
+     *
+     * <p>The controller is active when this method returns: saved state has
+     * been applied, listeners are registered, and the current merged state has
+     * been written once.</p>
      *
      * @param table Swing table to restore and observe
      * @param model descriptor-backed table model installed in the table
@@ -191,11 +210,20 @@ public final class TableStateController<R> implements Binding {
     /**
      * Creates and installs a controller with a migration hook and debounce.
      *
+     * <p>The constructor must run on the EDT. It validates that the table is
+     * using the supplied model, discovers the current Swing table columns,
+     * applies migrated/merged stored state, registers listeners, and saves the
+     * resulting state immediately. The migration hook is applied only to loaded
+     * store state before descriptor defaults are merged.</p>
+     *
      * @param table Swing table to restore and observe
      * @param model descriptor-backed table model installed in the table
      * @param store table state store
      * @param migration migration hook applied before descriptor merge
      * @param saveDelayMillis debounce delay for event-triggered saves
+     * @throws IllegalStateException if called off the EDT
+     * @throws IllegalArgumentException if the table does not use the supplied
+     *         model or descriptor column ids are duplicated
      */
     public TableStateController(
             JTable table,
@@ -227,9 +255,14 @@ public final class TableStateController<R> implements Binding {
     }
 
     /**
-     * Returns the currently captured state without writing it.
+     * Returns the currently captured table presentation state without writing it.
+     *
+     * <p>The snapshot includes visible and hidden descriptor columns plus the
+     * current sorter keys expressed with stable column persistence ids. It does
+     * not include row selection, scroll position, filters, or row data.</p>
      *
      * @return current table state
+     * @throws IllegalStateException if called off the EDT
      */
     public TableState captureState() {
         SwingEdt.requireEdt();
@@ -242,10 +275,14 @@ public final class TableStateController<R> implements Binding {
      *
      * <p>This programmatic hook is intentionally small. A later header menu can
      * call it without learning how hidden Swing {@link TableColumn} instances
-     * are cached and restored.</p>
+     * are cached and restored. Calling it with the current visibility is a
+     * no-op; a real change schedules a debounced save.</p>
      *
      * @param columnId stable column persistence id
      * @param visible whether the column should be visible
+     * @throws IllegalStateException if called off the EDT or after close
+     * @throws IllegalArgumentException if {@code columnId} is not known by the
+     *         descriptor
      */
     public void setColumnVisible(String columnId, boolean visible) {
         SwingEdt.requireEdt();
@@ -275,6 +312,8 @@ public final class TableStateController<R> implements Binding {
      * <p>This cancels any pending delayed save. Event-triggered saves use the
      * configured debounce interval; call this method for explicit user actions
      * or tests that need deterministic persistence at that point.</p>
+     *
+     * @throws IllegalStateException if called off the EDT or after close
      */
     public void saveNow() {
         SwingEdt.requireEdt();
@@ -284,6 +323,12 @@ public final class TableStateController<R> implements Binding {
 
     /**
      * Writes any delayed save that has been scheduled but not yet fired.
+     *
+     * <p>If no delayed save is pending, this method is a no-op. It is useful
+     * before assertions or before a surrounding lifecycle performs additional
+     * persistence work.</p>
+     *
+     * @throws IllegalStateException if called off the EDT or after close
      */
     public void flushPendingSaves() {
         SwingEdt.requireEdt();
@@ -291,6 +336,13 @@ public final class TableStateController<R> implements Binding {
         saveScheduler.flushPending();
     }
 
+    /**
+     * Removes installed listeners, writes pending state, and flushes the store.
+     *
+     * <p>The call must run on the EDT and is idempotent. Close does not dispose
+     * the table, model, row sorter, or state store; it only detaches this
+     * controller from the table lifecycle.</p>
+     */
     @Override
     public void close() {
         SwingEdt.requireEdt();

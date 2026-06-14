@@ -65,8 +65,8 @@ public final class BaselineSwingExample {
      * @throws InterruptedException when waiting for EDT execution is interrupted
      */
     public static void main(String[] args) throws InvocationTargetException, InterruptedException {
-        // A real application would show a top-level window here. The bootstrap
-        // entry point only exercises EDT-safe construction.
+        // A real application would show a top-level window here. This entry
+        // point only exercises EDT-safe construction.
         SwingUtilities.invokeAndWait(BaselineSwingExample::createWindow);
     }
 }

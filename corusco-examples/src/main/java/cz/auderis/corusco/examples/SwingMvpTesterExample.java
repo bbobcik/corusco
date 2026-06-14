@@ -20,6 +20,10 @@ import javax.swing.JTextField;
 
 /**
  * Demonstrates the Swing MVP tester foundation.
+ *
+ * <p>The example creates a small presenter/view interaction and asserts it
+ * through the test support APIs. It shows how to test Swing-facing presenter
+ * logic without displaying a window.</p>
  */
 public final class SwingMvpTesterExample {
 

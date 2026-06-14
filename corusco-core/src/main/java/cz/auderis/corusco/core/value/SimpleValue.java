@@ -8,11 +8,20 @@ import java.util.Objects;
 /**
  * Basic mutable {@link WritableValue} implementation.
  *
+ * <p>This is the default scalar observable used throughout Corusco models for
+ * field values, dirty flags, command state, busy state, and simple presenter
+ * state. It owns the current value and the listener registrations returned from
+ * {@link #subscribe(ValueChangeListener)}.</p>
+ *
  * <p>Mutation and listener dispatch are synchronous. This class is not
  * synchronized and is intended for single-owner presentation state. Equal
  * values, including equal {@code null} values, do not emit events. Listener
  * dispatch uses a snapshot so removing a listener during dispatch does not skip
  * or duplicate unrelated listeners.</p>
+ *
+ * <p>The value does not know about Swing or background tasks. If it is bound to
+ * a Swing component, the binding or presenter is responsible for EDT
+ * confinement.</p>
  *
  * @param <T> value type
  */

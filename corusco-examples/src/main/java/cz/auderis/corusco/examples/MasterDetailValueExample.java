@@ -10,6 +10,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Demonstrates a detachable master-detail value.
+ *
+ * <p>The example derives detail state from a selected master value and clears
+ * ownership through a detachable lifecycle. It is meant for readers modeling
+ * master-detail screens before adding Swing selection bindings.</p>
  */
 public final class MasterDetailValueExample {
 

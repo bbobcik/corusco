@@ -5,12 +5,27 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
- * Executable table column definition.
+ * Executable definition of one column in a typed Corusco table.
  *
- * <p>A column combines immutable descriptor metadata with typed row access.
- * Read access is an explicit function, not reflection or a string property
- * path. Editable columns use an updater function that returns the replacement
- * row, which fits immutable record-row tables and generated wither methods.</p>
+ * <p>A {@code Column} is where generated or handwritten table metadata becomes
+ * usable by adapters such as Corusco's Swing observable table model. The
+ * {@link ColumnDescriptor} supplies stable ids, resource keys, defaults,
+ * persistence metadata, and capabilities; the column itself supplies the typed
+ * functions that read a value from a row and, for editable columns, create the
+ * replacement row after a cell edit.</p>
+ *
+ * <p>The class deliberately avoids reflection and string property paths. Read
+ * access is a function supplied by generated code or handwritten descriptors.
+ * Editable columns use an updater function that returns a new row, which fits
+ * immutable records and generated wither-style methods. Instances are
+ * immutable and reusable as descriptor constants; they do not own row data,
+ * Swing components, table models, or persisted state.</p>
+ *
+ * <p>Use {@link #readOnly(ColumnDescriptor, Function)} for display-only
+ * columns and {@link #editable(ColumnDescriptor, Function, BiFunction)} only
+ * when the descriptor capabilities say the column is editable. Avoid using
+ * mutable row side effects inside getters or updaters; table adapters assume
+ * the returned value or replacement row represents the model change.</p>
  *
  * @param <R> row type
  * @param <V> cell value type
@@ -40,6 +55,9 @@ public final class Column<R, V> {
     /**
      * Creates a read-only column.
      *
+     * <p>The descriptor must describe a non-editable column. The getter is
+     * retained and invoked whenever an adapter needs a cell value.</p>
+     *
      * @param descriptor column descriptor
      * @param getter typed row value extractor
      * @param <R> row type
@@ -55,6 +73,10 @@ public final class Column<R, V> {
 
     /**
      * Creates an editable column.
+     *
+     * <p>The descriptor must declare editable capabilities. The updater is
+     * retained and is called with the current row and a value cast to the
+     * column's declared value type.</p>
      *
      * @param descriptor column descriptor with editable capabilities
      * @param getter typed row value extractor
@@ -72,7 +94,7 @@ public final class Column<R, V> {
     }
 
     /**
-     * Returns column metadata.
+     * Returns immutable descriptor metadata for this column.
      *
      * @return descriptor
      */
@@ -110,6 +132,9 @@ public final class Column<R, V> {
     /**
      * Extracts the cell value from a row.
      *
+     * <p>The supplied row must not be {@code null}. The getter's return value
+     * may be {@code null} if the column's semantic value allows nulls.</p>
+     *
      * @param row source row
      * @return cell value
      */
@@ -120,9 +145,17 @@ public final class Column<R, V> {
     /**
      * Returns a replacement row with the supplied cell value.
      *
+     * <p>Adapters call this only for editable columns. The value is cast to the
+     * column's declared {@link #valueType()} before the updater is invoked. The
+     * original row is not modified by this class; the updater decides whether
+     * to return a copied immutable row or a mutated row object.</p>
+     *
      * @param row source row
      * @param value new cell value
      * @return replacement row
+     * @throws UnsupportedOperationException if this column is read-only
+     * @throws ClassCastException if {@code value} is incompatible with the
+     *         declared value type
      */
     public R update(R row, Object value) {
         if (updater == null) {

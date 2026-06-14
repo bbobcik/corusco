@@ -9,6 +9,11 @@ import java.util.List;
 
 /**
  * Demonstrates adapting a Glazed Lists event list to Corusco.
+ *
+ * <p>The example keeps the Glazed Lists {@code EventList} as the storage owner
+ * and exposes it through a Corusco observable-list adapter. It highlights
+ * listener translation and adapter cleanup for applications already based on
+ * Glazed Lists.</p>
  */
 public final class GlazedListsInteropExample {
 

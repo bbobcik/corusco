@@ -22,13 +22,30 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Runs asynchronous validation for one field value.
+ * Lifecycle controller that runs asynchronous validation for one observable field value.
  *
- * <p>The controller observes a semantic value and submits validation work to a
- * {@link TaskService}. Each submission captures a generation token; callbacks
- * for older values are ignored, so slow server-side validation cannot overwrite
- * current field state. The controller is Swing-free and inherits callback
- * threading from the supplied task service.</p>
+ * <p>This class is used when validation requires work that should not block the
+ * caller, for example a server lookup or expensive local check. It subscribes
+ * to a semantic {@link ReadableValue}, submits validation work to a
+ * {@link TaskService}, and exposes two observable values: current async
+ * validation {@link #problems()} and {@link #busy()} state. It is core-level
+ * and Swing-free; Swing callers normally choose a task service whose callbacks
+ * return on the EDT.</p>
+ *
+ * <p>Each submitted validation captures a {@link GenerationCounter} token.
+ * Completion callbacks for older values are ignored, so a slow validation of a
+ * previous value cannot overwrite the problems for the current value. Closing
+ * the controller invalidates generations, removes the value subscription,
+ * cancels outstanding tasks, clears tracked handles, and publishes not-busy
+ * state. Close is idempotent.</p>
+ *
+ * <p>The controller owns only its subscription to the observed value and the
+ * task handles it submits. It does not own the field model, the task service,
+ * or the validator. Validator exceptions and task-submission failures are
+ * converted to a field-targeted {@link ProblemSeverity#ERROR} problem using
+ * {@link #ASYNC_VALIDATION_FAILED}. Cancellation is cooperative and follows the
+ * supplied task service's {@link cz.auderis.corusco.core.task.CancellationToken}
+ * contract.</p>
  *
  * @param <O> owner/model type
  * @param <T> field value type
@@ -55,6 +72,9 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
     /**
      * Creates and starts async field validation.
      *
+     * <p>The returned controller immediately validates the current value and
+     * then observes future value changes until closed.</p>
+     *
      * @param key typed field key
      * @param value observed field value
      * @param taskService task service
@@ -74,6 +94,10 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
 
     /**
      * Creates and starts async field validation.
+     *
+     * <p>Construction subscribes to the value and immediately schedules
+     * validation of the current value with {@link ChangeOrigin#SYSTEM}. Later
+     * value changes reuse the origin carried by the value event.</p>
      *
      * @param key typed field key
      * @param value observed field value
@@ -97,6 +121,11 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
     /**
      * Returns observable async validation problems.
      *
+     * <p>The returned value is owned by this controller. Subscribers are
+     * retained by the returned value according to {@link SimpleValue}'s normal
+     * subscription rules and should dispose their subscriptions when no longer
+     * needed.</p>
+     *
      * @return problem value
      */
     public ReadableValue<ProblemSet> problems() {
@@ -104,8 +133,12 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
     }
 
     /**
-     * Returns observable async validation busy state for the current field
-     * value.
+     * Returns observable async validation busy state for the current field value.
+     *
+     * <p>Busy becomes true when a validation task is submitted for the current
+     * generation and false when the current generation completes, fails, is
+     * cancelled, or the controller is closed. Older generations do not clear
+     * busy for newer work.</p>
      *
      * @return busy value
      */
@@ -115,11 +148,21 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
 
     /**
      * Revalidates the current value.
+     *
+     * <p>The call submits a new generation even if the field value has not
+     * changed. Calling this after close has no effect.</p>
      */
     public void validateNow() {
         validate(value.value(), ChangeOrigin.MODEL);
     }
 
+    /**
+     * Stops observing the value and cancels outstanding validation tasks.
+     *
+     * <p>The call is idempotent. Already queued task callbacks may still be
+     * delivered by the task service, but their generations are invalidated and
+     * cannot publish problems after close.</p>
+     */
     @Override
     public void close() {
         if (closed) {

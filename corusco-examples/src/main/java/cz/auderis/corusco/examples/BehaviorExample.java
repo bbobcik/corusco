@@ -23,6 +23,11 @@ import javax.swing.KeyStroke;
 
 /**
  * Demonstrates behavior-based Swing component extension.
+ *
+ * <p>The example installs several behaviors into a scope to show how Corusco
+ * separates primary bindings, decorations, and interactions. It gives readers a
+ * compact view of the behavior lifecycle before they move to generated view
+ * plans.</p>
  */
 public final class BehaviorExample {
 

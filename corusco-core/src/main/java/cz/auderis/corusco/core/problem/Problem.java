@@ -7,8 +7,8 @@ import java.util.Objects;
  *
  * <p>A problem is fully typed by its target and categorized by a stable
  * {@link ProblemCode}, {@link ProblemSeverity}, and {@link ProblemSource}.
- * The message is diagnostic text for tests and logs; localization is handled by
- * later resource stages.</p>
+ * The message is diagnostic text for tests and logs; user-facing localization
+ * belongs to resource descriptors and application presentation code.</p>
  *
  * @param code stable problem code
  * @param severity severity used for ordering and committability decisions

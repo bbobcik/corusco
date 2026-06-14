@@ -1,5 +1,13 @@
 package cz.auderis.corusco.processor;
 
+/**
+ * Normalized description of one generated action descriptor.
+ *
+ * <p>Instances are created only after {@code @UiAction} methods have been
+ * validated as parameterless {@code void} methods with stable ids. The writer
+ * uses these values to emit typed action keys, resource keys, accelerator
+ * metadata, and selectable-action flags.</p>
+ */
 final class ActionSpec {
 
     final String constantName;

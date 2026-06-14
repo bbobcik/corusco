@@ -8,11 +8,24 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Composes dynamic and static tooltip parts in a deterministic order.
+ * Immutable policy for composing tooltip lines from validation, state, and help inputs.
  *
- * <p>The policy is deliberately Swing-free. It returns ordered plain-text lines
- * so Swing, status-bar, or accessibility adapters can render the same content
- * through their own presentation rules without duplicating ordering logic.</p>
+ * <p>Corusco gathers tooltip text from several places: parse and validation
+ * problems, disabled command or field state, descriptor/resource help, and the
+ * presence of an F1/context-help topic. Swing components have one tooltip slot,
+ * so this policy defines a deterministic order for those inputs without making
+ * the core module depend on Swing or HTML rendering.</p>
+ *
+ * <p>The policy returns ordered plain-text lines. Swing bindings can join those
+ * lines into a component tooltip, while tests or accessibility adapters can
+ * inspect the same ordered content directly. Instances are immutable and
+ * reusable; {@link #standard()} is the normal generated-form/table policy,
+ * placing the most severe problem first, then disabled reason, static help, and
+ * finally the help indicator.</p>
+ *
+ * <p>The policy does not perform localization, resource lookup, or problem
+ * filtering. Callers should pass already-localized static help and the problem
+ * set relevant to the component or cell being rendered.</p>
  */
 public final class TooltipPolicy {
 
@@ -38,6 +51,10 @@ public final class TooltipPolicy {
     /**
      * Creates the standard tooltip policy.
      *
+     * <p>The standard policy appends {@link #DEFAULT_HELP_INDICATOR} when
+     * help is available and a higher-priority tooltip part has not already
+     * consumed the user's attention.</p>
+     *
      * @return standard policy
      */
     public static TooltipPolicy standard() {
@@ -56,9 +73,9 @@ public final class TooltipPolicy {
     /**
      * Composes tooltip content into ordered plain-text lines.
      *
-     * <p>The order matches the roadmap contract: the most severe validation or
-     * parse problem first, then the disabled reason, static help, and finally
-     * the F1/context help indicator.</p>
+     * <p>The order is fixed by this policy: the most severe validation or parse
+     * problem first, then the disabled reason, static help, and finally the
+     * F1/context help indicator.</p>
      *
      * @param content tooltip content
      * @return immutable ordered tooltip lines
@@ -85,6 +102,10 @@ public final class TooltipPolicy {
 
     /**
      * Composes tooltip content into a newline-separated string.
+     *
+     * <p>Use this convenience when a renderer has a single plain-text tooltip
+     * slot. Use {@link #composeLines(TooltipContent)} when the caller needs to
+     * render each line separately.</p>
      *
      * @param content tooltip content
      * @return composed tooltip text, or empty when no parts are present

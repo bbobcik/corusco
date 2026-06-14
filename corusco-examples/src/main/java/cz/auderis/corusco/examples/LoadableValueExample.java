@@ -8,6 +8,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Demonstrates a detachable lazy value.
+ *
+ * <p>The scenario delays value loading until requested and then detaches the
+ * loader from its owner. It illustrates how lazy model state can participate in
+ * the same cleanup conventions as listeners and list adapters.</p>
  */
 public final class LoadableValueExample {
 

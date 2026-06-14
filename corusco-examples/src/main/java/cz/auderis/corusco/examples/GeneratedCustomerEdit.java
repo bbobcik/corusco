@@ -14,6 +14,15 @@ import cz.auderis.corusco.annotations.TextField;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+/**
+ * Annotated sample edit record used by generated form examples.
+ *
+ * <p>The record is intentionally package-private because it is not a framework
+ * entry point. It demonstrates how a domain-facing edit DTO can carry
+ * {@link SwingForm} metadata, field annotations, validation annotations, and
+ * help metadata that the processor turns into generated field descriptors,
+ * resource keys, problem codes, and Swing component keys.</p>
+ */
 @SwingForm(id = "generated-customer")
 record GeneratedCustomerEdit(
         @TextField @Required @Length(max = 80) @Regex("[A-Za-z ]+") @Help(topic = "generated-customer/name") String name,

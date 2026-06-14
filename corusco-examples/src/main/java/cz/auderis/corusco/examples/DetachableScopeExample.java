@@ -10,6 +10,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Demonstrates grouping detachable models under one presenter lifecycle.
+ *
+ * <p>The example registers detachable objects in a scope and closes them from a
+ * single owner. It highlights reverse-order cleanup and the reason presenters
+ * should own listener-like resources instead of leaving each model to be closed
+ * ad hoc.</p>
  */
 public final class DetachableScopeExample {
 

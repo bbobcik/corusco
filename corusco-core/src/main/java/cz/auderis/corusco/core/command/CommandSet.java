@@ -10,7 +10,18 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Deterministic collection of commands keyed by {@link ActionKey}.
+ * Immutable command registry keyed by stable {@link ActionKey} values.
+ *
+ * <p>A command set is a small presentation-model companion for a view or
+ * presenter. It lets generated view plans, Swing test helpers, and menu/button
+ * assembly code find commands by typed action key without relying on field
+ * names or localized text. The set preserves insertion order for deterministic
+ * menu and toolbar construction, but lookup is by key.</p>
+ *
+ * <p>The set owns no command lifecycle; it retains command references but does
+ * not close or reset them. Duplicate keys are rejected at construction time so
+ * a presenter cannot accidentally expose two different commands for one
+ * action.</p>
  */
 public final class CommandSet {
 
@@ -18,6 +29,9 @@ public final class CommandSet {
 
     /**
      * Creates a command set.
+     *
+     * <p>The input collection is copied into an immutable insertion-ordered
+     * registry. {@code null} commands and duplicate action keys are rejected.</p>
      *
      * @param commands commands to include; duplicate keys are rejected
      */

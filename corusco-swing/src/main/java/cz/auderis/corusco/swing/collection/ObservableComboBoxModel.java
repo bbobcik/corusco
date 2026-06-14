@@ -9,12 +9,24 @@ import javax.swing.ComboBoxModel;
 import javax.swing.MutableComboBoxModel;
 
 /**
- * Swing {@link ComboBoxModel} backed by an {@link ObservableList}.
+ * Swing combo-box model backed by a Corusco {@link ObservableList}.
  *
- * <p>The same EDT and lifecycle rules as {@link ObservableListModel} apply.
- * The adapter implements {@link MutableComboBoxModel} by routing mutations back
- * to the source list, so combo-box edits and application list edits share one
- * observable state owner.</p>
+ * <p>This adapter extends {@link ObservableListModel} for Swing's
+ * {@link ComboBoxModel} contract. The observable list remains the owner of the
+ * option data. Combo-box mutations through {@link MutableComboBoxModel} are
+ * routed back to the source list, so user edits and presenter edits share the
+ * same observable state and listeners see the normal Corusco list changes.</p>
+ *
+ * <p>The adapter owns only Swing selection state and the inherited source-list
+ * subscription. Selection is stored separately from the source list because
+ * Swing's combo-box model allows a selected item that is not currently present.
+ * If a source-list change removes the selected value and no equal value remains
+ * in the source, the adapter clears selection and fires Swing's standard
+ * contents-changed notification for selection.</p>
+ *
+ * <p>Use the same EDT and lifecycle rules as {@link ObservableListModel}:
+ * create and use it on the EDT, ensure source changes are delivered on the EDT,
+ * and close the model when the owning component lifecycle ends.</p>
  *
  * @param <E> element type
  */
@@ -24,6 +36,9 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
 
     /**
      * Creates a combo-box model backed by {@code source}.
+     *
+     * <p>The inherited constructor subscribes immediately to source changes.
+     * The initial selection is {@code null}.</p>
      *
      * @param source observable source list
      */
@@ -42,6 +57,12 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
         return new ObservableComboBoxModel<>(source);
     }
 
+    /**
+     * Sets the selected item and fires Swing selection change events.
+     *
+     * <p>The item is not required to be present in the source list, following
+     * Swing's {@link ComboBoxModel} contract.</p>
+     */
     @Override
     public void setSelectedItem(Object anItem) {
         if (Objects.equals(selectedItem, anItem)) {
@@ -51,16 +72,27 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
         fireContentsChanged(this, -1, -1);
     }
 
+    /**
+     * Returns the currently selected item.
+     *
+     * @return selected item, possibly {@code null}
+     */
     @Override
     public Object getSelectedItem() {
         return selectedItem;
     }
 
+    /**
+     * Appends an option to the source list.
+     */
     @Override
     public void addElement(E item) {
         source().add(item);
     }
 
+    /**
+     * Removes the first source-list element equal to {@code obj}, if present.
+     */
     @Override
     public void removeElement(Object obj) {
         for (int i = 0; i < source().size(); i++) {

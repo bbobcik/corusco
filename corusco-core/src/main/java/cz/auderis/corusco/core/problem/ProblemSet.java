@@ -10,7 +10,13 @@ import java.util.Objects;
  *
  * <p>The set preserves insertion order for iteration and derives deterministic
  * views through explicit methods. Adding problems returns a new set. Filtering
- * never mutates the original set.</p>
+ * never mutates the original set. Form models, validators, and table helpers
+ * use this type as the common transport for validation, parsing, and
+ * UI-feedback diagnostics.</p>
+ *
+ * <p>The class does not deduplicate problems. If two validators report the same
+ * problem, both entries remain visible so callers can decide how to present or
+ * merge them.</p>
  */
 public final class ProblemSet {
 

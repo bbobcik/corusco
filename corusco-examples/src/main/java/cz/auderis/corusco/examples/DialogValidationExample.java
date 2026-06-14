@@ -20,6 +20,10 @@ import javax.swing.JPanel;
 
 /**
  * Demonstrates dialog validation summary and focus behavior.
+ *
+ * <p>The example attempts to commit a form with validation problems, reports
+ * the summary, and resolves focus to the relevant component. It shows how model
+ * problems, dialog commit policy, and Swing focus handling cooperate.</p>
  */
 public final class DialogValidationExample {
 

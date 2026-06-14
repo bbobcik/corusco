@@ -12,6 +12,10 @@ import javax.swing.SwingUtilities;
 
 /**
  * Demonstrates Swing EDT task callbacks.
+ *
+ * <p>The example submits background work through a Swing-aware task service and
+ * observes completion on the event dispatch thread. It shows where UI updates
+ * belong when task bodies run away from Swing components.</p>
  */
 public final class SwingTaskExample {
 

@@ -12,6 +12,10 @@ import javax.swing.table.TableRowSorter;
 
 /**
  * Demonstrates tester table-selection helpers.
+ *
+ * <p>The example verifies table selection behavior using the Swing MVP tester
+ * support. It is a headless table-testing scenario rather than a table-model
+ * reference implementation.</p>
  */
 public final class SwingMvpTesterTableExample {
 

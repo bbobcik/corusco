@@ -11,13 +11,25 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 
 /**
- * Binds a form dialog's current problems to validation-summary UI behavior.
+ * Binds a form dialog's problem state to validation summary and focus behavior.
  *
- * <p>The binding is EDT-bound and intentionally pull-based: call
- * {@link #refresh()} after form state changes. This matches the current
- * synchronous {@link cz.auderis.corusco.core.form.FormModel} contract and
- * leaves generated presenters free to decide when a dialog should refresh its
- * summary.</p>
+ * <p>This binding is the Swing presentation companion to {@link FormDialog}'s
+ * commit checks. It reads {@link cz.auderis.corusco.core.form.FormModel#problems()}
+ * from the dialog's model, writes a compact summary into a {@link JLabel}, and
+ * can ask a {@link ProblemFocusResolver} for the component that should receive
+ * focus for the most severe problem. It does not perform validation itself and
+ * does not change dialog result state.</p>
+ *
+ * <p>The binding is Event Dispatch Thread confined and intentionally
+ * pull-based. Call {@link #refresh()} after form state changes or after a
+ * generated presenter runs validation. This matches the current synchronous
+ * form-model contract and avoids hiding refresh timing in a listener that the
+ * form model does not expose.</p>
+ *
+ * <p>Instances retain the dialog, summary label, and resolver until closed.
+ * Closing restores the label text captured during installation and prevents
+ * later refresh/focus work. Use {@link FormDialogLifecycle} when the validation
+ * binding should be closed with the rest of a dialog view.</p>
  */
 public final class FormDialogValidationBinding implements Binding {
 
@@ -43,9 +55,12 @@ public final class FormDialogValidationBinding implements Binding {
     /**
      * Installs validation summary behavior without focus targets.
      *
-     * @param dialog dialog controller
-     * @param summaryLabel summary label
-     * @return installed binding
+     * @param dialog dialog controller whose form problems are displayed, not
+     *         {@code null}
+     * @param summaryLabel label whose text is owned by the binding until close,
+     *         not {@code null}
+     * @return installed binding; close it to restore the original label text
+     * @throws IllegalStateException if called off the EDT
      */
     public static FormDialogValidationBinding install(FormDialog<?, ?> dialog, JLabel summaryLabel) {
         return install(dialog, summaryLabel, ProblemFocusResolver.NONE);
@@ -54,10 +69,14 @@ public final class FormDialogValidationBinding implements Binding {
     /**
      * Installs validation summary and focus behavior.
      *
-     * @param dialog dialog controller
-     * @param summaryLabel summary label
-     * @param focusResolver problem focus resolver
-     * @return installed binding
+     * @param dialog dialog controller whose form problems are displayed, not
+     *         {@code null}
+     * @param summaryLabel label whose text is owned by the binding until close,
+     *         not {@code null}
+     * @param focusResolver resolver used by {@link #focusFirstProblem()}, not
+     *         {@code null}
+     * @return installed binding; close it to restore the original label text
+     * @throws IllegalStateException if called off the EDT
      */
     public static FormDialogValidationBinding install(
             FormDialog<?, ?> dialog,
@@ -69,6 +88,13 @@ public final class FormDialogValidationBinding implements Binding {
 
     /**
      * Refreshes summary text from the form's current problems.
+     *
+     * <p>The summary is blank when there are no problems, the first
+     * severity-ordered problem message when there is one problem, or a count
+     * plus the first message when there are multiple problems. Calling this
+     * method after {@link #close()} has no effect.</p>
+     *
+     * @throws IllegalStateException if called off the EDT
      */
     public void refresh() {
         SwingEdt.requireEdt();
@@ -82,7 +108,13 @@ public final class FormDialogValidationBinding implements Binding {
      * Attempts to focus the first severity-ordered problem with a resolvable
      * component.
      *
+     * <p>The method asks the resolver for each problem in severity-descending
+     * order and calls {@link JComponent#requestFocusInWindow()} on the first
+     * component it finds. It does not change validation state and does not show
+     * any dialog by itself.</p>
+     *
      * @return {@code true} when focus was requested successfully
+     * @throws IllegalStateException if called off the EDT
      */
     public boolean focusFirstProblem() {
         SwingEdt.requireEdt();
@@ -99,6 +131,11 @@ public final class FormDialogValidationBinding implements Binding {
         return false;
     }
 
+    /**
+     * Restores the summary label text captured during installation.
+     *
+     * @throws IllegalStateException if called off the EDT
+     */
     @Override
     public void close() {
         SwingEdt.requireEdt();

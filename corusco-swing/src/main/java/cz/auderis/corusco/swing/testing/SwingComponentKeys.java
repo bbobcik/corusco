@@ -7,13 +7,19 @@ import java.util.Optional;
 import javax.swing.JComponent;
 
 /**
- * Swing-side tagging convention for generated {@link ComponentKey} constants.
+ * Utility for marking Swing components with typed Corusco component keys.
  *
- * <p>The marker is stored as a client property so tests and generated helpers
- * can locate components without reflection or JavaBeans property paths. The
- * component name is set to the key id when it is currently blank, which keeps
- * screenshots and ad-hoc diagnostics readable without making name lookup the
- * primary contract.</p>
+ * <p>Generated view code can expose {@link ComponentKey} constants that name
+ * important components without tying tests to field names or reflection. This
+ * utility stores such a key in a Swing client property and, when the component
+ * has no explicit name, copies the stable key id into
+ * {@link JComponent#setName(String)} for diagnostics and screenshots.</p>
+ *
+ * <p>The client property is the primary contract. Name lookup is only a
+ * fallback used by package-local tester code for simple handwritten views. The
+ * utility does not install listeners and does not own the component; it only
+ * writes metadata to the supplied component, normally during view construction
+ * on the EDT.</p>
  */
 public final class SwingComponentKeys {
 
@@ -29,10 +35,16 @@ public final class SwingComponentKeys {
     /**
      * Marks a component with a typed component key.
      *
+     * <p>The component must be an instance of the key's declared component
+     * type. The same component is returned so generated builders can mark a
+     * component inline while constructing the view tree.</p>
+     *
      * @param component component to mark
      * @param key generated or hand-written component key
      * @param <C> component type
      * @return the same component for inline construction
+     * @throws IllegalArgumentException if the component does not match the
+     *         key's component type
      */
     public static <C extends JComponent> C mark(C component, ComponentKey<C> key) {
         Objects.requireNonNull(component, "component");

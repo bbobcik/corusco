@@ -16,14 +16,20 @@ import javax.swing.JTable;
 import javax.swing.table.JTableHeader;
 
 /**
- * Header popup menu for toggling table column visibility.
+ * Binding that adds a column-visibility popup menu to a table header.
  *
- * <p>The binding is EDT-confined and lifecycle-owned like other Swing
- * bindings. It does not mutate Swing table columns directly; menu actions
- * delegate to {@link TableStateController}, which keeps hidden columns cached
- * and schedules persisted state saves. Item labels come from the installed
- * {@link ObservableTableModel} column names, so later resource lookup can be
- * centralized in the model/binding layer.</p>
+ * <p>This class is the user-facing control for the column visibility part of
+ * {@link TableStateController}. It listens for platform popup triggers on the
+ * {@link JTableHeader}, rebuilds a {@link JPopupMenu} from the current captured
+ * {@link ColumnState}, and delegates visibility changes back to the controller
+ * so hidden {@link javax.swing.table.TableColumn} instances, visual order, and
+ * persisted state stay consistent.</p>
+ *
+ * <p>The binding is EDT-confined. It owns only the header mouse listener and
+ * transient menu items; it does not own the table, the model, or the controller.
+ * The menu disables the last visible column item to avoid leaving the table
+ * with no visible descriptor columns. Close the binding with the surrounding
+ * view lifecycle to remove the listener.</p>
  *
  * @param <R> row type
  */
@@ -56,9 +62,16 @@ public final class TableHeaderColumnVisibilityMenu<R> implements Binding {
     /**
      * Creates and installs a visibility popup menu.
      *
+     * <p>The constructor adds the popup mouse listener immediately. The
+     * controller and model must describe the same table instance because menu
+     * actions use stable column ids captured from both collaborators.</p>
+     *
      * @param table Swing table
      * @param model descriptor-backed table model installed in the table
      * @param controller table state controller for the same table/model pair
+     * @throws IllegalStateException if called off the EDT
+     * @throws IllegalArgumentException if the table does not use the supplied
+     *         model
      */
     public TableHeaderColumnVisibilityMenu(
             JTable table,
@@ -83,6 +96,7 @@ public final class TableHeaderColumnVisibilityMenu<R> implements Binding {
      * by direct controller calls, restored state, or previous menu actions.</p>
      *
      * @return popup menu
+     * @throws IllegalStateException if called off the EDT or after close
      */
     public JPopupMenu createMenu() {
         SwingEdt.requireEdt();
@@ -108,6 +122,12 @@ public final class TableHeaderColumnVisibilityMenu<R> implements Binding {
         return menu;
     }
 
+    /**
+     * Removes the header popup listener.
+     *
+     * <p>The call must run on the EDT and is idempotent. Existing transient
+     * popup menu instances are not tracked after they have been shown.</p>
+     */
     @Override
     public void close() {
         SwingEdt.requireEdt();

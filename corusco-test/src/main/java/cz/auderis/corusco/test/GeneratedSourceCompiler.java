@@ -17,7 +17,18 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 
 /**
- * Small javac harness for tests that need to inspect annotation-processor output.
+ * Small javac harness for tests that inspect annotation-processor output.
+ *
+ * <p>The harness writes caller-provided sample sources under a temporary work
+ * directory, invokes the system javac with configured processors, and returns a
+ * {@link GeneratedSourceCompilation} that exposes generated sources and
+ * diagnostics. It is intended for unit tests of generated-code contracts, not
+ * for production compilation or build orchestration.</p>
+ *
+ * <p>Instances are mutable builders: processor, release, and classpath settings
+ * affect subsequent compilations. Each {@code compile} call receives an
+ * isolated output directory under the harness work directory. The harness
+ * requires a JDK because it uses {@link ToolProvider#getSystemJavaCompiler()}.</p>
  */
 public final class GeneratedSourceCompiler {
 

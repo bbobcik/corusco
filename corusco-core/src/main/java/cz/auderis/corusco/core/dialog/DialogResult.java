@@ -4,11 +4,19 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Terminal result of a form dialog.
+ * Immutable terminal outcome of a form dialog interaction.
  *
- * <p>The result is immutable and Swing-free. Accepted results carry the
- * committed domain value; cancelled results intentionally carry no value so
- * callers cannot accidentally read a partially edited object.</p>
+ * <p>Dialog controllers use this Swing-free value to report whether the user
+ * accepted a form and, if so, which committed domain object was produced.
+ * Accepted results carry the value returned by the form model's commit path.
+ * Cancelled results intentionally carry no value so callers cannot accidentally
+ * consume a partially edited object after Cancel, Escape, window close, or a
+ * dirty-cancel confirmation.</p>
+ *
+ * <p>The result is one-shot state owned by the dialog interaction, not by the
+ * form model. It does not close dialogs or reset forms by itself; it merely
+ * records the outcome after the dialog controller has performed validation,
+ * active-editor commit, and lifecycle decisions.</p>
  *
  * @param <R> committed result type
  */

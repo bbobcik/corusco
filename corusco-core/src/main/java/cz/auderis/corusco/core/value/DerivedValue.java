@@ -11,10 +11,20 @@ import java.util.function.Supplier;
 /**
  * A one-way value derived from one or more source values.
  *
- * <p>The derived value recomputes synchronously when any dependency changes and
- * emits one event when the computed value changes. Closing the derived value
- * removes its dependency subscriptions and its own listeners. The class is not
- * synchronized and inherits the threading assumptions of its dependencies.</p>
+ * <p>Use this class when presenter state should be computed from several
+ * observable dependencies, for example a combined enabled flag or derived label
+ * text. The derived value subscribes to every dependency, computes an initial
+ * value immediately, recomputes synchronously when any dependency changes, and
+ * emits one event when the computed value changes.</p>
+ *
+ * <p>The instance owns its dependency subscriptions and its own listener list.
+ * Closing it removes dependency subscriptions, clears listeners, and makes
+ * later subscriptions no-ops. Callers should close derived values from the same
+ * lifecycle that owns the presenter or binding using them.</p>
+ *
+ * <p>The class is not synchronized and inherits the threading assumptions of
+ * its dependencies. The supplier may return {@code null}; equal recomputed
+ * values do not emit events.</p>
  *
  * @param <T> derived value type
  */

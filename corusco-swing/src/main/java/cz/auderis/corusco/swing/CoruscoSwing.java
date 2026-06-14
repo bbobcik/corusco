@@ -1,7 +1,13 @@
 package cz.auderis.corusco.swing;
 
 /**
- * Baseline marker for the Corusco Swing module.
+ * Identifies the Corusco Swing integration module in smoke tests and
+ * diagnostics.
+ *
+ * <p>This class has no binding or component-factory behavior. Applications
+ * should use the focused Swing packages for bindings, behaviors, dialogs,
+ * tables, tasks, and test support. The marker only exposes the module name used
+ * by smoke tests and simple runtime diagnostics.</p>
  */
 public final class CoruscoSwing {
 

@@ -8,7 +8,19 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * ArrayList-backed {@link ObservableList}.
+ * Mutable {@link ObservableList} implementation backed by an {@link ArrayList}.
+ *
+ * <p>This class is the general-purpose observable collection used by examples,
+ * bindings, and adapters when no specialized list implementation is needed. It
+ * owns its element storage, reports every structural mutation as a
+ * {@link ListChangeSet}, and returns immutable snapshots so callers can inspect
+ * list contents without holding an internal reference.</p>
+ *
+ * <p>Listeners are retained until the returned subscription is disposed.
+ * Notifications are delivered synchronously on the thread that performs the
+ * mutation. The class performs no synchronization and has no Swing awareness;
+ * callers that expose it to Swing components should mutate it on the event
+ * dispatch thread or use an adapter that documents a different policy.</p>
  *
  * @param <E> element type
  */
@@ -28,7 +40,11 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
     /**
      * Creates an observable list with initial contents.
      *
-     * @param initialElements initial elements
+     * <p>The supplied collection is copied during construction. Later changes
+     * to the collection are not observed, and construction itself does not fire
+     * change events.</p>
+     *
+     * @param initialElements initial elements, not {@code null}
      */
     public ObservableArrayList(Collection<? extends E> initialElements) {
         elements.addAll(Objects.requireNonNull(initialElements, "initialElements"));
@@ -47,7 +63,7 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
     /**
      * Creates an observable list with initial contents.
      *
-     * @param elements initial elements
+     * @param elements initial elements, copied into the new list
      * @param <E> element type
      * @return observable list
      */

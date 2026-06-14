@@ -11,6 +11,10 @@ import javax.swing.JPanel;
 
 /**
  * Demonstrates base form dialog controller semantics.
+ *
+ * <p>The example drives commit and cancel paths against a form dialog without a
+ * visible window. It is the smallest scenario for understanding how a
+ * UI-independent form model becomes a dialog result.</p>
  */
 public final class FormDialogExample {
 

@@ -3,10 +3,10 @@ package cz.auderis.corusco.core.validation;
 /**
  * Timing hint for validation rules.
  *
- * <p>The current core executes rules synchronously when asked. Timing metadata
- * is preserved so later Swing bindings and generated plans can decide whether a
- * rule belongs to change-time validation, commit-time validation, or a future
- * debounced path.</p>
+ * <p>The core executes rules synchronously when asked. Timing metadata lets
+ * form models, Swing bindings, and generated plans separate rules that should
+ * react to value changes from rules that should run during an explicit commit
+ * attempt.</p>
  */
 public enum ValidationTiming {
 

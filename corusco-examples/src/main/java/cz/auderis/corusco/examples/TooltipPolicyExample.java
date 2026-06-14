@@ -14,6 +14,10 @@ import java.util.Map;
 
 /**
  * Demonstrates toolkit-neutral tooltip composition.
+ *
+ * <p>The example combines validation feedback, disabled reasons, static help,
+ * and help availability through a core tooltip policy. It shows the text
+ * composition rules before Swing bindings write the result to a component.</p>
  */
 public final class TooltipPolicyExample {
 

@@ -11,6 +11,20 @@ import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 
+/**
+ * Writes generated form, field, resource, problem, descriptor, view, behavior,
+ * and action sources.
+ *
+ * <p>This writer is the central generated-code contract for {@code @SwingForm}
+ * and {@code @UiAction}. It receives validated {@link FieldSpec} and
+ * {@link ActionSpec} values and writes deterministic source files whose public
+ * APIs are consumed by core form models, Swing bindings, examples, and tests.
+ * It reports write failures through the annotation-processing messager instead
+ * of exposing processor internals as runtime API.</p>
+ *
+ * <p>The class is package-private because users should depend on generated
+ * sources and public annotations, not on writer implementation details.</p>
+ */
 final class GeneratedSourceWriter {
 
     private final Elements elements;

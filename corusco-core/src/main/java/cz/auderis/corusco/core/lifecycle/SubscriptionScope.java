@@ -23,6 +23,12 @@ public final class SubscriptionScope implements Disposable {
     private boolean closed;
 
     /**
+     * Creates an empty subscription scope.
+     */
+    public SubscriptionScope() {
+    }
+
+    /**
      * Registers a disposable child owned by this scope.
      *
      * <p>If this scope is already closed, the child is closed immediately. This

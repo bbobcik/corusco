@@ -6,9 +6,17 @@ import java.util.function.Consumer;
 /**
  * Callback hooks for an asynchronous task.
  *
- * <p>Callbacks are invoked by the {@link TaskService}'s configured callback
- * executor after the task leaves the busy state. Cancellation invokes
- * {@link #cancelled()} and suppresses success/failure callbacks.</p>
+ * <p>{@link TaskService} invokes these hooks to report the terminal outcome of
+ * a submitted {@link UiTask}. The callbacks are grouped so callers can pass one
+ * lifecycle object to the service instead of three unrelated lambdas. Callback
+ * execution thread is chosen by the task service implementation or factory; a
+ * Swing-aware service uses the Event Dispatch Thread for terminal callbacks.</p>
+ *
+ * <p>Only one terminal path should run for a task. Successful completion calls
+ * {@link #succeeded(Object)}, unexpected failure calls {@link #failed(Throwable)},
+ * and cooperative cancellation calls {@link #cancelled()} while suppressing
+ * success/failure callbacks. Implementations should return quickly because they
+ * may run on a UI callback executor.</p>
  *
  * @param <T> result type
  */

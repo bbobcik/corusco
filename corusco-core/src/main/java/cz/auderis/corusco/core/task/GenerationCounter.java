@@ -5,17 +5,31 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
- * Thread-safe generation counter for suppressing stale asynchronous results.
+ * Thread-safe token source for suppressing stale asynchronous results.
  *
- * <p>Call {@link #advance()} when scheduling work for the latest input. Capture
- * the returned {@link Generation} with the task, then call
- * {@link #isCurrent(Generation)} or {@link #tryAccept(Generation, Object, Consumer)}
- * from the callback before applying the result. Any later advance or
- * invalidation makes older generations stale.</p>
+ * <p>Presentation code often starts asynchronous work for a value that can
+ * change again before the work completes. This counter gives that code a small
+ * ownership token: call {@link #advance()} when scheduling work for the latest
+ * input, capture the returned {@link Generation} with the task, and call
+ * {@link #isCurrent(Generation)} or
+ * {@link #tryAccept(Generation, Object, Consumer)} before applying the result.
+ * Any later advance or invalidation makes older generations stale.</p>
+ *
+ * <p>The counter is thread-safe because the generation value is atomic, but it
+ * does not make the result consumer or the target model thread-safe. Callbacks
+ * must still apply accepted results on the thread or executor required by the
+ * owning model or Swing binding. Tokens are immutable value objects and can be
+ * stored with task callbacks.</p>
  */
 public final class GenerationCounter {
 
     private final AtomicLong generation = new AtomicLong();
+
+    /**
+     * Creates a counter starting at generation zero.
+     */
+    public GenerationCounter() {
+    }
 
     /**
      * Returns the current generation token without changing it.
@@ -29,6 +43,9 @@ public final class GenerationCounter {
     /**
      * Advances to a new generation.
      *
+     * <p>Use this when scheduling a new piece of work whose result should
+     * supersede all older work.</p>
+     *
      * @return new current generation
      */
     public Generation advance() {
@@ -37,6 +54,9 @@ public final class GenerationCounter {
 
     /**
      * Invalidates outstanding generations without scheduling new work.
+     *
+     * <p>Use this during close or reset paths to make already queued callbacks
+     * unable to update state.</p>
      *
      * @return new current generation
      */
@@ -69,6 +89,10 @@ public final class GenerationCounter {
     /**
      * Applies a result only when the supplied generation is still current.
      *
+     * <p>The consumer is invoked synchronously on the calling thread when the
+     * token matches. If the token is stale, the method returns {@code false}
+     * and the consumer is not invoked.</p>
+     *
      * @param token captured generation token
      * @param result result to apply, possibly {@code null}
      * @param consumer consumer that applies the result
@@ -86,6 +110,11 @@ public final class GenerationCounter {
 
     /**
      * Immutable generation token captured when work is scheduled.
+     *
+     * <p>The numeric value is only meaningful to the counter that produced it.
+     * Application code should compare tokens through the owning
+     * {@link GenerationCounter}, not by persisting or interpreting the raw
+     * value.</p>
      *
      * @param value generation value
      */

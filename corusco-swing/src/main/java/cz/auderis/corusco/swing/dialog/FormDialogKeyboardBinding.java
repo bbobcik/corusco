@@ -15,12 +15,25 @@ import javax.swing.JRootPane;
 import javax.swing.KeyStroke;
 
 /**
- * Installs root-pane keyboard behavior for a form dialog.
+ * Installs root-pane keyboard behavior for a {@link FormDialog}.
  *
- * <p>The binding maps ESC to the dialog's existing cancel command and can
- * assign an OK/default button. Closing restores the previous ESC mapping,
- * previous action, and previous default button so modal shells can be reused in
- * tests and long-lived views.</p>
+ * <p>This binding owns the Swing keyboard wiring that is deliberately kept out
+ * of {@code FormDialog} itself. It maps Escape in the root pane's
+ * {@link JComponent#WHEN_IN_FOCUSED_WINDOW} input map to the dialog's cancel
+ * command and can install a default OK button. The dialog remains responsible
+ * for cancel semantics; this class only routes keyboard events and default
+ * button state.</p>
+ *
+ * <p>Instances are mutable lifecycle handles, Event Dispatch Thread confined,
+ * and one-shot for one installed root pane. The binding records the previous
+ * Escape input-map value, previous action-map entry, and previous default
+ * button, then restores those values on {@link #close()}. Closing is idempotent
+ * and does not close the dialog controller.</p>
+ *
+ * <p>Use this class when a modal shell or internal frame should share the
+ * standard dialog keyboard policy. Avoid installing multiple keyboard bindings
+ * for the same root pane unless a higher-level lifecycle clearly owns their
+ * ordering.</p>
  */
 public final class FormDialogKeyboardBinding implements Binding {
 
@@ -55,23 +68,34 @@ public final class FormDialogKeyboardBinding implements Binding {
     }
 
     /**
-     * Installs ESC handling on a root pane.
+     * Installs Escape handling on a root pane.
      *
-     * @param rootPane root pane
-     * @param dialog dialog controller
-     * @return installed binding
+     * @param rootPane root pane whose input and action maps will be modified,
+     *         not {@code null}
+     * @param dialog dialog controller whose cancel command will be invoked, not
+     *         {@code null}
+     * @return installed binding; close it to restore previous root-pane state
+     * @throws IllegalStateException if called off the EDT
      */
     public static FormDialogKeyboardBinding install(JRootPane rootPane, FormDialog<?, ?> dialog) {
         return install(rootPane, dialog, null);
     }
 
     /**
-     * Installs ESC handling and a default button on a root pane.
+     * Installs Escape handling and optionally a default button on a root pane.
      *
-     * @param rootPane root pane
-     * @param dialog dialog controller
-     * @param defaultButton default button, or {@code null} to leave unchanged
-     * @return installed binding
+     * <p>If {@code defaultButton} is {@code null}, the current default button is
+     * left unchanged during installation and remains the value restored on
+     * close.</p>
+     *
+     * @param rootPane root pane whose input/action maps will be modified, not
+     *         {@code null}
+     * @param dialog dialog controller whose cancel command will be invoked, not
+     *         {@code null}
+     * @param defaultButton default button to install, or {@code null} to leave
+     *         the current button unchanged
+     * @return installed binding; close it to restore previous root-pane state
+     * @throws IllegalStateException if called off the EDT
      */
     public static FormDialogKeyboardBinding install(
             JRootPane rootPane,
@@ -81,6 +105,11 @@ public final class FormDialogKeyboardBinding implements Binding {
         return new FormDialogKeyboardBinding(rootPane, dialog, defaultButton);
     }
 
+    /**
+     * Restores the root pane's previous Escape mapping and default button.
+     *
+     * @throws IllegalStateException if called off the EDT
+     */
     @Override
     public void close() {
         SwingEdt.requireEdt();

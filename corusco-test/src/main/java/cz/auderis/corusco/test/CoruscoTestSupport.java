@@ -1,7 +1,12 @@
 package cz.auderis.corusco.test;
 
 /**
- * Baseline marker for the Corusco test-support module.
+ * Marker and diagnostics utility for the Corusco test-support module.
+ *
+ * <p>The test-support artifact provides small harnesses for compiling generated
+ * source examples and asserting annotation-processor output. Production code
+ * should not depend on this class; tests can use it as a stable module-presence
+ * marker when verifying classpaths.</p>
  */
 public final class CoruscoTestSupport {
 

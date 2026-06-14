@@ -7,6 +7,10 @@ import java.util.List;
 
 /**
  * Demonstrates observable list changes.
+ *
+ * <p>The example performs inserts, replacements, removals, and batching against
+ * a core observable list. It shows the shape and ordering of change events that
+ * adapters and table models consume.</p>
  */
 public final class ObservableListExample {
 

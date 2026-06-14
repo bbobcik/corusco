@@ -77,10 +77,10 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
     /**
      * Replaces the visibility predicate and refreshes the view.
      *
-     * <p>This early slice reports predicate replacement as a reset: removed
-     * visible contents followed by inserted new visible contents where
-     * applicable. Later diff-oriented stages may refine this into smaller
-     * change sets.</p>
+     * <p>Predicate replacement is reported as a reset: removed visible
+     * contents followed by inserted new visible contents where applicable. The
+     * source list remains unchanged; only the filtered view and its listeners
+     * observe the reset.</p>
      *
      * @param predicate new visibility predicate
      */

@@ -8,6 +8,12 @@ import java.util.Objects;
 
 /**
  * Result of compiling sample sources with annotation processors enabled.
+ *
+ * <p>The result captures the javac success flag, generated-source directory,
+ * and diagnostics produced by {@link GeneratedSourceCompiler}. It is intended
+ * for tests that inspect generated files directly. The instance does not own or
+ * delete the compilation directory; ownership remains with the temporary
+ * directory supplied to the compiler harness.</p>
  */
 public final class GeneratedSourceCompilation {
 
@@ -51,6 +57,10 @@ public final class GeneratedSourceCompilation {
     /**
      * Reads one generated source file and normalizes line endings.
      *
+     * <p>The path is resolved under {@link #generatedSources()} and must remain
+     * relative. Windows and old-Mac line endings are normalized to {@code \n} to
+     * keep textual assertions platform-independent.</p>
+     *
      * @param relativePath slash-separated path under the generated-source root
      * @return generated source text
      * @throws IOException if the generated source cannot be read
@@ -63,6 +73,10 @@ public final class GeneratedSourceCompilation {
 
     /**
      * Asserts that a generated source file contains all expected snippets.
+     *
+     * <p>The assertion message includes the missing snippet and compiler
+     * diagnostics so generated-source tests fail with enough context to debug
+     * processor changes.</p>
      *
      * @param relativePath slash-separated path under the generated-source root
      * @param snippets expected source snippets

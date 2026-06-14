@@ -18,6 +18,10 @@ import javax.swing.table.JTableHeader;
 
 /**
  * Demonstrates generated table header tooltips.
+ *
+ * <p>The scenario resolves column header tooltip text from generated table
+ * metadata. It is a small reference for connecting descriptor resource keys to
+ * Swing table header presentation.</p>
  */
 public final class TableHeaderTooltipExample {
 

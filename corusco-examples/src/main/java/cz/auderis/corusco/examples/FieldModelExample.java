@@ -11,6 +11,10 @@ import java.util.List;
 
 /**
  * Demonstrates handwritten field and form models without Swing.
+ *
+ * <p>The example builds field models, tracks dirty state, and commits a result
+ * using only core APIs. It is a starting point for readers who need the model
+ * layer before adding generated metadata or Swing bindings.</p>
  */
 public final class FieldModelExample {
 

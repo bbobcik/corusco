@@ -14,6 +14,11 @@ import javax.swing.table.DefaultTableModel;
 
 /**
  * Demonstrates active editor commit before a dialog result is created.
+ *
+ * <p>The scenario models a dialog where the currently edited Swing component
+ * must push its pending value into the form model before commit. It helps
+ * readers understand why dialog submission coordinates component editing state
+ * as well as model validation.</p>
  */
 public final class DialogActiveEditorExample {
 

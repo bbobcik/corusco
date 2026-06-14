@@ -10,6 +10,16 @@ import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 
+/**
+ * Writes generated sources for {@code @SwingTable} row records.
+ *
+ * <p>The writer turns a validated {@link TableSpec} into resource-key,
+ * column-metadata, descriptor, and Swing-binding source classes. Generated code
+ * is deterministic and uses stable table/column ids rather than reflection or
+ * localized header text. The writer reports failures to the annotation
+ * processing environment and remains package-private because applications
+ * should consume the generated classes, not the writer.</p>
+ */
 final class TableSourceWriter {
 
     private final Elements elements;

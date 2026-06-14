@@ -17,6 +17,10 @@ import javax.swing.JTable;
 
 /**
  * Demonstrates a typed observable table model over immutable record rows.
+ *
+ * <p>The scenario connects a table descriptor and observable row list to a
+ * Swing table model. It is headless-safe and focuses on how row values, column
+ * descriptors, and list changes become table model events.</p>
  */
 public final class ObservableTableModelExample {
 

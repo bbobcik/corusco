@@ -11,7 +11,9 @@ import java.util.Optional;
  *
  * <p>The input map is copied at construction time. Keys are stable resource
  * ids, not public property paths. Runtime values are checked against each
- * requested {@link ResourceKey#valueType()} before being returned.</p>
+ * requested {@link ResourceKey#valueType()} before being returned. This class
+ * is useful for examples, tests, and small applications that do not need a
+ * localized or reloadable resource service.</p>
  */
 public final class MapResources implements Resources {
 

@@ -8,6 +8,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Demonstrates a detachable observable row list.
+ *
+ * <p>The example loads rows into an observable list and exposes a detach step
+ * that stops later updates. It is a small model-layer scenario for views that
+ * need list data with explicit ownership and cleanup.</p>
  */
 public final class LoadableListExample {
 

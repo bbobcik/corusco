@@ -6,7 +6,21 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Declares a string length constraint for a text field component.
+ * Declares a string length constraint for a generated text field component.
+ *
+ * <p>Place this annotation on a record component that is also a
+ * {@link TextField}. The processor emits length metadata and generated
+ * validation for {@link String} values. Combine it with {@link Required} when
+ * blank or missing text should be invalid; length validation by itself
+ * describes accepted bounds for present string values.</p>
+ *
+ * <p>The processor validates that the component is a string text field and that
+ * {@code min >= 0} and {@code min <= max}. Applying it to non-string, numeric,
+ * date, checkbox, combo-box, or non-form components is invalid or meaningless.</p>
+ *
+ * <p>Generated descriptors expose the length bounds as validation metadata, so
+ * Swing bindings, tests, and generated documentation can describe the
+ * constraint without inspecting source annotations.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

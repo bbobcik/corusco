@@ -10,10 +10,17 @@ import java.util.Objects;
 /**
  * Helpers for targeting problems at typed table cells.
  *
- * <p>A table cell is identified by the row object and a typed
- * {@link ColumnKey}. The row match uses the row object's {@link Object#equals}
- * contract; applications that need stable identity across row replacement
- * should use row identity objects consistently as their problem targets.</p>
+ * <p>This utility bridges the generic problem model and descriptor-backed table
+ * code. A table cell is identified by a row object or row identity and a typed
+ * {@link ColumnKey}. The helpers create {@link
+ * cz.auderis.corusco.core.problem.ProblemTarget.Cell} instances and matching
+ * filters without exposing callers to the raw generic target type.</p>
+ *
+ * <p>The row match uses the row object's {@link Object#equals} contract.
+ * Applications that need stable identity across immutable row replacement
+ * should target problems at stable row identity objects rather than transient
+ * row instances. Swing table decorators can then filter problems independently
+ * of current sort order or view indexes.</p>
  */
 public final class TableCellProblems {
 

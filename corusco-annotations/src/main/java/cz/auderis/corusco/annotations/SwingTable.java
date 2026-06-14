@@ -10,7 +10,14 @@ import java.lang.annotation.Target;
  *
  * <p>The annotation is source-retained because Corusco processors use
  * {@code javax.lang.model} during compilation. The {@link #id()} value becomes
- * the stable prefix for generated table and column ids.</p>
+ * the stable prefix for generated table and column ids. Components annotated
+ * with {@link Column} inside the record become generated column descriptors;
+ * unannotated components are ignored by table metadata generation.</p>
+ *
+ * <p>The processor validates that the annotation is used on records and that
+ * the id is non-blank. Generated artifacts use the source type name and stable
+ * ids rather than runtime reflection, so changing the id is a compatibility
+ * change for saved table state.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)

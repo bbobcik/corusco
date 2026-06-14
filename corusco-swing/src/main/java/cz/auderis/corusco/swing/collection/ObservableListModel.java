@@ -10,7 +10,12 @@ import java.util.Objects;
 import javax.swing.AbstractListModel;
 
 /**
- * Swing {@link javax.swing.ListModel} backed by an {@link ObservableList}.
+ * Swing {@link javax.swing.ListModel} adapter over a Corusco {@link ObservableList}.
+ *
+ * <p>The adapter lets Swing list components display the same observable source
+ * list used by presenters and other Corusco models. The source list remains the
+ * data owner. This class only subscribes to source structural changes and
+ * translates them into Swing {@code ListDataEvent}s with matching indices.</p>
  *
  * <p>The adapter is EDT-confined. Construct it on the EDT and either mutate the
  * source list on the EDT while this adapter is subscribed, or wrap the source
@@ -20,7 +25,8 @@ import javax.swing.AbstractListModel;
  *
  * <p>Closing the adapter removes its source-list subscription. Closing is
  * idempotent, and a closed adapter still exposes the source's current contents
- * but no longer fires Swing list events.</p>
+ * but no longer fires Swing list events. It does not close, clear, or otherwise
+ * own the source list.</p>
  *
  * @param <E> element type
  */
@@ -32,6 +38,9 @@ public class ObservableListModel<E> extends AbstractListModel<E> implements Bind
 
     /**
      * Creates a list model backed by {@code source}.
+     *
+     * <p>The constructor subscribes immediately. The source list should not be
+     * mutated off the EDT unless it already dispatches changes on the EDT.</p>
      *
      * @param source observable source list
      */
@@ -74,6 +83,10 @@ public class ObservableListModel<E> extends AbstractListModel<E> implements Bind
     /**
      * Applies a delivered source-list change set to this Swing model.
      *
+     * <p>Subclasses may override when they need additional state maintenance
+     * before or after Swing events, as {@link ObservableComboBoxModel} does for
+     * selection. Implementations must preserve EDT confinement.</p>
+     *
      * @param changes source-list changes
      */
     protected void sourceChanged(ListChangeSet<E> changes) {
@@ -108,6 +121,12 @@ public class ObservableListModel<E> extends AbstractListModel<E> implements Bind
         }
     }
 
+    /**
+     * Removes the source-list subscription.
+     *
+     * <p>The call is idempotent. It should be made on the same Swing lifecycle
+     * path that disposes the list component using this model.</p>
+     */
     @Override
     public void close() {
         if (closed) {

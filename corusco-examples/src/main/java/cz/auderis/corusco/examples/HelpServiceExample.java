@@ -7,6 +7,10 @@ import java.util.List;
 
 /**
  * Demonstrates toolkit-neutral help topic dispatch.
+ *
+ * <p>The example resolves a help topic from typed metadata and dispatches it
+ * through a help service without coupling the core model to Swing. It shows the
+ * role of stable help-topic ids at the UI boundary.</p>
  */
 public final class HelpServiceExample {
 

@@ -46,6 +46,11 @@ import javax.swing.JTable;
 
 /**
  * Demonstrates a headless miniature customer-management flow.
+ *
+ * <p>The example combines generated-style metadata, observable values,
+ * validation, table state, commands, and resources in one small scenario. It is
+ * not a full application shell; it exists to show how the core abstractions fit
+ * together when editing and listing domain records.</p>
  */
 public final class CustomerManagementExample {
 

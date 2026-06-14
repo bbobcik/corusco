@@ -15,7 +15,19 @@ import javax.swing.JComponent;
 import javax.swing.KeyStroke;
 
 /**
- * Behaviors that bind commands to Swing controls and key maps.
+ * Factory methods for installing Corusco commands into Swing components.
+ *
+ * <p>The returned behaviors adapt a core {@link Command} to a Swing
+ * {@link Action}, then install that action into a button, menu item, or
+ * component key map. They are intended for generated view plans and
+ * handwritten views that want the same command metadata, resource lookup, and
+ * enabled-state handling.</p>
+ *
+ * <p>Installation and returned binding cleanup must run on the Swing event
+ * dispatch thread. The behaviors retain the supplied command and resources for
+ * as long as the binding is installed, restore the previous Swing action or key
+ * mapping on close, and close the created {@link SwingActionAdapter} during
+ * cleanup.</p>
  */
 public final class CommandBehaviors {
 
@@ -25,6 +37,10 @@ public final class CommandBehaviors {
     /**
      * Creates a behavior that installs a command action on a button-like
      * component.
+     *
+     * <p>Installing the behavior replaces the component's current action and
+     * the returned binding restores it. The command and resources must not be
+     * {@code null}.</p>
      *
      * @param command command to bind
      * @param resources command resource resolver
@@ -91,11 +107,18 @@ public final class CommandBehaviors {
      * Creates a behavior that dispatches a command through a component key
      * binding.
      *
+     * <p>Installation requires the command descriptor to declare an
+     * accelerator. The behavior records the previous input-map and action-map
+     * entries for the same stroke/key and restores them when the returned
+     * binding is closed.</p>
+     *
      * @param command command with accelerator metadata
      * @param resources command resource resolver
      * @param condition Swing input-map condition
      * @param <C> component type
      * @return key binding behavior
+     * @throws IllegalArgumentException when the command has no accelerator,
+     *         during behavior installation
      */
     public static <C extends JComponent> ViewBehavior<C> commandKeyBinding(
             Command command,

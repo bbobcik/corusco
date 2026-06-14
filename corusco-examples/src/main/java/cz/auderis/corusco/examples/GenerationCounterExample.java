@@ -7,6 +7,11 @@ import java.util.List;
 
 /**
  * Demonstrates stale asynchronous result suppression.
+ *
+ * <p>The scenario increments a generation counter as user input changes and
+ * accepts only the result that belongs to the latest generation. It illustrates
+ * the pattern used by asynchronous validation and loading code to avoid
+ * publishing obsolete work.</p>
  */
 public final class GenerationCounterExample {
 

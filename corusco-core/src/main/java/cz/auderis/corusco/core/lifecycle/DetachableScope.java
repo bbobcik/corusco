@@ -23,6 +23,12 @@ public final class DetachableScope implements Detachable, Disposable {
     private boolean closed;
 
     /**
+     * Creates an empty detachable scope.
+     */
+    public DetachableScope() {
+    }
+
+    /**
      * Registers a detachable child.
      *
      * <p>If the scope has already been closed, the child is detached

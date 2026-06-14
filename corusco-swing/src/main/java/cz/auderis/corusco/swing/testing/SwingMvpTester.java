@@ -36,12 +36,29 @@ import javax.swing.SwingUtilities;
 import javax.swing.text.JTextComponent;
 
 /**
- * EDT-safe test harness for Swing MVP views and presenters.
+ * Test harness for exercising Swing MVP views and presenters on the EDT.
  *
- * <p>The tester creates the view and optional presenter on the EDT, then runs
- * all lookup and interaction helpers on the EDT. Direct accessors are kept
- * intentionally small; tests should prefer {@link #runOnEdt(BiConsumer)} and
- * {@link #queryOnEdt(BiFunction)} when they interact with Swing state.</p>
+ * <p>This class is part of the Corusco test-support story for generated and
+ * handwritten Swing views. It creates the root view, optional presenter, and
+ * optional command set on the Swing Event Dispatch Thread, then provides
+ * component lookup, command execution, problem assertions, behavior assertions,
+ * and table-state assertions that also run on the EDT. Tests can therefore
+ * speak in generated {@link ComponentKey}, {@link ActionKey}, field-key, and
+ * table-state terms instead of reaching through Swing component trees directly
+ * from the test thread.</p>
+ *
+ * <p>The tester does not own application resources beyond the objects returned
+ * by the supplied factories. If a view or presenter installs bindings,
+ * behavior scopes, task services, or native windows, the test remains
+ * responsible for closing or disposing them through its own lifecycle hooks.
+ * Direct accessors intentionally require the caller to already be on the EDT;
+ * prefer {@link #runOnEdt(BiConsumer)} and {@link #queryOnEdt(BiFunction)}
+ * whenever a test interacts with Swing state.</p>
+ *
+ * <p>Lookup uses {@link SwingComponentKeys} markers first and component names
+ * only as a compatibility fallback. Table helpers distinguish view-row and
+ * model-row coordinates, and table-state helpers assert stable persisted ids
+ * rather than transient {@link javax.swing.table.TableColumn} instances.</p>
  *
  * @param <V> root view type
  * @param <P> presenter type
@@ -61,6 +78,9 @@ public final class SwingMvpTester<V extends JComponent, P> {
     /**
      * Creates a tester with no presenter.
      *
+     * <p>The view factory is invoked synchronously on the EDT. The resulting
+     * tester has an empty command set and a missing presenter value.</p>
+     *
      * @param viewFactory view factory executed on the EDT
      * @param <V> root view type
      * @return tester
@@ -71,6 +91,10 @@ public final class SwingMvpTester<V extends JComponent, P> {
 
     /**
      * Creates a tester with a presenter factory.
+     *
+     * <p>Both factories run synchronously on the EDT. The command set is empty;
+     * use the three-argument overload when command assertions or execution are
+     * part of the test.</p>
      *
      * @param viewFactory view factory executed on the EDT
      * @param presenterFactory presenter factory executed on the EDT
@@ -87,6 +111,11 @@ public final class SwingMvpTester<V extends JComponent, P> {
 
     /**
      * Creates a tester with a presenter and command-set factory.
+     *
+     * <p>The factories run synchronously on the EDT in this order: view,
+     * presenter, command set. Exceptions are propagated to the caller, with
+     * checked exceptions wrapped in {@link IllegalStateException} by the EDT
+     * dispatch helper.</p>
      *
      * @param viewFactory view factory executed on the EDT
      * @param presenterFactory presenter factory executed on the EDT

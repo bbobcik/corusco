@@ -17,6 +17,10 @@ import javax.swing.JTable;
 
 /**
  * Demonstrates generated table cell tooltips.
+ *
+ * <p>The scenario resolves tooltip content for table cells from generated
+ * metadata and row values. It illustrates how table descriptors can supply
+ * context-sensitive help without hardcoding strings in a renderer.</p>
  */
 public final class TableCellTooltipExample {
 

@@ -5,10 +5,17 @@ import java.util.Optional;
 /**
  * Persistence boundary for immutable table state snapshots.
  *
- * <p>Stores are Swing-free and work only with stable table ids plus immutable
- * {@link TableState} values. Implementations may be volatile, durable, or
- * application-specific. Callers that need durability should invoke
- * {@link #flush()} at lifecycle boundaries after saves or removals.</p>
+ * <p>This interface separates saved presentation state from both row data and
+ * Swing components. Stores work only with stable table ids plus immutable
+ * {@link TableState} values. They do not inspect {@code JTable}, do not know
+ * about current view indexes, and do not merge saved state with descriptors;
+ * that work belongs to table controllers and descriptor helpers.</p>
+ *
+ * <p>Implementations may be volatile, durable, or application-specific. The
+ * caller owns the timing of save/remove operations and should invoke
+ * {@link #flush()} at lifecycle boundaries when durable persistence requires
+ * buffered writes to be pushed. Implementors must use stable table ids rather
+ * than localized labels or generated class names as storage keys.</p>
  */
 public interface TableStateStore {
 

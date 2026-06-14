@@ -6,7 +6,13 @@ import cz.auderis.corusco.core.value.ReadableValue;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Handle returned for a submitted task.
+ * Observes and controls one submitted task.
+ *
+ * <p>The handle exposes task-specific busy state, cooperative cancellation, and
+ * a completion future. Closing the handle is equivalent to requesting
+ * cancellation; it does not close the owning {@link TaskService}. The
+ * completion future represents the final task outcome after the implementation
+ * has performed its documented callback and busy-state delivery.</p>
  *
  * @param <T> result type
  */
@@ -36,6 +42,11 @@ public interface TaskHandle<T> extends Disposable {
 
     /**
      * Requests cancellation.
+     *
+     * <p>Cancellation is cooperative. Implementations should signal the token
+     * and interrupt or cancel worker execution where their executor supports
+     * it, but task bodies are still expected to check the token and stop
+     * promptly.</p>
      */
     void cancel();
 

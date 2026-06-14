@@ -12,6 +12,10 @@ import java.util.List;
 
 /**
  * Demonstrates typed field targeting and problem filtering.
+ *
+ * <p>The example builds problem sets with field targets and filters them for
+ * presentation. It shows why Corusco uses typed keys instead of string property
+ * paths when routing validation feedback.</p>
  */
 public final class ProblemModelExample {
 

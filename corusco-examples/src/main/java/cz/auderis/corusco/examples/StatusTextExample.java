@@ -14,6 +14,10 @@ import javax.swing.JTextField;
 
 /**
  * Demonstrates focus-scoped status-bar text.
+ *
+ * <p>The example installs a behavior that writes status text while a component
+ * has focus and restores the label afterward. It illustrates a decoration-like
+ * interaction that belongs to view lifecycle rather than the form model.</p>
  */
 public final class StatusTextExample {
 

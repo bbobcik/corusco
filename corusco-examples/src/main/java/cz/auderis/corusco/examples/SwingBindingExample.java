@@ -17,6 +17,10 @@ import javax.swing.JTextField;
 
 /**
  * Demonstrates headless-safe Swing bindings.
+ *
+ * <p>The example binds Swing components to core field models and then closes
+ * the returned bindings. It focuses on listener ownership and model/component
+ * synchronization without showing a native window.</p>
  */
 public final class SwingBindingExample {
 
@@ -45,9 +49,9 @@ public final class SwingBindingExample {
             JLabel rawPreview = new JLabel();
 
             try (BindingScope scope = new BindingScope()) {
-                // The scope owns all Swing listeners and value subscriptions.
-                // Closing it mirrors what a future view/behavior lifecycle will
-                // do when a panel is removed.
+                // The scope owns all Swing listeners and value subscriptions,
+                // matching the cleanup path a view/behavior lifecycle uses
+                // when a panel is removed.
                 scope.add(BindingFactory.textField(creditLimitField, creditLimit));
                 scope.add(BindingFactory.selected(activeBox, active));
                 scope.add(BindingFactory.labelText(rawPreview, creditLimit.rawText()));

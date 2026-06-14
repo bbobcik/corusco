@@ -8,6 +8,22 @@ import java.lang.annotation.Target;
 /**
  * Declares optional help metadata for generated field and table-column
  * descriptors.
+ *
+ * <p>Use this annotation on record components that also participate in Corusco
+ * metadata generation, such as form fields or table columns. It does not affect
+ * validation, conversion, editability, or editor selection. It only supplies
+ * stable ids that generated descriptors can expose to tooltip, status-text, or
+ * help-topic services.</p>
+ *
+ * <p>For generated form fields, an empty tooltip id allows generated metadata
+ * to use the field's default tooltip resource id when a descriptor needs one.
+ * For generated table columns, an empty tooltip id means no separate tooltip
+ * unless {@link Column#tooltip()} declares one. An empty help topic means that
+ * no F1/context help topic is available for the target.</p>
+ *
+ * <p>Help ids are part of the user-facing metadata contract. They may appear in
+ * resource maps, generated descriptors, tests, and help-system routing. Treat
+ * changes as compatibility changes rather than cosmetic refactoring.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

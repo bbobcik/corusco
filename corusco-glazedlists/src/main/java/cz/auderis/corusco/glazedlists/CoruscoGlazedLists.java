@@ -1,7 +1,13 @@
 package cz.auderis.corusco.glazedlists;
 
 /**
- * Marker for the optional Corusco Glazed Lists interop module.
+ * Marker and diagnostics utility for the optional Glazed Lists interop module.
+ *
+ * <p>The module contains adapters between Glazed Lists {@code EventList}
+ * instances and Corusco observable-list APIs. Applications normally start with
+ * {@link GlazedListsAdapters}; this marker exists for smoke tests and tooling
+ * that need to verify that the optional integration artifact is present without
+ * constructing an adapter.</p>
  */
 public final class CoruscoGlazedLists {
 

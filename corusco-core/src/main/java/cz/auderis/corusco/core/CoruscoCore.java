@@ -1,7 +1,13 @@
 package cz.auderis.corusco.core;
 
 /**
- * Baseline marker for the Corusco core module.
+ * Identifies the Corusco core runtime module in smoke tests and diagnostics.
+ *
+ * <p>This class is not a service locator or a framework entry point. It exists
+ * so tests, examples, and diagnostic output can refer to the published Gradle
+ * module name without duplicating the string. Applications should normally
+ * start with the typed packages under {@code cz.auderis.corusco.core}, such as
+ * forms, values, commands, validation, tables, and lifecycle primitives.</p>
  */
 public final class CoruscoCore {
 

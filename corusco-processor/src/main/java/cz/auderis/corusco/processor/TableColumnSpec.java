@@ -1,5 +1,14 @@
 package cz.auderis.corusco.processor;
 
+/**
+ * Processor-internal description of one generated table column.
+ *
+ * <p>The spec is built from a record component annotated with {@code @Column}
+ * after ids, resource ids, width bounds, visibility, capabilities, help topic,
+ * and persistence metadata have been resolved. {@link TableSourceWriter}
+ * consumes it to generate column keys, descriptors, row accessors, and optional
+ * immutable-row updater functions.</p>
+ */
 final class TableColumnSpec {
 
     final String constantName;

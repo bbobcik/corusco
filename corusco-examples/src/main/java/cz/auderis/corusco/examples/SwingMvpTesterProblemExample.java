@@ -16,6 +16,10 @@ import javax.swing.JTextField;
 
 /**
  * Demonstrates tester problem assertions.
+ *
+ * <p>The scenario uses tester helpers to assert validation problems and their
+ * targets. It is focused on test readability for forms that expose Corusco
+ * problem sets.</p>
  */
 public final class SwingMvpTesterProblemExample {
 

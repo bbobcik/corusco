@@ -13,6 +13,10 @@ import javax.swing.JPanel;
 
 /**
  * Demonstrates dialog lifecycle ownership.
+ *
+ * <p>The scenario registers bindings, task services, detachables, and other
+ * cleanup actions with a dialog lifecycle and then closes them as one unit. It
+ * is the example counterpart to the dialog lifecycle API documentation.</p>
  */
 public final class DialogLifecycleExample {
 

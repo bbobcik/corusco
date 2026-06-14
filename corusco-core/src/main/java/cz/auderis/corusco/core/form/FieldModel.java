@@ -9,9 +9,23 @@ import java.util.Objects;
 /**
  * Semantic field model with dirty and touched state.
  *
- * <p>The model stores a typed {@link FieldKey}, the current semantic value, the
- * original dirty-state baseline, and a touched flag. It is Swing-free and
- * synchronous. Values may be {@code null}.</p>
+ * <p>This is the basic model object for a field whose value is already in its
+ * semantic Java type. It stores a typed {@link FieldKey}, the current semantic
+ * value, the original dirty-state baseline, and a touched flag. Form models use
+ * it directly for non-text fields and indirectly through {@link TextFieldModel}
+ * for text fields that also need parse state.</p>
+ *
+ * <p>The field owns three observable values: current value, dirty state, and
+ * touched state. Mutations are synchronous, may accept {@code null} values, and
+ * notify subscribers through the underlying value contracts. The model is
+ * Swing-free and not synchronized; Swing bindings must apply their own EDT
+ * rules when they write into it.</p>
+ *
+ * <p>Calling {@link #acceptCurrentValue()} changes only the dirty-state
+ * baseline. Calling {@link #reset()} restores the current value to that
+ * baseline and clears touched state. The field does not run validation by
+ * itself; form models and validators decide how semantic values become
+ * problems.</p>
  *
  * @param <O> owner/model type
  * @param <T> field value type

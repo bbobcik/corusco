@@ -27,6 +27,10 @@ import javax.swing.table.TableCellRenderer;
 
 /**
  * Demonstrates typed table cell problem decoration.
+ *
+ * <p>The example targets validation problems at table cells and decorates the
+ * matching Swing table locations. It shows how typed row and column identities
+ * let table feedback stay independent from view indices.</p>
  */
 public final class TableCellValidationExample {
 

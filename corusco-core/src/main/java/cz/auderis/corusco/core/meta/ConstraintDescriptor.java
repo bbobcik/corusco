@@ -7,7 +7,7 @@ import java.util.Objects;
  * Immutable generated metadata for one field constraint.
  *
  * <p>Descriptors are intentionally declarative: they name the problem code and
- * constraint parameters, while later generated form-model stages decide how to
+ * constraint parameters, while generated form-model code decides how to
  * instantiate validators from this metadata.</p>
  *
  * @param kind constraint kind

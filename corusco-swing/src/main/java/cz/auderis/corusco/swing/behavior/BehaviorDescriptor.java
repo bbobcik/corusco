@@ -3,7 +3,19 @@ package cz.auderis.corusco.swing.behavior;
 import java.util.Objects;
 
 /**
- * Metadata describing behavior installation ordering and conflicts.
+ * Immutable metadata used by {@link BehaviorScope} to order and validate a behavior.
+ *
+ * <p>Every {@link ViewBehavior} exposes one descriptor before installation.
+ * The scope sorts descriptors by {@link BehaviorPhase}, uses the
+ * {@link BehaviorKey} for diagnostics and duplicate checks, and applies
+ * {@link BehaviorCardinality} plus the primary-binding flag to prevent
+ * incompatible component responsibilities from being installed together.</p>
+ *
+ * <p>The descriptor does not own or install Swing state. It is safe to reuse a
+ * descriptor across behavior instances as long as the key, phase, and
+ * cardinality accurately describe the behavior's public lifecycle contract.
+ * Stable keys are important for generated plans and tests, but descriptors are
+ * not persisted user preferences.</p>
  *
  * @param key stable behavior key
  * @param phase installation phase
@@ -33,7 +45,7 @@ public record BehaviorDescriptor(
     }
 
     /**
-     * Creates a single behavior descriptor.
+     * Creates a descriptor for a behavior that may appear at most once per component.
      *
      * @param key stable behavior key
      * @param phase installation phase
@@ -44,7 +56,7 @@ public record BehaviorDescriptor(
     }
 
     /**
-     * Creates a multiple behavior descriptor.
+     * Creates a descriptor for a behavior that may appear multiple times per component.
      *
      * @param key stable behavior key
      * @param phase installation phase
@@ -55,7 +67,11 @@ public record BehaviorDescriptor(
     }
 
     /**
-     * Creates a primary binding descriptor.
+     * Creates a descriptor for the primary model/component binding behavior.
+     *
+     * <p>Primary binding descriptors are installed in the binding phase, use
+     * single cardinality, and conflict with any other behavior that claims the
+     * primary binding slot for the same component.</p>
      *
      * @param key stable behavior key
      * @return primary binding descriptor

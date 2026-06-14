@@ -9,7 +9,11 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 /**
- * Demonstrates core asynchronous task execution.
+ * Demonstrates core asynchronous task execution without Swing.
+ *
+ * <p>The example submits a task through the core task service and observes
+ * completion through the returned handle. It focuses on cancellation and
+ * terminal-result flow before Swing-specific callback dispatch is introduced.</p>
  */
 public final class AsyncTaskExample {
 

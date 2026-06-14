@@ -1,7 +1,18 @@
 import javax.annotation.processing.Processor;
 
 /**
- * Annotation processor that generates Corusco typed metadata and models.
+ * Provides the Corusco annotation processor.
+ *
+ * <p>The processor reads the source-retained annotations from
+ * {@link cz.auderis.corusco.annotations} and generates typed metadata for
+ * forms, tables, validation constraints, and actions. Generated sources are
+ * designed to be consumed by the core and Swing runtime modules: they expose
+ * stable keys, descriptors, and model helpers instead of requiring reflection
+ * or string property paths at runtime.</p>
+ *
+ * <p>Applications normally depend on this module as an annotation processor,
+ * not as a runtime library. The exported processor package exists for tests and
+ * build tooling that need to invoke the processor directly.</p>
  */
 module cz.auderis.corusco.processor {
     requires transitive java.compiler;

@@ -6,7 +6,19 @@ import cz.auderis.corusco.core.value.ReadableValue;
 import java.util.concurrent.Executor;
 
 /**
- * Runs blocking UI-initiated work away from the caller thread.
+ * Runs UI-initiated work away from the caller thread and reports completion
+ * through callbacks.
+ *
+ * <p>A task service is a lifecycle-owned presenter or view helper. It accepts
+ * {@link UiTask} bodies, passes each task a cooperative
+ * {@link CancellationToken}, exposes service-level busy state, and returns a
+ * {@link TaskHandle} for task-level observation and cancellation. The interface
+ * does not mandate a threading model for callbacks; implementations document
+ * which executor or thread is used.</p>
+ *
+ * <p>Implementation contract: implementations must reject new submissions after
+ * {@link #close()} and should make close idempotent. They should not invoke
+ * success callbacks after a task has been cancelled.</p>
  */
 public interface TaskService extends Disposable {
 

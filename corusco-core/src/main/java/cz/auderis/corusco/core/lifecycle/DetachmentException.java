@@ -5,7 +5,10 @@ package cz.auderis.corusco.core.lifecycle;
  * {@link DetachableScope}.
  *
  * <p>The scope continues detaching every child before throwing this exception.
- * Individual failures are available through {@link #getSuppressed()}.</p>
+ * Individual failures are available through {@link #getSuppressed()}, in the
+ * order the scope encountered them during cleanup. The exception therefore
+ * represents a lifecycle cleanup failure after best-effort detachment, not a
+ * signal that cleanup stopped at the first failing child.</p>
  */
 public final class DetachmentException extends RuntimeException {
 

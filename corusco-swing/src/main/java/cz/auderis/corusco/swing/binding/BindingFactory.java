@@ -26,12 +26,19 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 /**
- * Factory for basic Swing bindings.
+ * Factory for basic disposable Swing bindings.
  *
  * <p>All factory methods must be called on the EDT. Component listeners update
  * models with {@link ChangeOrigin#USER}; model-originated changes update
  * components with a feedback guard so the binding does not loop through Swing
- * document events.</p>
+ * document events. Returned bindings own every listener or model subscription
+ * they install and restore component state documented by the individual
+ * factory method when closed.</p>
+ *
+ * <p>These helpers adapt existing model instances; they do not take ownership
+ * of the model, component, or resource values passed to them. Closing a binding
+ * removes listeners and subscriptions but does not dispose the underlying
+ * model.</p>
  */
 public final class BindingFactory {
 
@@ -40,6 +47,11 @@ public final class BindingFactory {
 
     /**
      * Binds a text field to a text field model.
+     *
+     * <p>The binding installs a document listener, initializes the component
+     * from {@link TextFieldModel#rawText()}, and propagates user document
+     * changes back to the model with {@link ChangeOrigin#USER}. Closing the
+     * binding removes both the document listener and the model subscription.</p>
      *
      * @param component Swing text field
      * @param model text model
@@ -55,6 +67,9 @@ public final class BindingFactory {
     /**
      * Binds a text area to a text field model.
      *
+     * <p>The binding has the same raw-text and listener ownership semantics as
+     * {@link #textField(JTextField, TextFieldModel)}.</p>
+     *
      * @param component Swing text area
      * @param model text model
      * @param <O> owner/model type
@@ -68,6 +83,11 @@ public final class BindingFactory {
 
     /**
      * Binds selected state of an abstract button to a Boolean field model.
+     *
+     * <p>The component is initialized from the model. User item events update
+     * the model with {@link ChangeOrigin#USER}; model events update the button
+     * without writing back through the item listener. Closing the binding
+     * removes the item listener and value subscription.</p>
      *
      * @param button checkbox, radio button, or toggle button
      * @param model Boolean field model
@@ -106,6 +126,10 @@ public final class BindingFactory {
     /**
      * Binds label text to a readable string value.
      *
+     * <p>The label is initialized immediately and updated synchronously when
+     * the value changes. Closing the binding removes only the value
+     * subscription; it does not restore the previous label text.</p>
+     *
      * @param label label to update
      * @param value readable string value
      * @return binding
@@ -127,6 +151,9 @@ public final class BindingFactory {
 
     /**
      * Publishes static status text while a component owns focus.
+     *
+     * <p>A {@code null} status text is treated as an empty string. The status
+     * label text present at focus gain is restored on focus loss or close.</p>
      *
      * @param component component whose focus controls status ownership
      * @param statusLabel shared status label
@@ -192,6 +219,10 @@ public final class BindingFactory {
     /**
      * Sets accessible name and description while preserving previous values.
      *
+     * <p>{@code null} accessible strings are normalized to empty strings.
+     * Closing the binding restores the accessible name and description that
+     * were present at installation time.</p>
+     *
      * @param component component whose accessible context is updated
      * @param accessibleName accessible name, or {@code null} for blank
      * @param accessibleDescription accessible description, or {@code null} for blank
@@ -220,6 +251,10 @@ public final class BindingFactory {
 
     /**
      * Binds button enabled state to a readable Boolean value.
+     *
+     * <p>Only {@link Boolean#TRUE} enables the button. Closing the binding
+     * removes the value subscription but does not restore the previous enabled
+     * state.</p>
      *
      * @param button button to update
      * @param enabled readable enabled state
@@ -342,6 +377,10 @@ public final class BindingFactory {
 
     /**
      * Binds component border to error presence.
+     *
+     * <p>The binding snapshots the original border at installation time,
+     * replaces it with a red line border while the problem set has errors, and
+     * restores the original border on close.</p>
      *
      * @param component component border target
      * @param problems readable problem set

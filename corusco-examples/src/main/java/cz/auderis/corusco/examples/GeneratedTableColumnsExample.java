@@ -17,6 +17,10 @@ import javax.swing.JTable;
 
 /**
  * Demonstrates generated table column metadata from annotations.
+ *
+ * <p>The scenario reads generated-style table descriptors and verifies column
+ * ids, labels, value access, and sort metadata. It is aimed at readers wiring
+ * annotated row records into table models.</p>
  */
 public final class GeneratedTableColumnsExample {
 

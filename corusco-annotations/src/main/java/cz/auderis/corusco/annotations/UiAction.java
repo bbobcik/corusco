@@ -8,9 +8,22 @@ import java.lang.annotation.Target;
 /**
  * Marks a no-argument method as a generated UI action source.
  *
- * <p>This stage generates typed action metadata only. Later stages can connect
- * the descriptor to command instances and method invocation without runtime
- * annotation scanning.</p>
+ * <p>Use this annotation on presenter or controller methods that should become
+ * generated command metadata. The processor validates that the annotated method
+ * has no parameters, returns {@code void}, and declares stable action/resource
+ * ids. Generated code contains an {@code ActionKey}, resource keys, and an
+ * {@code ActionDescriptor}; runtime code can then create commands without
+ * scanning annotations reflectively.</p>
+ *
+ * <p>Mnemonic and accelerator values are metadata only. Swing adapters decide
+ * how to install them on buttons, menu items, or input maps. A non-zero
+ * accelerator modifier mask without an accelerator key is invalid. The
+ * {@link #selectable()} flag marks toggle-style actions and affects which
+ * command factory path should be used at runtime.</p>
+ *
+ * <p>The action id is a stable boundary value that may appear in generated
+ * source, resource maps, diagnostics, and tests. Changing it should be treated
+ * as a compatibility change.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.METHOD)
@@ -53,6 +66,9 @@ public @interface UiAction {
 
     /**
      * Optional accelerator modifier mask.
+     *
+     * <p>A non-zero modifier mask is valid only when
+     * {@link #acceleratorKey()} is also non-zero.</p>
      *
      * @return modifier mask
      */

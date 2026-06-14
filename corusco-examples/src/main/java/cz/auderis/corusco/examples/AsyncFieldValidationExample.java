@@ -18,6 +18,11 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Demonstrates asynchronous validation bound to a single field value.
+ *
+ * <p>The scenario connects a text field model to an asynchronous validator and
+ * shows how newer edits supersede stale validation results. It is useful for
+ * readers adding server-side or otherwise delayed validation to a form while
+ * keeping problem reporting in the Corusco model layer.</p>
  */
 public final class AsyncFieldValidationExample {
 

@@ -25,6 +25,10 @@ import javax.swing.SortOrder;
 
 /**
  * Demonstrates tester table-state assertions.
+ *
+ * <p>The scenario exercises helper assertions for column widths, visibility,
+ * and sort state. It is intended for tests that need to verify persisted table
+ * state without relying on manual JTable inspection.</p>
  */
 public final class SwingMvpTesterTableStateExample {
 

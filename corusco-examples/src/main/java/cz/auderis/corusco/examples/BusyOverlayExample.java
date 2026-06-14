@@ -15,6 +15,11 @@ import javax.swing.JPanel;
 
 /**
  * Demonstrates the Swing busy overlay behavior.
+ *
+ * <p>The scenario wraps a component in a {@code JLayer}, connects it to an
+ * observable busy value, and verifies that the overlay can be installed and
+ * removed deterministically. It is a headless-safe counterpart to the visual
+ * busy indicator used by task-driven Swing screens.</p>
  */
 public final class BusyOverlayExample {
 

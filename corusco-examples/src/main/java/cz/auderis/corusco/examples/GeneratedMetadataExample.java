@@ -4,6 +4,10 @@ import java.util.List;
 
 /**
  * Demonstrates generated field metadata from annotations.
+ *
+ * <p>The example inspects descriptor information that would be produced for an
+ * annotated record. It focuses on stable field ids, resource keys, editor
+ * kinds, and validation metadata rather than on Swing component construction.</p>
  */
 public final class GeneratedMetadataExample {
 

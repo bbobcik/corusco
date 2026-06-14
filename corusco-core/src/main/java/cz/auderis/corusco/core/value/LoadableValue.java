@@ -10,10 +10,20 @@ import java.util.function.Supplier;
 /**
  * Supplier-backed detachable value that loads lazily and caches while attached.
  *
+ * <p>Use this class when a presenter exposes a value that can be loaded on
+ * demand and released between view activations. The first call to
+ * {@link #value()} after construction or detach invokes the loader and marks
+ * the cache attached. {@link #detach()} and {@link #invalidate()} release the
+ * cached value without publishing a value-change event. {@link #refresh()}
+ * reloads explicitly and notifies subscribers if the effective value changes.</p>
+ *
  * <p>The loader is invoked on the caller's thread. This class is intentionally
- * not synchronized; it follows the existing value package convention of
- * single-owner presentation state. The loaded value may be {@code null}; cache
- * attachment is tracked separately from the cached object.</p>
+ * not synchronized; it follows the value package convention of single-owner
+ * presentation state. The loaded value may be {@code null}; cache attachment is
+ * tracked separately from the cached object.</p>
+ *
+ * <p>The instance retains subscribers until their subscriptions are closed. It
+ * does not own external resources used by the loader.</p>
  *
  * @param <T> value type
  */

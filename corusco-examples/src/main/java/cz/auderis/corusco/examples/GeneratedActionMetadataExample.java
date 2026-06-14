@@ -5,8 +5,19 @@ import java.util.List;
 
 /**
  * Demonstrates generated action metadata from annotated methods.
+ *
+ * <p>The example mirrors the output expected from action annotations and shows
+ * how stable ids and presentation resources become command descriptors. It is a
+ * generated-code smoke fixture rather than a command framework entry point.</p>
  */
 public final class GeneratedActionMetadataExample {
+
+    /**
+     * Creates an example instance whose package-private methods can be used as
+     * annotation-processor input.
+     */
+    public GeneratedActionMetadataExample() {
+    }
 
     /**
      * Reads generated action descriptor constants.

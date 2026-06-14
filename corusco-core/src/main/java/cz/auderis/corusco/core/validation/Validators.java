@@ -13,7 +13,18 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Generated-compatible validation constraint helpers.
+ * Factory methods for field validators that match Corusco generated metadata.
+ *
+ * <p>The annotation processor and handwritten models use these helpers to
+ * produce {@link FieldValidator} instances with the same problem codes and null
+ * handling. Each returned validator is stateless and reusable. Missing optional
+ * values are accepted by range, length, pattern, and date validators; combine
+ * them with {@link #required(String)} when absence itself is invalid.</p>
+ *
+ * <p>The helpers return {@link ProblemSet#empty()} for valid values and a
+ * single validation problem targeted at the supplied field key when invalid.
+ * They do not mutate model state, install listeners, or perform asynchronous
+ * work.</p>
  */
 public final class Validators {
 

@@ -15,6 +15,10 @@ import javax.swing.JTextField;
 
 /**
  * Demonstrates tester behavior-installation assertions.
+ *
+ * <p>The example uses the Swing MVP tester to verify which behaviors a view
+ * installs and how conflicts are reported. It is aimed at tests for generated
+ * or presenter-built view plans.</p>
  */
 public final class SwingMvpTesterBehaviorExample {
 

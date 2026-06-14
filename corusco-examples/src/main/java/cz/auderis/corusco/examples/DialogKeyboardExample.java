@@ -19,6 +19,10 @@ import javax.swing.KeyStroke;
 
 /**
  * Demonstrates dialog keyboard and default-button wiring.
+ *
+ * <p>The example shows how a form dialog reacts to Enter, Escape, and default
+ * button configuration without requiring a visible native window. It is focused
+ * on controller semantics rather than visual layout.</p>
  */
 public final class DialogKeyboardExample {
 

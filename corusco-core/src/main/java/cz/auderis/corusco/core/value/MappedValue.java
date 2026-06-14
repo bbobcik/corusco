@@ -10,9 +10,19 @@ import java.util.function.Function;
 /**
  * A one-way derived value computed by mapping a source value.
  *
- * <p>The mapped value updates synchronously when its source changes. Closing the
- * mapped value removes the source subscription. Null source values are passed to
- * the mapper.</p>
+ * <p>Use this class for the common one-source derived-value case, for example
+ * converting a selected row into a display string or mapping a task state to a
+ * boolean. The mapped value subscribes to its source, computes an initial value
+ * immediately, updates synchronously when the source changes, and emits an
+ * event only when the mapped value changes.</p>
+ *
+ * <p>The instance owns the source subscription and its own listeners. Closing
+ * the mapped value removes the source subscription, clears listeners, and makes
+ * later subscriptions no-ops. Null source values are passed to the mapper, so
+ * the mapper owns null-handling policy.</p>
+ *
+ * <p>The class is Swing-free, not synchronized, and inherits the threading
+ * assumptions of the source value.</p>
  *
  * @param <A> source value type
  * @param <B> mapped value type

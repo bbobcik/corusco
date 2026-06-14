@@ -10,7 +10,9 @@ import java.util.function.Predicate;
  *
  * <p>Filters are composable and side-effect free. Provided factories cover the
  * target dimensions needed by parsing, validation, tables, and components
- * without accepting arbitrary field-name strings.</p>
+ * without accepting arbitrary field-name strings. Callers normally pass filters
+ * to {@link ProblemSet#filter(ProblemFilter)} or use them to select which
+ * problems should be displayed near a specific field, row, cell, or component.</p>
  */
 @FunctionalInterface
 public interface ProblemFilter extends Predicate<Problem> {

@@ -16,10 +16,23 @@ import java.util.Objects;
 /**
  * Text-editable field model that preserves invalid intermediate input.
  *
- * <p>Raw text and semantic value are separate. Parse success updates the
- * semantic value and clears parse problems. Parse failure stores the raw text,
- * keeps the previous semantic value, marks the field touched, and exposes a
- * typed parse problem targeting the field key.</p>
+ * <p>This model is used when the UI edits text but the form result needs a
+ * semantic Java value such as a number, date, or string. Raw text and semantic
+ * value are separate. Parse success updates the semantic value and clears parse
+ * problems. Parse failure stores the raw text, keeps the previous semantic
+ * value, marks the field touched, and exposes a typed parse problem targeting
+ * the field key.</p>
+ *
+ * <p>The model owns observable raw text, parse state, dirty state, touched
+ * state, and parse problems. It delegates conversion to a {@link
+ * StringConverter}; validation rules run outside this class after a semantic
+ * value exists. This lets Swing bindings display exactly what the user typed
+ * while the form model continues to protect the last valid value.</p>
+ *
+ * <p>Instances are mutable, synchronous, Swing-free, and not synchronized.
+ * Component bindings are responsible for calling {@link #setRawText(String,
+ * ChangeOrigin)} on the correct thread and closing any subscriptions they
+ * install.</p>
  *
  * @param <O> owner/model type
  * @param <T> semantic value type

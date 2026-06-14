@@ -7,11 +7,18 @@ import java.util.List;
 /**
  * One precise observable-list mutation.
  *
- * <p>Indices refer to the source list. For insertions the index is the first
- * inserted position after mutation. For removals the index is the position the
- * removed elements occupied before mutation. For replacements the index is the
- * replaced position. Move indices are before/after positions for the same
- * element.</p>
+ * <p>{@link ObservableList} implementations publish these values so adapters
+ * can update derived views, Swing list models, and table models without
+ * reloading the entire list. Indices are expressed in the coordinate system of
+ * the list that emits the change, not necessarily an underlying storage list.
+ * For insertions the index is the first inserted position after mutation. For
+ * removals the index is the position the removed elements occupied before
+ * mutation. For replacements the index is the replaced position. Move indices
+ * are before/after positions for the same element.</p>
+ *
+ * <p>Change records are immutable value objects. Element references are not
+ * copied, but element lists are defensively wrapped so listeners cannot mutate
+ * the delivered change description.</p>
  *
  * @param <E> element type
  */

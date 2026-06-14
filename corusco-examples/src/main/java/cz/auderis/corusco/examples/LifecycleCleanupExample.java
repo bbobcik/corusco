@@ -6,6 +6,10 @@ import java.util.List;
 
 /**
  * Demonstrates deterministic cleanup of listener-style registrations.
+ *
+ * <p>The scenario registers subscriptions in a lifecycle scope and closes them
+ * in predictable order. It gives readers a compact pattern for presenter or
+ * dialog cleanup when several models retain listeners.</p>
  */
 public final class LifecycleCleanupExample {
 

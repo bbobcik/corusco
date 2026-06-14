@@ -11,16 +11,20 @@ import java.util.function.Function;
 /**
  * Lazy detachable detail value driven by a master value.
  *
- * <p>The detail loader receives the current master value, which may be
+ * <p>Use this class for master-detail presentation state, such as loading a
+ * detail record or derived editor model from a selected row. The helper owns a
+ * subscription to the master value and uses the supplied loader to compute the
+ * detail. The detail loader receives the current master value, which may be
  * {@code null}. Detail data loads lazily on {@link #value()} or
  * {@link #refresh()}. When the detail is already attached, master changes
  * reload immediately and notify subscribers if the effective detail changes.
  * When detached, master changes only invalidate the stale association; no
  * detail load occurs until the next access.</p>
  *
- * <p>The helper owns a subscription to the master value. Call {@link #close()}
- * when the presenter lifecycle ends to remove that subscription and clear
- * detail listeners.</p>
+ * <p>Call {@link #close()} when the presenter lifecycle ends to remove the
+ * master subscription, invalidate cached detail state, and clear detail
+ * listeners. The class is synchronous, not synchronized, and inherits the
+ * threading assumptions of the master value and loader.</p>
  *
  * @param <M> master value type
  * @param <T> detail value type

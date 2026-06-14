@@ -8,9 +8,20 @@ import java.lang.annotation.Target;
 /**
  * Marks a boolean record component as a generated checkbox field.
  *
- * <p>The first processor slice generates a {@code FieldKey<Owner, Boolean>}
- * constant for annotated components. The processor rejects non-boolean checkbox
- * components so generated code remains type-correct.</p>
+ * <p>Use this annotation on a component of a {@link SwingForm} record when the
+ * value should be edited as a selected/not-selected state. The processor
+ * accepts primitive {@code boolean} and {@link java.lang.Boolean} components,
+ * emits typed field and descriptor metadata, and adds a Swing
+ * {@code JCheckBox} entry to generated view plans.</p>
+ *
+ * <p>Checkbox fields are value fields, not command toggles. Use {@link
+ * UiAction#selectable()} for generated toggle actions. Text-only constraints
+ * such as {@link Length}, {@link Regex}, and numeric ranges are not meaningful
+ * for checkboxes. {@link Help} can provide tooltip/help metadata.</p>
+ *
+ * <p>Non-boolean components are rejected by the processor so generated
+ * bindings remain type-correct. Runtime code should consume the generated
+ * descriptors and field models rather than scanning this annotation.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

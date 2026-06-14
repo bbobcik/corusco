@@ -14,12 +14,21 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumn;
 
 /**
- * Resolves table header tooltips from generated column descriptors.
+ * Binding that supplies per-column table header tooltips from Corusco metadata.
  *
- * <p>The binding follows the table's current visible column order. It converts
- * header view coordinates through Swing's {@link TableColumn#getModelIndex()}
- * before reading the descriptor, so reordered and temporarily hidden columns
- * still resolve the correct tooltip resource.</p>
+ * <p>Generated {@link ColumnDescriptor column descriptors} keep table header
+ * help separate from the Swing {@link JTableHeader}. This binding connects the
+ * two: it listens to header mouse movement, maps the current view column to the
+ * model column with {@link TableColumn#getModelIndex()}, resolves the optional
+ * tooltip {@link ResourceKey}, and writes Swing's single header tooltip slot.
+ * Reordered and temporarily hidden columns therefore continue to show the
+ * descriptor tooltip that belongs to the visible header under the pointer.</p>
+ *
+ * <p>The binding is EDT-confined and assumes the supplied table uses the
+ * supplied {@link ObservableTableModel}. It owns the mouse listeners and the
+ * temporary tooltip text only; it does not own the table, model, descriptors,
+ * or resources. Closing removes the listeners, restores the header tooltip
+ * that existed at installation time, and is idempotent.</p>
  *
  * @param <R> row type
  */
@@ -53,9 +62,15 @@ public final class TableHeaderTooltipBinding<R> implements Binding {
     /**
      * Creates and installs table header tooltip behavior.
      *
+     * <p>The constructor adds mouse listeners immediately and captures the
+     * current header tooltip so it can be restored on {@link #close()}.</p>
+     *
      * @param table Swing table
      * @param model descriptor-backed table model installed in the table
      * @param resources tooltip resources
+     * @throws IllegalStateException if called off the EDT
+     * @throws IllegalArgumentException if the table does not use the supplied
+     *         model
      */
     public TableHeaderTooltipBinding(JTable table, ObservableTableModel<R> model, Resources resources) {
         SwingEdt.requireEdt();
@@ -71,6 +86,12 @@ public final class TableHeaderTooltipBinding<R> implements Binding {
         header.addMouseListener(listener);
     }
 
+    /**
+     * Removes installed header listeners and restores the original tooltip.
+     *
+     * <p>The call must run on the EDT. Repeated calls have no additional
+     * effect.</p>
+     */
     @Override
     public void close() {
         SwingEdt.requireEdt();

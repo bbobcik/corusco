@@ -10,6 +10,11 @@ import javax.swing.JList;
 
 /**
  * Demonstrates Swing list adapters over one observable source list.
+ *
+ * <p>The scenario adapts a Corusco observable list for Swing list consumers and
+ * verifies that source changes are reflected through the adapter. It helps
+ * readers understand where storage ownership stays when Swing models are
+ * created.</p>
  */
 public final class SwingListAdapterExample {
 

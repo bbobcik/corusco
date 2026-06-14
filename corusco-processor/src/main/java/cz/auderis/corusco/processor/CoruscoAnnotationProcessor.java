@@ -42,11 +42,14 @@ import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 
 /**
- * Initial Corusco annotation processor.
+ * Annotation processor that generates Corusco form, table, and action metadata.
  *
- * <p>This first slice generates typed field-key classes for annotated records.
- * It deliberately uses only {@code javax.lang.model} APIs; no runtime
- * reflection or annotation scanning is involved.</p>
+ * <p>The processor consumes source-retained annotations using
+ * {@code javax.lang.model}. It validates record and method contracts, reports
+ * diagnostics at the annotated element, and writes strongly typed source files
+ * that expose field keys, form models, table descriptors, table columns, and
+ * action descriptors. Runtime code should depend on those generated artifacts
+ * rather than scanning annotations reflectively.</p>
  */
 @SupportedAnnotationTypes({
         "cz.auderis.corusco.annotations.SwingForm",
@@ -60,6 +63,12 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
     private Types types;
     private Messager messager;
     private Filer filer;
+
+    /**
+     * Creates a processor instance for the Java compiler.
+     */
+    public CoruscoAnnotationProcessor() {
+    }
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {

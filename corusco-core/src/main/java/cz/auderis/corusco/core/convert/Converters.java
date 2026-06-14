@@ -7,7 +7,20 @@ import java.util.Objects;
 import java.util.function.Function;
 
 /**
- * Standard text converters used by handwritten and generated form models.
+ * Provides standard {@link StringConverter} implementations for form models.
+ *
+ * <p>Generated form models use this class to wire supported text field kinds to
+ * semantic values, and handwritten forms can use the same converters for
+ * consistent parse behavior. Converters return {@link ParseResult} instances
+ * instead of throwing for user-entered text, allowing invalid intermediate UI
+ * input to remain in a {@code TextFieldModel} while the last valid semantic
+ * value is preserved.</p>
+ *
+ * <p>The converters are locale-neutral. Numbers use JDK parsing for the target
+ * type, dates use ISO-8601 {@code yyyy-MM-dd}, and enum values use enum
+ * constant names. Empty-text behavior is controlled by
+ * {@link EmptyTextPolicy} for types where empty text may represent either a
+ * missing value or a validation error.</p>
  */
 public final class Converters {
 

@@ -1,7 +1,14 @@
 package cz.auderis.corusco.core.meta;
 
 /**
- * Kind of generated field constraint metadata.
+ * Category of validation constraint recorded in generated field metadata.
+ *
+ * <p>The processor emits these values from validation annotations so tools,
+ * forms, and tests can describe the validation contract without re-reading
+ * source annotations. The enum identifies the kind of constraint, while the
+ * generated descriptor carries the constraint parameters such as bounds or
+ * regular-expression text. Values are stable metadata identifiers and should
+ * not be renamed when descriptor output is consumed externally.</p>
  */
 public enum ConstraintKind {
 

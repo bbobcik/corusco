@@ -10,6 +10,10 @@ import java.util.List;
 
 /**
  * Demonstrates simple and derived observable values with scoped cleanup.
+ *
+ * <p>The example creates writable and derived values, subscribes to changes,
+ * and disposes those subscriptions through a scope. It is the basic value-model
+ * scenario that underlies field models and Swing bindings.</p>
  */
 public final class ObservableValueExample {
 
