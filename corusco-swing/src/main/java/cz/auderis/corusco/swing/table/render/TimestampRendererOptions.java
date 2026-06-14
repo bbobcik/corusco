@@ -108,6 +108,6 @@ public record TimestampRendererOptions(
     }
 
     int prefixLength() {
-        return DEFAULT_PATTERN.equals(pattern) ? 17 : 0;
+        return DEFAULT_PATTERN.equals(pattern) ? 16 : 0;
     }
 }

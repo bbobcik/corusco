@@ -53,9 +53,9 @@ final class TimestampTableCellRenderer extends BitmapTextRenderer {
         java.awt.Rectangle view = textViewRectangle();
         BitmapText prefix = cachedText(graphics, text.substring(0, prefixLength));
         BitmapText suffix = cachedText(graphics, text.substring(prefixLength));
-        int prefixY = view.y + Math.max(0, (view.height - prefix.image().getHeight()) / 2);
-        int suffixY = view.y + Math.max(0, (view.height - suffix.image().getHeight()) / 2);
-        graphics.drawImage(prefix.image(), view.x, prefixY, null);
-        graphics.drawImage(suffix.image(), view.x + prefix.width(), suffixY, null);
+        int prefixY = view.y + Math.max(0, (view.height - prefix.height()) / 2);
+        int suffixY = view.y + Math.max(0, (view.height - suffix.height()) / 2);
+        graphics.drawImage(prefix.image(), view.x, prefixY, prefix.width(), prefix.height(), null);
+        graphics.drawImage(suffix.image(), view.x + prefix.width(), suffixY, suffix.width(), suffix.height(), null);
     }
 }

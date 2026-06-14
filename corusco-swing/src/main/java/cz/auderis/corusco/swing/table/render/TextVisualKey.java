@@ -16,6 +16,7 @@ record TextVisualKey(
         boolean enabled,
         int rowHeight,
         double scaleX,
-        double scaleY
+        double scaleY,
+        TextRenderingSettings renderingSettings
 ) {
 }

@@ -10,12 +10,18 @@ dependencies {
     implementation project(':corusco-glazedlists')
     implementation project(':corusco-swing')
     implementation project(':corusco-annotations')
+    implementation libs.flatlaf
+    implementation libs.h2
+    implementation libs.miglayout.swing
     annotationProcessor project(':corusco-processor')
 
     publishedArtifactsImplementation "cz.auderis.corusco:corusco-core:${project.version}"
     publishedArtifactsImplementation "cz.auderis.corusco:corusco-glazedlists:${project.version}"
     publishedArtifactsImplementation "cz.auderis.corusco:corusco-swing:${project.version}"
     publishedArtifactsImplementation "cz.auderis.corusco:corusco-annotations:${project.version}"
+    publishedArtifactsImplementation libs.flatlaf
+    publishedArtifactsImplementation libs.h2
+    publishedArtifactsImplementation libs.miglayout.swing
     publishedArtifactsAnnotationProcessor "cz.auderis.corusco:corusco-processor:${project.version}"
 }
 

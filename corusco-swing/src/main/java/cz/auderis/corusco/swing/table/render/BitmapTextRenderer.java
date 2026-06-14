@@ -73,6 +73,9 @@ abstract class BitmapTextRenderer extends DefaultTableCellRenderer {
      */
     final BitmapText cachedText(Graphics2D graphics, String text) {
         AffineTransform transform = graphics.getTransform();
+        double scaleX = Math.abs(transform.getScaleX());
+        double scaleY = Math.abs(transform.getScaleY());
+        TextRenderingSettings renderingSettings = TextRenderingSettings.from(graphics);
         TextVisualKey key = new TextVisualKey(
                 text,
                 getFont(),
@@ -82,12 +85,22 @@ abstract class BitmapTextRenderer extends DefaultTableCellRenderer {
                 focused,
                 isEnabled(),
                 getHeight(),
-                transform.getScaleX(),
-                transform.getScaleY()
+                scaleX,
+                scaleY,
+                renderingSettings
         );
         BitmapText bitmap = cache.get(key);
         if (bitmap == null) {
-            bitmap = BitmapText.render(text, getFont(), getForeground(), getFontMetrics(getFont()));
+            bitmap = BitmapText.render(
+                    text,
+                    getFont(),
+                    getForeground(),
+                    getBackground(),
+                    getFontMetrics(getFont()),
+                    renderingSettings,
+                    scaleX,
+                    scaleY
+            );
             cache.put(key, bitmap);
         }
         return bitmap;
@@ -112,8 +125,8 @@ abstract class BitmapTextRenderer extends DefaultTableCellRenderer {
     void paintBitmapText(Graphics2D graphics, String text) {
         Rectangle view = textViewRectangle();
         BitmapText bitmap = cachedText(graphics, text);
-        int y = view.y + Math.max(0, (view.height - bitmap.image().getHeight()) / 2);
-        graphics.drawImage(bitmap.image(), view.x, y, null);
+        int y = view.y + Math.max(0, (view.height - bitmap.height()) / 2);
+        graphics.drawImage(bitmap.image(), view.x, y, bitmap.width(), bitmap.height(), null);
     }
 
     /**

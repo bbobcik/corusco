@@ -16,9 +16,11 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.time.ZoneId;
 import java.util.List;
+import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.table.TableCellRenderer;
 import org.junit.jupiter.api.Test;
@@ -75,6 +77,24 @@ class OptimizedTableRenderersTest {
         assertThat(renderer.text(0L)).isEqualTo("1970-01-01 00:00:00.000");
         assertThat(renderer.text(1_234L)).isEqualTo("1970-01-01 00:00:01.234");
         assertThat(renderer.text(null)).isEqualTo("(none)");
+    }
+
+    @Test
+    void defaultTimestampPrefixKeepsSecondsSeparatorWithSuffix() {
+        TimestampRendererOptions options = new TimestampRendererOptions(
+                EpochUnit.MILLIS,
+                ZoneId.of("UTC"),
+                "yyyy-MM-dd HH:mm:ss.SSS",
+                true,
+                true,
+                16,
+                ""
+        );
+
+        assertThat("yyyy-MM-dd HH:mm:ss.SSS".substring(0, options.prefixLength()))
+                .isEqualTo("yyyy-MM-dd HH:mm");
+        assertThat("yyyy-MM-dd HH:mm:ss.SSS".substring(options.prefixLength()))
+                .isEqualTo(":ss.SSS");
     }
 
     @Test
@@ -218,6 +238,59 @@ class OptimizedTableRenderersTest {
     }
 
     @Test
+    void cachedBitmapTextInvalidatesWhenTextRenderingHintsChange() {
+        SwingEdt.runAndWait(() -> {
+            TimestampTableCellRenderer renderer = new TimestampTableCellRenderer(
+                    new TimestampRendererOptions(
+                            EpochUnit.MILLIS,
+                            ZoneId.of("UTC"),
+                            "yyyy-MM-dd HH:mm:ss.SSS",
+                            true,
+                            true,
+                            8,
+                            ""
+                    )
+            );
+            JTable table = new JTable(1, 1);
+
+            paint(renderer, table, 1_234L, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int grayscaleCacheSize = renderer.cachedImageCount();
+            paint(renderer, table, 1_234L, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+
+            assertThat(renderer.cachedImageCount()).isGreaterThan(grayscaleCacheSize);
+        });
+    }
+
+    @Test
+    void cachedBitmapTextFillsTrailingScaledPixelsWithBackground() {
+        SwingEdt.runAndWait(() -> {
+            JLabel label = new JLabel();
+            Font font = label.getFont();
+
+            BitmapText bitmap = BitmapText.render(
+                    "OPEN",
+                    font,
+                    Color.RED,
+                    Color.WHITE,
+                    label.getFontMetrics(font),
+                    new TextRenderingSettings(
+                            RenderingHints.VALUE_TEXT_ANTIALIAS_ON,
+                            RenderingHints.VALUE_FRACTIONALMETRICS_ON,
+                            null
+                    ),
+                    1.25,
+                    1.25
+            );
+
+            int lastX = bitmap.image().getWidth() - 1;
+            for (int y = 0; y < bitmap.image().getHeight(); y++) {
+                assertThat(bitmap.image().getRGB(lastX, y) & 0x00ffffff)
+                        .isNotEqualTo(0x000000);
+            }
+        });
+    }
+
+    @Test
     void benchmarkSmokeComparesRendererPaths() {
         SwingEdt.runAndWait(() -> {
             JTable table = new JTable(1, 1);
@@ -255,11 +328,23 @@ class OptimizedTableRenderersTest {
     }
 
     private static BufferedImage paint(TableCellRenderer renderer, JTable table, Object value) {
+        return paint(renderer, table, value, null);
+    }
+
+    private static BufferedImage paint(
+            TableCellRenderer renderer,
+            JTable table,
+            Object value,
+            Object textAntialiasing
+    ) {
         Component component = renderer.getTableCellRendererComponent(table, value, false, false, 0, 0);
         component.setSize(220, table.getRowHeight());
         BufferedImage image = new BufferedImage(220, table.getRowHeight(), BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
         try {
+            if (textAntialiasing != null) {
+                graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, textAntialiasing);
+            }
             component.paint(graphics);
         } finally {
             graphics.dispose();

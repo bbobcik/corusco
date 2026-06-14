@@ -1,13 +1,19 @@
 [versions]
 assertj = "3.27.7"
+flatlaf = "3.7.1"
 glazedlists = "1.11.0"
+h2 = "2.4.240"
 junit = "6.1.0"
+miglayout = "11.4.3"
 
 [libraries]
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+flatlaf = { module = "com.formdev:flatlaf", version.ref = "flatlaf" }
 glazedlists = { module = "com.glazedlists:glazedlists", version.ref = "glazedlists" }
+h2 = { module = "com.h2database:h2", version.ref = "h2" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit" }
+miglayout-swing = { module = "com.miglayout:miglayout-swing", version.ref = "miglayout" }
 
 [bundles]
 testPlatform = ["junit-jupiter", "assertj-core"]
