@@ -9,7 +9,8 @@ package cz.auderis.corusco.core.table;
  * bounds are declarative clamp limits for later table-state restoration.</p>
  *
  * <p>Generated {@code @Column} metadata creates {@code ColumnPersistence}
- * instances inside {@code <Row>Columns} from {@code persistenceId},
+ * instances inside row-specific columns companions such as
+ * {@code CustomerRowColumns} from {@code persistenceId},
  * {@code minWidth}, and {@code maxWidth} annotation members.</p>
  *
  * @param id stable persistence id

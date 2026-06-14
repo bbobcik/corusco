@@ -25,11 +25,12 @@ import java.lang.annotation.Target;
  * resources, diagnostics, and saved table preferences, so changing them is a
  * compatibility change for users with existing persisted layout state.</p>
  *
- * <p>The generated {@code <Row>Columns} companion exposes a typed
+ * <p>The generated columns companion, for example
+ * {@code CustomerRowColumns}, exposes a typed
  * {@code cz.auderis.corusco.core.table.ColumnKey} constant for each
  * {@code @Column}. Header and tooltip ids become
  * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants in
- * {@code <Row>TableResources}. {@link
+ * resources companions such as {@code CustomerRowTableResources}. {@link
  * cz.auderis.corusco.annotations.help.Help#topic()} metadata is embedded in
  * generated descriptors as {@code cz.auderis.corusco.core.key.HelpTopic}
  * values.</p>

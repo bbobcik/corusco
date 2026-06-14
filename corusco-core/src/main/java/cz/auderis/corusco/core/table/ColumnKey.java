@@ -10,7 +10,8 @@ import java.util.Objects;
  * row value; {@link Column} carries the typed extractor/updater functions.</p>
  *
  * <p>Generated {@code @SwingTable} records create a {@code ColumnKey} constant
- * in {@code <Row>Columns} for each {@code @Column} record component.
+ * in a row-specific columns companion, for example {@code CustomerRowColumns},
+ * for each {@code @Column} record component.
  * Handwritten descriptors may create keys with {@link #of(String, Class,
  * Class)}.</p>
  *

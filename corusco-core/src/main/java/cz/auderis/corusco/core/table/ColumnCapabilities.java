@@ -8,7 +8,8 @@ package cz.auderis.corusco.core.table;
  * themselves.</p>
  *
  * <p>Generated {@code @Column} metadata creates {@code ColumnCapabilities}
- * instances inside {@code <Row>Columns} from {@code sortable},
+ * instances inside row-specific columns companions such as
+ * {@code CustomerRowColumns} from {@code sortable},
  * {@code filterable}, {@code editable}, and {@code hideable} annotation
  * members.</p>
  *

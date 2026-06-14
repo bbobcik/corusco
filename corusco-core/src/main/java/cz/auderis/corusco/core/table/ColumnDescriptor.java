@@ -12,8 +12,10 @@ import java.util.Objects;
  * {@link Column} for executable row access.</p>
  *
  * <p>Generated {@code @SwingTable} records create {@code ColumnDescriptor}
- * constants in {@code <Row>Columns} from {@code @Column} and {@code @Help}
- * metadata. Header and tooltip keys come from {@code <Row>TableResources};
+ * constants in row-specific columns companions such as
+ * {@code CustomerRowColumns} from {@code @Column} and {@code @Help}
+ * metadata. Header and tooltip keys come from resource companions such as
+ * {@code CustomerRowTableResources};
  * defaults, persistence metadata, and capabilities come from annotation
  * members.</p>
  *

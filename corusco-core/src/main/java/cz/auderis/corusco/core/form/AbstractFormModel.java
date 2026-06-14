@@ -23,8 +23,8 @@ import java.util.Objects;
  * registration before the instance is passed to bindings, validators, or dialog
  * controllers.</p>
  *
- * <p>Generated {@code @SwingForm} records create a concrete
- * {@code <Form>FormModel} subclass. The generated subclass registers
+ * <p>Generated {@code @SwingForm} records create a concrete form-model
+ * subclass, for example {@code CustomerEditFormModel}. The generated subclass registers
  * {@link TextFieldModel} instances for {@code @TextField}/{@code @DateField}
  * components, {@link FieldModel} instances for {@code @CheckBox}/{@code
  * @ComboBox} components, exposes generated descriptors, wires generated

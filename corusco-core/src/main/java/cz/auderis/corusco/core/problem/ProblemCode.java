@@ -10,7 +10,7 @@ import java.util.Objects;
  * Equality and hash code are based on the stable id.</p>
  *
  * <p>Generated {@code @SwingForm} records create {@code ProblemCode} constants
- * in {@code <Form>Problems} for supported validation annotations. Generated
+ * in problem-code companions such as {@code CustomerEditProblems} for supported validation annotations. Generated
  * field descriptors and generated form-model validation rules then refer to the
  * same constants, keeping diagnostics and descriptor metadata aligned.</p>
  *

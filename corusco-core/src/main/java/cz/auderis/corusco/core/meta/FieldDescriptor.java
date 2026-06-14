@@ -14,7 +14,8 @@ import java.util.Objects;
  * this metadata later.</p>
  *
  * <p>Generated {@code @SwingForm} records create {@code FieldDescriptor}
- * constants in {@code <Form>Descriptors} for each record component annotated
+ * constants in a form-specific descriptor companion, for example
+ * {@code CustomerEditDescriptors}, for each record component annotated
  * with {@code @TextField}, {@code @DateField}, {@code @CheckBox}, or
  * {@code @ComboBox}. Handwritten forms may construct descriptors directly, but
  * generated forms should use the generated constants so ids, resource keys,

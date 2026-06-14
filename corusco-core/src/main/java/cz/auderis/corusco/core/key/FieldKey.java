@@ -11,7 +11,7 @@ import java.util.Objects;
  * and value type, and are therefore stable for generated key constants.</p>
  *
  * <p>Generated {@code @SwingForm} metadata creates {@code FieldKey} constants
- * in {@code <Form>Fields} for non-text field kinds such as {@code @CheckBox}
+ * in form-specific fields companions such as {@code CustomerEditFields} for non-text field kinds such as {@code @CheckBox}
  * and {@code @ComboBox}. Text-editable field kinds use
  * {@link TextFieldKey} and can be converted back to a general field key through
  * {@link TextFieldKey#asFieldKey()}. Handwritten code can create equivalent

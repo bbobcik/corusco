@@ -11,8 +11,10 @@ import java.util.Objects;
  *
  * <p>Generated form, table, help, and action metadata create
  * {@code ResourceKey<String>} constants for labels, headers, command text, and
- * tooltips. Form resources live in {@code <Form>Resources}, table resources in
- * {@code <Row>TableResources}, and action resources in {@code <Owner>Actions}.
+ * tooltips. Form resources live in companions such as
+ * {@code CustomerEditResources}, table resources in companions such as
+ * {@code CustomerRowTableResources}, and action resources in companions such as
+ * {@code CustomerPresenterActions}.
  * Use {@link #of(String, Class)} for handwritten resource metadata and tests.</p>
  *
  * @param id stable non-blank resource id

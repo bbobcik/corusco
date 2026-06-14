@@ -24,7 +24,8 @@ import java.lang.annotation.Target;
  * Swing bindings, tests, and generated documentation can describe the
  * constraint without inspecting source annotations. The generated metadata uses
  * {@code cz.auderis.corusco.core.meta.ConstraintDescriptor}; the generated
- * problem identity is exposed in {@code <Form>Problems}.</p>
+ * problem identity is exposed in problem-code companions such as
+ * {@code CustomerEditProblems}.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.RECORD_COMPONENT)

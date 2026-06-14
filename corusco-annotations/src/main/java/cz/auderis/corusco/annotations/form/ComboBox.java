@@ -31,15 +31,16 @@ import java.lang.annotation.Target;
  * resource ids from the enclosing form. Runtime code should consume that
  * generated metadata rather than scanning this annotation reflectively.</p>
  *
- * <p>The generated {@code <Form>Fields} companion exposes a
+ * <p>The generated fields companion, for example {@code CustomerEditFields}, exposes a
  * {@code cz.auderis.corusco.core.key.FieldKey} constant for each
  * {@code @ComboBox} component. Generated labels and tooltips use
  * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants in
- * {@code <Form>Resources}. Enum-valued combo boxes may also expose option
- * lists in {@code <Form>Options}; those option lists are separate from key
+ * resources companions such as {@code CustomerEditResources}. Enum-valued combo
+ * boxes may also expose option lists in companions such as
+ * {@code CustomerEditOptions}; those option lists are separate from key
  * identity.</p>
  *
- * <p>The generated {@code <Form>FormModel} owns a
+ * <p>The generated form model, for example {@code CustomerEditFormModel}, owns a
  * {@code cz.auderis.corusco.core.form.FieldModel} for each combo box. The
  * generated descriptor is a
  * {@code cz.auderis.corusco.core.meta.FieldDescriptor} with combo-box field

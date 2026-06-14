@@ -26,22 +26,25 @@ import java.lang.annotation.Target;
  * are referenced by tests, resources, or persisted UI state.</p>
  *
  * <p>Generated form companions are the normal place to obtain runtime key
- * instances. {@code <Form>Fields} contains
+ * instances. A fields companion such as {@code CustomerEditFields} contains
  * {@code cz.auderis.corusco.core.key.TextFieldKey} constants for
  * {@link TextField}/{@link DateField} components and
  * {@code cz.auderis.corusco.core.key.FieldKey} constants for
- * {@link CheckBox}/{@link ComboBox} components. {@code <Form>Resources}
- * contains {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants
+ * {@link CheckBox}/{@link ComboBox} components. A resources companion such as
+ * {@code CustomerEditResources} contains
+ * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants
  * for generated labels and field tooltips.</p>
  *
- * <p>The same source also generates non-key runtime objects. {@code
- * <Form>Descriptors} contains
- * {@code cz.auderis.corusco.core.meta.FieldDescriptor} constants. {@code
- * <Form>Problems} contains {@code cz.auderis.corusco.core.problem.ProblemCode}
- * constants for supported validation annotations. {@code <Form>FormModel}
- * extends {@code cz.auderis.corusco.core.form.AbstractFormModel}; {@code
- * <Form>View} is the generated Swing view contract; {@code <Form>BehaviorPlan}
- * and {@code <Form>Bindings} install generated Swing behaviors.</p>
+ * <p>The same source also generates non-key runtime objects. A descriptor
+ * companion such as {@code CustomerEditDescriptors} contains
+ * {@code cz.auderis.corusco.core.meta.FieldDescriptor} constants. A problem
+ * companion such as {@code CustomerEditProblems} contains
+ * {@code cz.auderis.corusco.core.problem.ProblemCode} constants for supported
+ * validation annotations. A form model such as {@code CustomerEditFormModel}
+ * extends {@code cz.auderis.corusco.core.form.AbstractFormModel}; a view
+ * contract such as {@code CustomerEditView} represents Swing components; and
+ * companions such as {@code CustomerEditBehaviorPlan} and
+ * {@code CustomerEditBindings} install generated Swing behaviors.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)

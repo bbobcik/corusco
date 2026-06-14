@@ -21,7 +21,8 @@ import java.util.Objects;
  * and column ids stable when persisted state or tests depend on them.</p>
  *
  * <p>Generated {@code @SwingTable} records create a {@code TableDescriptor}
- * constant in {@code <Row>TableDescriptor}. That generated companion also
+ * constant in a row-specific descriptor companion, for example
+ * {@code CustomerRowTableDescriptor}. That generated companion also
  * exposes a factory for the Swing {@code ObservableTableModel}; applications
  * can use the descriptor directly when they need custom table assembly.</p>
  *

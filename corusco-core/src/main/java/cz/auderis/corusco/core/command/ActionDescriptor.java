@@ -14,7 +14,8 @@ import java.util.Objects;
  * bundle mechanics.</p>
  *
  * <p>Generated {@code @UiAction} methods create {@code ActionDescriptor}
- * constants in {@code <Owner>Actions}. The same generated companion also
+ * constants in an owner-specific companion, for example
+ * {@code CustomerPresenterActions}. The same generated companion also
  * exposes descriptor lists for menu/toolbar assembly and command factories
  * that bind descriptors to an owner instance. Handwritten presenters may build
  * descriptors directly with {@link #action(ActionKey, ResourceKey)} or

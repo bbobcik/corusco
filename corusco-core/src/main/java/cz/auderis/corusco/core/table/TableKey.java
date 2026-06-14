@@ -10,7 +10,8 @@ import java.util.Objects;
  * user-facing title. Equality includes both the id and row type.</p>
  *
  * <p>Generated {@code @SwingTable} records create a {@code TableKey} constant
- * named {@code TABLE} in {@code <Row>Columns}. Handwritten table descriptors
+ * named {@code TABLE} in a row-specific columns companion, for example
+ * {@code CustomerRowColumns}. Handwritten table descriptors
  * may create keys with {@link #of(String, Class)}.</p>
  *
  * @param id stable non-blank table id

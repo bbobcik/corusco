@@ -27,7 +27,7 @@ import java.lang.annotation.Target;
  * does not specify a date picker widget or locale policy; Swing view code and
  * converters own those presentation decisions.</p>
  *
- * <p>The generated {@code <Form>Fields} companion exposes a
+ * <p>The generated fields companion, for example {@code CustomerEditFields}, exposes a
  * {@code cz.auderis.corusco.core.key.TextFieldKey} constant for each
  * {@code @DateField} component because date editing uses text-field raw-text
  * handling. Generated descriptors can use
@@ -35,7 +35,7 @@ import java.lang.annotation.Target;
  * {@code cz.auderis.corusco.core.key.HelpTopic} metadata supplied by
  * {@link Help}.</p>
  *
- * <p>The generated {@code <Form>FormModel} owns a
+ * <p>The generated form model, for example {@code CustomerEditFormModel}, owns a
  * {@code cz.auderis.corusco.core.form.TextFieldModel} with a generated
  * {@code LocalDate} converter for each {@code @DateField}. The generated
  * descriptor is a {@code cz.auderis.corusco.core.meta.FieldDescriptor} with

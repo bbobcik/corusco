@@ -2,18 +2,51 @@
  * Table annotations used to generate column descriptors and Swing table
  * binding helpers.
  *
+ * <p>This package solves the compile-time description of typed table rows. A
+ * table row record says what values exist, and {@link
+ * cz.auderis.corusco.annotations.table.Column} says which of those values
+ * become visible columns. The processor then emits typed column keys,
+ * descriptor metadata, table resources, binding helpers, and row updater
+ * functions without JavaBeans reflection.</p>
+ *
  * <p>Use {@link cz.auderis.corusco.annotations.table.SwingTable} on a
  * non-generic record that represents one table row. Mark record components
  * that should become visible columns with
- * {@link cz.auderis.corusco.annotations.table.Column}. Generated code exposes
- * typed column keys, descriptor metadata, table resources, binding helpers,
- * and row updater functions for editable columns.</p>
+ * {@link cz.auderis.corusco.annotations.table.Column}. Unannotated components
+ * can still participate in generated editable-row constructors, but they do
+ * not become columns.</p>
  *
- * <p>Generated table key instances live in generated companions.
- * {@code <Row>Columns} exposes
+ * <p>For example, this source record:</p>
+ *
+ * <pre>{@code
+ * @SwingTable(id = "customer-table")
+ * record CustomerRow(
+ *         @Column(width = 180, editable = true) String name,
+ *         @Column(width = 80) int orders
+ * ) {
+ * }
+ * }</pre>
+ *
+ * <p>produces generated companions whose names start with
+ * {@code CustomerRow}, such as {@code CustomerRowColumns},
+ * {@code CustomerRowTableResources}, {@code CustomerRowTableDescriptor}, and
+ * {@code CustomerRowTableBindings}. The prefix comes from the row type name, so
+ * generated names remain easy to find from the source row record.</p>
+ *
+ * <p>The first runtime step is usually to create an observable row list and
+ * install the generated table model helper:</p>
+ *
+ * <pre>{@code
+ * ObservableList<CustomerRow> rows = ObservableArrayList.empty();
+ * ObservableTableModel<CustomerRow> model =
+ *         CustomerRowTableDescriptor.tableModel(rows);
+ * }</pre>
+ *
+ * <p>Generated table key instances live in generated companions. A columns
+ * companion such as {@code CustomerRowColumns} exposes
  * {@code cz.auderis.corusco.core.table.TableKey} and
- * {@code cz.auderis.corusco.core.table.ColumnKey} constants.
- * {@code <Row>TableResources} exposes
+ * {@code cz.auderis.corusco.core.table.ColumnKey} constants. A resources
+ * companion such as {@code CustomerRowTableResources} exposes
  * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants for
  * headers and tooltips. Help topics from {@code @Help} are embedded in
  * descriptors as {@code cz.auderis.corusco.core.key.HelpTopic} values.</p>
@@ -22,11 +55,31 @@
  * {@code cz.auderis.corusco.core.table.Column},
  * {@code cz.auderis.corusco.core.table.ColumnDescriptor}, and
  * {@code cz.auderis.corusco.core.table.TableDescriptor} objects through
- * {@code <Row>Columns} and {@code <Row>TableDescriptor}. Swing model and
- * selection installation helpers are generated in {@code <Row>TableBindings}.</p>
+ * companions such as {@code CustomerRowColumns} and
+ * {@code CustomerRowTableDescriptor}. Swing model and selection installation
+ * helpers are generated in companions such as
+ * {@code CustomerRowTableBindings}.</p>
+ *
+ * <p>Editable generated columns update immutable records by calling the record
+ * constructor with the edited value and the previous values for the remaining
+ * components. This keeps table editing explicit and reviewable. It also means
+ * row records should keep constructor invariants cheap and deterministic.</p>
  *
  * <p>Column ids and persistence ids are stable application metadata. They can
- * appear in resources, tests, generated source, and saved table layout state,
- * so changing them should be treated as a compatibility change.</p>
+ * appear in resources, tests, generated source, and saved table layout state.
+ * Use {@link cz.auderis.corusco.annotations.table.Column#persistenceId()} when
+ * a visible column must keep saved layout compatibility while its generated
+ * column id changes.</p>
+ *
+ * <p>The annotation model describes table structure, not a complete table UI.
+ * Sorting, filtering, selection, state restoration, renderers, and editors are
+ * installed by Swing table adapters and application code. Generated bindings
+ * provide the common model and selection setup, while advanced screens can use
+ * generated descriptors directly for custom assembly.</p>
+ *
+ * <p>Advanced users should read generated table source when reviewing a table
+ * contract. Descriptor constants show ids, resource keys, persistence metadata,
+ * default widths, capabilities, and accessors in one place. That generated
+ * source is often the clearest compatibility review for table-state changes.</p>
  */
 package cz.auderis.corusco.annotations.table;

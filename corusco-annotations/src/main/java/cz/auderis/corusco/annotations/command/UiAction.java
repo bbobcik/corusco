@@ -15,8 +15,9 @@ import java.lang.annotation.Target;
  * {@code ActionDescriptor}; runtime code can then create commands without
  * scanning annotations reflectively.</p>
  *
- * <p>The generated {@code <Owner>Actions} companion is the normal place to
- * obtain runtime key instances. It exposes a
+ * <p>The generated owner-specific actions companion, for example
+ * {@code CustomerPresenterActions}, is the normal place to obtain runtime key
+ * instances. It exposes a
  * {@code cz.auderis.corusco.core.key.ActionKey} constant, one or more
  * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants, an action
  * descriptor, and generated command factories for each annotated method.</p>

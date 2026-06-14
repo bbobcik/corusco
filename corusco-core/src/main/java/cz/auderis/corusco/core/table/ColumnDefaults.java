@@ -7,7 +7,8 @@ package cz.auderis.corusco.core.table;
  * table-state initialization. They do not persist user customizations.</p>
  *
  * <p>Generated {@code @Column} metadata creates {@code ColumnDefaults}
- * instances inside {@code <Row>Columns} from {@code width}, {@code order}, and
+ * instances inside row-specific columns companions such as
+ * {@code CustomerRowColumns} from {@code width}, {@code order}, and
  * {@code visible} annotation members.</p>
  *
  * @param width preferred width in pixels

@@ -28,7 +28,7 @@ import java.util.function.Function;
  * the returned value or replacement row represents the model change.</p>
  *
  * <p>Generated {@code @SwingTable} records create {@code Column} constants in
- * {@code <Row>Columns}. Read-only generated columns call the record accessor;
+ * row-specific columns companions such as {@code CustomerRowColumns}. Read-only generated columns call the record accessor;
  * editable generated columns call the canonical record constructor to return a
  * replacement row with the edited value.</p>
  *

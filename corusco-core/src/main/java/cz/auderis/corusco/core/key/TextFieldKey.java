@@ -10,7 +10,8 @@ import java.util.Objects;
  * generated descriptors and diagnostics, not an arbitrary property path.</p>
  *
  * <p>Generated {@code @SwingForm} metadata creates {@code TextFieldKey}
- * constants in {@code <Form>Fields} for {@code @TextField} and
+ * constants in form-specific fields companions such as
+ * {@code CustomerEditFields} for {@code @TextField} and
  * {@code @DateField} record components. Use generated constants for ordinary
  * generated forms; use {@link #of(String, Class, Class)} for handwritten
  * metadata and tests.</p>

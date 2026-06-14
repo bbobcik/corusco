@@ -28,13 +28,13 @@ import java.lang.annotation.Target;
  * bindings remain type-correct. Runtime code should consume the generated
  * descriptors and field models rather than scanning this annotation.</p>
  *
- * <p>The generated {@code <Form>Fields} companion exposes a
+ * <p>The generated fields companion, for example {@code CustomerEditFields}, exposes a
  * {@code cz.auderis.corusco.core.key.FieldKey} constant for each
  * {@code @CheckBox} component. Generated labels and tooltips use
  * {@code cz.auderis.corusco.core.key.ResourceKey<String>} constants in
- * {@code <Form>Resources}.</p>
+ * resources companions such as {@code CustomerEditResources}.</p>
  *
- * <p>The generated {@code <Form>FormModel} owns a
+ * <p>The generated form model, for example {@code CustomerEditFormModel}, owns a
  * {@code cz.auderis.corusco.core.form.FieldModel} for each checkbox. The
  * generated descriptor is a
  * {@code cz.auderis.corusco.core.meta.FieldDescriptor} with checkbox field

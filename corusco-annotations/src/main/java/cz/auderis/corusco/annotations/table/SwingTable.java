@@ -20,19 +20,22 @@ import java.lang.annotation.Target;
  * change for saved table state.</p>
  *
  * <p>Generated table companions are the normal place to obtain runtime table
- * metadata keys. {@code <Row>Columns} contains typed
+ * metadata keys. A columns companion such as {@code CustomerRowColumns} contains typed
  * {@code cz.auderis.corusco.core.table.TableKey} and
  * {@code cz.auderis.corusco.core.table.ColumnKey} constants. Column header and
  * tooltip text use {@code cz.auderis.corusco.core.key.ResourceKey<String>}
- * constants in {@code <Row>TableResources}.</p>
+ * constants in resources companions such as
+ * {@code CustomerRowTableResources}.</p>
  *
- * <p>The same source also generates non-key runtime objects. {@code
- * <Row>Columns} contains {@code cz.auderis.corusco.core.table.Column} and
- * {@code cz.auderis.corusco.core.table.ColumnDescriptor} constants. {@code
- * <Row>TableDescriptor} contains a
+ * <p>The same source also generates non-key runtime objects. A columns
+ * companion such as {@code CustomerRowColumns} contains
+ * {@code cz.auderis.corusco.core.table.Column} and
+ * {@code cz.auderis.corusco.core.table.ColumnDescriptor} constants. A
+ * descriptor companion such as {@code CustomerRowTableDescriptor} contains a
  * {@code cz.auderis.corusco.core.table.TableDescriptor} constant and a Swing
- * table-model factory. {@code <Row>TableBindings} installs table models and
- * selection bindings into Swing views.</p>
+ * table-model factory. A bindings companion such as
+ * {@code CustomerRowTableBindings} installs table models and selection bindings
+ * into Swing views.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)
