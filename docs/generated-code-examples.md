@@ -10,25 +10,25 @@ The examples module contains the current generated-code walkthroughs. Build the
 project and inspect generated sources under:
 
 ```text
-corusco-examples/build/generated/sources/annotationProcessor/java/main/cz/auderis/corusco/examples
+corusco-examples/build/generated/sources/annotationProcessor/java/main/cz/auderis/corusco/examples/generated
 ```
 
 ## Example Map
 
 | Annotated source | Generated companions | Runtime example |
 | --- | --- | --- |
-| `GeneratedCustomerEdit` | `GeneratedCustomerEditFields`, `Resources`, `Problems`, `Descriptors`, `FormModel`, `View`, `BehaviorPlan` | `GeneratedMetadataExample`, `GeneratedFormModelExample`, `GeneratedViewPlanExample` |
-| `GeneratedCustomerRow` | `GeneratedCustomerRowColumns`, `TableResources`, `TableDescriptor`, `TableBindings` | `GeneratedTableColumnsExample` |
-| `GeneratedActionMetadataExample` | `GeneratedActionMetadataExampleActions` | `GeneratedActionMetadataExample` |
+| `examples.generated.GeneratedCustomerEdit` | `GeneratedCustomerEditFields`, `Resources`, `Problems`, `Descriptors`, `FormModel`, `View`, `BehaviorPlan` | `examples.generated.GeneratedMetadataExample`, `examples.forms.GeneratedFormModelExample`, `examples.generated.GeneratedViewPlanExample` |
+| `examples.generated.GeneratedCustomerRow` | `GeneratedCustomerRowColumns`, `TableResources`, `TableDescriptor`, `TableBindings` | `examples.tables.GeneratedTableColumnsExample` |
+| `examples.generated.GeneratedActionMetadataExample` | `GeneratedActionMetadataExampleActions` | `examples.generated.GeneratedActionMetadataExample` |
 
-Each runtime example has a matching test under `corusco-examples/src/test`.
-Those tests assert behavior through public APIs, not private generated
-implementation details.
+Each runtime example has a matching test under the corresponding package in
+`corusco-examples/src/test`. Those tests assert behavior through public APIs,
+not private generated implementation details.
 
-`CustomerManagementExample` composes the generated form/table/action pieces
-with dialog controllers, table state, validation summary, invoice-line editing,
-an address sub-dialog, and async VAT validation into one headless miniature
-business flow.
+`examples.generated.CustomerManagementExample` composes the generated
+form/table/action pieces with dialog controllers, table state, validation
+summary, invoice-line editing, an address sub-dialog, and async VAT validation
+into one headless miniature business flow.
 
 ## Form Metadata
 

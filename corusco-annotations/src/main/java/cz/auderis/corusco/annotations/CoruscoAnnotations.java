@@ -1,5 +1,9 @@
 package cz.auderis.corusco.annotations;
 
+import cz.auderis.corusco.annotations.command.UiAction;
+import cz.auderis.corusco.annotations.form.SwingForm;
+import cz.auderis.corusco.annotations.table.SwingTable;
+
 /**
  * Identifies the Corusco annotations module in smoke tests and diagnostics.
  *

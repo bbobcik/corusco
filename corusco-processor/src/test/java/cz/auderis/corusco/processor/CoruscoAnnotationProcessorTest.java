@@ -18,17 +18,17 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.CheckBox;
-                import cz.auderis.corusco.annotations.ComboBox;
-                import cz.auderis.corusco.annotations.DecimalRange;
-                import cz.auderis.corusco.annotations.DateField;
-                import cz.auderis.corusco.annotations.Help;
-                import cz.auderis.corusco.annotations.IntRange;
-                import cz.auderis.corusco.annotations.Length;
-                import cz.auderis.corusco.annotations.Required;
-                import cz.auderis.corusco.annotations.Regex;
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.form.CheckBox;
+                import cz.auderis.corusco.annotations.form.ComboBox;
+                import cz.auderis.corusco.annotations.validation.DecimalRange;
+                import cz.auderis.corusco.annotations.form.DateField;
+                import cz.auderis.corusco.annotations.help.Help;
+                import cz.auderis.corusco.annotations.validation.IntRange;
+                import cz.auderis.corusco.annotations.validation.Length;
+                import cz.auderis.corusco.annotations.validation.Required;
+                import cz.auderis.corusco.annotations.validation.Regex;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
                 import java.math.BigDecimal;
                 import java.time.LocalDate;
 
@@ -141,7 +141,7 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.form.SwingForm;
 
                 @SwingForm(id = "customer")
                 public final class CustomerEdit {
@@ -157,9 +157,9 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.CheckBox;
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.form.CheckBox;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(@TextField @CheckBox boolean active) {
@@ -175,8 +175,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.CheckBox;
-                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.form.CheckBox;
+                import cz.auderis.corusco.annotations.form.SwingForm;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(@CheckBox String active) {
@@ -192,8 +192,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit<T>(@TextField T name) {
@@ -209,9 +209,9 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.Length;
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.validation.Length;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
                 import java.math.BigDecimal;
 
                 @SwingForm(id = "customer")
@@ -228,9 +228,9 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.DecimalRange;
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.validation.DecimalRange;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
                 import java.math.BigDecimal;
 
                 @SwingForm(id = "customer")
@@ -247,8 +247,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.Required;
-                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.validation.Required;
+                import cz.auderis.corusco.annotations.form.SwingForm;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(@Required String name) {
@@ -264,8 +264,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
 
                 @SwingForm(id = "customer name")
                 public record CustomerEdit(@TextField String name) {
@@ -282,8 +282,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.DateField;
-                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.form.DateField;
+                import cz.auderis.corusco.annotations.form.SwingForm;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(@DateField String validFrom) {
@@ -299,9 +299,9 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.Regex;
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.validation.Regex;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(@TextField @Regex("[0-9]+") Integer age) {
@@ -317,9 +317,9 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.IntRange;
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.validation.IntRange;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(@TextField @IntRange(min = 10, max = 1) Integer age) {
@@ -335,8 +335,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.SwingForm;
-                import cz.auderis.corusco.annotations.TextField;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
 
                 @SwingForm(id = "customer")
                 public record CustomerEdit(@TextField Double score) {
@@ -353,9 +353,9 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.Column;
-                import cz.auderis.corusco.annotations.Help;
-                import cz.auderis.corusco.annotations.SwingTable;
+                import cz.auderis.corusco.annotations.table.Column;
+                import cz.auderis.corusco.annotations.help.Help;
+                import cz.auderis.corusco.annotations.table.SwingTable;
 
                 @SwingTable(id = "customer/search")
                 public record CustomerEdit(
@@ -444,7 +444,7 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.SwingTable;
+                import cz.auderis.corusco.annotations.table.SwingTable;
 
                 @SwingTable(id = "customer/search")
                 public final class CustomerEdit {
@@ -460,8 +460,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.Column;
-                import cz.auderis.corusco.annotations.SwingTable;
+                import cz.auderis.corusco.annotations.table.Column;
+                import cz.auderis.corusco.annotations.table.SwingTable;
 
                 @SwingTable(id = "customer/search")
                 public record CustomerEdit(
@@ -480,8 +480,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.Column;
-                import cz.auderis.corusco.annotations.SwingTable;
+                import cz.auderis.corusco.annotations.table.Column;
+                import cz.auderis.corusco.annotations.table.SwingTable;
 
                 @SwingTable(id = "customer/search")
                 public record CustomerEdit(@Column(width = 0) String name) {
@@ -497,8 +497,8 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.Column;
-                import cz.auderis.corusco.annotations.SwingTable;
+                import cz.auderis.corusco.annotations.table.Column;
+                import cz.auderis.corusco.annotations.table.SwingTable;
 
                 @SwingTable(id = "customer/search")
                 public record CustomerEdit(@Column(width = 80, minWidth = 100) String name) {
@@ -514,9 +514,9 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.Column;
-                import cz.auderis.corusco.annotations.Help;
-                import cz.auderis.corusco.annotations.SwingTable;
+                import cz.auderis.corusco.annotations.table.Column;
+                import cz.auderis.corusco.annotations.help.Help;
+                import cz.auderis.corusco.annotations.table.SwingTable;
 
                 @SwingTable(id = "customer/search")
                 public record CustomerEdit(
@@ -537,7 +537,7 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.UiAction;
+                import cz.auderis.corusco.annotations.command.UiAction;
 
                 public final class CustomerEdit {
                     @UiAction(
@@ -576,7 +576,7 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.UiAction;
+                import cz.auderis.corusco.annotations.command.UiAction;
 
                 public final class CustomerEdit {
                     @UiAction(id = "customer/save")
@@ -594,7 +594,7 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.UiAction;
+                import cz.auderis.corusco.annotations.command.UiAction;
 
                 public final class CustomerEdit {
                     @UiAction(id = "customer/save")

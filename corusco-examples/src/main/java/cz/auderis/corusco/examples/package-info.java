@@ -1,24 +1,23 @@
 /**
- * Small examples and smoke fixtures that demonstrate Corusco APIs.
+ * Executable examples that demonstrate Corusco APIs by topic.
  *
- * <p>This package is executable documentation. The examples are intentionally
- * compact, mostly headless-safe scenarios that show how public APIs fit
- * together without building a complete application framework. They are useful
- * when a reader understands a class contract but wants to see the normal shape
- * of a small workflow.</p>
+ * <p>The root package contains only this overview. Concrete examples live in
+ * topic subpackages. Each example is intentionally compact and mostly
+ * headless-safe: it shows the normal shape of a workflow without becoming an
+ * application framework.</p>
  *
- * <p>Core model examples cover observable values and lists, typed keys,
- * resources, validation, generated-style metadata, help topics, lifecycle
- * cleanup, asynchronous tasks, and stale-result suppression. Swing examples
- * cover bindings, behaviors, commands, list adapters, task callbacks, dialog
- * lifecycle, dirty-cancel policy, validation focus, accessible text, status
- * text, busy overlays, and table integration. Generated examples mirror the
- * contracts produced by the annotation processor.</p>
+ * <p>Use {@code core} for model primitives, typed keys, resources, validation,
+ * help, lifecycle, and task examples. Use {@code collections} for observable,
+ * loadable, filtered, EDT, Swing-list, and Glazed Lists scenarios. Use
+ * {@code forms}, {@code tables}, {@code commands}, {@code dialogs},
+ * {@code swing}, and {@code testing} for their corresponding UI workflow
+ * examples. Use {@code generated} for annotated source fixtures, generated
+ * companion usage, and the larger customer-management scenario.</p>
  *
  * <p>Examples should be read as scenarios, not as framework entry points or
- * production architecture templates. When a class name begins with
- * {@code Generated}, it demonstrates generated-code shape or metadata usage;
+ * production architecture templates. Generated companion classes appear at
+ * compile time next to the annotated source fixtures in {@code generated};
  * users normally edit annotations and consume generated output rather than
- * hand-maintaining those classes.</p>
+ * hand-maintaining generated classes.</p>
  */
 package cz.auderis.corusco.examples;

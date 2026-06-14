@@ -1,28 +1,15 @@
 /**
- * Source annotations that describe Corusco forms, tables, actions, validation,
- * and help metadata.
+ * Root package for the Corusco annotation module.
  *
- * <p>This package is the source-level vocabulary for generated Corusco UI
- * metadata. Use {@link cz.auderis.corusco.annotations.SwingForm} on a record
- * that represents editable form input and combine it with record-component
- * annotations such as {@link cz.auderis.corusco.annotations.TextField},
- * {@link cz.auderis.corusco.annotations.ComboBox}, {@link
- * cz.auderis.corusco.annotations.CheckBox}, and {@link
- * cz.auderis.corusco.annotations.DateField}. Use {@link
- * cz.auderis.corusco.annotations.SwingTable} and {@link
- * cz.auderis.corusco.annotations.Column} for table row metadata. Use {@link
- * cz.auderis.corusco.annotations.UiAction} on methods that should become
- * generated action descriptors.</p>
- *
- * <p>Constraint annotations such as {@link
- * cz.auderis.corusco.annotations.Required}, {@link
- * cz.auderis.corusco.annotations.Length}, {@link
- * cz.auderis.corusco.annotations.IntRange}, {@link
- * cz.auderis.corusco.annotations.DecimalRange}, and {@link
- * cz.auderis.corusco.annotations.Regex} contribute generated validation
- * metadata. {@link cz.auderis.corusco.annotations.Help} contributes stable
- * tooltip and help-topic ids. The processor validates annotation placement,
- * field type compatibility, ids, and selected invalid combinations.</p>
+ * <p>This package intentionally contains only module-level support types such
+ * as {@link cz.auderis.corusco.annotations.CoruscoAnnotations}. The annotation
+ * vocabulary is split by concern: {@link cz.auderis.corusco.annotations.form}
+ * for generated form metadata, {@link cz.auderis.corusco.annotations.table}
+ * for generated table metadata, {@link
+ * cz.auderis.corusco.annotations.validation} for generated field constraints,
+ * {@link cz.auderis.corusco.annotations.command} for action metadata, and
+ * {@link cz.auderis.corusco.annotations.help} for tooltip/help-topic
+ * metadata.</p>
  *
  * <p>The annotations are source-retained and consumed by compile-time
  * processors through {@code javax.lang.model}. Runtime framework code should

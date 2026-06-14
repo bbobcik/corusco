@@ -7,6 +7,21 @@ annotation processing. Runtime framework code must not scan them reflectively.
 Use annotations to describe stable UI contracts. Put business behavior,
 cross-field validation, persistence, and presenter logic in ordinary Java code.
 
+## Package Layout
+
+Annotation types are grouped by authoring concern:
+
+| Package | Use for |
+| --- | --- |
+| `cz.auderis.corusco.annotations.form` | `@SwingForm` and field-kind annotations such as `@TextField`, `@DateField`, `@ComboBox`, and `@CheckBox`. |
+| `cz.auderis.corusco.annotations.table` | `@SwingTable` and `@Column`. |
+| `cz.auderis.corusco.annotations.validation` | Field constraints such as `@Required`, `@Length`, `@Regex`, `@DecimalRange`, and `@IntRange`. |
+| `cz.auderis.corusco.annotations.command` | `@UiAction` action descriptor metadata. |
+| `cz.auderis.corusco.annotations.help` | `@Help` tooltip and help-topic metadata. |
+
+The root `cz.auderis.corusco.annotations` package is kept for module-level
+support only. Import the package that matches the annotated source element.
+
 ## Stable ID Rules
 
 IDs become typed-key IDs, resource IDs, problem-code IDs, and persisted table

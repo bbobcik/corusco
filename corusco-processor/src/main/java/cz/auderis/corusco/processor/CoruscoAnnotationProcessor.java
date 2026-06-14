@@ -1,19 +1,19 @@
 package cz.auderis.corusco.processor;
 
-import cz.auderis.corusco.annotations.CheckBox;
-import cz.auderis.corusco.annotations.ComboBox;
-import cz.auderis.corusco.annotations.Column;
-import cz.auderis.corusco.annotations.DecimalRange;
-import cz.auderis.corusco.annotations.DateField;
-import cz.auderis.corusco.annotations.Help;
-import cz.auderis.corusco.annotations.IntRange;
-import cz.auderis.corusco.annotations.Length;
-import cz.auderis.corusco.annotations.Required;
-import cz.auderis.corusco.annotations.Regex;
-import cz.auderis.corusco.annotations.SwingForm;
-import cz.auderis.corusco.annotations.SwingTable;
-import cz.auderis.corusco.annotations.TextField;
-import cz.auderis.corusco.annotations.UiAction;
+import cz.auderis.corusco.annotations.form.CheckBox;
+import cz.auderis.corusco.annotations.form.ComboBox;
+import cz.auderis.corusco.annotations.table.Column;
+import cz.auderis.corusco.annotations.validation.DecimalRange;
+import cz.auderis.corusco.annotations.form.DateField;
+import cz.auderis.corusco.annotations.help.Help;
+import cz.auderis.corusco.annotations.validation.IntRange;
+import cz.auderis.corusco.annotations.validation.Length;
+import cz.auderis.corusco.annotations.validation.Required;
+import cz.auderis.corusco.annotations.validation.Regex;
+import cz.auderis.corusco.annotations.form.SwingForm;
+import cz.auderis.corusco.annotations.table.SwingTable;
+import cz.auderis.corusco.annotations.form.TextField;
+import cz.auderis.corusco.annotations.command.UiAction;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -52,9 +52,9 @@ import javax.tools.Diagnostic;
  * rather than scanning annotations reflectively.</p>
  */
 @SupportedAnnotationTypes({
-        "cz.auderis.corusco.annotations.SwingForm",
-        "cz.auderis.corusco.annotations.SwingTable",
-        "cz.auderis.corusco.annotations.UiAction"
+        "cz.auderis.corusco.annotations.form.SwingForm",
+        "cz.auderis.corusco.annotations.table.SwingTable",
+        "cz.auderis.corusco.annotations.command.UiAction"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
 public final class CoruscoAnnotationProcessor extends AbstractProcessor {

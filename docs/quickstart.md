@@ -200,7 +200,9 @@ directory layout, compiler diagnostics, or platform-specific line endings.
 
 ## Next References
 
-- `corusco-examples/src/main/java/cz/auderis/corusco/examples`
+- `corusco-examples/src/main/java/cz/auderis/corusco/examples`, organized by
+  topic subpackage (`core`, `collections`, `forms`, `tables`, `commands`,
+  `dialogs`, `swing`, `testing`, and `generated`)
 - `docs/annotations.md`
 - `docs/architecture.md`
 - `docs/behaviors.md`
