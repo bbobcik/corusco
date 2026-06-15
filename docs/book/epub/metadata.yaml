@@ -1,0 +1,20 @@
+---
+title: Swing with Corusco
+author: Auderis
+lang: en
+subject: Progressive Java Swing engineering with Corusco, MigLayout, and JDK 25
+keywords:
+  - Java
+  - Swing
+  - Corusco
+  - MigLayout
+  - FlatLaf
+  - JDK 25
+  - EDT
+  - JTable
+  - forms
+  - bindings
+  - annotation processing
+description: A progressive field manual for Java desktop applications using Swing, modern Java, and Corusco.
+rights: This document is an original technical synthesis. Java, Swing, OpenJDK, MigLayout, FlatLaf, and Corusco names are used descriptively.
+---

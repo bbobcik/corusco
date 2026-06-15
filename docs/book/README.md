@@ -18,6 +18,23 @@ TEXLIVE_IMAGE=texlive/texlive:latest ./build.sh
 
 The generated PDF is `main.pdf`.
 
+## EPUB build
+
+The EPUB edition is generated from the same LaTeX source with Pandoc. It is a
+reflowable EPUB 3 output tuned for mobile readers such as ReadEra, so it favors
+reader-controlled fonts, margins, wrapping, and image scaling over exact A4 PDF
+layout.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-epub.ps1
+```
+
+The script switches to the `docs/book` directory before running Pandoc so
+`\include{...}` paths, figures, metadata, CSS, and Lua filters resolve
+consistently. The generated EPUB is
+`build/epub/Swing-with-Corusco.epub`. If `epubcheck` is available on `PATH`, the
+script runs it after generation; otherwise that validation step is skipped.
+
 ## Chapter volume audit
 
 Use the paragraph-volume audit after substantial drafting:
@@ -61,11 +78,13 @@ floor.
 
 ## Expected toolchain
 
-The source is built with pdfLaTeX via Dockerized `latexmk`. It uses common TeX Live packages including `libertine`, `inconsolata`, `microtype`, `geometry`, `fancyhdr`, `titlesec`, `booktabs`, `tabularx`, `tcolorbox`, `listings`, `hyperref`, `xurl`, `epigraph`, `needspace`, `emptypage`, and `nowidow`.
+The PDF source is built with pdfLaTeX via Dockerized `latexmk`. It uses common TeX Live packages including `libertine`, `inconsolata`, `microtype`, `geometry`, `fancyhdr`, `titlesec`, `booktabs`, `tabularx`, `tcolorbox`, `listings`, `hyperref`, `xurl`, `epigraph`, `needspace`, `emptypage`, and `nowidow`. The EPUB source is built with Pandoc and EPUB-specific metadata, CSS, and Lua filtering under `epub/`.
 
 ## Project layout
 
 - `main.tex` - document preamble and chapter includes.
+- `build-epub.ps1` - Pandoc EPUB build entry point.
+- `epub/` - EPUB metadata, mobile-first CSS, and LaTeX-to-EPUB filter.
 - `frontmatter/` - title page and preface.
 - `chapters/` - the foundation, Swing mechanics, Corusco, generation, and packaging chapter source files.
 - `examples.tex` - central macros for companion example source paths.
