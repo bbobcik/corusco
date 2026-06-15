@@ -1,0 +1,624 @@
+\chapter{Painting, Dirty Regions, and Layout Invalidation}
+\chapterquote{In Swing, pixels are not drawn when you ask for them; they are scheduled, merged, clipped, and finally painted under a contract you must not accidentally break.}{A useful lie for advanced debugging}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How does Swing decide what to lay out and repaint after state changes?\\
+Primary APIs & \api{JComponent}, \api{RepaintManager}, \api{LayoutManager2}, \api{JViewport}, \api{Scrollable}, \api{Graphics2D}, \api{Composite}, \api{AlphaComposite}, \api{BufferedImage}, and \api{DebugGraphics}.\\
+Hidden difficulty & Repaint requests are declarative. They describe damage; they are not immediate drawing commands.\\
+Payoff & Faster custom components, fewer visual artifacts, better diagnostics for repaint storms, layout churn, and renderer mistakes.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{The Two Ledgers}
+
+Experienced Swing developers usually remember three rules: override \api{paintComponent}, call \api{super.paintComponent}, and call \api{repaint} rather than invoking \api{paint} directly. These rules are necessary, but they are too small to explain most production painting failures. The more useful model is that Swing maintains two lazily reduced work sets: a geometry work set and a pixel work set.
+
+\termdef{Layout invalidation}{marking component geometry as no longer trustworthy} writes to the geometry ledger. A component's preferred size may have changed, a child may have been added, a border may now reserve different insets, or a container may need to place children again. \termdef{Dirty-region repainting}{marking rectangular pixel areas as stale} writes to the pixel ledger. A color may have changed, a caret may have blinked, a selected row may need a highlight, or a plot line may have moved.
+
+The two ledgers interact, but they are not the same ledger. Changing a label's foreground color requires repainting but not layout. Changing the label's text may require layout if the preferred width changed. Replacing the data behind a chart may require no layout if the chart's preferred size is stable, but it may require precise repainting of the plotted interval. Adding a component to a form usually requires layout and repainting because the component tree and pixels both changed.
+
+\begin{principlebox}{Geometry is not pixels}
+Call \api{revalidate} when a component's geometry contract may have changed. Call \api{repaint} when pixels inside already assigned bounds may be stale. Calling both for every mutation is simple, but it hides the distinction that makes advanced Swing screens fast and predictable.
+\end{principlebox}
+
+The distinction matters because advanced performance problems are often not caused by one slow \api{paintComponent}. They are caused by imprecise invalidation: using \api{fireTableDataChanged} when rows were inserted, calling \api{revalidate} on every animation tick, repainting an entire viewport when a ten-pixel caret changed, or rebuilding a whole panel when one bound value changed. Each individual call looks harmless; the system-level cost appears only after the event queue batches and propagates the work.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{\paintingDirtyFigure}
+\caption{Dirty regions are a vocabulary for truthful damage. The component changes semantic state first, computes old and new visual bounds, and asks Swing to repaint the union rather than the whole surface.}
+\label{fig:painting-dirty-regions}
+\end{figure}
+
+Figure~\ref{fig:painting-dirty-regions} shows the normal discipline for custom components. The application does not paint immediately. It mutates state, identifies which visual area became stale, and schedules that area. The \api{RepaintManager} may merge this request with others, clip it, and paint it later. A precise request does not force Swing to do less work in every implementation detail, but it gives the repaint system the information it needs to do less work.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{\paintingOpacityFigure}
+\caption{Opacity is a contract with ancestors and viewports. A component that says it is opaque must fill every pixel in its bounds; a non-opaque component lets earlier pixels show through.}
+\label{fig:painting-opacity}
+\end{figure}
+
+Figure~\ref{fig:painting-opacity} shows the other half of the contract. A component that lies about opacity may leave old pixels behind, especially after scrolling, resizing, or changing Look-and-Feel. A component that is visually opaque but reports itself as non-opaque may force unnecessary ancestor painting. Both errors are easy to miss in a small demo and expensive in a dense screen.
+
+\begin{examplebox}{painting figures}
+\api{BookVisualFigures} contains the source for Figures~\ref{fig:painting-dirty-regions}, \ref{fig:painting-opacity}, \ref{fig:painting-composite-src-over}, \ref{fig:painting-composite-group-opacity}, \ref{fig:painting-composite-clear-mask}, and~\ref{fig:painting-composite-rule-comparison}. The screenshots are generated by \api{BookFigureGenerator} through \screenshotHarnessExample{}, so the book uses rendered Swing examples rather than copied illustrations.
+\end{examplebox}
+
+\textbf{From mutation to pixels.} A typical Swing mutation path has six steps. Application code mutates component state, a Swing model, or a domain adapter. The component or model fires a scoped event. A listener invalidates layout, marks dirty pixels, or both. The \api{RepaintManager} records invalid components and dirty rectangles. Pending AWT events continue dispatching. Finally, invalid components are validated and dirty regions are painted, usually through double buffering.
+
+The exact ordering is intentionally not a contract for ordinary application logic. The practical contract is simpler: make state changes on the EDT, describe geometry and pixel damage precisely, and let the repaint system batch the work. Code that depends on "paint happens immediately after this line" is fragile. Code that depends on "after current events have completed, stale pixels will be repainted" is much closer to the Swing model.
+
+\begin{detailbox}{\api{repaint} is not a synchronous draw}
+\api{JComponent.repaint(Rectangle)} schedules a dirty region. It does not mean "draw now." If a program needs to render to an off-screen image immediately, it should call a rendering method with a \api{Graphics2D} it owns. Forcing the live component painting path is almost always the wrong boundary.
+\end{detailbox}
+
+This is also why painting code must be side-effect free. The paint method may be called more often than expected, less often than expected, for a smaller clip than expected, or after several repaint requests have been merged. It may be called because a parent exposed pixels, because a window moved, because another component changed, or because the Look-and-Feel asked for a refresh. A paint method that starts tasks, mutates models, installs listeners, or changes layout is using an observation point as a command point.
+
+\textbf{Semantic mutation belongs before visual damage.} A component should expose semantic operations and internally decide their visual consequences. A chart offers \api{setSeries}, \api{replaceRange}, or \api{setSelection}; callers should not be required to know which pixels a marker occupies. The component owns the mapping from domain state to screen space. This keeps the public API meaningful and keeps damage calculation near the geometry code.
+
+At the same time, the component should avoid exaggerating damage. A common pattern is to compute old visual bounds, apply the semantic mutation, compute new visual bounds, inflate for stroke and antialiasing, and repaint the union. For layout-sensitive changes, compare old and new preferred size before calling \api{revalidate}. This pattern is simple enough to teach early and powerful enough to use in serious components.
+
+\begin{lstlisting}[caption={Repainting the union of old and new selection bounds.}]
+private Rectangle selection = new Rectangle();
+
+public void setSelection(Rectangle next) {
+    Rectangle old = new Rectangle(selection);
+    selection = new Rectangle(next);
+
+    Rectangle dirty = old.union(selection);
+    dirty.grow(2, 2); // Account for stroke width and antialiasing.
+    repaint(dirty);
+}
+\end{lstlisting}
+
+The example hides one important detail: \api{selection} is a visual rectangle, not necessarily the domain state. In a real diagram editor the domain state might be a selected node id; the visual rectangle is derived from the current model, transform, and selection style. The old visual bounds must be captured before the semantic mutation changes what the selected id means. Otherwise the component has no way to erase the old highlight precisely.
+
+\section{The Component Painting Contract}
+
+The public \api{paint} method of \api{JComponent} is a coordinator. It invokes component painting, border painting, child painting, and UI delegate work in a sequence controlled by Swing. Most application components should override \api{paintComponent}; very few should override \api{paint}. Overriding \api{paint} is appropriate only when the component must alter the entire composite operation, including children and borders, and the author understands that responsibility.
+
+\api{paintComponent} should usually begin by calling \api{super.paintComponent}. If the component is opaque, the superclass or UI delegate path clears the background according to the component's UI. If the component is non-opaque, the superclass behavior may still perform important delegate work. Omitting the call is sometimes correct for specialized components, but it should be a deliberate decision, not a habit copied from a minimal canvas example.
+
+\begin{lstlisting}[caption={A conventional custom component painting skeleton.}]
+public final class HistogramView extends JComponent {
+    private final int[] bins;
+
+    public HistogramView(int[] bins) {
+        this.bins = bins.clone();
+        setOpaque(true);
+        setFocusable(true);
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);          // Clears background if opaque.
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                RenderingHints.VALUE_ANTIALIAS_ON);
+            paintBars(g2, getWidth(), getHeight());
+        } finally {
+            g2.dispose();                 // Restore the caller's Graphics state.
+        }
+    }
+
+    private void paintBars(Graphics2D g2, int width, int height) {
+        Rectangle clip = g2.getClipBounds();
+        for (int i = firstVisibleBin(clip); i <= lastVisibleBin(clip); i++) {
+            paintOneBar(g2, i, width, height);
+        }
+    }
+}
+\end{lstlisting}
+
+The \api{Graphics.create} call is not decoration. It protects the rest of the paint chain from transforms, clips, composites, strokes, paints, fonts, and rendering hints installed by the component. A failure to dispose the copy can leak native resources in some pipelines; more commonly it makes ownership obscure and creates state leaks when helper methods evolve.
+
+\textbf{Opacity as a promise.} Opacity is not just a painting preference. When a component returns true from \api{isOpaque}, it promises to fill every pixel in its bounds. Swing can then avoid painting ancestors behind it. When the promise is false, ancestors may need to be visible through it. Incorrect opacity is a classic source of ghosting, trails, flicker, and strange platform-specific differences because it corrupts the repaint manager's assumptions.
+
+\begin{pitfallbox}{opaque-but-not-really}
+A component that calls \api{setOpaque(true)} but paints only part of its area is broken. The bug may remain invisible on one Look-and-Feel or background color, then appear inside a viewport, layered pane, translucent window, or HiDPI pipeline.
+\end{pitfallbox}
+
+The reverse lie is also costly. A component that is visually opaque but reports false can force redundant ancestor painting. In a dense table, tree, or form this cost multiplies quickly. It may also prevent optimizations in custom containers that rely on opaque children. Truthful opacity is therefore both correctness and performance.
+
+\textbf{The clip is part of the method input.} Repaint precision reduces the dirty region; clip-aware painting reduces the work done inside that dirty region. When a component paints a handful of shapes, it can ignore the clip and remain acceptable. When it paints thousands of rows, points, graph nodes, or time intervals, it should use \api{Graphics.getClipBounds} to determine what can be visible.
+
+The clip is not always the same as the rectangle passed to \api{repaint}. Requests may be merged, constrained by parent clips, affected by double buffering, or shaped by the native peer. The safe rule is to treat the clip as the current drawing boundary. Do not draw outside it deliberately unless you have a well-understood reason, and do not use it as the only source of component geometry. It tells you where pixels are needed, not what the whole model means.
+
+\textbf{Painting outside bounds breaks the model.} Swing lightweight components compose through containment. A child has bounds. A parent may clip. A scroll pane moves a view inside a viewport. The repaint manager schedules rectangles based on component geometry. If a component paints a shadow or selection handle outside its own bounds, the effect may be clipped, not repainted, or covered by siblings. The code may work in a test panel and fail inside a scroll pane.
+
+If a visual effect must extend beyond the logical object, prefer one of three designs. Enlarge the component's bounds so the effect is inside the contract. Paint the effect in a parent or overlay layer that owns the larger visual region. Use \api{JLayer}, a glass pane, or another explicit layering technique when the effect crosses component boundaries. Do not smuggle cross-boundary painting through a child that cannot ask Swing to repaint the space it uses.
+
+\textbf{The paint method you should not write.} The following example is a small museum of painting errors. It overrides the wrong method, ignores the component size, ignores the clip, does not call the superclass, mutates the caller's graphics context, and schedules more painting from inside painting. Each individual choice can be justified in rare specialist code; together they make a component hostile to Swing.
+
+\begin{lstlisting}[caption={Do not copy this pattern.}]
+@Override
+public void paint(Graphics g) {
+    g.setColor(Color.WHITE);
+    g.fillRect(0, 0, 2000, 2000); // Ignores component size and clip.
+    drawData((Graphics2D) g);     // Mutates Graphics state.
+    repaint();                    // Schedules another paint from painting.
+}
+\end{lstlisting}
+
+The most subtle error in this example is the last one. Calling \api{repaint} from painting creates a self-sustaining repaint loop. If the intent is animation, use a timer or animation clock that updates presentation state at a controlled cadence. If the intent is to finish incomplete work, move the work out of painting. Painting should observe state and produce pixels; it should not be the engine that drives the application.
+
+\textbf{Look-and-Feel cooperation.} Many \api{JComponent} subclasses let their UI delegates do substantial painting. If you override painting, understand whether you are supplementing or replacing the delegate. The \api{update} method of a UI delegate often handles background clearing before calling \api{paint}. A reusable component should make ownership explicit: the component manages data and geometry; the delegate manages appearance; the application supplies models and resources.
+
+This split is explored again in the Look-and-Feel chapter, but it affects painting immediately. A component subclass that hard-codes colors, focus rings, disabled rendering, or selection backgrounds may work under one theme and feel alien under another. Prefer \api{UIManager} defaults, component colors, resource keys, and delegate cooperation when the component is meant to live in more than one application.
+
+\section{Compositing, Transparency, and Offscreen Layers}
+
+Transparency is not only a color with an alpha channel. In Java 2D, transparency is controlled by the current \termdef{\api{Composite}}{the rule used by \api{Graphics2D} to combine newly drawn source pixels with destination pixels that already exist in the drawing surface}. The ordinary implementation is \api{AlphaComposite}. It answers a precise question: when a source pixel is drawn over a destination pixel, what color and alpha should the result have? This question appears in busy overlays, drag images, selection halos, disabled veils, validation marks, map labels, shadow layers, masked screenshots, spotlight help, glass panes, and offscreen rendering caches. A Swing programmer who treats alpha as merely "make this color translucent" will eventually draw a component that looks right in the first demo and wrong in the first layered screen.
+
+The terminology is worth slowing down. The \termdef{source}{the pixels produced by the drawing operation currently being performed} is not the shape object or the Java color by itself; it is the rasterized result of that drawing operation after paint, stroke, transform, clip, antialiasing, and font rendering have done their work. The \termdef{destination}{the pixels already present in the target surface} may be the component back buffer, an offscreen \api{BufferedImage}, a printer graphics context, or another intermediate layer. A \termdef{compositing rule}{the mathematical rule that combines source and destination coverage and color} determines whether the source appears over the destination, inside the destination, outside the destination, in exclusive regions, or as a replacement. The alpha value on a color is only one input to that rule.
+
+The default Swing painting path behaves as if ordinary drawing uses source-over composition. When a component fills a background and then draws text, the text is drawn over the background. When a validation overlay paints a translucent red wash, the wash is drawn over the form. When a selection halo is painted over a diagram, the existing diagram remains visible through the halo. In Java terms, this is \api{AlphaComposite.SRC\_OVER}. It is the right default because it matches the mental model of painting with translucent ink over existing content.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\paintingCompositeSrcOverFigure}
+\caption{\api{AlphaComposite.SRC\_OVER} is the normal overlay rule: the source contributes according to its alpha, while the destination remains visible through it.}
+\label{fig:painting-composite-src-over}
+\end{figure}
+
+Figure~\ref{fig:painting-composite-src-over} shows the ordinary case. The rounded destination shape has already been painted. The red ellipse is then painted with source-over alpha. The overlap is not a new object in the component model; it is the result of combining two sets of pixels. That distinction matters because dirty regions must include the visual effect, not only the model shape that caused it. If the translucent ellipse moves, the component must repaint the old ellipse bounds and the new ellipse bounds, inflated for antialiasing, even if the domain object underneath did not move.
+
+\begin{lstlisting}[caption={Temporarily installing a translucent source-over composite.}]
+@Override
+protected void paintComponent(Graphics g) {
+    super.paintComponent(g);
+    Graphics2D g2 = (Graphics2D) g.create();
+    try {
+        paintContent(g2);
+
+        g2.setComposite(AlphaComposite.getInstance(
+                AlphaComposite.SRC_OVER, 0.35f));
+        g2.setColor(new Color(0xb94a48));
+        g2.fill(validationRegion);
+    } finally {
+        g2.dispose();
+    }
+}
+\end{lstlisting}
+
+The listing uses a fresh graphics copy for the same reason earlier examples used it for strokes and transforms. A composite is part of the mutable \api{Graphics2D} state. If helper code installs a translucent composite and forgets to restore it, later text, focus rings, child painting, borders, or delegate painting may become accidentally translucent. The bug is visually strange because the wrong code is not where the symptom appears. A label may look faded because a shape painter upstream leaked its composite state.
+
+\textbf{Alpha belongs to a rendering decision, not always to a color constant.} A common shortcut is to define \api{new Color(r, g, b, a)} and pass that color around as "the disabled color" or "the overlay color." That is sometimes fine for small local drawing. But in larger components it blurs two decisions: what hue represents the state, and how strongly should that state be composited over the current destination? A warning color might be resolved from resources, while the overlay alpha depends on interaction state, theme contrast, screenshot mode, or animation. Keeping the alpha in the composite decision makes the visual policy easier to review.
+
+Premultiplied alpha is another reason to keep the model clear. Some images store color channels already multiplied by alpha. Some do not. Java's image types and pipelines can handle both, but mixing image formats casually can produce dark fringes or unexpected edges when translucent images are scaled or composited. A book chapter need not turn into a raster-format manual, but the practical rule is simple: choose an ARGB image type deliberately for intermediate layers, test antialiased edges over light and dark backgrounds, and avoid treating transparent pixels as if their hidden RGB values never matter.
+
+\textbf{Group opacity is not the same as object opacity.} Suppose a busy overlay is made of a rounded panel, a spinner, a progress arc, and text. If every object is drawn with alpha 0.45, their overlaps darken. That may look acceptable for a single veil, but it is wrong for a grouped notification that should fade as one unit. The correct approach is to draw the group opaquely into an offscreen transparent image, then draw that image once with the desired alpha. Figure~\ref{fig:painting-composite-group-opacity} shows why the difference is visible.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\paintingCompositeGroupFigure}
+\caption{Drawing each object with alpha makes overlaps accumulate. Drawing the objects into an offscreen group and compositing the group once preserves internal color relationships.}
+\label{fig:painting-composite-group-opacity}
+\end{figure}
+
+This distinction matters in rich Swing screens because visual groups are common. A drag image may contain a thumbnail, badge, count, and shadow. A map label may contain text, halo, shield, and route marker. A validation summary bubble may contain a translucent background, icon, and text. A disabled-area veil may contain several highlighted holes and explanatory labels. If the intended object is a group, use a group. If the intended effect is several translucent strokes that genuinely accumulate, draw several translucent strokes. The two effects are not interchangeable.
+
+\begin{lstlisting}[caption={Rendering a grouped overlay before applying group alpha.}]
+BufferedImage layer = new BufferedImage(width, height,
+        BufferedImage.TYPE_INT_ARGB);
+Graphics2D lg = layer.createGraphics();
+try {
+    configureQuality(lg);
+    paintOverlayContents(lg);      // Opaque within the layer.
+} finally {
+    lg.dispose();
+}
+
+Graphics2D g2 = (Graphics2D) g.create();
+try {
+    g2.setComposite(AlphaComposite.getInstance(
+            AlphaComposite.SRC_OVER, overlayAlpha));
+    g2.drawImage(layer, x, y, null);
+} finally {
+    g2.dispose();
+}
+\end{lstlisting}
+
+The cost of this pattern is allocation and an additional raster pass. That cost is often fine for a stable overlay or screenshot figure and dangerous inside a high-frequency paint path. The engineering question is not "offscreen images good or bad?" The question is whether the group has stable inputs and a sensible invalidation rule. A cached layer might be invalidated by size, theme, scale, text, font, progress value, or component orientation. If those facts change often, caching may cost more than direct painting. If they change rarely, caching can make a complex overlay both correct and fast.
+
+Offscreen rendering also needs the right coordinate system. A group drawn at component scale into a small image may blur when the component moves to a monitor with a different scale. A group drawn with the wrong \api{FontRenderContext} may measure text differently from the live component. A group that ignores the current Look-and-Feel may preserve old colors after a theme switch. The offscreen layer is not exempt from the painting contract merely because it is not a component. It has a size, transform, clip, render hints, font context, and invalidation story.
+
+\textbf{Clearing should usually happen on a layer, not the live component destination.} The \api{AlphaComposite.CLEAR} rule sets destination pixels to transparent where the source is drawn. On an ARGB offscreen image, that is a useful operation. It can cut a spotlight hole in a veil, remove a rounded region from a shadow, or build a mask. On a live Swing component back buffer, it is usually the wrong abstraction. A lightweight component does not own the pixels behind its ancestors and siblings in the way a raw image owns its pixels. Clearing live pixels may produce undefined-looking results, especially under double buffering, opaque ancestors, layered panes, and platform pipelines.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\paintingCompositeClearFigure}
+\caption{\api{AlphaComposite.CLEAR} is useful when applied to an offscreen ARGB layer. The layer can then be drawn back with \api{SRC\_OVER}; the live component destination is not treated as scratch memory.}
+\label{fig:painting-composite-clear-mask}
+\end{figure}
+
+Figure~\ref{fig:painting-composite-clear-mask} demonstrates the safe pattern. The veil is created as an offscreen ARGB layer. A clear operation cuts a hole in that layer. The resulting layer is drawn back over the form. The form itself is never cleared. This is the same design principle as dirty-region repainting: make the operation local to an object that owns the relevant pixels. An offscreen image owns its transparent pixels; a child component usually does not own the whole screen around it.
+
+\begin{lstlisting}[caption={Cutting a hole in an offscreen veil.}]
+BufferedImage veil = new BufferedImage(width, height,
+        BufferedImage.TYPE_INT_ARGB);
+Graphics2D vg = veil.createGraphics();
+try {
+    vg.setComposite(AlphaComposite.SrcOver);
+    vg.setColor(new Color(0x202833));
+    vg.fillRect(0, 0, width, height);
+
+    vg.setComposite(AlphaComposite.Clear);
+    vg.fill(focusHole);            // Transparent only inside the layer.
+} finally {
+    vg.dispose();
+}
+
+g.drawImage(veil, 0, 0, null);
+\end{lstlisting}
+
+The cutout pattern is useful for guided tours, blocked-workflow overlays, disabled regions, masked screenshots, and spotlight help. It has the same accessibility caution as every visual effect: the hole is not interaction policy by itself. If the overlay indicates that only one control is usable, input routing and command enablement must say the same thing. A translucent veil that still lets every hidden button fire is a visual lie. A cutout that steals focus from the actual control is also a lie. Composite can draw the explanation, but state and behavior must own the workflow.
+
+\textbf{Other compositing rules are exact tools, not decorative options.} \api{SRC\_OVER} is ordinary painting. \api{SRC\_IN} keeps the source only where destination coverage already exists. \api{SRC\_OUT} keeps the source where destination coverage does not exist. \api{DST\_IN} and \api{DST\_OUT} are useful for masking an existing image. \api{XOR} keeps non-overlapping coverage. These rules can implement clipped icons, gradient fills inside glyph outlines, masked thumbnails, selection region previews, and geometry diagnostics. They can also produce baffling results if the destination contains pixels you did not mean to include.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\paintingCompositeRulesFigure}
+\caption{Different \api{AlphaComposite} rules ask different coverage questions. The transparent pixels in the intermediate layer are part of the answer, so the layer must contain only the intended destination.}
+\label{fig:painting-composite-rule-comparison}
+\end{figure}
+
+The warning in Figure~\ref{fig:painting-composite-rule-comparison} is subtle. If a checkerboard background, old pixels, or a previously drawn label is accidentally present in the destination layer, rules such as \api{SRC\_IN} and \api{SRC\_OUT} will use that coverage too. The result may look like the rule is wrong, when the actual bug is that the destination layer contained more than the shape being used as a mask. This is why compositing code benefits from small named intermediate images: one layer for the mask, one layer for the source, one layer for the final group. General-purpose scratch images tend to accumulate accidental pixels.
+
+\begin{lstlisting}[caption={Masking a source image by a shape using a deliberate destination layer.}]
+BufferedImage masked = new BufferedImage(width, height,
+        BufferedImage.TYPE_INT_ARGB);
+Graphics2D mg = masked.createGraphics();
+try {
+    configureQuality(mg);
+    mg.setComposite(AlphaComposite.SrcOver);
+    mg.setColor(Color.WHITE);
+    mg.fill(maskShape);            // Destination coverage.
+
+    mg.setComposite(AlphaComposite.SrcIn);
+    mg.drawImage(sourceImage, 0, 0, null);
+} finally {
+    mg.dispose();
+}
+\end{lstlisting}
+
+The listing fills a mask shape first, then draws the source image through \api{SRC\_IN}. The white color is not semantically important; its alpha is. The source appears only where the mask had destination coverage. A production implementation may use a reusable compatible image, a cached mask, or a custom image operation. The important part is that the layer is born transparent and receives only the intended mask before the rule is applied.
+
+\textbf{Composite interacts with clipping and dirty regions.} A translucent shadow or blur may draw pixels outside the model shape. A cutout overlay may affect the entire visible rectangle even though the interesting hole is small. A group layer may cover a bounding box larger than its internal shapes. Dirty-region code must repaint the visual effect, not merely the source geometry. The repaint rectangle for a drop shadow includes the shadow spread. The repaint rectangle for an overlay includes the old and new overlay bounds. The repaint rectangle for a clear hole includes the area where the veil changed from covered to uncovered and back.
+
+Clip-aware painting remains valuable, but a clip does not shrink the semantic effect. If a component is asked to repaint a small dirty region inside a translucent group, it may still need enough cached group data to paint that region correctly. For simple source-over shapes, painting only the clipped shape segments may be fine. For a blurred shadow, a pixel inside the clip may depend on source pixels outside the clip. For a group-opacity layer, a pixel inside the clip may depend on overlapping group members. This is one reason advanced renderers often separate model query, prepared display layers, and final clipping.
+
+\textbf{Composite is part of renderer discipline.} A table renderer that sets a translucent composite on the graphics object is almost always wrong, because renderer painting is a stamp inside a larger painting protocol. If a renderer needs a translucent icon, use an icon that paints itself correctly while restoring graphics state. If a renderer needs a disabled look, set component state or colors and let the UI delegate do its work where possible. Renderer code that directly manipulates composite must be especially careful to use a graphics copy and to avoid retaining state between cells.
+
+\textbf{Composite affects text.} Drawing text with alpha can reduce contrast and make antialiasing look muddy, especially over patterned or image backgrounds. A disabled label rendered by the Look-and-Feel often uses colors chosen for readability rather than a naive half-alpha black. A map label halo may need an opaque or nearly opaque outline under the text before the text itself is drawn. A screenshot figure may need deterministic text antialiasing and a fixed background. Do not assume that applying alpha to all text in a group is the same as choosing appropriate disabled or overlay typography.
+
+\textbf{Custom \api{Composite} implementations are rare and should be treated as rendering infrastructure.} Java 2D allows custom composites through \api{Composite} and \api{CompositeContext}. This is powerful enough for specialized blending, scientific visualization, image analysis overlays, and domain-specific raster effects. It is also easy to make slow or incompatible with accelerated pipelines. Most Swing applications should use \api{AlphaComposite}, \api{BufferedImageOp}, or explicit image processing before writing a custom composite. If a custom composite is necessary, isolate it, test it on premultiplied and non-premultiplied images, measure it under realistic image sizes, and provide a fallback path for printing or export if needed.
+
+The custom-composite boundary is also a maintenance boundary. A colleague reading a component should not have to understand low-level raster loops to review a validation overlay. A named renderer service, image operation, or paint profile can hide the implementation while exposing the policy: multiply heatmap colors, mask thumbnail to rounded outline, desaturate disabled preview, or blend selected feature with map base. This is the same architectural move used throughout the book: name the semantic operation, then keep the low-level Swing or Java 2D mechanism behind it.
+
+\textbf{Performance questions should be asked before and after the effect is drawn.} A translucent full-window veil may force the pipeline to read and blend many pixels. A large offscreen ARGB image may allocate memory and pressure the garbage collector. A cached mask may save CPU but become stale under scale changes. Drawing dozens of translucent shapes over a huge canvas may be slower than preparing a single group layer; preparing a group layer for every mouse move may be slower than direct drawing. The only reliable answer is to name the expected update frequency, pixel area, invalidation facts, and target hardware.
+
+For ordinary business screens, the best Composite policy is often conservative. Use source-over alpha for small overlays and markers. Use group opacity only when overlaps visibly matter. Use offscreen clear masks for spotlights and cutouts. Avoid custom composites unless the application is truly a visual tool. Keep effects inside explicit bounds. Test under light and dark Look-and-Feel. Capture screenshots with representative backgrounds rather than only white panels. These rules are not timid; they are the shortest path to visual effects that remain correct inside Swing's repaint system.
+
+\begin{coruscobox}{composite state belongs to visual behavior}
+Corusco does not replace \api{AlphaComposite}; it helps decide when a composited effect should be visible and who owns its lifecycle. Busy state, validation severity, selected ids, guided-help focus, and drag state can be observable facts. The painting behavior then maps those facts to source-over overlays, group layers, cutout masks, or ordinary repaint requests.
+\end{coruscobox}
+
+The Corusco boundary is useful because composited effects are often cross-cutting. A busy value may darken a form, disable commands, change cursor policy, show progress text, and block incompatible input. A validation problem may draw a field halo, update a tooltip, enable a problem summary, and prevent OK. A guided-help state may draw a spotlight, focus a component, and change keyboard routing. If each effect is implemented as a private listener that sets alpha somewhere, the screen becomes difficult to reason about. If the state is named and the visual behavior is scoped, the Composite code can remain low-level without becoming hidden policy.
+
+A review checklist for compositing is short and strict. Identify source and destination. Use a graphics copy. Restore the composite. Keep mask layers born transparent. Draw only intended coverage into mask layers. Distinguish object alpha from group alpha. Compute dirty regions from the full visual effect. Avoid clearing the live component destination. Include font, scale, theme, size, and state in layer invalidation. Test over non-white backgrounds. These checks catch most Composite bugs before a user reports that an overlay looks strange only on one screen.
+
+The four Composite figures in this chapter should be read as a small progression rather than as alternatives chosen for decoration. Figure~\ref{fig:painting-composite-src-over} is the everyday overlay case. Figure~\ref{fig:painting-composite-group-opacity} shows why a visual group sometimes needs an intermediate layer. Figure~\ref{fig:painting-composite-clear-mask} shows why destructive rules belong on images that own their pixels. Figure~\ref{fig:painting-composite-rule-comparison} shows that coverage rules answer different mathematical questions. A rich visual application may use all four patterns on the same screen: source-over for hover feedback, group opacity for a drag image, clear masks for guided help, and source-in or source-out for thumbnails and glyph-shaped fills.
+
+This progression is also a useful screenshot checklist. A chapter or application that teaches Composite should not show only the final pretty overlay. It should include at least one picture that exposes destination pixels, one that exposes accumulated versus grouped alpha, one that exposes mask ownership, and one that compares rules. Otherwise the reader sees the effect without seeing the contract, and Composite remains a bag of visual tricks rather than a precise part of the painting system.
+
+\section{RepaintManager, Validation, and Diagnostics}
+
+\api{RepaintManager} is the broker between components and actual painting. It tracks invalid components, dirty regions, and double buffering. Most applications never replace it. Advanced applications sometimes install a temporary subclass for diagnostics, tests, or performance analysis. The replacement should usually be a microscope, not a product architecture.
+
+A custom repaint manager is useful because it makes invisible rules visible. It can log dirty rectangles, detect unusually broad repaint requests, count invalidation bursts, or report off-EDT repaint calls during tests. It can also mislead if left enabled during measurement, because logging itself changes timing. Use it for focused experiments with known questions.
+
+\begin{lstlisting}[caption={A diagnostic RepaintManager that reports unusually large repaint requests.}]
+public final class LoggingRepaintManager extends RepaintManager {
+    private final int largeArea;
+
+    public LoggingRepaintManager(int largeArea) {
+        this.largeArea = largeArea;
+    }
+
+    @Override
+    public void addDirtyRegion(JComponent c, int x, int y, int w, int h) {
+        if (w > 0 && h > 0 && w * h >= largeArea) {
+            System.err.printf("large repaint: %s [%d,%d %dx%d]%n",
+                    componentName(c), x, y, w, h);
+        }
+        super.addDirtyRegion(c, x, y, w, h);
+    }
+
+    @Override
+    public void addInvalidComponent(JComponent invalidComponent) {
+        System.err.println("invalid: " + componentName(invalidComponent));
+        super.addInvalidComponent(invalidComponent);
+    }
+
+    private static String componentName(Component c) {
+        String name = c.getName();
+        return c.getClass().getName() + (name == null ? "" : "#" + name);
+    }
+}
+\end{lstlisting}
+
+Install this kind of manager early in a diagnostic run, before the screen creates the components whose repaint behavior you want to observe. Remove it after the experiment. A repaint log is not a moral judgment: some broad repaint requests are correct. The log is a map that tells you where the program spends its visual attention.
+
+\begin{lstlisting}
+public static void main(String[] args) {
+    RepaintManager.setCurrentManager(new LoggingRepaintManager(500_000));
+    EventQueue.invokeLater(App::start);
+}
+\end{lstlisting}
+
+\begin{detailbox}{Current manager scope}
+\api{RepaintManager.currentManager(Component)} allows the implementation to choose a manager appropriate for a component context. In ordinary desktop applications you will experience it as application-wide, but diagnostic code should not assume more than the API promises.
+\end{detailbox}
+
+\textbf{Validation is demand-driven.} Swing layout is not recomputed eagerly for every possible size-affecting change. A container becomes invalid when its geometry contract may no longer hold. Calling \api{revalidate} tells Swing to invalidate the relevant hierarchy and arrange validation later. Calling \api{validate} attempts validation immediately on a validate root. In ordinary application code, \api{revalidate} is usually right because it batches work and respects the event model.
+
+\termdef{Validate root}{a component that can stop invalidation propagation and validate a subtree} is the reason local relayout can remain local. Components such as \api{JScrollPane} and \api{JRootPane} participate in this system. If you write a complex container, understand whether it should be a validate root and test how it behaves when child preferred sizes change rapidly. A validate root can make a screen efficient; the wrong boundary can make geometry changes surprisingly broad.
+
+\begin{lstlisting}[caption={A component whose preferred size depends on data must invalidate geometry when the size changes.}]
+public final class Ruler extends JComponent {
+    private int unitCount;
+    private int pixelsPerUnit = 8;
+
+    public void setUnitCount(int unitCount) {
+        if (this.unitCount == unitCount) {
+            return;
+        }
+        Dimension old = getPreferredSize();
+        this.unitCount = unitCount;
+        Dimension now = getPreferredSize();
+        if (!old.equals(now)) {
+            revalidate();
+        }
+        repaint();
+    }
+
+    @Override
+    public Dimension getPreferredSize() {
+        return new Dimension(unitCount * pixelsPerUnit, 32);
+    }
+}
+\end{lstlisting}
+
+Notice the conditional \api{revalidate}. The component repaints for any semantic change, but it invalidates layout only when its preferred size changes. This small discipline matters in components with frequent updates. It also documents the component's geometry contract for future maintainers: data changes may affect pixels, but only some data changes affect preferred size.
+
+\textbf{Double buffering is usually your ally.} Swing normally uses double buffering to reduce flicker. Most developers should leave it enabled. The exceptions are narrow: when using \api{DebugGraphics}, when integrating with an active rendering strategy, when painting into an already-buffered destination, or when diagnosing excessive buffering costs. Turning off double buffering globally to fix flicker usually treats the symptom rather than the cause.
+
+\api{DebugGraphics} is a useful old tool, but it has a catch. It requires double buffering to be disabled for the component under inspection. That makes it suitable for local investigation, not for measuring production paint performance. It can show that a component repaints unexpectedly; it should not be used to decide final frame-time budgets.
+
+\begin{lstlisting}[caption={Using DebugGraphics in a controlled diagnostic experiment.}]
+static void enableDebugPainting(JComponent component) {
+    RepaintManager manager = RepaintManager.currentManager(component);
+    manager.setDoubleBufferingEnabled(false);
+    component.setDebugGraphicsOptions(DebugGraphics.LOG_OPTION |
+                                      DebugGraphics.FLASH_OPTION);
+}
+\end{lstlisting}
+
+\textbf{A practical repaint audit.} When a screen is visually wrong or sluggish, instrument first. The following table gives a compact decision guide. It is intentionally symptom-oriented because painting problems are usually reported as symptoms: ghosting, flicker, slow scroll, shaking layout, or mysterious broad repaints.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.23\linewidth}X X}
+\toprule
+Symptom & Likely cause & First instrument\\
+\midrule
+Ghosting after resize or scroll & Opaque component does not fill its bounds; painting outside bounds; missing \api{super.paintComponent}. & Toggle background colors; enable repaint logging; inspect \api{isOpaque}.\\
+Whole window repaints on tiny update & Imprecise \api{repaint}; model event too broad; viewport repaint in parent coordinates. & Custom \api{RepaintManager}; log dirty region area.\\
+Layout shakes during data load & Preferred size changes on each item; repeated \api{revalidate}; expensive layout manager. & Log \api{addInvalidComponent}; batch model mutation.\\
+Table scrolling is slow & Renderer allocates objects; renderer fails opacity contract; row sorter converts repeatedly. & Allocation profiler; renderer call counter.\\
+Animation tears or flickers & Long EDT task; immediate painting misuse; double-buffering conflict. & EDT watchdog; frame-time histogram.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The audit should produce one of three conclusions. The screen is repainting too much area. The screen is doing too much work for the area it repaints. Or the screen is invalidating geometry too often. These conclusions demand different fixes. Reducing dirty rectangles will not help a renderer that allocates images per cell. Optimizing a paint method will not help a form that removes and re-adds every child after each validation change.
+
+\section{Viewports, Renderers, and Large Views}
+
+\api{JViewport} is one of the best places to see why repaint precision matters. A scroll operation can often be optimized by copying existing pixels and repainting only the newly exposed strip. But this depends on view opacity, viewport mode, component properties, and whether the view's repaint behavior cooperates. A view that lies about opacity or repaints too broadly defeats work that the viewport could otherwise avoid.
+
+Large custom views inside \api{JScrollPane} should implement \api{Scrollable} when they have meaningful unit and block increments or track viewport dimensions. A component that does not implement it can still work, but scrolling feels less native and less controllable. Unit increments should correspond to useful navigation units: one row, one tick, one character, one logical card, or one small visual step. Block increments should correspond to page-like movement, usually based on the visible rectangle.
+
+\begin{lstlisting}[caption={A sketch of Scrollable for a custom timeline view.}]
+public final class TimelineView extends JComponent implements Scrollable {
+    @Override
+    public Dimension getPreferredScrollableViewportSize() {
+        return new Dimension(900, 300);
+    }
+
+    @Override
+    public int getScrollableUnitIncrement(Rectangle visibleRect,
+                                          int orientation,
+                                          int direction) {
+        return orientation == SwingConstants.HORIZONTAL ? 16 : 12;
+    }
+
+    @Override
+    public int getScrollableBlockIncrement(Rectangle visibleRect,
+                                           int orientation,
+                                           int direction) {
+        return orientation == SwingConstants.HORIZONTAL
+                ? Math.max(16, visibleRect.width - 32)
+                : Math.max(12, visibleRect.height - 24);
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportWidth() {
+        return false;
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportHeight() {
+        return getParent() instanceof JViewport vp
+                && getPreferredSize().height < vp.getHeight();
+    }
+}
+\end{lstlisting}
+
+The subtle part is deciding when the view tracks the viewport. A text editor may track width when line wrapping is enabled and not otherwise. A chart may track height but not width. A form panel may track width to avoid horizontal scrolling. These choices determine not only scroll bars, but also layout invalidation when the viewport is resized.
+
+A large view needs a visible-range strategy. If a timeline knows the clip in view coordinates and the transform from time to x coordinate, it can compute the first and last visible items. If a diagram editor has a spatial index, it can ask for model objects intersecting the visible model rectangle. If a log viewer has fixed-height rows, it can derive row range from clip y coordinates. Painting every item and trusting clipping to hide the result is wasteful when the model is large.
+
+The visible-range strategy should be tested without painting. Given a clip and a transform, which model objects are candidates? The answer can be verified as ordinary logic. The paint method can then concentrate on drawing those candidates. This split prevents a familiar failure: a developer tries to optimize painting while the real cost is a model query that still scans everything.
+
+\termdef{Renderer component}{a Swing component used as a stamp rather than as a child in the hierarchy} is another essential term. \api{JTable}, \api{JTree}, and \api{JList} render many logical cells using a small number of component instances. A renderer configures itself for one cell and paints. It is not installed once per row. This is why renderer implementations often override validation and repaint methods for performance.
+
+Treating a renderer as a live component with listener state, timers, asynchronous loading, or per-row mutable fields is usually wrong. The same renderer object may paint row 1, then row 90, then row 2, depending on scrolling and repaint order. Persistent state belongs in the model, in a cache keyed by stable identity, or in the owning component. The renderer should be a pure visual adapter for the current cell input.
+
+\begin{pitfallbox}{stateful renderers}
+Do not put per-row mutable UI state inside the renderer instance unless that state is recomputed for every call. The same renderer object may paint many rows. Persistent state belongs in the model, a cache keyed by stable identity, or the owning component.
+\end{pitfallbox}
+
+Painting bugs in tables often look random because renderers are reused. A renderer that forgets to reset foreground, background, font, border, opacity, tooltip, icon, enabled state, or component orientation can leak that state into the next row that uses the same instance. The symptom appears during scrolling because scrolling changes the order in which the stamp is reused. The bug is deterministic; the stamp carries old ink.
+
+Renderers should be reviewed like serialization code: every visible property has to be assigned from current input. If severity is normal, set the normal icon or clear the icon. If a row is not selected, set the unselected background. If a cell has no tooltip, clear the tooltip. Do not rely on default state left over from construction, because construction happened long before the current cell.
+
+Large data also changes event precision. A table model that fires "all data changed" after one row update makes the view forget useful information. Selection, sorting, row height caches, and repaint scope may all be broader than necessary. A precise row or cell event lets the view preserve more state and repaint less area. The painting chapter therefore reaches naturally into the model chapter: rendering efficiency often begins with precise model events.
+
+\section{Corusco Boundaries for Painting State}
+
+Corusco does not change Swing's painting contract. Components still paint on the EDT, dirty regions are still scheduled, opacity still has to be truthful, and renderers still behave as stamps. What Corusco changes is where screen facts live and who owns the listeners that connect facts to pixels. That is enough to remove a surprising amount of painting confusion.
+
+\begin{coruscobox}{state before damage}
+Corusco helps painting when semantic facts live in observable models and descriptors instead of hidden widget fields. A binding or behavior observes the fact, computes whether geometry or pixels are affected, and calls \api{revalidate}, \api{repaint}, or both through a lifecycle-owned scope.
+\end{coruscobox}
+
+A validation problem is a simple example. Plain Swing code often installs a document listener on a field, changes a border, changes a tooltip, toggles an OK button, and maybe repaints a summary panel. The same fact is handled in several listeners. In a Corusco-oriented screen, the problem belongs to a \api{ProblemSet} with a target and severity. A border behavior, tooltip behavior, command enablement behavior, and summary view observe the same model fact. Each behavior owns its visual consequence.
+
+This separation makes repaint decisions clearer. A tooltip change may require no repaint. A border change may require repaint and perhaps layout if border insets changed. A summary row appearing may require layout. The fact "field has an error" is not enough to choose the Swing operation; the behavior that presents the fact knows whether its presentation affects geometry, pixels, or workflow. Corusco gives that behavior a named owner.
+
+A busy overlay is another example. The busy value itself is usually a \api{ReadableValue<Boolean>}. The overlay painter only needs to know whether to paint a veil and status message. When busy changes, the overlay region repaints. If the busy state disables buttons, command or binding behavior updates enabled state. If busy replaces a content panel, layout changes. One semantic value can have several visual consequences, but each consequence is scoped and testable.
+
+Observable lists matter because they preserve change precision. A list change that says "items 20 through 24 were inserted" lets a view update geometry and pixels locally. A change that says "everything might have changed" forces broad invalidation. Corusco list adapters are therefore not only model conveniences; they can protect the painting system from unnecessary uncertainty. The table and large-data chapters develop this further, but the repaint principle is already visible here.
+
+Descriptors matter because renderers need stable meaning. A renderer that relies on column index 7 to mean "severity" will break when columns move or when a table variant omits a column. A descriptor-backed renderer can ask for the severity column's value, resource key, tooltip policy, or problem target by identity. The Swing renderer still paints a component; Corusco makes the input less brittle.
+
+Lifecycle matters because painting-related listeners are easy to leak. A component may listen for Look-and-Feel changes, model changes, value changes, task status, resource changes, or graphics configuration changes. If the screen is closed and those subscriptions remain, stale components may repaint, caches may stay alive, and background tasks may deliver results to dead views. Corusco scopes give these subscriptions a place to end.
+
+\begin{migrationbox}{from repaint calls to visual behaviors}
+Plain Swing often scatters \api{repaint} and \api{revalidate} calls through listeners. A Corusco design keeps semantic state observable and places visual consequences in named behaviors: validation decoration, busy overlay, command enablement, table state, or help tooltip. The calls still happen, but they happen in code that owns the presentation rule.
+\end{migrationbox}
+
+The migration can be incremental. First, identify a repeated screen fact such as validation severity, selected customer, busy state, or filter text. Move that fact to a model value. Second, replace one listener cluster with a behavior that observes the value and updates a component. Third, make the behavior explicit about whether it affects geometry, pixels, or both. Finally, bind the behavior to a scope so it closes with the screen.
+
+Testing improves immediately. A core test can assert that invalid input produces a problem. An EDT test can assert that the border behavior calls for repaint or changes the component border. A screenshot test can capture the final decorated screen. These tests are not substitutes for one another. They form a ladder from semantic fact to pixels, which is exactly the ladder the repaint system climbs at runtime.
+
+\section{Worked Example: A Repaint-Safe Timeline}
+
+Consider a timeline component used in a project planning screen. It shows thousands of events across several months. Each event has an identity, a start time, an end time, a severity, and a label. The user can scroll horizontally, select events, hover for a tooltip, filter by owner, and watch background loading append new ranges. The component lives inside a \api{JScrollPane} beside an ordinary MigLayout property panel. This is a typical Swing business component, not a game and not a drawing toy.
+
+The first boundary is the preferred size. The timeline's width depends on the visible time span and the pixels-per-day scale. Its height depends on row count and row height. It does not depend on which event is selected, which event is hovered, or whether one event changes severity. Those are pixel changes inside existing geometry. If the component calls \api{revalidate} for every selection or severity change, it is asking the layout system to solve a problem whose answer cannot change.
+
+The second boundary is the viewport contract. The timeline implements \api{Scrollable} because keyboard and wheel scrolling should move by meaningful units. A horizontal unit increment might move to the next day tick; a block increment might move almost one viewport width; vertical increments might move by one row. These increments are part of the user experience. They are not painting details, and they should be testable without drawing the timeline.
+
+The third boundary is the time-to-view transform. Given an \api{Instant}, the component can compute an x coordinate. Given a clip rectangle, it can compute a time interval that may be visible. Given a mouse point, it can compute the corresponding time and row. This mapping is the timeline's equivalent of a table's row and column conversion. Painting, hit testing, tooltips, selection, and accessibility should all use the same mapping.
+
+The fourth boundary is event identity. Selection is stored by event id, not by visible index. Filtering, sorting, and background loading can change the visible order. The selected event should remain selected if it is still present. If selection is stored as "the third visible event," repainting after a filter change will highlight the wrong object. This is a model defect that appears as a painting defect.
+
+The ordinary paint path begins by asking the clip what rows and time interval are visible. It then asks the model or an index for events intersecting that interval. For each candidate, it computes visual bounds and paints only if the bounds intersect the clip. A simple component can use a sorted list and binary search. A large component may use an interval tree or precomputed row buckets. The paint method should not scan the whole project for every dirty strip.
+
+Selection movement uses old and new bounds. Before changing the selected id, the component asks for the old selected event's visual bounds if that event is visible. After changing selection, it asks for the new bounds. It repaints the union, inflated for focus rings and antialiasing. If selection also changes a property panel, that is a separate model or binding consequence. The timeline's repaint should remain local.
+
+Hover is similar but usually more volatile. Mouse motion may change hover many times per second, so the component should avoid broad repainting and avoid firing heavyweight workflow changes for every pixel. If hover only draws a thin outline, repaint old and new hover bounds. If hover updates a status bar or tooltip model, coalesce if needed. A hover highlight should not rebuild the timeline's preferred size or cause the parent form to relayout.
+
+Event insertion is more interesting because it may be a geometry change or only a pixel change. If the inserted events fit into existing rows and do not change the time span, the preferred size may remain stable. The component repaints the affected time interval and rows. If the insertion extends the total time span or adds rows, the preferred size changes and the component calls \api{revalidate} before repainting. The model operation is the same kind of event insertion; the visual consequence depends on geometry.
+
+Filtering often changes geometry because row count may change. A naive implementation removes all events, inserts filtered events, calls \api{revalidate}, and repaints everything. A better implementation treats the filter state as a presentation model value, computes the visible row structure, and compares old and new preferred size. If the height changes, layout invalidation is justified. If only colors or labels change, repainting may be enough.
+
+Background loading should not mutate timeline data from a worker thread. The worker produces a batch away from the EDT. The presentation model receives the batch on the EDT. The timeline observes a precise list change or range change and computes visual damage. If a newer load supersedes an older one, cancellation or generation checks prevent stale data from causing repaint after the user has already changed filters.
+
+The busy overlay is drawn in the same component but driven by a different fact. It may cover the visible rectangle with a translucent veil and a small message. The overlay does not change the timeline's preferred size. It therefore repaints pixels, not geometry. If the busy state also disables commands, command behavior handles that separately. If the busy state replaces the whole screen, the parent layout handles that separately. One fact can have several consequences, but each consequence should be owned by the right layer.
+
+The opacity contract is straightforward for this timeline. If the timeline paints its full background, row backgrounds, and empty areas, it can be opaque. If it intentionally lets a parent texture show through, it should be non-opaque and accept the repaint cost. Most business timelines should be opaque because scroll performance and visual clarity matter. Opaque does not mean "mostly filled." It means every pixel in the component bounds is painted.
+
+Text labels inside events should be measured with the current font metrics. If the visible width is too small, the renderer truncates or omits the label. It should not assume that eight characters fit in 64 pixels. Font, Look-and-Feel, scale, and language can all change that answer. The timeline can cache label layouts, but the cache key must include text, font, available width, and rendering context assumptions.
+
+Severity colors should come from resources rather than being embedded in the painter. A warning event may use a theme-aware color, icon, border, or hatch pattern. In Corusco terms, severity is a fact from the model or problem set, while the color is a resolved resource. This matters for screenshots and dark themes: the same warning should remain semantically warning without hard-coding an orange that fails contrast.
+
+Printing the timeline asks whether the renderer is a component side effect or a reusable operation. If printing should include the whole time span, it cannot simply call \api{paintComponent} with the current viewport clip and scroll position. It needs a rendering profile and a target range. The screen component can delegate to the same renderer, but the renderer should accept explicit bounds, data snapshot, transform, and profile.
+
+Debugging the timeline begins with instrumentation. A repaint manager reports whether mouse motion repaints only event bounds or the whole viewport. A layout log reports whether hover causes invalid components. An allocation profiler reports whether painting creates temporary icons or text layouts on every frame. A screenshot harness captures representative states: empty, loaded, busy, selected, warning, dark theme, and high scale.
+
+The first test layer is pure geometry. Given a time span, row height, and viewport scale, the component maps known events to rectangles. Given a clip, it returns the candidate event range. Given a selected id, it computes old and new repaint bounds. These tests do not need Swing. They test the arithmetic that makes painting precise.
+
+The second test layer is EDT behavior. Changing selection should call repaint for a bounded region. Changing row count should call \api{revalidate}. Changing busy should repaint the visible overlay region. The test may use a subclass that records repaint requests, or a small harness that installs a diagnostic repaint manager. The point is not to assert implementation trivia; it is to catch broad damage where local damage was promised.
+
+The third test layer is visual. The screenshot example fixes data, size, Look-and-Feel, and state, then captures the timeline. This test will not prove that every pixel is right on every platform, but it will catch accidental theme colors, missing opacity, stale overlay text, and layout drift in the book figures. Visual examples should be deterministic enough to serve as documentation and smoke tests.
+
+MigLayout participates around the timeline, not inside it. The parent panel may use MigLayout to place the timeline scroll pane beside filters, commands, and a property editor. The timeline itself reports preferred size and scroll behavior. If the timeline tries to compensate for a bad parent layout by painting outside bounds or by lying about preferred size, both sides become harder to reason about. Parent layout and child painting are separate contracts.
+
+The component should also state what it does not do. It does not start background loads from painting. It does not store per-event Swing components. It does not allocate icons during renderer calls. It does not expose dirty rectangles in its public API. It does not treat view indexes as identities. Negative rules like these are useful because they prevent future maintenance from reintroducing the exact shortcuts that repaint-safe design avoided.
+
+This timeline example is deliberately ordinary. The same structure applies to a mini calendar, a waveform viewer, a dependency graph, a validation summary, or a large custom list. Identify the geometry contract. Identify pixel-only changes. Use the clip. Keep state semantic. Own visual consequences. Test geometry before pixels. These habits make custom painting feel less like a special art and more like normal Swing engineering.
+
+One final timeline detail is worth naming: row height is a contract. If row height follows the font, a font or Look-and-Feel change may require \api{revalidate}. If row height is fixed by product design, the renderer must clip or elide labels that no longer fit. The component should not discover this decision accidentally during painting. It should document whether row height is derived, fixed, or user-adjustable.
+
+The same is true of time scale. A zoom command may change pixels-per-day and therefore preferred width. That is geometry. A selection command may change only highlight pixels. That is repaint. A filter command may change both visible row count and visible event pixels. That is both. Classifying commands this way is a useful exercise before writing listeners, because it prevents the listener layer from becoming a place where every change calls every Swing update method.
+
+The timeline also shows why repaint precision should not leak into callers. A service that imports new events should not know dirty rectangles. It should report semantic additions. The presentation model or component maps those additions to rows, time intervals, and repaint regions. This keeps domain code independent of Swing while still allowing the Swing boundary to be precise.
+
+The example can be simplified for teaching. A first version may use a list and linear scan, fixed row height, no cache, and full repaint for filter changes. That is acceptable if the chapter names which compromises were made. The danger is not starting simple; the danger is letting simple code pretend it has no contracts. Once the contracts are named, the implementation can grow without changing the conceptual shape.
+
+The mature version should still remain inspectable. A spatial index, label cache, or event coalescer should have a narrow purpose and a visible invalidation rule. Sophisticated painting code becomes maintainable when each optimization can answer two questions: what cost does it reduce, and what input makes it stale?
+
+That question is the chapter's bridge to later large-data work. Repaint precision, list-change precision, renderer discipline, and lifecycle cleanup are not separate topics. They are the same engineering habit applied at different layers: describe the smallest truthful change, then let the next layer do only the work implied by that change.
+
+\section{Case Studies, Drills, and Review Rules}
+
+The invisible repaint storm begins with a harmless status indicator. A background process updates progress many times per second; each update calls \api{setText}; the label invalidates and repaints; the containing panel recomputes layout because the preferred width changes from "9" to "10" to "100"; a scroll pane repaints broadly; the user experiences sluggish typing in an unrelated field. The fix is to coalesce progress and reserve label width. The lesson is that tiny semantic changes can have large geometry consequences when they alter preferred size.
+
+A robust progress area separates exact model progress from displayed progress. The model may update frequently. The screen displays at human cadence. The volatile text has reserved width or fixed formatting, so layout does not shake as digits change. If progress also drives a bar, the bar repaints only the changed region or the bar's bounds, not the surrounding form. These are small choices, but they protect the event queue under load.
+
+Renderer repaint surprises form another production class. A custom renderer sets an icon when severity is warning but never clears it when severity is normal. The symptom is random warning icons while scrolling. The actual bug is deterministic: one renderer instance is reused, and old state leaks into the next stamp. The fix is not to repaint more often; it is to reset all renderer state on every renderer call.
+
+The layout-invalidating animation is a third class. Animations should usually be paint-only. If an animation changes preferred size, minimum size, border insets, or component count on every frame, the layout system becomes part of the animation loop. A pulsing validation badge should not add and remove a child component every tick. It should paint inside reserved space or in an overlay. Reserve layout changes for states that truly change geometry.
+
+The design drill is to classify every animation variable. Alpha, stroke phase, highlight radius, caret visibility, spinner angle, and progress sweep are paint variables. Row count, preferred column width, visible child set, font size, and border insets are layout variables. Mixing them without intent leads to avoidable work. A variable that begins as a paint detail may become a layout detail later; when it does, the code should say so.
+
+A repaint budget makes these ideas concrete. During development, define statements such as: typing in a filter field must not repaint the whole frame; moving the mouse over a chart must not allocate; scrolling a table must not call domain services; dragging a selection rectangle must repaint only old and new rectangles; a validation change must not rebuild the whole form. Then encode the budget as diagnostics. A temporary \api{RepaintManager} can report broad dirty regions during UI tests.
+
+Resizing deserves its own rehearsal. A component that works at its packed preferred size may fail when the frame grows, shrinks, enters a scroll pane, or moves to a monitor with different scale. Ask which content clips, which content scales, which content scrolls, and which content remains anchored. Then encode that answer in preferred size, \api{Scrollable}, layout constraints, and painting. The user should not discover the component's real geometry contract by dragging a window corner.
+
+Theme changes are another rehearsal. A component that paints its own background, selection, focus, disabled state, or validation marks should be opened under the light and dark companion themes used for figures. The goal is not decorative variety. It is to catch hard-coded colors, missing opacity, weak contrast, and cached theme resources that do not update when the Look-and-Feel changes.
+
+Accessibility and input close the loop. If a custom component paints selectable regions, keyboard users and assistive tools still need a way to reach those regions. If it paints warnings, the warnings should also exist in a model that can be exposed through text, tooltips, accessible descriptions, or problem summaries. Pixels are only one presentation of the screen's facts. A screen that paints meaning but exposes no meaning is incomplete.
+
+A custom component should also explain how it will be tested. Pure geometry can be tested without a live window by mapping model facts to rectangles. Renderer state can be tested by invoking the renderer with several inputs and inspecting the returned component. Painting itself can be smoke-tested through screenshot generation when the visual contract matters. Separating these test levels keeps the component from becoming a mysterious object that only manual inspection can validate.
+
+The painting chapter is therefore a chapter about cooperation. Swing will call painting when it needs pixels, not when the application wants to run logic. Layout will give the component bounds, not the bounds it wishes it had. The Look-and-Feel will define many visual defaults. The safest custom painting cooperates with these systems and keeps application facts in models that can be observed, tested, and closed.
+
+\textbf{Review questions.} When reviewing a custom component, ask what state changes affect geometry and what state changes affect pixels only. Ask whether opacity is truthful, whether the clip is used to reduce work, whether cached images are invalidated when size, font, scale, Look-and-Feel, or data changes, and whether painting can be called repeatedly without changing application state. Ask whether the component behaves inside a scroll pane, under a different theme, at fractional scale, and after resizing.
+
+\textbf{A practical checklist.} Override \api{paintComponent} unless you have a specific reason to own border and child painting. Call \api{super.paintComponent} unless the component is deliberately non-opaque and the superclass behavior is known. Keep painting side-effect free. Use \api{Graphics.create} and dispose the copy. Respect the clip. Make \api{isOpaque} truthful. Repaint precise regions when possible. Revalidate only when geometry contracts change. Never retain a \api{Graphics} reference after painting returns. Test inside \api{JScrollPane}, under several Look-and-Feels, at fractional DPI, and after resizing.
+
+\textbf{A Corusco checklist.} Keep semantic facts in observable values, lists, problem sets, descriptors, and commands. Put visual consequences into named behaviors that know whether they affect pixels, geometry, or workflow. Scope every subscription. Let renderers consume stable identities rather than view indexes. Treat screenshot examples as deterministic rendering tests for the book. These rules do not make painting automatic; they make the inputs to painting legible.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Build a custom \api{RepaintManager} that records the total dirty area per second and prints the top five repainting component classes.
+\item Modify a custom component so selection movement repaints only old and new selection bounds. Compare dirty-region area before and after.
+\item Create a component that lies about opacity. Place it over a patterned parent and inside a scroll pane. Document the visual failures.
+\item Write a \api{Scrollable} timeline whose horizontal unit increment snaps to the next tick mark. Verify keyboard scrolling behavior.
+\item Implement a renderer that deliberately leaks foreground state, then fix it by resetting all state on every renderer call.
+\item Use \api{DebugGraphics} on a small component and observe why double buffering changes what you can see.
+\item Design a component whose preferred size changes only when a scale factor changes, not when data values change. Prove that ordinary data updates avoid \api{revalidate}.
+\item Instrument \api{addInvalidComponent} during a form rebuild. Replace full removal/re-addition with targeted model updates and compare invalidation count.
+\item Move validation decoration from a document listener into a lifecycle-owned behavior and decide whether the behavior repaints, revalidates, or both.
+\item Add a screenshot smoke test for a custom painting state that previously required manual inspection.
+\end{enumerate}
+\end{exercisebox}

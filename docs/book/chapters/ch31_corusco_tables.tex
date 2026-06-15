@@ -1,0 +1,1375 @@
+\chapter{Corusco Tables}
+\label{ch:corusco-tables}
+\chapterquote{A table column deserves an identity more stable than the integer it happens to occupy today.}{The descriptor rule}
+
+\begin{chaptermap}
+Core question & How does Corusco make serious \api{JTable} work less fragile without hiding Swing's real table mechanics?\\
+Primary APIs & \api{TableDescriptor}, \api{TableKey}, \api{ColumnKey}, \api{Column}, \api{ColumnDescriptor}, \api{ObservableTableModel}, \api{TableStateController}, \api{TableSelectionBinding}, \api{TableCellValidationBinding}, \api{TableCellTooltipBinding}, \api{TableHeaderTooltipBinding}, and \api{TableHeaderColumnVisibilityMenu}.\\
+Swing topics & Model and view coordinates, selection, sorting, filtering, validation, tooltips, persisted layout, hidden columns, editable cells, renderers, and large data.\\
+Companion examples & \largeDataExample, \api{ObservableTableModelExample}, \api{TableSelectionBindingExample}, \api{TableStateExample}, \api{GeneratedTableColumnsExample}, \api{TableCellValidationExample}, and \api{TableHeaderTooltipExample}.\\
+\end{chaptermap}
+
+\section{A JTable is not a table contract}
+
+\api{JTable} is a powerful Swing component, but it is not the durable contract
+of a business table. It knows how to display a \api{TableModel}, manage a
+column model, track selection, ask renderers and editors for components,
+cooperate with a row sorter, and paint a rectangular view. It does not know
+which column identity should survive localization, which row type is expected,
+which resource key names a header, which cell value type a column returns, or
+how a user's column layout should migrate after a release. Those facts belong
+above the component.
+
+\termdef{Table descriptor}{in Corusco} is the Swing-neutral table contract. It
+combines a typed \api{TableKey<R>} with ordered executable
+\api{Column<R,V>} definitions. Each column has a typed \api{ColumnKey}, a
+\api{ColumnDescriptor}, a value extractor, and optionally an updater for
+editable cells. A \api{JTable} becomes one presentation of that contract.
+
+\begin{lstlisting}[caption={Descriptor first, Swing table second.}]
+TableDescriptor<CustomerRow> descriptor =
+        GeneratedCustomerRowTableDescriptor.DESCRIPTOR;
+
+ObservableTableModel<CustomerRow> model =
+        ObservableTableModel.of(rows, descriptor);
+
+JTable table = new JTable(model);
+\end{lstlisting}
+
+The descriptor owns no rows and no Swing state. It describes meaning. The
+observable list owns rows. The Swing table model adapts rows and descriptor to
+Swing. The table component owns view state: selection, column model, row
+sorter, renderers, editors, focus, keyboard behavior, and painting. This
+division is the table version of the core/Swing boundary used throughout the
+book.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\coruscoTableDescriptorFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\coruscoTableStateFigure}
+\end{minipage}
+\caption{Corusco table screenshots show the two halves of the contract: descriptor-backed column meaning and persisted Swing table state by stable ids.}
+\label{fig:corusco-table-screens}
+\end{figure}
+
+Figure~\ref{fig:corusco-table-screens} gives the chapter's main picture. The
+descriptor side names row type, column identity, resources, and value access.
+The state side records what users do to the Swing view: widths, order,
+visibility, and sorting. A serious table needs both halves. If the descriptor
+is missing, user state is stored against weak things such as headers or
+indexes. If the view state is missing, a table may be semantically clean but
+hostile to users who must resize the same columns every morning.
+
+The distinction is not academic. A table model that hard-codes column indexes
+may be shorter on the first day, but it has no single place where column
+meaning can be inspected. The header setup knows one set of indexes. The
+renderer setup knows another. Validation code knows a third. Preference
+persistence may know a localized header. Export may scrape renderer text.
+Descriptor-backed tables force these meanings into one typed contract before
+Swing is asked to display anything.
+
+\begin{pitfallbox}{the integer that lied}
+An integer table coordinate is a position, not an identity. It can answer
+"where is this column or row now?" It cannot safely answer "which business fact
+is this?"
+\end{pitfallbox}
+
+Plain Swing is not the enemy here. A disciplined \api{AbstractTableModel}, a
+clear row type, and careful coordinate conversion can produce a good table.
+Corusco becomes useful when the same table accumulates several durable
+concerns: localization, generated headers, validation targets, row selection,
+state persistence, hidden columns, editable records, help topics, export,
+testing, or large-data update precision. These concerns exist in plain Swing
+too. Corusco names them and gives them typed boundaries.
+
+\section{Rows, columns, and stable identity}
+
+Start with the row. A row type should represent the values the table displays
+and the identity the screen needs for selection, refresh, persistence, export,
+and master-detail workflow. A row may be an immutable record, a projection
+from a domain object, a lightweight DTO, or a mutable model object. What it
+should not be is "whatever the current table model happens to return at
+column three." The row type is the first step away from index-based thinking.
+
+\begin{lstlisting}[caption={A row type before there is a JTable.}]
+public record CustomerRow(
+        CustomerId id,
+        String displayName,
+        CustomerStatus status,
+        LocalDate lastOrderDate) {
+}
+\end{lstlisting}
+
+\api{TableKey<R>} names the table contract for a row type. A screen may have
+several tables over the same row type, and each can have a different table
+key. A search-results table, an export-preview table, and an audit-history
+table may all show customer-like rows but need different columns, persisted
+state, and help. The table key is therefore not merely the Java row class. It
+is the stable identity of this table contract.
+
+\api{ColumnKey<R,V>} names one column. It carries the row type and the value
+type. That type information is not decoration. It prevents a status column key
+from being used where a date column is expected, and it lets descriptor,
+validation, tooltip, export, and test code talk about the same column without
+using a view index. The id string inside the key remains useful for resources,
+diagnostics, persistence, and generated source, but application code should
+keep the typed key where possible.
+
+\begin{lstlisting}[caption={Typed table and column keys.}]
+static final TableKey<CustomerRow> CUSTOMERS =
+        TableKey.of("customer/table", CustomerRow.class);
+
+static final ColumnKey<CustomerRow, String> DISPLAY_NAME =
+        ColumnKey.of("customer/table/display-name",
+                CustomerRow.class, String.class);
+\end{lstlisting}
+
+Do not make column ids follow visible headers. A header changes for
+localization, copyediting, or density. A column id changes only when the
+durable identity changes. \api{"customer/table/status"} can keep its identity
+when the English header changes from \api{"State"} to \api{"Status"}. If a
+column is split into two different business facts, then a new id and a table
+state migration may be justified. The id policy should make that distinction
+visible.
+
+The same row value may have several identities in a screen. The row object may
+be equal by value. The domain object may have a \api{CustomerId}. The table
+model row index changes when rows are inserted or removed. The view row index
+changes when sorting or filtering changes. The selected row object may become
+stale after refresh. A robust table design decides which identity is used for
+which job. Persisted selection across refresh normally wants a domain id.
+Immediate selection binding may publish a row value. Swing repaint wants a
+model row. The visible table selection wants a view row.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{\tableCoordinatesFigure}
+\caption{A table has several coordinate systems. Corusco descriptors and bindings keep durable row and column identity separate from current Swing view positions.}
+\label{fig:corusco-table-coordinates}
+\end{figure}
+
+Figure~\ref{fig:corusco-table-coordinates} belongs near the beginning because
+many table bugs are not renderer bugs or model bugs. They are coordinate
+bugs. A user selects the third visible row, but the presenter saves model row
+three after sorting. A tooltip asks for view column two, but validation stored
+model column two. A table state store writes the English header instead of the
+column persistence id. Once the coordinate systems are named, the fixes become
+straightforward.
+
+Stable identity also improves documentation. A table descriptor can be cited in
+the book, a test, a migration note, or a resource audit. A phrase such as
+"the customer status column" can correspond to a \api{ColumnKey}. Without that
+key, the phrase is implemented as a header string in one place, an index in
+another, and a renderer branch in a third. The human concept remains singular;
+the code has split it into accidents.
+
+\section{Descriptor anatomy}
+
+\api{ColumnDescriptor<R,V>} contains the metadata side of a column. It has a
+column key, header resource key, optional tooltip resource key, optional help
+topic, persistence metadata, default presentation state, and declared
+capabilities. It does not read row values. It does not update rows. It does
+not know Swing components. It says what the column is and what default
+presentation policy belongs to it.
+
+\api{Column<R,V>} is the executable side of a column. It wraps the descriptor
+with a getter and, for editable columns, an updater. The getter reads a value
+from a row. The updater returns a replacement row after an edit. This design
+fits immutable records naturally, but it also works with mutable row objects
+when the updater returns the mutated object. The important rule is that the
+adapter receives a coherent row value after editing.
+
+\begin{lstlisting}[caption={A handwritten descriptor-backed column.}]
+ColumnDescriptor<CustomerRow, String> nameDescriptor =
+        new ColumnDescriptor<>(
+                DISPLAY_NAME,
+                CustomerResources.DISPLAY_NAME_HEADER,
+                CustomerResources.DISPLAY_NAME_TOOLTIP,
+                CustomerHelp.DISPLAY_NAME,
+                new ColumnDefaults(220, true, 0),
+                ColumnCapabilities.readOnly());
+
+Column<CustomerRow, String> name =
+        Column.readOnly(nameDescriptor, CustomerRow::displayName);
+\end{lstlisting}
+
+Generated \api{@SwingTable} companions write this kind of code mechanically.
+For a record component annotated with \api{@Column}, generated code can create
+the column key, resource keys, descriptor, getter, and table descriptor. The
+generated form is not magic; it is typed Java that a careful developer might
+write by hand and would not want to repeat for every table.
+
+\api{ColumnDefaults} and \api{ColumnPersistence} deserve attention. Defaults
+describe initial view policy: width, visibility, and default order. Persistence
+describes how user state should be stored and bounded: persistence id, default
+width, and maximum restored width. Defaults answer "what should the table look
+like when no user state exists?" Persistence answers "how do saved values map
+back to this column?" These are related but not identical.
+
+Capabilities describe what the screen may offer. A column may be sortable,
+filterable, hideable, or editable. This is not only for generated menus. A
+filter builder should not show columns marked non-filterable unless
+application policy overrides the descriptor. A column visibility menu should
+respect hideability. A generated editable column should have an updater. A
+renderer may still render any column, but user-facing operations should not
+pretend all columns support every capability.
+
+The visible header is not the descriptor. The descriptor points to a resource
+key. A Czech translation, an English copy edit, or a shorter header for a
+narrow screen should not change validation targets or persisted table state.
+Resource lookup belongs near presentation, where missing resources can be
+handled by policy and where localized strings can be applied to headers,
+menus, tooltips, and accessibility.
+
+\begin{lstlisting}[caption={Using descriptor metadata at the Swing edge.}]
+Column<CustomerRow, ?> column = descriptor.column(modelColumn);
+
+String header =
+        resources.require(column.descriptor().headerKey());
+String tooltip =
+        resources.resolve(column.descriptor().tooltipKey(), "");
+\end{lstlisting}
+
+Help topics also belong in descriptors. A table cell is often visually small,
+but the column may have a real business explanation. F1 on a header or cell can
+route to the column's help topic if the descriptor supplies one. This is much
+stronger than guessing help from the current header text. It also lets a
+command palette, documentation generator, or accessibility adapter discover
+help metadata without walking Swing components.
+
+\begin{coruscobox}{what the descriptor buys}
+The descriptor gives one durable place for row type, column identity, resource
+keys, help topics, value extraction, editing behavior, default widths,
+persistence ids, capabilities, generated tests, and documentation references.
+Swing remains responsible for rendering and interaction, but it does not have
+to invent table meaning from indexes and header text.
+\end{coruscobox}
+
+\section{Observable models and row changes}
+
+\api{ObservableTableModel<R>} is a Swing \api{TableModel} backed by an
+\api{ObservableList<R>} and a \api{TableDescriptor<R>}. It is EDT-confined.
+Construct it on the EDT. Mutate the source list on the EDT while the model is
+subscribed, or wrap the source with \api{EdtObservableList} before constructing
+the model. Without an explicit dispatcher, off-EDT source changes should fail
+fast instead of firing Swing events on the wrong thread.
+
+\begin{lstlisting}[caption={Observable row source to JTable.}]
+ObservableList<CustomerRow> rows = presenter.rows();
+EdtObservableList<CustomerRow> swingRows =
+        EdtObservableList.of(rows);
+
+ObservableTableModel<CustomerRow> model =
+        ObservableTableModel.of(swingRows,
+                GeneratedCustomerRowTableDescriptor.DESCRIPTOR);
+
+table.setModel(model);
+\end{lstlisting}
+
+The table model answers Swing's questions by consulting the descriptor. Row
+count comes from the observable list. Column count comes from descriptor
+columns. Column class comes from the column value type. Column names default
+to header key ids until resources are applied at a higher layer. Cell values
+come from the column getter. Editability comes from column update capability.
+The model is small because row and column meaning are elsewhere.
+
+The model subscribes to the row source and translates list changes into table
+events. An inserted range becomes \api{fireTableRowsInserted}. A removed range
+becomes \api{fireTableRowsDeleted}. A replacement becomes
+\api{fireTableRowsUpdated}. A clear becomes a delete range. This is why row
+source precision matters. The model cannot fire precise Swing events if the
+row source reports every small edit as "clear and refill everything."
+
+\begin{coruscobox}{list precision becomes table precision}
+Corusco tables are not faster because they ignore Swing. They are faster and
+more stable when observable row sources report precise changes that Swing can
+translate into precise table events.
+\end{coruscobox}
+
+Large data makes this rule visible. A table with 200 rows can survive broad
+refreshes. A table with 200,000 rows cannot casually rebuild itself on every
+edit. Precise row replacement preserves scroll position, selection, sorter
+state, renderer caches, and user confidence. Broad changes are sometimes
+correct, especially after a new search query or refresh from a different data
+source. They should be broad because the workflow is broad, not because the
+model lacks vocabulary for smaller changes.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{\largeDataFigure}
+\caption{Large table examples make row-event precision visible. Descriptor-backed columns help, but row-source update policy still decides how much of the table Swing must revisit.}
+\label{fig:corusco-table-large-data}
+\end{figure}
+
+Figure~\ref{fig:corusco-table-large-data} is intentionally not a glamorous
+table. It is the kind of dense data screen where table discipline matters. A
+cell renderer that allocates too much, a model that fires full refreshes, or a
+selection policy based on view rows will show up quickly. Corusco's table
+model gives the screen a typed contract, but performance still depends on
+using Swing's event model accurately.
+
+Editable cells cross from Swing editor to row source. \api{ObservableTableModel}
+checks whether the column is editable, calls the column updater, replaces the
+row in the source list, suppresses the duplicate source event for its own
+immediate update path, and fires a cell update. The updater receives the
+current row and the new value cast to the column's declared value type. For
+record rows, the updater normally calls the canonical constructor or a wither.
+For mutable rows, it may mutate and return the same object. In both cases, the
+row source must represent the semantic edit.
+
+Do not put all parsing and validation inside the table editor. The editor may
+collect text. The row model, form model, or validation model should own
+semantic validity. A cell validation binding can then display structured
+problems. An editor that rejects every intermediate invalid keystroke may feel
+hostile; an editor that commits invalid semantic data into the row may corrupt
+state. Treat editing as a small workflow, not only a call to \api{setValueAt}.
+
+Closing the model matters. \api{ObservableTableModel} implements the binding
+lifecycle because it owns a subscription to the row source. When the view
+closes, close the model or the binding scope that owns it. Otherwise a row
+source can keep notifying a table model after the table is gone. That leak may
+not appear in a short demo, but it appears in long-running desktop sessions.
+
+\section{Selection and coordinate systems}
+
+Swing selection lives in view coordinates. Presenter state should not. A table
+may be sorted or filtered, so the selected view row must be converted to a
+model row before it becomes application state. If the table is refreshed, the
+old model row may not name the same domain object. If a row sorter is active,
+the visible row order is not the source order. These are ordinary Swing facts,
+and a serious table must name them rather than pretend they are rare.
+
+\api{TableSelectionBinding} binds a \api{JTable} selection to a writable
+selected model-row value and optionally a selected row value. User-originated
+selection writes \api{ChangeOrigin.USER}. Presenter-originated changes to the
+model-row value select the corresponding view row. The binding uses Swing's
+view/model conversion APIs and listens to selection, table-model, and row-sorter
+changes so selection remains coherent after sorting or structural updates.
+
+\begin{lstlisting}[caption={Selection as model state.}]
+WritableValue<Integer> selectedModelRow = SimpleValue.empty();
+WritableValue<CustomerRow> selectedRow = SimpleValue.empty();
+
+Binding selection = TableSelectionBinding.bind(
+        table, model, selectedModelRow, selectedRow);
+\end{lstlisting}
+
+This binding is intentionally single-row oriented. Swing can support multiple
+selected rows, intervals, lead selection, and anchor selection. If a screen
+needs multi-selection, model that explicitly with a selected-id set or selected
+row collection. Do not pretend that a single lead row represents a batch
+operation. Delete selected rows, export selected rows, and compare selected
+rows deserve a multi-selection model.
+
+Configure any row sorter before creating the binding. If the table receives a
+replacement sorter, close and recreate the binding. This rule follows from
+ownership. The binding attaches to the current sorter to refresh selection
+after sort changes. If another part of the view silently swaps sorters, it has
+changed a relationship the binding owns. Recreate the relationship rather than
+hoping listener state still matches the table.
+
+Filtering raises a design question: does filtering belong in Swing's
+\api{RowFilter} or in a presenter-owned filtered list? If filtering is purely a
+view choice, such as "hide closed rows in this table only", a Swing sorter may
+be enough. If filtering affects command state, status text, export, summary
+counts, master-detail selection, or other screen areas, put the filter in the
+presenter or row source and let the table display the result. A filter that
+changes application meaning should not live only inside a \api{JTable}.
+
+Selection preservation after refresh is policy, not an accident. If rows are
+reloaded from a service, should the previously selected customer remain
+selected if it still exists? Should selection clear if the row disappears?
+Should the nearest visible row become selected? The answer depends on the
+workflow. The implementation should use durable row identity where continuity
+matters. A model row index from before refresh is rarely durable enough.
+
+The testing consequence is direct. A weak table test says "select row two and
+assert row two is selected." A stronger test says "select the row whose id is
+42, sort by name, refresh with the same id present, and assert the selected row
+identity is still 42." The second test follows the user's mental model. The
+user selected Grace Hopper, not whatever happened to occupy view row seven.
+
+\section{State, visibility, and migration}
+
+\termdef{Table state}{in Corusco} includes column order, widths, visibility,
+and sort state. Users expect serious business tables to remember these
+choices. Persisting them by localized header text is a mistake. Persisting
+them by stable table ids and column persistence ids is the right shape. A
+header may change for translation; a column persistence id should remain
+stable unless the column's durable meaning changes.
+
+\api{TableStateController} is the bridge between toolkit-neutral table
+metadata in \api{TableDescriptor}/\api{TableState} and Swing's mutable
+\api{TableColumnModel}. It reads stable column persistence ids from the
+\api{ObservableTableModel} descriptor, merges saved state with current
+descriptor defaults, applies column order, visibility, width bounds, and sort
+keys to the table, then listens for Swing column and sorter changes. It owns
+the listeners and save scheduler. It does not own the table, model,
+descriptor, or store.
+
+\begin{lstlisting}[caption={Installing persisted table state.}]
+TableStateStore store =
+        new PreferencesTableStateStore(preferences);
+
+TableStateController<CustomerRow> controller =
+        TableStateController.install(table, model, store);
+\end{lstlisting}
+
+State writes are debounced on the EDT so resize and drag gestures coalesce
+into one store write. Programmatic changes such as column visibility changes
+also schedule persistence. Closing the controller removes Swing listeners,
+writes pending state, and flushes the store. After close, mutation and capture
+methods should reject use. That strict lifecycle is useful because table state
+controllers otherwise become quiet leak sources.
+
+Hiding a column is not the same as removing it from the model. A hidden column
+may still exist in the descriptor and row model. It may still participate in
+export, validation, help, or future visibility. The table state controller can
+hide and restore columns by persistence id while keeping the descriptor
+stable. A visibility menu should list columns by descriptor metadata and
+localized resources, not by current header text scraped from the table.
+
+\api{TableHeaderColumnVisibilityMenu} is useful for this reason. It can present
+a popup trigger for column visibility while using descriptor identities under
+the surface. The user sees localized names. The table state receives stable
+ids. The code avoids a common bug where hiding a column removes it from the
+model and shifts every remaining index.
+
+Persisted table state outlives one application version. Columns are renamed,
+split, removed, or added. \api{TableStateMigration} lets loaded state be
+adjusted before descriptor defaults are merged. Use migration sparingly and
+document it. Table ids and column ids should be stable by default. Migration
+is for real schema changes, not for casual id renaming. A migration that
+exists only because a header was copyedited is a sign that identity and
+presentation were confused.
+
+Corusco separates table state from the place where state is stored.
+\api{InMemoryTableStateStore} is useful for tests and examples.
+\api{PreferencesTableStateStore} is useful for desktop applications that want
+per-user settings through Java preferences. Larger applications may provide a
+store backed by workspace files, application configuration, or a database. The
+store should not need Swing. It stores \api{TableState} by stable ids. The
+controller knows Swing. The descriptor knows table meaning.
+
+\begin{tabularx}{0.96\linewidth}{@{}p{0.31\linewidth}X@{}}
+\toprule
+Observation & Review question\\
+\midrule
+Column id changed with label text & Was a resource edited when an id should have stayed stable?\\
+Selection breaks after sorting & Is the code mixing view row and model row?\\
+Persisted widths reset after release & Did table or column persistence ids change?\\
+Renderer runs validation & Should validation problems be computed before rendering?\\
+Hidden column removed from model & Is visibility being confused with descriptor membership?\\
+Refresh clears selection & Are row identity and precise list events preserved?\\
+\bottomrule
+\end{tabularx}
+
+\section{Validation, tooltips, help, and accessibility}
+
+Table validation problems need stable targets. A problem at view row 4,
+column 2 is not stable under sorting. A problem for a row identity and
+\api{ColumnKey} is. \api{TableCellValidationBinding} decorates cells by
+finding problems for the row and column being rendered. The problem model
+remains independent of current view coordinates. Rendering displays an already
+computed fact; it should not run the validation rule.
+
+\begin{lstlisting}[caption={Cell validation observes structured problems.}]
+ReadableValue<ProblemSet> problems =
+        presenter.tableProblems();
+
+Binding validation =
+        TableCellValidationBinding.bind(table, model, problems);
+\end{lstlisting}
+
+The row side of a problem target requires a screen decision. Some screens can
+target by row object because rows are stable values for the lifetime of the
+table. Some should target by domain id because rows are replaced after
+refresh. Some validation is transient and can target the current model row
+only. The column side should still use \api{ColumnKey}. The important point is
+that validation identity is explicit rather than inferred from current view
+coordinates.
+
+Tooltips are another shared surface. Header tooltips may come from column
+descriptors and resources. Cell tooltips may come from validation problems,
+static column help, formatted values, disabled reasons, or help availability.
+Corusco provides table tooltip bindings so tooltip ownership is not scattered
+through renderers and header mouse listeners. The same composition principle
+from commands and forms applies: several sources contribute to one tooltip
+slot; a policy composes them.
+
+\begin{lstlisting}[caption={Header tooltip binding uses descriptor resources.}]
+Binding headerTooltips =
+        TableHeaderTooltipBinding.bind(table, model, resources);
+\end{lstlisting}
+
+Cell tooltips should remain cheap. A tooltip query may happen frequently as
+the mouse moves. It should not call services, run full validation, or allocate
+large formatting structures. It should look up descriptor metadata, current
+row value, and already computed problems. If a cell requires expensive
+explanation, precompute the explanation or route to help instead of doing the
+work on hover.
+
+Help topics make table documentation precise. F1 on a table header or focused
+cell can route to a column help topic. A help request may include the column
+key, row identity, current value, or validation problem context. It should not
+derive the topic from the visible header. Header text is presentation. The
+help topic is durable routing metadata.
+
+Accessibility follows the same metadata. A header resource can contribute to
+the accessible column name. A tooltip resource or help topic can contribute to
+an accessible description. A validation problem can be exposed through a
+problem summary, tooltip, or cell renderer state. A color-only cell marker is
+not sufficient for all users. The descriptor gives the screen a typed place to
+attach accessible meaning; the renderer and table bindings decide how to
+present it.
+
+Validation and tooltip bindings should be closed with the view. They install
+renderers, mouse listeners, or table integrations that belong to a particular
+\api{JTable}. If a table model outlives the view, the old view should not
+continue to receive problem updates. The same lifecycle rule appears
+throughout Corusco Swing: install relationships through scopes and close them
+when the owner closes.
+
+\section{Editing cells without losing the row}
+
+Editable cells look simple until the first invalid intermediate value appears.
+Swing editors are components. They can hold text or selection state that is
+not yet committed. The table model row is application data. The two should not
+be confused. Commit should happen through Swing's editor lifecycle, and the
+column updater should produce a coherent row update only when the edit is
+ready to enter the row source.
+
+For immutable rows, an editable column normally returns a replacement row:
+\api{new CustomerRow(row.id(), value, row.status())} or a generated wither-like
+constructor call. The observable list then replaces the row and fires a precise
+row update. Selection by row object may need to be refreshed; selection by
+domain id is usually more stable. For mutable rows, the updater may set a
+property and return the same row, but the observable list still needs to fire a
+change event so Swing repaints and dependent state updates.
+
+The value type in \api{ColumnKey<R,V>} is useful during editing because
+\api{Column.update} casts the supplied value to the declared type before
+calling the updater. This catches accidental editor/model mismatches close to
+the table boundary. It does not replace validation. A \api{BigDecimal} value
+of \api{-1} may be type-correct and semantically invalid. Type, parse, and
+validation are separate concepts.
+
+Some tables should not commit edits directly to the domain row. A price table
+may need a transactional edit model. An invoice-line table may need row-level
+validation before commit. A remote grid may need optimistic updates and
+rollback. Corusco's descriptor model still helps by naming columns and row
+identity, but the editable workflow may need a form model per row, an edit
+buffer, or a command that applies staged changes. Do not force every table
+edit through \api{setValueAt} merely because Swing provides that method.
+
+Active-editor commit matters for commands. If the user is editing a cell and
+presses Save, should the active editor commit first? Usually yes. If the
+editor cannot commit because the value is invalid, Save should not proceed as
+though the old row value were current. Dialog chapters discuss active-editor
+commit for forms; tables need the same discipline. The command handler should
+know whether pending cell edits have been committed, cancelled, or rejected.
+
+Cell editors also affect focus and keyboard behavior. Enter may commit the
+cell, move to the next row, or invoke the default button depending on table
+policy. Escape may cancel the editor or close a dialog. These policies should
+be reviewed explicitly in dense business screens. Descriptor-backed columns
+do not decide key behavior, but they let editor installation and command
+policy know which column is being edited.
+
+\section{Rendering and scale}
+
+Swing renderers are already optimized in one important way: one renderer
+instance stamps many cells. Most performance problems come from violating that
+model by allocating expensive objects, doing business work, or retaining row
+state inside renderer components. A renderer cost that seems trivial for one
+cell is paid for many visible cells and repeated repaints. Keep validation,
+service calls, filtering, and remote lookups out of renderers.
+
+\begin{pitfallbox}{renderer work is multiplied}
+A renderer cost that seems trivial for one cell is paid for many visible cells
+and repeated repaints. Keep validation, service calls, and row filtering out
+of renderers.
+\end{pitfallbox}
+
+The descriptor does not make rendering disappear. It makes rendering less
+lonely. A renderer can ask what column it is painting through a stable
+\api{ColumnKey}; it can read display policy from descriptor metadata; it can
+cooperate with table validation and tooltip bindings that use the same column
+identity. This is different from a renderer that receives an integer column,
+switches on that integer, and silently assumes that no one will move, hide, or
+insert a column later.
+
+Start with ordinary Swing renderers. A descriptor-backed table model and
+selection binding are enough for many screens. Introduce optimized renderers
+only when there is a measured reason or a known dense workload. A timestamp
+column that repaints thousands of cells per second may deserve a cached
+formatter and a renderer installed by column key. A boolean status column may
+deserve a finite-state renderer. A risk column may deserve a custom badge.
+Each of these is still Swing presentation. It should not compute validation,
+call services, or rewrite row identity.
+
+Look-and-Feel discipline matters. A descriptor can say that a column
+represents severity. It should not force one hard-coded red into every theme.
+Renderers should prefer table foreground, selection foreground, disabled
+foreground, UI defaults, or application theme keys. A renderer that is fast
+but unreadable in dark mode is not finished. A renderer that hides state
+behind color alone is not finished either; the same descriptor identity should
+lead to tooltip, accessibility, export, and testable problem state.
+
+Large data changes the renderer review. A table with hundreds of visible rows
+and frequent updates needs renderers that reuse formatters, avoid per-cell
+allocation, and do not trigger layout changes. Icons should be cached. Date
+and number formatters should be prepared outside the hot path when possible.
+Tooltips should avoid recomputing expensive strings on every mouse move.
+Selection and row updates should preserve enough state that the table does
+not repaint everything unnecessarily.
+
+Sorting and filtering also affect perceived performance. Swing's
+\api{TableRowSorter} can be useful for moderate row counts and local data. For
+large remote data, sorting and filtering may belong in the service or
+presenter-owned row source. The descriptor still names columns and
+capabilities. The application decides where the operation runs. Do not let a
+small demo sorter become production policy for a million-row query.
+
+Printing, export, and copy are rendering-adjacent but not renderer work. They
+should use descriptor metadata and row values, not scrape painted components.
+The display renderer may show an icon for status; export may need the status
+code or localized text. A descriptor gives the export path the same column
+identity without depending on how the current Look-and-Feel paints the cell.
+
+\section{Generated and handwritten tables}
+
+\api{@SwingTable} generation is the shortest path for ordinary record-backed
+tables. The annotated record declares stable table and column facts. The
+processor emits column keys, resource keys, descriptors, a table descriptor,
+and binding helpers. Generated columns call record accessors. Editable
+generated columns can produce replacement records through constructor calls
+when supported. The generated code is ordinary Java source and should be read
+when behavior is surprising.
+
+\begin{lstlisting}[caption={Annotated table row source.}]
+@SwingTable(id = "customer/search")
+public record CustomerRow(
+        @Column(width = 180)
+        String name,
+
+        @Column(width = 80, sortable = false)
+        int orders) {
+}
+\end{lstlisting}
+
+Generated tables are not a layout system. They do not decide where the
+\api{JTable} belongs in a MigLayout panel, how tall the table should be, which
+commands surround it, or whether it appears in a split pane. They generate the
+metadata and adapters that make the table meaning stable. The view still owns
+Swing composition.
+
+Handwritten descriptors remain useful. A GIS layer table, paint-editor object
+table, log-event stream, or diagnostic table may have dynamic columns,
+specialized renderers, or column definitions that do not fit record
+annotations. Handwriting a \api{TableDescriptor} is not a failure. It is the
+same contract expressed directly. The rest of Corusco's table stack can still
+use it: observable model, selection binding, state controller, tooltips,
+validation, and tests.
+
+The migration path from plain Swing is incremental. First define row type and
+column keys. Then replace index switches with columns and descriptors. Then
+adapt the existing row list to an observable list. Then install
+\api{ObservableTableModel}. Then move selection state out of table listeners.
+Then add table state by stable ids. Then add tooltip, validation, export, and
+generated resources as needed. Each step should reduce one hidden convention.
+
+\begin{migrationbox}{from JTable conventions to descriptors}
+Do not migrate by rewriting every table at once. Migrate one table contract:
+row type, column keys, descriptor, observable model, selection binding, and
+state persistence. Keep the visible table recognizable while the internal
+identity becomes stable.
+\end{migrationbox}
+
+For a small diagnostic table, plain Swing may still be the right tool. The
+threshold is not row count alone. A table becomes a Corusco table when column
+identity matters outside immediate painting: persisted widths, generated
+headers, localization, validation targets, row selection, column visibility,
+tooltips, tests, editable record rows, or generated documentation. If none of
+those apply, the descriptor may be ceremony. If several apply, the descriptor
+is usually cheaper than a network of conventions.
+
+The companion examples show several slices. \api{ObservableTableModelExample}
+focuses on rows and descriptor-backed values. \api{TableSelectionBindingExample}
+focuses on sorting and selection conversion. \api{TableStateExample} focuses
+on persisted state and migration. \api{GeneratedTableColumnsExample} shows the
+generated path. \api{TableCellValidationExample} and
+\api{TableHeaderTooltipExample} show feedback surfaces. Read them as small
+chapters in table ownership rather than as unrelated demos.
+
+\section{A table lifecycle in one screen}
+
+It is helpful to trace one realistic table from construction to teardown. The
+screen begins before a \api{JTable} exists. The source declaration or
+handwritten descriptor defines the row type and column identities. At this
+stage there are no view rows, no table columns, no selected index, and no
+renderer calls. There is only a contract: this screen has a customer table;
+it has columns such as name, state, and last order; each column has stable
+identity and resource keys; some columns may be editable; table layout should
+be persisted by ids that survive localization.
+
+The presenter then creates or receives an observable row source. This source
+is not Swing state. It is the current set of rows the screen is responsible
+for. It may be loaded from a repository, filtered by presenter logic, sorted
+by a business rule, mapped from a larger model, or adapted from another
+event-list library. The important point is that changes are stated as changes.
+One row replacement should not become a declaration that the whole table
+universe collapsed. A batch load may still be broad, but it should be broad
+because the workflow is broad.
+
+Only after descriptor and rows exist does the Swing table model appear. The
+\api{ObservableTableModel} adapts row source and descriptor to Swing's
+\api{TableModel} protocol. Swing asks row count, column count, column class,
+column name, cell value, editability, and value update. The model answers
+through descriptor metadata and row values. When the source list changes, the
+table model translates list change sets into table events. The \api{JTable}
+does not need to know where rows came from. It only sees a model that obeys
+Swing's contract.
+
+The table component is then configured for presentation. The view may install
+a row sorter, custom renderers, column width defaults, selection mode, grid
+policy, row height, popup menu, and keyboard actions. These are real Swing
+decisions and should remain visible in view code. Corusco should not hide them
+behind a generated GUI builder. What Corusco supplies is stable metadata that
+makes those decisions less brittle. A renderer can be installed for the state
+column by key. A popup menu can operate on selected row identity. A header
+tooltip can resolve a descriptor resource key.
+
+Selection is the next boundary. A user selects a view row. If sorting or
+filtering is active, that row is not the model row. If the table has been
+refreshed, the selected index may not name the same business object it named a
+moment ago. The selection binding performs mechanical Swing conversion and
+publishes model-row or row-value state according to the screen's needs. The
+presenter reacts to this state, not to the table's transient selected view
+row. This keeps master-detail loading, command enablement, and status text on
+the same side of the boundary.
+
+Validation follows the same identity rule. A problem belongs to a row and a
+column. A renderer or tooltip binding can ask whether the cell currently being
+painted has a problem, but it should not run the rule that discovers the
+problem. The rule belongs to form, row, presenter, or validation model code.
+The table presentation displays an already computed structured fact.
+
+Persistence enters after the table's columns exist. The state controller
+restores width, order, visibility, and sort state from stable ids. It then
+listens to column and sorter changes and writes snapshots through a store.
+This is view state, not table meaning. A user may decide that Status should be
+the first visible column. The descriptor still knows that Status is the status
+column. If the descriptor id changes casually, old user preferences, tests,
+validation, export, and help all become suspect.
+
+Refresh tests the whole design. A background task loads new rows. The result
+returns on the EDT or through an EDT-adapted list. The row source applies a
+precise update where possible. Selection is preserved by identity when the
+user expects continuity. Table state remains attached to column ids.
+Validation and tooltip bindings observe the new problem state. Renderers
+repaint visible cells. If any part of this chain was based on localized
+headers, stale view indexes, or hidden listeners, refresh is where the bug
+usually appears.
+
+Finally, teardown must be ordinary. The view closes the table model
+subscription, selection binding, table state controller, tooltip bindings,
+validation bindings, and any renderer installer handles that promised
+restoration. If the row source changes after the view closes, the old table
+should not receive events. If a table state save was scheduled, it should
+either finish under its owner or be cancelled by policy. A table whose
+lifecycle is unclear will eventually show duplicate listeners, stale selection
+writes, or preference updates from a screen the user has already closed.
+
+\begin{lstlisting}[caption={One reviewable table assembly outline.}]
+ObservableList<CustomerRow> rows = presenter.rows();
+TableDescriptor<CustomerRow> descriptor =
+        GeneratedCustomerRowTableDescriptor.DESCRIPTOR;
+
+EdtObservableList<CustomerRow> swingRows =
+        EdtObservableList.of(rows);
+ObservableTableModel<CustomerRow> model =
+        ObservableTableModel.of(swingRows, descriptor);
+
+JTable table = new JTable(model);
+table.setRowSorter(new TableRowSorter<>(model));
+
+scope.add(TableSelectionBinding.bind(
+        table, model,
+        presenter.selectedModelRow(),
+        presenter.selectedRow()));
+
+scope.add(TableCellValidationBinding.bind(
+        table, model,
+        presenter.tableProblems()));
+
+scope.add(TableHeaderTooltipBinding.bind(
+        table, model,
+        resources));
+
+scope.add(TableStateController.install(
+        table, model,
+        tableStateStore));
+\end{lstlisting}
+
+The outline is not a recipe for every table. Some tables do not need
+validation. Some do not need persisted state. Some use a presenter-owned
+sorted list rather than a Swing row sorter. Some have multi-selection. The
+value of the outline is that every installed relationship has a name and a
+scope. Remove one concern only when the screen truly does not need it, not
+because the concern was hidden inside a listener.
+
+\section{Large data and refresh workflows}
+
+Large data does not begin at a magic row count. It begins when table updates
+become visible to users: a refresh moves the scroll position, a sorter stalls,
+a renderer allocates too much, selection disappears, or a background result
+arrives after the user has moved on. The large-data chapter studies lists in
+general. In a descriptor-backed table the same concerns appear with Swing
+specific consequences. The row source must report meaningful changes. The
+table model must translate them on the EDT. Selection must be preserved by
+identity when policy says so. Renderers must stay cheap. Table state must not
+be reset merely because rows changed.
+
+There are three common row-source shapes. The first is a small local list
+loaded all at once. It can use \api{ObservableArrayList} directly on the EDT.
+The second is a medium local list whose changes may be computed away from the
+EDT and delivered through \api{EdtObservableList}. The third is a large or
+remote source where the visible list is only a window, filter result, or query
+result. The descriptor works in all three shapes, but the update policy
+differs. A small list can be simple. A large list needs refresh generations,
+precise replacement, and sometimes service-side sorting or filtering.
+
+A refresh workflow should declare what happens to old rows while new rows are
+loading. Keeping old rows visible is often best because the user can still
+read the table, but it requires a visible stale or loading state so the user
+knows a refresh is in progress. Clearing rows immediately may be appropriate
+when old rows would be misleading, but it destroys selection and scroll
+context. Replacing rows only after a successful load preserves context on
+failure. None of these choices belongs in \api{JTable}; they belong to the
+presenter and row source.
+
+When rows arrive, do not assume that \api{clear} plus \api{addAll} is the only
+honest update. If the service returns stable row ids, the presenter can compute
+a diff: removed ids, inserted ids, moved rows, and replaced row values. For
+small tables the diff may not be worth the code. For large tables or
+frequently refreshed tables it can preserve selection, sorter state, and
+rendering work. The descriptor does not compute the diff; it makes the table
+model able to benefit from a precise diff when the row source supplies one.
+
+Selection preservation is usually a row-identity problem. Suppose the user
+selects customer 42, then refresh runs. If customer 42 is still present, the
+screen may preserve the selection even if the row moved. If customer 42 is
+gone, the screen may clear detail or select the nearest visible row. If the
+table is sorted by name, preserving "model row five" is not the same as
+preserving customer 42. The selected-row value can help immediate workflow;
+a selected-id value often helps refresh continuity.
+
+\begin{lstlisting}[caption={Refresh by row identity, not by old view row.}]
+CustomerId previouslySelected = selectedCustomerId.value();
+rows.replaceAll(diffedRowsFrom(serviceRows));
+
+if (previouslySelected != null) {
+    rows.indexOfFirst(row -> row.id().equals(previouslySelected))
+            .ifPresentOrElse(
+                    selectedModelRow::setValue,
+                    () -> selectedModelRow.setValue(null));
+}
+\end{lstlisting}
+
+The exact list API may differ, but the policy is the point. The selected fact
+is a customer id. The table row after refresh is found by that id. Swing view
+coordinates are recalculated after the model changes. This is slower to write
+than \api{table.getSelectedRow()} and much cheaper to maintain after sorting,
+filtering, and refresh appear.
+
+Sorting location matters. Swing's \api{TableRowSorter} is convenient and works
+well for many local tables. It sorts the view, leaving the model order
+unchanged. A presenter-owned sorted list changes the model order before Swing
+sees it. A service-side sort returns data already sorted. Each option has a
+different owner. Use Swing sorting for local view preference. Use presenter or
+service sorting when sorted order affects other screen state, paging, remote
+query cost, or exported order. The descriptor can mark which columns are
+sortable; it does not decide where sorting runs.
+
+Filtering has the same three possible owners. A Swing row filter is local and
+view-oriented. A Corusco filtered list can feed several views or command
+states. A service filter can reduce remote data volume. Do not choose the
+owner only because one API is shorter. Ask who needs to know the filtered set.
+If a status label says "34 matching customers", an export command exports the
+filtered set, and a detail panel reacts to filtered selection, the filter is
+probably presenter state rather than only table view state.
+
+Virtualized data requires an even stronger boundary. A Swing \api{JTable}
+still asks for row count and cell values, but the row source may represent a
+window into a remote result. Descriptors remain useful because columns have
+stable identities and value extractors for loaded rows. Selection should be by
+domain id. Table state should be independent from current page. Renderers must
+handle loading placeholders or absent values deliberately. A virtual table is
+not just a bigger local list; it is a table whose row source has loading
+semantics.
+
+Glazed Lists interop fits naturally when an existing application already uses
+\api{EventList}. The adapter boundary should still be explicit. Let Glazed
+Lists own its event list and advanced filtering if that is the established
+tool. Adapt it to Corusco's observable-list contract at the Swing boundary
+where needed. Do not mix two event systems in the same method. The table model
+should see one observable row source with clear EDT delivery.
+
+Large table diagnostics should print stable ids. A log entry saying
+"full refresh of customer/table, 80,000 rows, previous selection customer 42
+not found" is useful. A log entry saying "selected row -1" is not. Include
+table key, row counts, changed ranges, sort keys, filter descriptions, and
+column ids when diagnosing performance or selection problems. Typed table
+identity makes such diagnostics natural.
+
+\section{Commands, export, and surrounding screens}
+
+A table rarely stands alone. It sits in a screen with commands: Refresh,
+Delete, Edit, Export, Copy, Toggle Column, Show Details, Open Help, and maybe
+Select All. These commands should not scrape the \api{JTable} for meaning.
+They should use descriptor identity, selected-row state, row ids, and command
+enablement derived from presenter state. The table component is the user's
+surface; it should not be the command model.
+
+Delete is the simplest example. A delete command should be enabled when a
+deletable selection exists and the user has permission. The command should
+receive selected row identity from presenter state. It should not call
+\api{getSelectedRow} and convert coordinates in the handler. If the table is
+sorted and selection binding already publishes selected id or row, the command
+can ignore the current view coordinate. This makes toolbar, menu, popup, and
+keyboard paths consistent.
+
+Popup menus are a table-specific trap. A right-click may happen on a row that
+is not currently selected. Some applications select the row under the pointer
+before showing the popup. Others keep selection unchanged and offer commands
+for the clicked row. Either policy can be right, but it should be explicit.
+Use row identity and selection binding to implement the policy. Do not let a
+popup action silently operate on whatever row happened to be selected before
+the mouse press.
+
+Export should be descriptor-oriented. A visible table may hide columns,
+reorder columns, show icons, use localized headers, and format values for
+density. An export may need all columns, visible columns only, a product-owned
+export order, raw values, localized display values, or separate export labels.
+The \api{JTable} cannot infer this product decision. The descriptor can supply
+stable column identity and value extraction; an export descriptor or export
+policy can decide which columns and value representations are exported.
+
+\begin{lstlisting}[caption={Export starts from descriptors and rows, not renderers.}]
+List<Column<CustomerRow, ?>> columns =
+        exportPolicy.columnsFor(descriptor, tableState);
+
+for (CustomerRow row : selectedRows.value()) {
+    for (Column<CustomerRow, ?> column : columns) {
+        export.writeCell(column.key(), column.value(row));
+    }
+}
+\end{lstlisting}
+
+Copy to clipboard is similar but more presentation-oriented. Copying visible
+cells may reasonably follow current view order and visible columns. It still
+should not scrape renderer components. Convert selected view rows to model
+rows, read row values through descriptor columns, resolve headers through
+resources, and format values through a copy policy. The visible table state
+contributes ordering and visibility; the descriptor contributes meaning.
+
+Column visibility commands are table commands too. A column chooser or header
+popup toggles visibility by column persistence id. It should honor
+\api{hideable} capability and update the \api{TableStateController}. The
+command text comes from resources. The selected state comes from current table
+state. Tests can assert that toggling \api{customer/table/status} hides the
+status column, not that "the third visible column" disappeared.
+
+Master-detail screens should treat the table as a selection source, not as
+the detail owner. Selecting a row publishes selected identity. The presenter
+loads detail or creates a form model. Commands observe detail state. The table
+may show validation markers or stale-row markers, but it should not own the
+detail form. This separation keeps the table usable even when detail loading
+is asynchronous, fails, or is cancelled by a new selection.
+
+Navigation and help also use descriptor identity. Double-click on a row may
+open detail. Enter may activate the primary row command. F1 may open help for
+the focused column. A context menu may show column help. These gestures are
+Swing input events, but their meaning comes from row and column identity.
+Generated or handwritten descriptors provide the stable terms that command
+and help systems can use.
+
+Accessibility review should include surrounding commands. A table with icon
+status cells, hidden columns, and popup-only operations can be difficult for
+keyboard and assistive-technology users. Descriptor metadata can feed header
+names, tooltip text, help topics, and command labels. The view still needs
+keyboard access, focus traversal, and accessible descriptions. Do not assume a
+well-typed descriptor automatically creates an accessible table.
+
+The table's status text should be model-driven. "125 customers", "34 matching",
+"Loading", "Stale results", "3 selected", and "Selection hidden by filter" are
+not table paint details. They are facts derived from row source, filter state,
+selection state, task state, and table state. A status label bound to those
+facts is easier to test than a series of \api{setText} calls inside listeners.
+
+\section{Migration from legacy JTable code}
+
+Legacy Swing tables usually begin with a custom \api{AbstractTableModel}, a
+set of integer constants, a renderer switch, a selection listener, and perhaps
+a preference key based on a header. Do not rewrite such a table all at once
+unless it is very small. A staged migration keeps the screen usable while
+identity becomes stronger.
+
+The first stage is naming the row type. If the model currently stores arrays
+or maps, introduce a row record or row class at the boundary where values are
+already known. The \api{getValueAt} method can still switch on columns for a
+while. The important improvement is that row values have names and types.
+Tests can start constructing rows directly.
+
+The second stage is naming columns. Introduce \api{ColumnKey} constants for
+the existing columns without changing rendering. Replace persistence keys,
+validation targets, and tests first, because those are the places where stable
+identity pays off immediately. The table can still use the old model while
+surrounding code stops depending on raw indexes.
+
+The third stage is building descriptors. Create \api{ColumnDescriptor} and
+\api{Column} objects that mirror the existing model. At this point it is often
+clear which old column constants were really view positions and which were
+business identities. Write a small test that traces a descriptor column from
+key to value extractor. This test will protect the migration when the Swing
+model is replaced.
+
+The fourth stage is replacing the model with \api{ObservableTableModel}. Use
+the same row data and descriptor. Keep renderers and selection policy as close
+as possible to the old screen. The goal of this stage is not visual change; it
+is to put descriptor-backed values under the table. If the screen changes
+appearance at this stage, it will be harder to tell whether the descriptor or
+the view changed.
+
+The fifth stage is moving selection into presenter state. Install
+\api{TableSelectionBinding}. Change commands to read selected row or selected
+id values. Leave the visible table selection behavior unchanged. Tests should
+assert selection across sorting if sorting exists. This stage often deletes
+several small listeners that used to duplicate coordinate conversion.
+
+The sixth stage is installing table state by stable ids. Start with an
+\api{InMemoryTableStateStore} in tests, then move to preferences or the
+application store. If old user preferences exist, write a migration from old
+keys to new persistence ids. If old preferences used localized headers, this
+is the time to fix that permanently.
+
+The seventh stage is moving feedback into bindings. Header tooltips, cell
+tooltips, validation markers, and help topics can be installed from descriptors
+and problem state. Renderers become simpler because they display state rather
+than discovering it. Tests become clearer because problem identity and column
+identity are typed.
+
+The eighth stage is optional generation. Once a descriptor pattern is stable,
+decide whether \api{@SwingTable} can own the row declaration. Some legacy
+tables have dynamic columns or specialized row models and should remain
+handwritten. Others are ordinary record-backed tables and can move to
+generated companions. Generation is a convenience after the contract is
+understood, not a substitute for understanding the contract.
+
+During migration, keep screenshots. A table is visual and dense. A screenshot
+before and after model replacement can catch lost widths, poor headers, dark
+theme problems, hidden columns, row height changes, and renderer regressions.
+Pair screenshot review with targeted tests for descriptors and selection so a
+visual difference can be interpreted rather than guessed.
+
+The migration is complete when a reviewer can answer these questions without
+searching for integer conventions: what is the row type, what are the column
+keys, where are headers resolved, where is selection stored, where is table
+state persisted, where are validation problems targeted, where are renderers
+installed, and who closes table bindings? If those answers are visible, the
+legacy table has crossed the important boundary.
+
+\section{Testing, review, and failure patterns}
+
+Table tests should be explicit about coordinate systems. A table state
+assertion should use persisted column ids. A selection assertion should
+distinguish view row, model row, row value, and row identity. A validation
+assertion should target row identity and column key. A renderer test should
+not pretend to prove validation semantics. A screenshot should prove the table
+renders, not that a service query is correct.
+
+\begin{lstlisting}[caption={Testing selection after sorting by row value.}]
+tester.selectTableModelRow(CustomerComponents.TABLE, 1);
+tester.sortBy(CustomerColumns.DISPLAY_NAME);
+
+tester.assertSelectedRowValue(
+        CustomerComponents.TABLE,
+        row -> row.id().equals(CustomerId.of(42)));
+\end{lstlisting}
+
+The exact helper names may vary, but the policy does not. Tests should say
+which coordinate system they are asserting. If the test wants current view
+position, say view row. If it wants source position, say model row. If it wants
+domain continuity, say row id. Ambiguous table tests often pass until the
+first sorter, filter, or hidden column is added.
+
+Review table code by tracing one column through the whole screen. Start with
+the source record component or handwritten column definition. Find its
+\api{ColumnKey}. Find the header resource key. Find the value extractor. Find
+the renderer, if any. Find the validation target. Find the persisted column
+state. Find export and help behavior if they exist. If each step uses the same
+descriptor identity, the table is coherent. If one step switches to header
+text or view index, that step is a likely future bug.
+
+The first failure pattern is column-index sprawl. A model switch, renderer
+switch, export switch, validation switch, and tooltip switch all use integers.
+Recovery begins by creating column keys and descriptors. Do not attempt to fix
+every switch at once if the table is large. Replace one column identity, then
+move consumers to it.
+
+The second failure pattern is selection by visible row. It works until sorting
+or filtering arrives. Recovery begins by binding selection to model row or row
+identity and by changing command handlers to read presenter selection state
+instead of \api{JTable.getSelectedRow}. This makes master-detail screens much
+easier to test.
+
+The third failure pattern is persisted state by header. It works until
+localization or copyediting. Recovery begins by assigning column persistence
+ids and migrating old stored state if necessary. Do not change ids casually
+after users have saved layouts.
+
+The fourth failure pattern is renderer-owned behavior. A renderer computes
+validation, loads icons from disk, formats with newly allocated formatters, or
+records state in fields. Recovery begins by moving facts out of the renderer:
+validation into problem sets, icons into caches, formatting policy into helper
+objects, and row identity into descriptors.
+
+The fifth failure pattern is hidden table lifecycle. A table state controller,
+tooltip binding, selection listener, and model subscription are installed, but
+no scope closes them. Recovery begins by listing every installed relationship
+and adding a view-owned binding scope. A table is often the largest listener
+cluster in a screen; its cleanup should be visible.
+
+\section{Operational recipes}
+
+The first recipe is a sorted master-detail table. Define a row type with a
+durable id. Define a descriptor with stable column keys. Build an observable
+row source. Create the \api{ObservableTableModel} on the EDT. Install a
+\api{TableRowSorter} if sorting is local. Install \api{TableSelectionBinding}
+after the sorter. Bind selected row identity into presenter state. Let the
+detail panel observe selected identity or selected row, then load detail
+through a task when necessary. Preserve selection across refresh by durable id,
+not by old view row.
+
+The second recipe is an editable table of immutable rows. Use editable
+\api{Column} definitions whose updater returns a replacement row. Keep
+parsing policy in editors or form-like cell models, and keep semantic
+validation in problem models. On commit, let the table model replace the row
+in the observable list. If a save command commits table edits, explicitly stop
+or cancel the active cell editor before reading row state. Test both a valid
+edit and an invalid intermediate edit. The test should prove that row identity
+is preserved or deliberately changed according to policy.
+
+The third recipe is a table with a column chooser. Give every hideable column
+a stable persistence id and a localized resource name. Install
+\api{TableStateController}. Install a visibility menu that talks to the
+controller by persistence id. Do not remove columns from the model to hide
+them. Do not store hidden state by header text. Test that hiding and restoring
+a column preserves column order, width, and sort policy where appropriate.
+Then change the header resource text and prove the stored visibility still
+applies.
+
+The fourth recipe is a validation-heavy table. Decide whether problems target
+row object, row id, or model row. Use \api{ColumnKey} for the column side.
+Compute problems outside renderers. Install \api{TableCellValidationBinding}
+to decorate cells. Compose cell tooltips from problem, static help, and
+formatted value. Add a problem summary if keyboard users need a stable place
+to inspect errors. Test validation by problem identity, not by the exact
+rendered red border or localized message.
+
+The fifth recipe is a table with background refresh. Commands start tasks.
+Tasks load rows away from the EDT. Results return through an explicit EDT
+boundary or an EDT-adapted list. A generation counter suppresses stale
+results. The row source applies precise changes when that effort is justified.
+Selection is restored by durable id. Table state remains untouched by row
+refresh. Busy state disables incompatible commands and may show an overlay.
+Failure state says whether rows are stale, cleared, or still usable. None of
+this belongs in a renderer or table model.
+
+The sixth recipe is export. Decide whether export follows visible columns,
+descriptor columns, or a separate export descriptor. Resolve export headers
+through resources or export-specific labels. Read values through descriptor
+columns or export value extractors. Convert selected view rows to row
+identity or model rows before export. Do not scrape renderer components. Test
+export after column reorder, after hiding a column, and after localization.
+Those tests catch whether export is accidentally coupled to the current view.
+
+The seventh recipe is row detail navigation. A double-click, Enter key, popup
+command, and toolbar command should route through the same selected-row or
+selected-id state. The table event should translate user gesture into command
+execution, not directly open a service or dialog. This keeps keyboard and
+mouse behavior consistent and lets command enablement explain why navigation
+is unavailable. If double-click on a row should select it first, make that
+policy explicit and test it with sorting active.
+
+The eighth recipe is table help. Attach help topics to column descriptors.
+Install header or cell help behavior that identifies the current column by
+model column and descriptor key. Include row context only when help needs it.
+Use F1 and explicit help commands rather than hover-only documentation. A help
+request should contain a topic and structured context, not visible header
+text. Test help dispatch with a fake help service; no browser is needed to
+prove the boundary.
+
+The ninth recipe is teardown. Put the table model, selection binding, state
+controller, validation binding, tooltip binding, renderer installers, popup
+listeners, and key bindings into the view's scope. Close the scope when the
+view closes. Then mutate the row source and problem state in a test and prove
+the old component is no longer updated. Close pending table-state saves or
+flush them according to policy. A table is too listener-rich to rely on
+garbage collection as cleanup.
+
+These recipes are intentionally repetitive in one respect: every one starts
+from typed identity and ends with scoped Swing relationships. That is the
+Corusco table style. It does not prevent a screen from using ordinary Swing
+features. It keeps those features attached to names that survive sorting,
+localization, refresh, and view teardown.
+
+\begin{tabularx}{0.96\linewidth}{@{}p{0.30\linewidth}X@{}}
+\toprule
+Scenario & Primary owner to inspect first\\
+\midrule
+Wrong value saved after sorting & Selection binding and row identity policy\\
+Column widths lost after release & Table and column persistence ids, then migration\\
+Tooltip disagrees with validation & Problem source and tooltip composition policy\\
+Slow scrolling & Renderer allocation, row event volume, and sorter/filter owner\\
+Export columns wrong after hiding & Export policy and descriptor/table-state boundary\\
+Help opens generic page & Column help topics and help dispatch context\\
+Old table updates after close & View scope and binding/controller cleanup\\
+\bottomrule
+\end{tabularx}
+
+\section{Decision rules}
+
+Use a generated \api{@SwingTable} descriptor when the row is naturally a record
+and the column set is known at compile time. Use a handwritten descriptor when
+columns are dynamic, domain-specific, or assembled from runtime configuration.
+Use plain Swing only when the table is genuinely local, short-lived, and has
+no durable column identity outside painting. This is not a hierarchy of virtue.
+It is a choice about where the table's meaning can be stated most clearly.
+
+Use Swing sorting when sorting is a view preference over a loaded local list.
+Use a Corusco sorted list when sorted order is shared by several parts of the
+screen. Use service-side sorting when the result is large, remote, paged, or
+part of a query contract. The descriptor can mark a column sortable in all
+three cases, but the sorting owner determines how selection, export, refresh,
+and status text behave.
+
+Use Swing filtering when the filter is local to one table and does not affect
+other screen facts. Use a presenter-owned filtered list when commands,
+summaries, export, or detail workflow need to know the filtered set. Use
+service-side filtering when remote volume or security requires it. A filter
+that users experience as "the current result set" usually belongs above the
+\api{JTable}; a filter that users experience as "temporarily hide these rows in
+this view" may belong in the sorter.
+
+Use row-value selection when the row objects are stable enough for the
+workflow. Use row-id selection when refresh, paging, or replacement rows are
+common. Use model-row selection only for immediate table mechanics. Use view
+row only inside Swing event handling and tests specifically about view
+coordinates. This rule prevents many master-detail bugs because it makes the
+selection's intended lifetime explicit.
+
+Use table-state persistence when users can reasonably personalize the table:
+widths, order, visibility, or sort. Do not persist state for tiny static
+tables unless the application benefits from it. Once state is persisted, ids
+become compatibility-sensitive. A throwaway table can rename columns freely; a
+persisted business table needs migration discipline.
+
+Use validation bindings when problems are computed outside rendering and need
+to be shown in cells. Use custom renderers when values need special visual
+presentation. Use both when a cell has both display policy and problem state.
+Do not make the renderer compute the problem merely because the problem is
+drawn there. Rendering is presentation; validation is model or presenter
+policy.
+
+Use descriptor-based export when the exported data has semantic meaning. Use
+screenshot or copy helpers when the user explicitly wants visible text in
+visible order. The first path is data export; the second is view capture. They
+may share resource formatting, but they are different workflows. Confusing
+them leads to exported icons, hidden columns, or localized headers in places
+where stable schema was needed.
+
+Use optimized renderers after measurement or when the workload is obviously
+dense. Do not replace every default renderer preemptively. Swing's default
+renderers are competent for many tables and cooperate with Look-and-Feel
+defaults. Premature custom renderers often break selection colors,
+accessibility, dark themes, or performance by accident. A descriptor-backed
+table can begin plain and become specialized column by column.
+
+These rules should be written into code review. When a table change arrives,
+ask which owner was chosen and whether that owner matches the workflow. A
+short answer is acceptable: "local sorter because this is a small loaded
+result", "service sort because the query is paged", "row id selection because
+refresh replaces row objects", "handwritten descriptor because columns come
+from a user-defined report." The answer matters more than the particular
+class imported.
+
+A second review pass should ask whether the table can explain itself without
+the screen running. The descriptor should name columns. The state object should
+name persisted ids. The selection model should name its coordinate system. The
+problem target should name row and column meaning. The example should name the
+fixture data, and the screenshot should show the state the prose discusses. If
+one of these facts exists only as a current Swing index, a localized header, or
+a renderer side effect, the table is borrowing meaning from pixels. That can
+work for a demo, but it is too weak for a table users personalize, export,
+validate, or revisit after a restart.
+
+\section{Exercises and checklist}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Replace one column-index constant with a \api{ColumnKey} and update the
+renderer, tooltip, and test that used the old index.
+\item Add selection binding to a sorted table and verify that model-row state
+remains correct after sorting.
+\item Persist column widths by descriptor id, not header text, and change the
+visible header to prove state survives.
+\item Add a validation problem to a row and column key, then display it through
+a cell validation binding.
+\item Hide a column and restore it through table state rather than rebuilding
+the model.
+\item Profile a renderer that formats dates. Move formatter allocation out of
+the rendering path.
+\item Add a table-state migration for a real column split and document why the
+old id cannot remain.
+\item Add a table export path that uses descriptors rather than renderer text.
+\item Close the table view scope and prove that later row-source changes do not
+notify the old table model.
+\item Compare a Swing \api{RowFilter} with a presenter-owned filtered list and
+decide which owner fits the screen.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{center}
+\textbf{Corusco table checklist.}
+\end{center}
+
+\begin{itemize}
+\item Use descriptors for stable table meaning.
+\item Keep view indexes out of persistence, validation identity, export, help,
+and tests.
+\item Adapt off-EDT row sources before Swing consumes them.
+\item Bind selection by model row, row value, or row id when sorting and
+filtering are active.
+\item Persist table state through stable table and column ids.
+\item Treat hidden columns as descriptor columns with invisible presentation,
+not as deleted model columns.
+\item Use migration only for real table-schema changes.
+\item Compose tooltips and validation rather than hiding logic in renderers.
+\item Keep renderers stateless, theme-aware, and cheap.
+\item Commit editable cells deliberately before command execution.
+\item Close table models, controllers, renderers with installed state, and
+bindings with the view lifecycle.
+\item Test table behavior by naming the coordinate system under test.
+\end{itemize}
+
+The point of a Corusco table is not to make \api{JTable} disappear. Swing's
+table component remains a serious, mutable, highly capable widget. The point is
+to stop asking the widget to be the only place where table meaning lives. Once
+row identity, column identity, resources, validation, state, selection, and
+lifecycle have owners, a \api{JTable} can do what it does well: present data,
+let users interact with it, and repaint quickly.

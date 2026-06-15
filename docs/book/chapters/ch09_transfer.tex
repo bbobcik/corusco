@@ -1,0 +1,581 @@
+\chapter{Drag-and-Drop, Clipboard, TransferHandler, and DataFlavor}
+\chapterquote{Transfer is not mouse motion. It is a negotiated data exchange with gesture feedback attached.}{A useful DnD correction}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How should Swing components exchange data through clipboard and drag-and-drop while preserving semantics, feedback, native interoperability, and application safety?\\
+Primary APIs & \api{TransferHandler}, \api{Transferable}, \api{DataFlavor}, \api{Clipboard}, \api{DropMode}, \api{TransferHandler.TransferSupport}.\\
+Hidden difficulty & Export and import are asymmetric; local JVM data, native data, move semantics, drop locations, slow imports, and user feedback require separate handling.\\
+Payoff & Reliable copy/paste, drag reordering, cross-component transfer, native file drops, import progress, and testable domain semantics.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{The Transfer Protocol}
+
+\termdef{Transfer}{in Swing, the exchange of data between a source and a target through clipboard or drag-and-drop machinery} is often mistaken for mouse handling. The user's hand moves the pointer, but the program is not transferring pointer coordinates. It is offering one or more data representations, advertising permitted actions, asking targets whether they can import the data, and then mutating application state if the exchange succeeds.
+
+\termdef{TransferHandler}{the Swing abstraction that connects a component to clipboard and drag-and-drop operations} is the center of this protocol. A handler can create a \api{Transferable} when a component exports data, decide which actions are possible, validate imports through \api{canImport}, and perform imports through \api{importData}. Standard text components already use this machinery for cut, copy, and paste.
+
+This is the first important correction for intermediate Swing programmers. Mouse listeners may detect a gesture, and a component may paint feedback while a drag is over it, but the data exchange belongs to \api{TransferHandler}. A table mouse listener that remembers row indices and mutates another table on mouse release has implemented a private drag protocol. It will not cooperate with the clipboard, native applications, keyboard paste, or standard drop feedback.
+
+\termdef{Transferable}{an object that advertises the data flavors it can provide and returns data for a requested flavor} is the source's promise. The target is allowed to ask for any supported flavor. The transferable should be immutable or at least snapshot-like because clipboard contents can be requested after the source selection has changed, and a drag operation can outlive the exact screen state that initiated it.
+
+\termdef{DataFlavor}{a description of one representation of transferred data} is the vocabulary of negotiation. A source may offer a local Java object flavor for same-JVM transfer, a plain string flavor for text targets, HTML for rich targets, CSV for spreadsheets, and a file-list flavor for native file drops. A target chooses the richest representation it understands and should degrade deliberately when it receives a simpler one.
+
+Figure~\ref{fig:transfer-drop-target} shows the first visible state of the protocol. The user sees a target and a possible drop. The program should see offered flavors, source actions, target policy, and a drop location. The drag picture is only the surface. The important question is whether the target can explain why the drop is accepted, rejected, copied, moved, or deferred to an import workflow.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\transferDropFigure}
+\caption{A drop target should make format negotiation visible enough for the user. The target accepts specific flavors and shows preview feedback before the data becomes model state.}
+\label{fig:transfer-drop-target}
+\end{figure}
+
+Figure~\ref{fig:transfer-import-progress} shows the second state that many examples omit: after the desktop transfer succeeds, the application may still be importing. A file drop may need parsing, validation, duplicate handling, progress reporting, cancellation, and problem display. Swing's transfer callback should not be mistaken for the whole import operation.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\transferImportFigure}
+\caption{A realistic transfer workflow continues after the drop. Accepted rows, rejected rows, progress, and status belong to application state, not to mouse handling.}
+\label{fig:transfer-import-progress}
+\end{figure}
+
+Figure~\ref{fig:transfer-flavor-workflow} names the whole chain. A visible gesture starts the exchange, but the useful implementation is a sequence of adapters. The source creates a snapshot-like \api{Transferable}; source and target negotiate a \api{DataFlavor}; the target converts desktop context into an application request; slow work moves away from the EDT; the model receives precise accepted rows, rejected rows, and problems. This is the shape to keep in mind while reading the rest of the chapter.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\transferWorkflowFigure}
+\caption{Transfer should be reviewed as a protocol pipeline. The mouse or keyboard gesture is only the first event; the durable result is an application request and a precise model publication.}
+\label{fig:transfer-flavor-workflow}
+\end{figure}
+
+\begin{examplebox}{Transfer figures}
+The transfer screenshots are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. The screenshot harness is \screenshotHarnessExample. The figures deliberately cite compact class names rather than full paths, so the PDF documents the example contract without exposing repository layout. The three transfer figures capture drop feedback, import progress, and the flavor-to-workflow boundary.
+\end{examplebox}
+
+\begin{principlebox}{separate gesture from transfer}
+Mouse events may initiate drag feedback, but \api{TransferHandler} owns the data exchange. The application model owns the meaning of imported data. Keep those layers separate or the first sorted table, native paste, or failed import will expose the shortcut.
+\end{principlebox}
+
+Clipboard and drag-and-drop use the same conceptual machinery but have different user expectations. A clipboard copy can leave the application and be pasted into email. A drag from one table to another often feels more local and contextual. A cut operation suggests source removal; a copy operation does not. A file drop suggests the application is receiving external input and should validate it. One handler may serve several of these paths, but it should not pretend they are identical.
+
+The protocol also has a trust boundary. Data may arrive from another component in the same JVM, another process, the operating system clipboard, a file manager, a spreadsheet, a browser, or an unknown application. Internal local object flavors are convenient, but external text, files, and HTML are untrusted input. Transfer is user input, not a privileged back door into the model.
+
+Good transfer design begins with a written miniature specification. Name the source components, target components, offered flavors, accepted flavors, actions, drop-location meaning, domain identities, failure policy, undo policy, asynchronous work, and clipboard equivalence. The specification often reveals missing semantics before code is written. "Drag orders into the basket" is not enough; it must say whether the operation copies references, moves ownership, schedules fulfillment, or merely filters a view.
+
+The same discipline helps with accessibility. Users who cannot drag precisely still need copy, cut, paste, import, export, keyboard reordering, or explicit commands. If the only implementation is a mouse gesture, the feature is incomplete. A \api{TransferHandler} can connect multiple surfaces to one import path; a mouse listener usually cannot.
+
+Transfer is therefore a small desktop protocol embedded in the application. It deserves the same respect as a network protocol on a smaller scale: representations, negotiation, validation, transaction, error reporting, and compatibility. The code is Swing code, but the design problem is data exchange.
+
+There is a useful lifecycle hidden in that sentence. The source chooses a snapshot. The desktop machinery advertises available representations. The target checks whether the operation is plausible at the current location. The user receives feedback and releases the gesture or invokes paste. The target converts the representation into an application request. The application validates and publishes model changes or problems. The source may receive completion feedback for a move. A defect at any stage can look like a drag-and-drop bug, even when the real failure is a missing domain rule.
+
+This lifecycle is why transfer examples should not stop at \api{createTransferable}. Export is only half of the story. A beautiful local object flavor does not help a native paste target. A precise drop location does not help if the import blocks the EDT. A correct \api{exportDone} does not help if the domain never defined whether the target owns the moved object. The protocol is only as good as its weakest stage.
+
+It is also why transfer bugs are often misdiagnosed. A user says, "drag-and-drop lost my row." The bug may be a view-to-model conversion error, a stale selection snapshot, a target choosing the wrong flavor, a partial import policy, a sorter that moves the inserted row away, or source cleanup running after a failed move. A user says, "paste sometimes does nothing." The bug may be an unavailable clipboard, unsupported flavor, parser rejection, command disabled state, focus owner ambiguity, or a validation problem hidden in a log. The chapter keeps returning to named boundaries because named boundaries make these failures searchable.
+
+The word \termdef{negotiation}{the process by which a source advertises possible representations and a target chooses one representation and action it can accept} should not suggest a long conversation. In most Swing code the negotiation is a few method calls: \api{getTransferDataFlavors}, \api{isDataFlavorSupported}, \api{canImport}, and perhaps \api{setDropAction}. But the design behind those calls is a real negotiation. The source does not know every possible target. The target does not know how the source stores data. They meet through advertised formats and actions.
+
+\termdef{Drop action}{the operation selected for a drag-and-drop exchange, such as copy or move} is another phrase worth defining early. The source advertises what it can support; the target may choose one action within that set; the user's modifier keys and platform conventions may influence the proposal; and the final action is reported to the source. Treating the action as a cursor decoration is dangerous. If the cursor says move, users expect source ownership to change. If the domain cannot define source ownership, the operation should usually be copy.
+
+The clipboard path has the same conceptual stages with a different rhythm. Copy creates a transferable and hands it to a clipboard. Paste later asks the current target whether it can import that transferable. The source component may no longer be focused, visible, or alive. The target may be a different application. This temporal gap is the reason immutable or snapshot-like transferables are not pedantry. They are the only defensible way to make copy mean "copy what I selected then," rather than "copy whatever the old component happens to expose when somebody asks."
+
+The drag path has a stronger sense of place. While the pointer moves, the user sees target feedback and expects it to describe the current drop location. A table row insertion mark, a tree child highlight, a diagram snap point, or a rejected cursor is live explanation. But even here, the gesture is not the payload. A custom component may use mouse motion to paint a preview, yet the payload still belongs in \api{Transferable} and the final mutation still belongs in a domain operation. Gesture feedback is present tense; transfer data is the contract.
+
+Plain Swing is already more disciplined than many handwritten desktop applications. It gives transfer actions, clipboard integration, drag enablement, drop locations, and standard component behavior. Text components use these facilities every day. The mistake is to bypass the machinery for custom tables, trees, canvases, and domain panels because a mouse listener looks shorter on the first afternoon.
+
+The presence of a \api{TransferHandler} also makes the feature easier to explain to readers. The source has a handler. The target has a handler. The transferable lists flavors. The support object describes context. The model command performs domain work. Each object can be named. That naming matters in a book because the reader should know where to look when a transfer feature grows from demo to product.
+
+\section{Flavors, Payloads, and Export}
+
+The source side of transfer answers three questions. What data can this component export? In which representations can it export that data? Which user actions are allowed: copy, move, link, or none? The answers should be based on application semantics, not merely on what the selected component happens to display.
+
+A table selection illustrates the issue. The user selects three visible rows in a sorted table. The visible row numbers are view coordinates. The model rows may differ. The domain identities are something else again. A useful export should usually carry stable domain identities or immutable snapshots, not selected view row numbers. View coordinates may be useful for feedback; they are not a durable payload.
+
+There are three common payload styles. A \termdef{stable identity payload}{a transferred value that names domain objects without copying their full mutable state} is useful inside one application because the target can resolve the current object by id and apply current permissions. An \termdef{immutable snapshot payload}{a copied value that contains the data needed by the target without requiring the source to remain alive} is useful for clipboard and cross-window copy because it says exactly what was copied. A \termdef{external reference payload}{a file path, URI, or similar reference to data outside the application} is useful for native interoperability but shifts validation to the import side. Confusing these styles causes subtle defects. A stable id is not a snapshot; a file path is not parsed data; a mutable row object is neither stable nor safely copied.
+
+For example, dragging selected orders from a search table to a planning table should usually export order ids. The target can check whether those orders are still visible, whether they already belong to the plan, and whether the current user may schedule them. Copying the entire displayed row into the payload would make the target reason about stale values. By contrast, copying selected rows to a spreadsheet should export a text or tabular snapshot. The spreadsheet cannot resolve application ids. It needs visible values, formatted deliberately, with no hidden sensitive columns.
+
+This difference is why transfer code benefits from a small source-side decision table before implementation:
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.22\linewidth}X X}
+\toprule
+Destination & Preferred payload & Review question\\
+\midrule
+Same component & Stable identities plus reorder target & Does the move preserve identity under sorting, filtering, and selection changes?\\
+Same application & Stable identities or immutable domain request & Can the target revalidate permissions and current object state?\\
+Another application instance & Text, JSON, files, or documented interchange format & Does the representation survive class-loader and process boundaries?\\
+Spreadsheet or editor & Plain text, tabular text, HTML, image, or file & Does the exported representation match user expectations and privacy policy?\\
+File system & Files or generated files & Who owns cleanup, naming, and failure reporting?\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The simplest internal flavor is a local JVM object flavor. It is excellent for transferring domain identities inside one running application. It is poor for interoperability. A target outside the JVM cannot understand your \api{OrderId} list. Even another instance of the same application may not share the same object identity or class loader assumptions.
+
+\begin{lstlisting}[caption={Defining a local DataFlavor for domain row identities.}]
+public final class OrderTransfer {
+    public static final DataFlavor ORDER_IDS_FLAVOR = new DataFlavor(
+            DataFlavor.javaJVMLocalObjectMimeType +
+            ";class=java.util.List",
+            "Order ID List");
+
+    private OrderTransfer() {}
+}
+\end{lstlisting}
+
+The type in the flavor above is only \api{java.util.List}. Because of type erasure, the flavor does not prove that every element is an \api{OrderId}. The target must validate imported objects defensively. This is not pessimism; it is the cost of accepting data through a general transfer protocol.
+
+The representation class in a \api{DataFlavor} is not a generic type promise. A flavor may distinguish a \api{String} from an \api{InputStream}, or a local object from a serialized object, but it cannot express all domain invariants. If a local flavor returns a list of order ids, the target still checks that the object is a list, that every element is the expected type, that the ids are known, and that the requested operation is currently allowed. Transfer is not a typed method call between two trusted collaborators; it is an exchange through an intentionally general API.
+
+Mime types deserve the same care. A plain string flavor is convenient because many targets understand it, but a string can contain several formats: a display label, a newline-separated id list, a TSV table, a CSV file fragment, a JSON document, or a URI list. If the receiving code treats every string as "whatever our table happened to copy last year," the protocol is implicit and brittle. When a format matters, name it in a custom flavor, document it near the handler, and provide tests that parse representative examples.
+
+Most useful sources offer more than one flavor. A selection of orders might offer local IDs for internal transfer, tab-separated text for spreadsheets, plain text for email, and HTML for rich destinations. A tree node might offer a local node reference internally and a path string externally. A chart might offer an image, CSV data, and a text summary. Multiple flavors are not duplication. They are interoperability.
+
+Ordering those flavors is a small but useful expression of intent. Internal handlers may scan for the richest local flavor first. Native targets may choose string or image flavors. Some applications inspect all flavors and choose according to their own preferences. You cannot force every target to read your mind, but you can make your source consistent. Every flavor should represent the same selection and the same permission boundary. If the local object flavor includes locked rows that plain text omits, the source has created two different exports under one gesture.
+
+There is a tension between rich internal transfer and broad interoperability. Rich internal transfer preserves identity, avoids lossy parsing, and can carry enough context for a good domain command. Broad interoperability lets users paste into spreadsheets, email, editors, bug reports, and documentation. A mature Swing component often offers both. The local flavor gives the application its precise path. The text or tabular flavor gives the desktop its useful path. The two are generated from one snapshot so they do not drift.
+
+\begin{lstlisting}[caption={A Transferable offering local IDs and plain text.}]
+public final class OrderIdsTransferable implements Transferable {
+    private static final DataFlavor[] FLAVORS = {
+            OrderTransfer.ORDER_IDS_FLAVOR,
+            DataFlavor.stringFlavor
+    };
+
+    private final List<OrderId> ids;
+
+    public OrderIdsTransferable(List<OrderId> ids) {
+        this.ids = List.copyOf(ids);
+    }
+
+    @Override
+    public DataFlavor[] getTransferDataFlavors() {
+        return FLAVORS.clone();
+    }
+
+    @Override
+    public boolean isDataFlavorSupported(DataFlavor flavor) {
+        return Arrays.asList(FLAVORS).contains(flavor);
+    }
+
+    @Override
+    public Object getTransferData(DataFlavor flavor)
+            throws UnsupportedFlavorException {
+        if (flavor.equals(OrderTransfer.ORDER_IDS_FLAVOR)) {
+            return ids;
+        }
+        if (flavor.equals(DataFlavor.stringFlavor)) {
+            return ids.stream().map(OrderId::toString)
+                    .collect(Collectors.joining("\n"));
+        }
+        throw new UnsupportedFlavorException(flavor);
+    }
+}
+\end{lstlisting}
+
+The transferable copies the list on construction and clones the flavor array. These are small habits with large consequences. The clipboard may ask for data later. A target may hold the returned object longer than the source expects. Immutable payloads remove a class of time-dependent bugs in which the selection changes after export and the import receives different data from what the user dragged.
+
+Export from a table should convert view rows to model rows before extracting identities. If a row sorter is installed, \api{getSelectedRows} returns view rows. The model's domain object may be elsewhere. Exporting the visible integer is a bug waiting for the first sort, filter, or asynchronous refresh.
+
+\begin{lstlisting}[caption={Exporting selected domain IDs from a JTable.}]
+public final class OrderTableTransferHandler extends TransferHandler {
+    @Override
+    protected Transferable createTransferable(JComponent c) {
+        JTable table = (JTable) c;
+        OrderTableModel model = (OrderTableModel) table.getModel();
+        List<OrderId> ids = new ArrayList<>();
+        for (int viewRow : table.getSelectedRows()) {
+            int modelRow = table.convertRowIndexToModel(viewRow);
+            ids.add(model.orderIdAt(modelRow));
+        }
+        return new OrderIdsTransferable(ids);
+    }
+
+    @Override
+    public int getSourceActions(JComponent c) {
+        return COPY_OR_MOVE;
+    }
+}
+\end{lstlisting}
+
+The handler advertises \api{COPY\_OR\_MOVE}, but that does not mean every target should move. Source actions say what the source can support. The target still chooses the drop action within that set. The application should not display a move cursor if the target will only copy; truthful feedback is part of the protocol.
+
+Export should also consider empty selection, disabled state, and permissions. If no rows are selected, copy should be disabled or export should return no data. If selected rows are locked, a move may be forbidden while copy remains allowed. If the user lacks permission, the command state should explain that before a drag begins. A transfer handler can support this, but command state often provides a better user-facing surface.
+
+The source handler is often the wrong place to invent business permissions. It can ask a command or selection model whether export is currently allowed, but it should not duplicate the whole permission engine. Otherwise toolbar Copy, popup Copy, drag Copy, and keyboard Copy begin to disagree. In a Corusco-style screen the command state is the natural owner: it already knows focused component, selected domain identities, user permissions, and disabled reason. The transfer handler becomes one presentation of that state.
+
+Clipboard export has one additional rule: the data may leave the application. Do not include secrets in plain text or HTML flavors simply because they are visible in a table. A table may mask account numbers on screen but export full values if the source code naively serializes row objects. Copy is a product surface and deserves privacy review.
+
+String flavors need formatting policy. Should copied rows be separated by newline, tab, comma, or localized labels? Should a cell containing a newline be quoted? Should numbers use display formatting or machine-readable formatting? Copying to a spreadsheet is not the same as copying to a plain text note. If the application claims spreadsheet interoperability, use a flavor and format suitable for that destination.
+
+The visible text is not always the right exported text. A table cell may show an abbreviated status, a localized date, a color-coded icon, or a formatted monetary amount. Export to a spreadsheet may need unlocalized ISO dates and decimal numbers. Export to email may need localized human text. Export to an internal target may need ids. When the display renderer becomes the export formatter, hidden dependencies appear: changing a renderer for visual clarity changes clipboard semantics. Keep export formatters separate enough that they can be reviewed as data interchange.
+
+HTML flavors add another layer. A table copied as HTML can preserve columns, headers, and emphasis when pasted into a rich destination. But HTML also carries escaping, styling, links, and sometimes unintended metadata. If the application offers HTML, generate a small, predictable fragment rather than dumping component-renderer output. Use the same selected-row snapshot as the plain text export; the HTML flavor is a richer representation, not a separate report.
+
+Images and rich content have similar questions. A diagram component may offer an image flavor and an SVG or custom vector flavor. The image helps native paste; the vector preserves editability for another internal target. The chapter's examples use small row identities because the transfer mechanics are easier to see, but production components should think broadly about representations.
+
+Flavor order is not a formal priority contract that every target must obey, but it is still documentation. Put the representations the source most wants to advertise in a deliberate order and implement all of them consistently. If plain text says one set of rows and HTML says another, support calls will be miserable. The source should build all representations from one snapshot, not from live component state each time a flavor is requested.
+
+Serialization should also be a conscious choice. A Java serialized object flavor can seem convenient, but it couples transfer to class versions, security policy, and class loading. A local JVM object flavor avoids some external serialization issues but works only inside the same JVM. Text, CSV, JSON, file references, and domain ids all have different compatibility stories. The right answer depends on whether the target is internal, another instance of the application, or an arbitrary native program.
+
+Selection restoration belongs near export design. If a move or copy changes the source model, the source may want to keep, clear, or restore selection. That decision should use stable identities. After model events fire and sorting runs, the old view rows may no longer exist. A source handler that remembers view rows during export and selects them after completion will fail in the same way as a view-index payload.
+
+Export should be deterministic under repeated requests. Some targets may ask a transferable for the same flavor more than once. The data returned should not depend on the current selection at that later moment. If generating a representation is expensive, cache it inside the immutable transferable or generate it from the same immutable snapshot. Do not re-query the component every time \api{getTransferData} is called.
+
+There is one exception worth naming: very large export may need deferred materialization. A component that can export a huge report may not want to allocate every representation immediately. Even then, the deferred producer should close over an immutable request or stable file, not a mutable selection. Lazy export is an optimization; it is not permission to make clipboard contents change under the user's feet.
+
+Large export also raises ownership questions. A data grid may let the user copy a million cells, but building several in-memory flavors may be unacceptable. A better design may write a temporary CSV file, offer a file or URI flavor, and show an export progress task. If the export is intentionally asynchronous, say so in the command surface rather than pretending it is ordinary clipboard copy. The important rule is still snapshot semantics: the exported file represents a particular selection and query at a particular time.
+
+The source should also decide whether export is idempotent. A copy operation should be idempotent: repeating it creates the same clipboard content until the selection or model changes. A cut operation is not completed by export alone; it becomes destructive only after a successful move or paste policy. A drag move may be idempotent until release and non-idempotent afterward. Naming these facts prevents accidental deletion when a source handler receives \api{exportDone} for an operation that only looked like a move.
+
+\section{Import, Drop Locations, and Move Semantics}
+
+The target side of transfer answers a different set of questions. Which offered flavors can this component import? Is this operation a drop or a paste? What is the proposed action? Where is the drop location? Is the target currently able to accept the payload? What model mutation, command, or asynchronous task should follow?
+
+\api{TransferHandler.TransferSupport} carries that context. It provides the component, transferable, offered flavors, source actions, drop action, drop location, and a flag that distinguishes drop from clipboard paste. Use \api{canImport} to answer cheap validation and feedback questions. Use \api{importData} to perform the actual import or to hand it to an application command.
+
+The distinction between \api{canImport} and \api{importData} is one of Swing's better design hints. \api{canImport} is asked while the user is still deciding. It should be fast enough to run repeatedly and simple enough to be trusted as feedback. \api{importData} is asked after the user has committed the gesture or invoked paste. It can create an import request, start a task, open a preview, or perform a small synchronous mutation. A handler that performs real import work inside \api{canImport} makes the user's pointer movement as expensive as the worst input file.
+
+\api{TransferSupport} also lets the target choose a drop action. This is not a cosmetic setting. If the source supports copy and move, but the target only accepts copy, the target should set copy so that cursor feedback, source cleanup, and user expectations agree. If the target accepts move only inside the same model, the handler must detect that case by source identity or by payload semantics. A generic "source supports move, therefore move" rule is rarely enough.
+
+\begin{lstlisting}[caption={Importing order IDs into a target model.}]
+@Override
+public boolean canImport(TransferSupport support) {
+    if (!support.isDataFlavorSupported(OrderTransfer.ORDER_IDS_FLAVOR)) {
+        return false;
+    }
+    if (support.isDrop()) {
+        support.setDropAction(COPY);
+    }
+    return true;
+}
+
+@Override
+public boolean importData(TransferSupport support) {
+    if (!canImport(support)) {
+        return false;
+    }
+    try {
+        @SuppressWarnings("unchecked")
+        List<OrderId> ids = (List<OrderId>) support.getTransferable()
+                .getTransferData(OrderTransfer.ORDER_IDS_FLAVOR);
+        targetModel.addReferences(List.copyOf(ids));
+        return true;
+    } catch (UnsupportedFlavorException | IOException | ClassCastException ex) {
+        return false;
+    }
+}
+\end{lstlisting}
+
+\api{canImport} should be cheap and honest. It may be called frequently while the drag moves over the target. It should inspect flavors, actions, and drop location. It should not parse a hundred files, call a remote service, open a database transaction, or mutate the target model. Expensive validation belongs after acceptance, usually in an import task with progress and cancellation.
+
+\api{importData} should still validate. The target should not assume that a successful \api{canImport} call from a moment earlier proves the transferable will return well-typed data. Clipboard contents may be surprising. Local object flavors may contain unexpected objects. File lists may include unreadable files. Validation is not wasted; it is the boundary between desktop protocol and application state.
+
+There is a useful two-level validation rule. The first level checks the envelope: flavor present, action allowed, target enabled, drop location plausible, payload count not obviously impossible. The second level checks the content: ids exist, files parse, rows are valid, duplicates have a policy, permissions still hold, and side effects are allowed. The first level belongs in \api{canImport} and early \api{importData}; the second level belongs in the import workflow. This split gives the user immediate feedback without pretending that live drag-over is a full transaction.
+
+The return value of \api{importData} is consequently modest. Returning \api{true} can mean the handler accepted the request and started a preview or background import, not necessarily that every row is already committed. If the product needs that distinction, expose it in application state: a status line, progress model, problem set, or import log. Do not overload the boolean return as the user's only evidence.
+
+Tables, lists, and trees provide specialized drop locations. A table drop location can describe a row and column. A list drop location can distinguish insertion from item drop. A tree drop location can refer to a path and child index. These locations are more meaningful than mouse coordinates and should be interpreted in terms of the target component's model.
+
+\begin{lstlisting}[caption={Using JTable.DropLocation for row insertion.}]
+@Override
+public boolean importData(TransferSupport support) {
+    JTable.DropLocation dl = (JTable.DropLocation) support.getDropLocation();
+    int viewRow = dl.getRow();
+    int modelRow = viewRow < 0
+            ? model.getRowCount()
+            : table.convertRowIndexToModel(viewRow);
+    return insertAt(modelRow, support.getTransferable());
+}
+\end{lstlisting}
+
+Sorted tables complicate insertion. If the table is sorted by date, inserting at the visible row under the pointer may not keep the new row there after the sorter runs. The user may perceive the drop as lost. Some applications disable row-position drops while sorting is active. Others interpret the drop by domain grouping, such as "assign to the same sprint as this row," rather than by physical index.
+
+Filtering creates a second ambiguity. Dropping between two visible rows in a filtered table may name a position that does not exist in the full model order. If hidden rows belong between those visible rows, should the new row go before them, after them, or into a logical group that ignores physical order? The correct answer depends on the domain. A playlist editor may disable filtering while reordering. A planning screen may interpret the visible row as a semantic bucket. A log viewer may accept drops only as filters, never as row insertion. Swing gives the coordinate; the application must provide the meaning.
+
+Tree drops have a different ambiguity. Dropping on a node may mean "make this a child." Dropping between visible rows may mean "make this a sibling." Dropping on a closed node may need expansion feedback. A good tree handler sets \api{DropMode} deliberately and uses drop feedback that says whether the object will become a child, sibling, or rejected item.
+
+Tree imports should also guard against cycles and duplicate ownership. Moving a node under one of its descendants may not be possible. Copying a node may be possible but should create new identities. Linking a node may be allowed in a graph-like tree but not in a strict containment tree. These distinctions should be named before the handler is written. Otherwise a tree DnD feature tends to begin as a visual rearrangement demo and later discovers that the domain has stronger rules than the demo represented.
+
+Custom visual components have the same problem without the convenience of predefined drop-location classes. A diagram editor may convert a point into a canvas coordinate, snap it to a grid, find the nearest lane, and then decide whether a shape can be added there. A map component may convert a screen point through a zoom transform into world coordinates and then into a layer id. A timeline may convert a horizontal coordinate into time and a vertical coordinate into a track. The handler should create an application-level location object rather than passing raw mouse coordinates into the model.
+
+Move semantics require special care because a move is not just a copy followed by casual deletion. In Swing, \api{exportDone} informs the source handler which action completed. If the action is \api{MOVE}, the source may remove or adjust its data. That is simple for an intra-list reorder and dangerous for cross-component ownership changes unless the domain semantics are clear.
+
+\begin{lstlisting}[caption={Removing moved rows after a successful move.}]
+@Override
+protected void exportDone(JComponent source, Transferable data, int action) {
+    if (action != MOVE) {
+        return;
+    }
+    JTable table = (JTable) source;
+    OrderTableModel model = (OrderTableModel) table.getModel();
+    try {
+        @SuppressWarnings("unchecked")
+        List<OrderId> ids = (List<OrderId>) data.getTransferData(
+                OrderTransfer.ORDER_IDS_FLAVOR);
+        model.removeByIds(ids);
+    } catch (UnsupportedFlavorException | IOException ex) {
+        // Import already completed; recovery is application-specific.
+    }
+}
+\end{lstlisting}
+
+The code is intentionally small, and it is not a universal transaction. If the target merely copied references, source removal may be wrong. If the target imported some but not all rows, source removal may need partial semantics. If source and target are backed by a database, the move should probably be a command-level transaction rather than two independent UI callbacks.
+
+Intra-list reordering is the transfer feature most often requested and most often subtly wrong. If multiple selected rows move downward, removing them first changes target indices. If filtering is active, physical positions may not correspond to model order. If sorting is active, reordering may be meaningless. Stable identities and a domain reorder command are better than arithmetic on visible indices.
+
+A robust reorder command accepts moved identities and a target position expressed in domain order. The transfer handler translates drop location to a command request. The model validates, mutates, fires precise events, and updates selection. This design is not much more code, and it survives sorting rules, persistence, undo, and tests.
+
+The same command should usually own undo. A view-level handler can know what the user dragged, but it rarely knows how to restore all domain effects. A reorder command can record old neighbor identities. A cross-list move command can record old owner and old position. An import command can record newly created rows or decide that undo is not supported and produce an import log instead. If undo is not considered until after \api{exportDone} deletes source rows, recovery becomes archaeology.
+
+Move between two views of the same model is particularly treacherous. The source and target may be different tables, but the domain object may be one list. A move may therefore be a reorder, a filter change, a grouping change, or no operation. The handler should compare domain owners, not just Swing components. Two component instances do not imply two models; one component instance does not imply one domain owner.
+
+Partial move success needs a rule before implementation. Suppose the user moves ten rows to a target, but the target accepts eight and rejects two. Should the source remove eight, remove none, or ask the user? The desktop protocol does not decide this for you. If the application cannot explain partial success, the first implementation should probably support copy and import preview, not move. Move is a promise about ownership, and promises need failure semantics.
+
+Drop feedback should be specific and truthful. A table should show insertion row, target cell, or rejection. A tree should show child versus sibling. A custom component should clear old feedback when the drag exits. A target that paints acceptance while \api{canImport} will later reject the data trains users not to trust the UI.
+
+Autoscroll is another piece of import feedback. Large lists and trees should scroll while the pointer hovers near edges. Swing components support autoscroll behavior in common cases, but custom components may need explicit support. The feedback region must continue to update as the viewport moves, or the user loses track of the target.
+
+Autoscroll also changes the meaning of "current location." While the viewport scrolls, the same screen coordinate can refer to a different model row. A handler that caches the first drop location during drag-over and reuses it at release can import into the wrong place. The current location should be recomputed or obtained from the support object at the moment of import. In custom components, keep the painted preview and the final request derived from the same coordinate conversion code so they do not drift.
+
+\begin{detailbox}{canImport should be cheap and honest}
+\api{canImport} may be called many times during drag feedback. It should inspect offered flavors, proposed action, and current drop location. It should not perform slow I/O or mutate model state. Expensive validation belongs in the import command or task, where progress and failure can be reported.
+\end{detailbox}
+
+Import should normally produce one domain request, not a sequence of incidental component edits. If the user drops five rows into a planning table, the model should see "add these five orders to this plan at this semantic position" rather than five unrelated row insertions issued by the handler. The domain request can validate duplicates, permissions, ordering, capacity, and undo as one operation.
+
+Partial success needs a policy. A target may accept ten pasted rows, reject two malformed rows, and warn about one duplicate. Should accepted rows be committed immediately? Should the user see a preview first? Should the whole import fail if any row fails? All three policies are defensible in different products. The handler should not accidentally choose one because it loops over rows and inserts until an exception appears.
+
+The policy should match the user's ability to predict and repair. For small, reversible imports, committing valid rows and showing rejected rows may be pleasant. For financial or regulatory data, all-or-nothing may be required. For a large file with thousands of rows, a preview or staging area may be best because it lets the user fix several classes of problems before committing. The transfer handler's role is to start the chosen policy, not to hide it inside exception flow.
+
+Selection after import is user feedback. After rows are inserted, the table may select imported rows, preserve previous selection, select the first problem row, or leave selection unchanged. Each choice teaches the user what happened. Selection restoration must again use stable identities because sorting, filtering, and validation can change visible positions during the import.
+
+Drop rejection should be informative without being noisy. During drag-over, the cursor and target highlight may be enough. After release, a rejected import may need a status message or problem summary. A target that silently returns \api{false} from \api{importData} leaves the user guessing whether the gesture failed, the format was wrong, or the application ignored the input.
+
+Trees and hierarchical models need cycle protection. Dragging a node into one of its descendants can create an impossible structure. Copy may be allowed where move is not. A local object flavor can make cycle detection cheap because the target sees stable node ids. A text flavor may require resolving paths or names and should be treated as less authoritative.
+
+\section{Clipboard, Files, and Slow Imports}
+
+Clipboard operations deserve the same design discipline as drag-and-drop. Copy should decide whether it exports visible text, structured rows, domain ids, images, or several flavors at once. Cut should define source removal. Paste should define whether it appends, replaces, edits the current selection, opens an import preview, or starts a background task.
+
+Standard text components already bind common keyboard shortcuts to transfer actions. Custom components should cooperate with \api{TransferHandler.getCopyAction}, \api{getCutAction}, and \api{getPasteAction} where possible, or provide application commands that call the handler. The point is that keyboard paste and drag import should reach the same domain import path.
+
+The focus owner matters for clipboard commands. A main window may contain a search field, a table, a notes editor, and a diagram. Pressing Ctrl+V should paste into the component that owns the current editing context, not into whichever panel most recently installed a handler. Swing's action maps and focus maps help, but application commands often need a higher-level notion of active target. A Corusco command can ask the active context provider for a paste target; plain Swing can achieve the same effect with disciplined action routing.
+
+The system clipboard can outlive the source component. A copied local object flavor may be useless after the source window closes. A string flavor may remain useful indefinitely. If interoperability matters, offer a representation that survives process boundaries. If security matters, ensure that representation does not leak data the user is not meant to export.
+
+Paste availability should be command state, not a surprise error. A Paste command can observe the focused component, current selection, clipboard flavors, and target model state. It can be disabled with a reason when the target cannot accept the clipboard. A failed paste may still happen because external data is messy, but the ordinary unavailable case should be visible before invocation.
+
+Clipboard availability is not perfectly stable. The system clipboard may be temporarily unavailable because another process owns it, a platform bridge is busy, or the application runs in a restricted or headless environment. The UI should not assume that clipboard inspection always succeeds. Treat clipboard reads as fallible input operations. In tests, separate parser and import-command coverage from platform clipboard coverage; the latter is smaller and more environment-sensitive.
+
+Cut is more than copy with a different icon. Text components can remove selected text after a successful transfer because the document owns the edit and undo story. Domain tables need a more explicit policy. Cutting selected rows might mean marking them for move until paste succeeds, immediately deleting them, or creating a transferable whose successful move callback deletes them. Each choice affects undo, concurrent edits, and user anxiety. Many business screens avoid Cut for rows and provide explicit Move commands instead.
+
+Native file drops use \api{DataFlavor.javaFileListFlavor}. A file-list flavor says only that the transfer can provide file paths. It does not prove that the files exist at import time, are readable, are safe, are small, are local, or are of the expected type. Treat a file drop as untrusted user input with a friendly gesture attached.
+
+\begin{lstlisting}[caption={Recognizing a native file-list drop.}]
+if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+    @SuppressWarnings("unchecked")
+    List<File> files = (List<File>) support.getTransferable()
+            .getTransferData(DataFlavor.javaFileListFlavor);
+    importFiles(List.copyOf(files));
+}
+\end{lstlisting}
+
+Cheap file validation belongs near the transfer boundary. Count the files, check that the target accepts files at all, reject directories if unsupported, and perhaps inspect extensions when that is reliable enough for feedback. Deep validation belongs after acceptance: open the files, parse headers, check schemas, detect duplicates, and report problems through an import workflow.
+
+Slow import should not block the EDT. Dragging a large CSV file over a target should not freeze because \api{canImport} opened the file. Dropping ten files should not lock the application while \api{importData} parses them. Accept the shape, create an import request, and hand slow work to a background task. The UI can then show busy state, progress, cancellation, and partial problems.
+
+A file path is a time-dependent reference. Between drop and parse, the file may be deleted, replaced, locked, moved, or changed by another program. For small imports, reading immediately after acceptance may be enough. For longer workflows, record file metadata and be prepared to report that the file changed. Do not promise that a preview generated from one version of a file will commit a different version silently. If exactness matters, copy the file into a staging area or keep an open handle according to platform constraints.
+
+Directories need explicit product behavior. Some applications reject directories. Others recursively import supported files. Others treat a directory as a workspace. Recursion raises performance and safety questions: symbolic links, permission errors, huge trees, hidden files, network mounts, and duplicate names. A file-drop handler that simply walks a directory on the EDT is a small denial-of-service tool against its own application.
+
+Line endings, encodings, and formats matter for text imports. A pasted table from a spreadsheet may use tabs and newlines. A copied web table may arrive as HTML and plain text. A CSV file may have a byte-order mark, quoted newlines, or a different delimiter. Do not let the \api{DataFlavor.stringFlavor} fallback become a silent parser of everything.
+
+Text import should define its grammar. "Paste rows" is not a grammar. Does the first line contain headers? Are fields separated by tabs, commas, semicolons, or localized delimiters? Are quotes recognized? Are empty trailing cells preserved? Are numbers parsed by locale or by a machine format? A tolerant parser is useful when it reports what it tolerated. Silent tolerance becomes data corruption when a column shifts or a decimal separator is misread.
+
+HTML paste and drop deserve sanitation. Swing may expose HTML text, but the application should decide which tags and attributes are acceptable. A notes field may accept plain text only. A rich editor may accept limited markup. A security-sensitive application may strip links or embedded references. Clipboard HTML is external input, not trusted internal markup.
+
+Drag images and cursors are partly platform-controlled. Swing can provide drag images in some paths and uses action feedback to influence cursors. Custom components may paint a drop preview while the pointer is over them. Keep feedback truthful. A move cursor for an operation that will copy is a bug. A green target for data that will later be rejected is also a bug.
+
+An import preview can be better than immediate import. A file drop containing many rows may open a preview dialog with accepted rows, rejected rows, duplicate handling, target selection, and command buttons. This turns a risky gesture into an explicit decision. The transfer handler starts the workflow; the domain import command owns the final mutation.
+
+Undo and rollback should be decided before the first release. If import creates domain records, can the user undo them? If a move removes source records, can rollback restore them? If an import partially succeeds, what is the recovery path? The answer may be "no undo, but show an import log." That can be acceptable when it is explicit.
+
+Progress should name useful units. "Importing..." is weaker than "Parsed 4,800 of 12,000 rows" or "Validating file 3 of 8." If exact counts are unavailable, report phases: reading, parsing, validating, resolving duplicates, committing, refreshing. Cancellation should have phase-specific semantics too. Cancelling during preview construction may leave no domain changes. Cancelling during commit may require rollback or an import log. A task service cannot invent this policy; it can only expose cancellation and delivery points.
+
+Diagnostics are part of production transfer. Support teams need to know which flavor was chosen, which file failed, which row was rejected, and whether the import was cancelled. Logging every copied value may violate privacy, so diagnostics should record metadata and problem summaries rather than blindly dumping payloads.
+
+\begin{pitfallbox}{blocking import feedback}
+The user experiences drag feedback as live UI. Do not perform slow validation inside \api{canImport}, and do not parse large files on the EDT inside \api{importData}. Create an import request and report progress through ordinary application state.
+\end{pitfallbox}
+
+An import preview is often the correct answer for business data. The preview can show columns recognized from a file, row count, rejected rows, duplicate policy, target workspace, and the command that will commit. It changes transfer from an irreversible gesture into a reviewable workflow. The transfer handler merely supplies the initial request; the preview owns user confirmation.
+
+File import should be cancelable after the desktop drop succeeds. Users drop the wrong folder, a network share stalls, or a file is larger than expected. Cancellation should stop further parsing and report what, if anything, was committed. If nothing is committed until preview acceptance, cancellation is easy. If rows are streamed into the model as they parse, cancellation policy needs more care.
+
+Drag-and-drop should not be the only file import path. A File/Open or Import command can call the same import workflow as a file drop. This is better for accessibility, testing, support, and automation. If the drop path and menu path diverge, one of them will eventually support a format or validation rule that the other lacks.
+
+External applications may provide surprising flavor combinations. A spreadsheet may offer HTML, plain text, and proprietary formats. A browser may offer URI lists, HTML, and text. A file manager may offer file lists and sometimes text paths. A robust target should inspect available flavors and choose intentionally instead of assuming the first familiar flavor is the best one.
+
+Clipboard ownership is also time-sensitive. On some platforms the source application may be asked for clipboard data after the copy command returns. Swing hides much of this, but the design rule remains: clipboard payloads should not depend on a component that may be disposed or a selection that may change. Snapshot now, serve later.
+
+Large clipboard payloads require restraint. Copying a table selection as several multi-megabyte flavors can pause the UI, consume memory, and surprise the receiving application. Consider export commands for very large data, or generate files and offer them explicitly. Users understand "Export CSV" as a durable operation; they do not always expect Ctrl+C to allocate hundreds of megabytes. A good UI can still support ordinary copy for visible selections while steering huge exports to a clearer workflow.
+
+The best file and clipboard implementations converge on one import pipeline. Drag a CSV file, choose Import from a menu, paste tabular text, or invoke an automation hook; after the boundary adapter, all four paths should create a similar import request and receive similar validation. Differences remain at the envelope: file path versus text payload, synchronous versus asynchronous source, drag feedback versus dialog selection. The parser, problem reporting, duplicate policy, and model commit should not fork without a reason.
+
+\section{Corusco Around Transfer Boundaries}
+
+Corusco does not replace Swing transfer. The desktop protocol still belongs to \api{TransferHandler}, \api{Transferable}, \api{DataFlavor}, clipboard objects, and drop locations. Corusco becomes useful immediately after the boundary, where transferred data turns into application state, problems, commands, tasks, and observable lists.
+
+An import that adds rows to a table should usually enter an \api{ObservableList} through a batch. The list can publish precise changes; the table model can preserve selection and repaint only affected rows; the user can keep context. A handler that fires "all data changed" after every drop loses the precision that transfer payloads often carried.
+
+The boundary adapter can be small:
+
+\begin{lstlisting}[caption={A transfer handler creating an application import request.}]
+record OrderImportRequest(
+        ImportSource source,
+        List<OrderId> ids,
+        DropTarget target,
+        TransferAction action) {}
+
+@Override
+public boolean importData(TransferSupport support) {
+    return orderImportCommand.tryStart(
+            requestFactory.fromTransferSupport(support));
+}
+\end{lstlisting}
+
+This listing is deliberately not a complete handler. Its point is ownership. The handler reads Swing facts and constructs a request. The command decides whether the request can start. The task parses or resolves. The model publishes. The problem set reports. When those responsibilities are separated, the same request factory can be tested with fake transferables, and the same command can be used by paste, file-open, and scripted import.
+
+Imported data often has problems. Some rows parse, some rows fail, some rows duplicate existing data, and some rows require confirmation. \api{ProblemSet} gives those outcomes structure: severity, code, source, target, and message. The import workflow can show a summary, decorate rows, disable commit, or expose test assertions without hiding errors inside a status label.
+
+Commands make Copy, Cut, Paste, Import, Export, and Cancel Import ordinary application actions. A command can be enabled only when the focused target accepts clipboard data. A Paste command can carry a disabled reason. An Import command can show progress and cancellation. Buttons, menu items, toolbar items, key bindings, and tests can all observe the same command state.
+
+Command state is especially useful for Paste. Plain Swing can invoke paste and then discover failure. A command surface can say why paste is unavailable: no target, clipboard unavailable, unsupported flavor, target read-only, import already running, selection locked, or validation required first. That disabled reason belongs in resource-backed text so it can appear in a tooltip, status line, accessibility description, or test assertion. The transfer handler does not need to know how every presenter phrases the reason.
+
+Task services belong to slow imports. A dropped file can become an immutable import request, processed away from the EDT. Progress and status become observable values. Cancellation becomes a token. The EDT receives batches, problem sets, or final results. Stale result suppression matters because the user may drop a second file before the first import finishes.
+
+Generation counters are a simple protection for transfer workflows. If import A starts, then import B starts, and A finishes late, A must not overwrite B's preview or clear B's progress. The task result should carry the generation or request identity that started it. The UI applies results only when they still match the current workflow. This rule is not specific to Corusco, but Corusco values and task services make the current generation explicit instead of scattering boolean flags through listeners.
+
+Typed keys help with transfer targets. A row problem can target a domain row and column. A field problem can target an import option. A command descriptor can provide resource-backed text for "Import selected rows" and help. The target can be stable even while the visible table is sorted or filtered. This is the same stable-identity lesson from tables applied to imported data.
+
+\begin{coruscobox}{what Corusco changes}
+Swing handles desktop transfer mechanics. Corusco gives the resulting application facts stable homes: imported rows in observable lists, import failures in \api{ProblemSet}, copy and paste as commands, slow parsing in task services, and cleanup in scopes. The transfer handler becomes a boundary adapter rather than the whole workflow.
+\end{coruscobox}
+
+Validation and import are different layers. A transfer handler can reject a file list because the target accepts only one file. It should not become the only place that knows a CSV row has an invalid date. Row validation belongs to the import pipeline and should produce structured problems. That pipeline can be used by drag, paste, file-open commands, tests, and scheduled imports.
+
+This separation is especially important for clipboard paste. Pasting text into a table should call the same parser and validation pipeline as dropping a CSV file if the data format is equivalent. Otherwise two import paths drift: paste accepts values that file import rejects, or file import reports problems that paste silently discards.
+
+Observable values make this separation visible. The import workflow can expose \api{ReadableValue<ImportPhase>}, \api{ReadableValue<Integer>} for accepted count, \api{ReadableValue<ProblemSet>} for current problems, and \api{WritableValue<Boolean>} for options such as "skip duplicates." The dialog binds to these values. The handler never reaches into components to update labels. Tests can advance the workflow and inspect values without rendering a window.
+
+Behavior scopes matter for visual transfer feedback. A view may install a drop target, temporary highlight, status binding, or progress overlay. Those resources should close when the view closes. Drag-and-drop bugs often look like stale listeners: a closed panel still receives import callbacks or a glass-pane hint remains installed after the workflow ends.
+
+Testing transfer becomes easier when boundaries are named. A \api{Transferable} can be tested directly for flavors. A parser can be tested without Swing. A domain import command can be tested with rows and expected problems. A Swing binding test can verify that a handler delegates to the command. A screenshot can verify drop feedback and progress state. Each test knows its layer.
+
+Generated companions can help here too. A generated table descriptor can expose column identity for row-targeted problems. A generated command descriptor can provide resource keys and shortcuts for Paste. A generated view companion can provide stable component keys so a test harness can locate the drop target. Generation removes repeated wiring; it does not hide transfer semantics.
+
+There is also a useful migration path. First, move import logic out of mouse listeners into a command or service. Next, make the transfer handler create immutable import requests. Then publish accepted rows through observable lists and rejected rows through problem sets. Finally, bind progress and command state to the UI. The screen becomes easier to reason about at each step.
+
+\begin{migrationbox}{from drag callbacks to import workflow}
+Replace ad hoc mouse-driven transfer with a \api{TransferHandler} that negotiates flavors and creates an import request. Let a command or task validate and publish results. Use observable lists for accepted data, \api{ProblemSet} for rejected data, and command state for Copy, Paste, Import, and Cancel. Keep visual drop feedback separate from model mutation.
+\end{migrationbox}
+
+The most important Corusco contribution is predictability. When a row appears after a drop, the reviewer knows which list owns it. When a row fails, the reviewer knows where the problem is. When paste is disabled, the reviewer knows which command state explains it. Transfer code stops being a special case and becomes another input path into the same application model.
+
+Observable list batching is especially useful after imports. A CSV import may add hundreds of rows. Publishing them one row at a time can produce hundreds of table events, selection recalculations, sorter updates, and repaints. Publishing one precise batch lets the UI update once while still knowing which rows arrived. The transfer handler should not hide that efficiency behind repeated model calls.
+
+Problem targeting becomes important when the user needs to fix imported data. A problem that says "row 17 has an invalid date" is helpful. A problem targeted to an import row id and a typed column key is better because it can decorate a preview table, focus the offending cell, and survive sorting. This is the same table identity discipline reused in the import workflow.
+
+Corusco command descriptors also help with clipboard consistency. Copy, Paste, Import Files, Cancel Import, and Retry Failed Rows can have resource-backed text, icons, shortcuts, help topics, and disabled reasons. The toolbar button, popup menu, main menu, and keyboard shortcut then present the same command. Transfer stops being a hidden component trick and becomes part of the command surface.
+
+Lifecycle scopes matter because transfer workflows often install temporary state. A drop target may subscribe to model capabilities. A preview may install validation bindings. A busy overlay may observe an import task. A status line may follow progress. When the dialog or panel closes, every one of these subscriptions must close too. Otherwise a later import updates a dead view.
+
+The Corusco testing story is deliberately layered. Test the parser with representative text and files. Test the import command with accepted and rejected rows. Test the observable list events. Test problem targeting. Test command enablement around clipboard availability as far as practical. Then add a small number of Swing tests for handler wiring and screenshots for feedback states. Robot drag tests become confirmation, not the only evidence.
+
+Screenshot tests are most useful when they capture decisions, not decoration. A transfer chapter screenshot should show accepted feedback, rejected feedback, import running, import completed with problems, and paste disabled with a visible reason. The screenshot does not prove every parser case, but it proves that the user receives state at the moments when the protocol changes stage. Corusco's stable component keys and screenshot harness make those states reproducible enough to include in documentation.
+
+The migration path is therefore incremental. A team can keep existing \api{TransferHandler} subclasses while extracting the parser, import command, problem model, and task boundary. Once those pieces exist, clipboard paste, file import, drag-and-drop, and generated screens can converge on the same request objects. The visible code may still contain Swing transfer APIs, but the risk has moved out of anonymous listeners and into named, testable units.
+
+\section{Review Drills and Checklist}
+
+The first review question is "what is the payload?" A payload containing view row indices is suspicious. A payload containing mutable domain objects is suspicious. A payload containing stable ids, immutable snapshots, file paths, text, or a documented import request is easier to review. The payload should outlive the exact gesture that produced it.
+
+The second question is "what flavors are offered and accepted?" A local JVM flavor alone is fine for a private internal gesture and disappointing for clipboard copy. A string flavor alone may be interoperable but loses identity. A file-list flavor requires file validation. The list of flavors is not an API footnote; it is the public contract of transfer.
+
+The third question is "what does move mean?" A move from one list to another may transfer ownership. A move within one list may reorder. A move from a backlog to a sprint may schedule without deleting. A move to an archive may be destructive. If the domain answer is vague, the UI implementation will be vague too.
+
+The fourth question is "where can this run slowly?" File parsing, spreadsheet decoding, duplicate detection, database lookup, virus scanning, and remote validation must not happen inside drag feedback or on the EDT. The review should identify the background task, progress model, cancellation path, and stale-result policy.
+
+The fifth question is "how does keyboard transfer behave?" Copy and paste should be available without a mouse where possible. Reorder may need explicit Move Up and Move Down commands. Import may need a button or menu item in addition to file drop. Accessibility is not an extra feature; it is a way to verify that transfer semantics are not trapped inside pointer motion.
+
+The view-index drag drill is short and valuable. Implement table row drag while the table is unsorted. Then enable sorting and filtering. If the wrong row moves, the payload used view state instead of model identity. Fix it by exporting stable ids and resolving against the current model during import.
+
+The native clipboard drill reveals interoperability. Copy selected rows and paste into a text editor, spreadsheet, email, and another instance of the application. Each target should receive the best reasonable representation. If only the same JVM can paste, say that in the feature design or add plain text and tabular flavors.
+
+The file-drop drill tests input boundaries. Drop no files, one valid file, ten valid files, an unsupported extension, a directory, a very large file, a file on a slow share, and a file that disappears before import. The handler should provide cheap feedback, and the import workflow should report structured problems without freezing the UI.
+
+The move drill tests transaction semantics. Move rows within one model, between two models, from a filtered view, and while an import failure occurs. Decide whether undo exists. If partial success is possible, decide how source removal works. A move feature that cannot explain failure should probably start life as copy.
+
+The security drill asks what leaves the application. Copy a row containing masked or sensitive fields. Inspect every flavor. Does plain text include hidden values? Does HTML include internal ids? Does a local flavor expose mutable objects? The safest rule is not "never export"; it is "export deliberately and review every representation."
+
+The screenshot drill should capture states rather than only final tables. Show acceptable drop, rejected drop, import running, import completed with rejected rows, and paste disabled. A static before/after screenshot misses the protocol. The visual chapter needs the moments when users decide whether the application understood them.
+
+The command-surface drill asks whether every drag operation has a keyboard or menu equivalent. Copy and paste usually do. Reorder might have Move Up, Move Down, or Move To commands. File drop should have Import Files. If no equivalent exists, document why the operation is inherently pointer-based. Most business transfer is not.
+
+The failure-message drill asks what the user sees when \api{importData} returns \api{false}, when parsing fails, when a duplicate is rejected, when an import is cancelled, and when a move cannot remove the source. Each case should have a user-facing result and a diagnostic result. Silent failure is not a policy.
+
+The lifecycle drill closes the source panel during or after transfer. Does the clipboard still contain useful data? Does a slow import stop or continue deliberately? Do progress bindings close? Does a stale drop highlight disappear? These tests are awkward precisely because lifecycle bugs in transfer are awkward in production.
+
+The interoperability drill records which native applications are supported. A desktop business app may reasonably support spreadsheet paste, text-editor paste, and file-manager drops. It may not need rich HTML import. Write that decision down. Otherwise every unsupported flavor becomes a potential bug report whose answer depends on who triages it.
+
+The documentation drill is simple: write down offered flavors and accepted flavors in user-facing or developer-facing docs. Future maintainers should not need to read the handler line by line to know whether copying rows to a spreadsheet is supported. A protocol that is not documented tends to be changed accidentally.
+
+The final reader test is predictability. Given a new transfer requirement, the code should make it clear whether to add a flavor, command, parser, task, problem target, or renderer feedback.
+
+A useful code review can walk the feature in protocol order. First inspect the source snapshot and every flavor it offers. Then inspect target flavor choice, action choice, and drop-location conversion. Then inspect the import request, validation pipeline, slow-work handoff, model publication, source cleanup, and user-visible failure path. This order prevents the review from becoming a tour through callbacks and helps beginners see transfer as a chain of responsibilities.
+
+When the implementation is mature, the reviewer should be able to ask for one requirement change and predict the edit location. "Add spreadsheet paste" should touch flavor choice and parser tests. "Reject duplicate customer ids" should touch validation and problem targeting. "Show cancel progress" should touch task state and command state. "Keep source selection after copy" should touch source selection restoration. If every change points back to one large handler, the chapter's boundary lesson has not yet been applied.
+
+\begin{detailbox}{transfer review rule}
+A transfer feature has three checkpoints: desktop format negotiation, application validation, and model publication. If all three are implemented inside one mouse listener or one table handler, the feature is probably too tangled to test well.
+\end{detailbox}
+
+For beginners, the practical rules are modest. Use \api{TransferHandler}. Offer at least one useful flavor. Do not put view indices in payloads. Keep transferables immutable. Use scrollable component drop locations rather than raw mouse coordinates. Do not block the EDT during file import. Test paste as well as drag.
+
+For intermediate Swing programmers, the checklist expands. Define \api{DropMode}; handle sorted and filtered views; make \api{canImport} cheap; use \api{exportDone} carefully; separate copy from move; keep clipboard and drag import paths equivalent; validate native file drops; and provide honest visual feedback while the drag is moving.
+
+For Corusco programmers, the rule is to move application meaning out of the handler. The handler adapts desktop data into import requests. Commands decide availability. Task services process slow imports. Observable lists publish rows. Problem sets report failures. Scopes own listeners and feedback. Tests cover each layer without requiring a full robot drag for every case.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Implement copy/paste of selected table rows as both local IDs and plain text.
+\item Add drag reordering to an unsorted list model, then define behavior when sorting is enabled.
+\item Implement a tree drop target that accepts nodes only under compatible parent types.
+\item Provide a file drop target that accepts at most ten files and validates extension cheaply before import.
+\item Write tests for a \api{Transferable} offering two flavors and rejecting unsupported flavors.
+\item Implement move semantics using stable IDs and an undoable reorder command.
+\item Add visual drop feedback to a custom component without using mouse listeners for data transfer.
+\item Verify that clipboard paste and drag import call the same domain import path.
+\item Build an import preview that reports accepted and rejected rows through \api{ProblemSet}.
+\item Capture screenshots for accepted drop, rejected drop, import progress, and import problems.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{itemize}
+\item Offer stable domain identities or immutable snapshots, not view indices.
+\item Provide interoperable flavors when data should leave the JVM.
+\item Keep \api{Transferable} payloads immutable or snapshot-like.
+\item Use \api{canImport} for cheap validation and drop-action feedback.
+\item Use specialized drop locations for tables, trees, and lists.
+\item Define move semantics at the domain level before implementing \api{exportDone}.
+\item Do not perform slow I/O inside drag validation or EDT import callbacks.
+\item Use the same transfer semantics for clipboard and drag-and-drop where possible.
+\item Test sorted and filtered tables before supporting row reordering.
+\item Validate native file drops as untrusted user input.
+\item Publish accepted imported data through precise model changes.
+\item Report rejected imported data through structured problems.
+\end{itemize}

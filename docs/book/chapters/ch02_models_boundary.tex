@@ -1,0 +1,413 @@
+\chapter{Models, Components, and the Presentation Boundary}
+\label{ch:models-boundary}
+\chapterquote{A widget can display state, but it should not be the only place where important state exists.}{The presentation boundary}
+
+\begin{chaptermap}
+Core question & Which facts belong in Swing components, which belong in Swing models, and which belong in application-owned presentation models?\\
+Primary APIs & \api{Document}, \api{ButtonModel}, \api{ListModel}, \api{TableModel}, \api{ListSelectionModel}, \api{Action}, \api{PropertyChangeListener}.\\
+Corusco connection & Core models, typed keys, descriptors, problems, values, commands, and lifecycle scopes make the presentation boundary testable.\\
+Companion example & \coreExample.\\
+\end{chaptermap}
+
+\section{Why this boundary matters}
+
+Swing makes it extremely easy to put state in a component. A text field has text. A combo box has a selected item. A table has selected rows. A button has enabled state. A label has a message. For the first hour of a program, that seems like enough.
+
+Then the screen grows. The text field's value must be validated. The OK button must be enabled only when the form can commit. The same validation problem must appear as an inline icon, a tooltip, an accessible description, and a dialog summary. The selected table row must survive sorting and refresh. The Save action appears in a button, menu item, toolbar item, and keyboard shortcut. The screen must be tested without showing a window. Suddenly component state is not enough.
+
+The \termdef{presentation boundary}{the line between application-owned screen state and concrete Swing widgets} is the answer to that pressure. It is not a dogma that components are stupid. Swing components are sophisticated. The boundary says that important application facts need owners that are not merely incidental widgets.
+
+\begin{principlebox}{State follows ownership}
+If a value is part of application behavior, put it in an application-owned model. If a value is only part of widget mechanics, leave it in the component. Do not make a text field the authoritative database of the screen.
+\end{principlebox}
+
+\textbf{Three kinds of state.} \termdef{Domain model}{state that belongs to the problem domain} describes the world the application is about. A customer is active. An invoice is overdue. A telescope observation has a timestamp and quality flag. Domain state should not know which Swing field edits it. \termdef{Presentation model}{state that belongs to one screen or workflow} describes how the user is interacting with domain state. A row is selected. A field contains raw text. A parsed value is invalid. A command is disabled. A background load is running. A form is dirty relative to its baseline. Presentation state may be temporary, but it is still real state. \termdef{Component state}{state owned by a Swing component} describes widget mechanics. A caret is at offset 7. A table is editing row 3. A scroll bar model has a current value. A button is armed. A renderer is painting a selected cell. A component has focus. This state belongs in Swing because Swing implements the widget behavior. The mistake is not that these categories interact. They must interact. The mistake is to let the easiest category swallow the others. A \api{JTextField} should display raw text and own caret mechanics. It should not be the only object that knows whether the user's intended value is valid, dirty, committable, or tied to a help topic.
+
+The boundary is not a way to make screens abstract for their own sake. It is a way to preserve facts at the level where they can be reasoned about. A domain object should be testable without Swing. A presentation rule should be testable without a native window. A component should remain free to manage caret blinking, selection painting, drag feedback, and focus traversal without pretending that these mechanics are business rules. The code becomes quieter when each fact has the smallest durable owner that can answer for it.
+
+The categories also explain why the same visible value may have several legitimate representations. A customer name may appear as a string in a text field, as raw text in a field model, as a parsed semantic value, as a property of a customer record, as a table cell, as a search token, and as text in an audit message. These are not duplicates if each representation has a clear role and synchronization path. They are duplicates only when two owners claim to be authoritative without a rule for resolving disagreement.
+
+\textbf{Swing already teaches separation.} Swing is often criticized as old-fashioned, but it contains an important design lesson: many widgets are adapters over models. A \api{JList} displays a \api{ListModel}. A \api{JTable} displays a \api{TableModel}. A text component edits a \api{Document}. A button can present an \api{Action}. Selection is commonly stored in a separate selection model. This separation is not academic. It lets the same data be viewed in different ways. It lets a table change selection without changing row data. It lets a text field process input methods, undo, filters, and caret movement without pretending that text is a bare string. It lets one action drive many UI presentations.
+
+The lesson is easy to miss because Swing does not force it uniformly. It gives strong model contracts for tables, lists, documents, buttons, and selections, but it does not give the same strong contract for dirty state, disabled reasons, validation problems, help topics, resource keys, background task state, or table-column identity. Applications invent those concepts anyway. Some invent them as named models; others invent them as a haze of listeners and component properties. Corusco exists to make the named-model version easier and more consistent.
+
+This chapter therefore treats Swing's built-in models as the starting point, not as legacy API. The correct question is not "Should I use Swing models or Corusco models?" The correct question is "Which model owns which fact, and how is that fact adapted to the component tree?" A \api{TableModel} may still be exactly the right Swing-facing adapter, while a Corusco observable list owns the application-side row sequence and a descriptor owns column identity. Boundaries are layers of responsibility, not a contest for one supreme object.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\modelsOwnershipFigure}
+\caption{A Swing screen has several legitimate owners. Domain models own business facts, presentation models own screen facts, descriptors own stable metadata, Swing models own widget-facing mechanics, and bindings adapt between them under a lifecycle scope.}
+\label{fig:models-ownership-boundary}
+\end{figure}
+
+Figure~\ref{fig:models-ownership-boundary} is deliberately not a framework diagram. It is an ownership diagram. Each box answers a different review question. The domain model answers what is true in the problem world. The presentation model answers what is true in this screen now. Descriptors answer which fields, columns, commands, resources, and help topics are stable enough to name. Swing components and Swing models answer how the user edits, sees, selects, and navigates. Bindings carry facts across the border and must be closed when the screen closes.
+
+This separation is not always visible in small examples because one Java object can play more than one role. A demo table model may store rows and adapt them to \api{JTable}. A small dialog panel may create its fields and also decide Save enablement. That is acceptable while the behavior is small. The important habit is to notice when a role has outgrown the object that currently hosts it. A table model that merely adapts records is fine. A table model that also owns server refresh, permissions, validation summaries, export metadata, and selected-row workflow is no longer a table model in any useful sense.
+
+The diagram also explains why tests should not all start with "create the panel." If the fact belongs to the domain model, test it there. If the fact belongs to the presentation model, test it without a native window. If the fact belongs to a Swing component, such as focus traversal, editor commit, renderer behavior, or document filtering, then a Swing test is appropriate. A test that constructs the whole screen for every rule is usually a sign that ownership is too close to the component tree. A test that avoids Swing even for focus and editing behavior is equally wrong. The owner chooses the test level.
+
+\begin{detailbox}{Swing models are not domain models}
+A \api{TableModel} is a Swing-facing adapter. It may read from domain objects, but it also answers Swing questions: row count, column count, column class, editability, and table events. Keep that adapter role clear.
+\end{detailbox}
+
+\textbf{The model families in detail.} \api{Document} is the text model family. It stores characters and attributes, emits document events, supports filters, and participates in undoable edits. Treating a text field as a string loses this machinery. A returning developer should remember that \api{DocumentListener} sees mutations after they happen, while \api{DocumentFilter} can intercept attempted mutations before they are committed. The document also owns positions, not merely offsets. A caret, highlighter, view, and undo manager can continue to refer to meaningful positions while text changes around them. That is much richer than a property named \api{text}.
+
+This richness is useful only if the application does not ask the document to become every other model too. The document should not be the only place where parsed value, dirty state, validation target, help topic, and field label exist. Let the document own editing mechanics. Let the form field model own form meaning. Then a binding can translate document mutations into raw-text changes and model resets back into document contents. The result is less code in listeners and more honesty about which facts are being edited.
+
+\api{ButtonModel} is the button state family. It records selected, armed, pressed, rollover, and enabled states. Most applications do not implement button models, but the concept explains why check boxes, radio buttons, toggle buttons, and ordinary buttons share behavior. It also explains why a command should not be confused with a button press. A button model knows whether the mouse is currently pressing this button. A command model knows whether Save is available, selected, named, described, and bound to a handler. The two cooperate through \api{Action} and component adapters, but they answer different questions.
+
+\api{ListModel} and \api{ComboBoxModel} are option-list families. A combo-box model also stores selected item state. A list model does not necessarily store selection; that belongs to \api{ListSelectionModel}. The separation lets selection change independently from list contents. It also lets one list of options be reused while selection belongs to a particular view. If a settings dialog and a toolbar combo box display the same options but have different temporary selections, the model boundary tells us which facts are shared and which are local.
+
+\api{TableModel} is a two-dimensional data adapter. \api{TableColumnModel} is a column presentation model. \api{RowSorter} maps model rows to view rows. \api{ListSelectionModel} stores row or column selection. A table is therefore not one model; it is a protocol among several models. When table code becomes confusing, the first diagnostic question is often "which table model are we talking about?" Row data, visible column order, sort mapping, selection, editor state, renderer policy, and persisted column layout are different facts even though the user sees them in one rectangle.
+
+\api{Action} is command state. It may appear less "model-like" because it performs work, but it owns mutable presentation facts: enabled state, selected state, name, icon, description, mnemonic, and accelerator metadata. A Swing action can be enough for small screens. Corusco commands add stronger identity, resource discipline, typed keys, disabled reasons, and testable state, but the conceptual bridge is already present in Swing. A command is not a button. It is the operation that a button, menu item, toolbar item, context item, or key binding may present.
+
+These families reveal a useful rule: a model is not merely storage. It is storage plus notification plus a vocabulary for change. A \api{DocumentEvent} says which range changed. A table-model event can say that one cell changed or that rows were inserted. A selection event says whether adjustment is still in progress. Good Swing screens depend on this precision. If a table model fires "all data changed" for every small update, the table may lose selection and repaint too much even though the data is technically present.
+
+The same rule should be extended to application-owned presentation state. A busy value should notify when busy changes. A problem set should notify which target changed if that matters. A row list should report inserted and removed ranges. A command should notify when enablement or text changes. Without notifications, the only way to keep the UI current is to re-read everything after every possible event. That is how small programs become sluggish and brittle.
+
+Swing models also show that adapters are legitimate. A \api{TableModel} may adapt immutable records. A \api{ComboBoxModel} may adapt a sorted observable list. A document binding may adapt raw text into a field model. The adapter should be honest about its direction and lifetime. If the adapter owns data, say so. If it merely exposes data owned elsewhere, say so. Confusing storage owner and adapter is one of the fastest ways to make a screen hard to test.
+
+\textbf{The hidden cost of component-owned behavior.} Consider a form with three fields and a Save button. The simplest implementation adds document listeners to fields. Each listener parses text, sets an error label, and enables or disables Save. That implementation has three hidden costs. First, the validation result is not a value. It is an effect on a label. If a dialog summary later needs the same problem, the code must rediscover it or read it back from the label. Second, the Save enablement is not a value. It is an effect on a button. If a menu item also presents Save, it may drift. Third, the form result is not a model. It is assembled by scraping components at the moment OK is pressed. These costs compound. Listener code begins as glue and becomes the application. The cure is not to ban listeners. The cure is to make listeners connect components to owned state rather than make them the sole owners of behavior.
+
+\begin{pitfallbox}{scraping the UI}
+Reading every component at commit time is sometimes necessary, but it should not be the only representation of the screen. If validation, dirty state, command state, or tests need the same data before commit, scraping the UI has already failed as the main model.
+\end{pitfallbox}
+
+There is a fourth hidden cost: component-owned behavior is difficult to describe to another programmer. "The name field listener sets the error label unless the country combo listener has already disabled Save" is not a stable design. "The form model reports problems and committability; the Save command observes committability" is a design. The difference is not syntax. It is whether the rule can be named, tested, and changed without tracing incidental event order.
+
+The cost also appears in screenshots and examples. A screenshot of a field with a red border proves almost nothing if the problem exists only as border state. A screenshot of a field whose problem is also present in a problem set, summary, tooltip, and accessible description proves a contract: several presentations agree because they observe the same structured fact. A book example should prefer the second form, even when the first form is visually simpler.
+
+\textbf{Presentation models.} A presentation model stores screen-level facts in ordinary Java objects. It may expose observable values, lists, commands, validators, descriptors, and problem sets. It may be handwritten or generated. It is close enough to the screen to know about selection and dirty state, but far enough from Swing that it can be tested without constructing components. Presentation models are not one fixed pattern. Some applications call the owner a presenter. Some call it a controller. Some use explicit form model classes. Some use observable values inside a panel controller. The name matters less than the ownership rule: important screen facts have named objects.
+
+\begin{lstlisting}[caption={A small presentation-state sketch.}]
+final class CustomerScreenModel {
+    final WritableValue<CustomerRow> selected = SimpleValue.empty();
+    final WritableValue<Boolean> busy = SimpleValue.of(false);
+    final WritableValue<String> status = SimpleValue.of("Ready");
+    final ObservableArrayList<CustomerRow> rows = ObservableArrayList.empty();
+}
+\end{lstlisting}
+
+This sketch is not yet a complete Corusco form or table setup. It is the basic move: selection, busy state, status, and rows are not hidden inside components. They can be observed, tested, and bound.
+
+\textbf{Corusco's core boundary.} Corusco core is deliberately Swing-free. It contains values, lists, commands, forms, validation, problems, table descriptors, resources, help topics, tasks, and lifecycle contracts. The Swing module adapts these concepts to components. This division lets the same screen facts be tested and generated before Swing enters.
+
+\begin{coruscobox}{testability}
+A Corusco form model can be tested without opening a window. A command can be enabled, disabled, and invoked without a button. A table descriptor can be reviewed without a column model. Swing tests then verify binding and component behavior, not every business rule.
+\end{coruscobox}
+
+The boundary also keeps threading honest. Core values and lists are synchronous; they do not secretly marshal to the EDT. Swing bindings are the place where EDT confinement must be respected. This is a good thing. Hidden thread hops make tests surprising and can conceal ownership errors.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\bindingFormFigure}
+\caption{A form screen read as model ownership rather than component ownership. The Swing fields and labels are visible, but the durable facts are field state, problems, command state, and lifecycle-owned bindings. Later binding chapters return to this figure in detail.}
+\label{fig:models-binding-form-state}
+\end{figure}
+
+Figure~\ref{fig:models-binding-form-state} is intentionally shown early. A reader should see that Corusco does not replace the form with an abstract machine. The text fields still exist. MigLayout still arranges them. FlatLaf still paints them. What changes is the location of authority. The name field does not own the meaning of the name. The Save button does not own the Save rule. The tooltip does not own validation. The binding layer carries facts between owners.
+
+That location of authority is also what makes generated code acceptable. If generation merely produced more component manipulation, it would be a faster way to write fragile code. When generation produces stable keys, descriptors, binding plans, and model companions, it reinforces the boundary. The generated code has something clear to generate because the screen facts have already been named.
+
+\textbf{Values.} A Corusco \api{ReadableValue} represents one observable fact. A \api{WritableValue} can be changed by its owner. \api{SimpleValue} is the basic implementation. Values are suitable for selected row, status text, busy flag, enabled flag, current filter text, or derived display text. Values are not Swing properties. They have no component. A label binding may mirror a value into a label. A command may observe a value to update enablement. A test may subscribe to the same value and assert events. The value is the presentation fact; the component is one display.
+
+Values should be small enough to have a clear name. A value named "screen state" is usually too large unless the screen state is an immutable record deliberately replaced as a whole. A value named \api{selectedCustomer}, \api{busy}, \api{statusText}, or \api{canSave} can be reviewed. The name tells the reader who may write it and who may observe it. Derived values become especially useful when a rule is otherwise copied into listeners: \api{canSave} can depend on dirty state, validation state, busy state, and permission state without any button owning that rule.
+
+Values also create a vocabulary for origins. If user input changes a field and a binding writes to a model, that update has a different explanation from a programmatic reset or a background load result. Origins are not a replacement for ownership, but they help diagnose feedback loops and surprising updates. They answer the question "which side of the boundary caused this change?"
+
+\textbf{Lists.} An observable list represents changing row or option data. It should report precise changes: inserted, removed, replaced, moved, cleared, or batched. Swing adapters can translate those changes into list, combo-box, or table model events. The distinction matters for large data. Replacing a whole table model when one row changes is not merely inefficient. It can lose selection, sorter state, scroll position, and user trust. Precise list changes make precise Swing events possible.
+
+Lists also force a choice about identity. A list position is not a business identity. If rows are sorted, filtered, inserted, or refreshed, position changes. A selection model that stores only index may be correct for a transient list; it is usually wrong for a business table. A presentation model can store the selected row object, selected key, or selected id, then let the table adapter translate between view coordinates and model coordinates. This is the beginning of large-data discipline.
+
+For combo boxes and small option lists, precise identity still matters. An enum constant, typed id, or descriptor may be a better selected value than the localized text shown to the user. The text can change with locale; the identity should not. This is the same boundary in miniature.
+
+\textbf{Forms.} A form model owns editable state. It must distinguish raw text from parsed value, parsed value from validated value, and validation problems from exceptions. It should know dirty state and committability. It should allow invalid intermediate input without corrupting the last meaningful value. This is one of the strongest reasons not to store form truth only in components. A text field naturally stores raw text. It does not naturally store parse state, touched state, baseline value, field descriptor, help topic, problem codes, and form result creation. A form model can.
+
+A form model also gives dialogs honest semantics. OK is not simply "read all components and close". OK is "commit the active editor, parse current input, decide whether validation permits commit, produce a result, and close only on success". Cancel is not simply "hide the window". Cancel may need to discard dirty edits, cancel validation tasks, restore baseline values, and close bindings. When these meanings live only in component listeners, every dialog reimplements them differently.
+
+\section{Structured feedback, commands, and descriptors}
+
+A problem is structured feedback: severity, code, source, target, and message. A label can display a problem. A tooltip can include it. A border can decorate it. A dialog summary can list it. A test can assert it. The problem should not be born as a red string painted into one component. Problem targets are especially important. A problem attached to a field can focus that field. A problem attached to a table cell can decorate that cell. A problem attached to a form can appear in a summary. Without targets, validation feedback becomes text without routing.
+
+Structured problems are also better for timing. Parsing may fail while the user is still typing. Validation may fail after parsing succeeds. A remote uniqueness check may still be running. A warning may permit commit while an error blocks it. A tooltip string cannot express those distinctions reliably. A problem model can. It can say what happened, where it belongs, how severe it is, which code identifies it, and which presentation is responsible for showing it.
+
+This structure also prevents feature collisions. Help, validation, disabled reasons, and accessibility may all want to speak through the same component. If each one writes a tooltip directly, the last writer wins. If each one contributes structured information, a behavior can compose the final tooltip, accessible description, border decoration, and summary entry. This is the difference between decorating a component and owning the fact behind the decoration.
+
+There is an important difference between a parse problem and a validation problem. A parse problem says the user's raw text cannot currently become a semantic value. The text "abc" in an integer field is a parse problem. The text "-" may also be a parse problem, but it may be an acceptable intermediate editing state. A validation problem says a semantic value exists but is not acceptable for this form or operation. The number 0 may parse as an integer and still be invalid for a positive quantity field. Keeping these facts separate lets the screen remain editable while still being honest.
+
+Problem severity is another model fact. An error may block commit. A warning may allow commit but ask for attention. An informational problem may guide the user without implying failure. A busy validation state may mean that the answer is not known yet. If all of these become red label text, the UI loses vocabulary. The OK command cannot know whether to enable. The accessibility layer cannot report severity. A test cannot assert the difference between "not parsed", "parsed but invalid", "warning only", and "remote validation pending". A \api{ProblemSet} or equivalent model can express those states explicitly.
+
+Targets make problems actionable. A problem target may be a field key, table column key, row key, cell coordinate, command key, whole form key, or screen key. The target tells the UI where focus should go when the user asks for the first problem. It tells a table renderer which cells to mark. It tells a tooltip behavior which component should display the message. It tells a summary whether clicking an entry should focus a field, select a row, or open a detail panel. Without targets, a validation summary is a list of sentences with no operational route.
+
+Problem codes are not decoration either. A user-visible message may be localized, edited by a documentation writer, or changed to improve tone. A code such as \api{customer.name.required} or a typed problem id remains stable enough for tests, diagnostics, and help links. The user should not see cryptic codes in ordinary UI, but the program should not use localized prose as its only identity. This is the same descriptor principle applied to failures.
+
+Asynchronous validation tests the boundary most severely. Suppose a user edits a customer name, and the application checks uniqueness on a server. The field has raw text immediately. It may parse immediately. The remote uniqueness answer arrives later and may be stale because the user kept typing. The presentation model needs a generation or request identity for that validation. The completion should install a problem only if it still belongs to the current raw or parsed field state. A tooltip cannot carry that policy. A problem model can.
+
+Plain Swing can implement all of this manually, but the burden is easy to underestimate. One listener marks a red border. Another updates a summary. Another disables OK. Another sets an accessible description. Another clears the border on reset. Another performs asynchronous validation. The first bug report says that the summary cleared but the border remained, or that OK stayed disabled after a warning. Corusco's problem and field models reduce this drift by making parse state, validation state, problem targets, severity, and command enablement observable facts rather than effects scattered across components.
+
+\textbf{Commands.} Commands are presentation facts too. Save is enabled or disabled. Delete may be selected or not. Refresh may be busy. Each command has stable identity and resources. Swing \api{Action} is the component-facing form; Corusco commands can exist before Swing adapts them. When a command is a first-class model, a presenter can test its behavior directly. A button can bind to it. A menu item can bind to it. A keyboard shortcut can invoke it. The command's enabled state lives once.
+
+Command identity is especially important in applications that have menus, toolbars, context menus, and generated help. "Save" is not the button text. It is an operation with a stable key, resource keys, enablement, optional selected state, optional accelerator, help topic, and handler. The text may be localized. The icon may change. The current presentation may be hidden. The command remains the same user operation.
+
+Command state often depends on several model facts. A Delete command may require a selected row, no running delete task, permission to delete, and a row that is not locked. If these conditions are checked separately by three buttons and a menu item, the UI will drift. If they feed one command state, every presentation agrees. Corusco does not invent the need for that agreement; it makes the agreement easier to express.
+
+\textbf{Descriptors.} A descriptor is immutable metadata. A field descriptor says a field exists, has a stable key, expects a certain editor family, and may have resource or help metadata. A table descriptor says a table has these typed columns with stable ids, defaults, capabilities, and accessors. An action descriptor says a command has a key, text resource, tooltip resource, mnemonic, or accelerator. Descriptors are not state. They are the contract around state. They are valuable because they remove meaning from fragile strings and indexes. A table column is no longer "whatever column 3 means today"; it is a typed descriptor with a key.
+
+\begin{principlebox}{Descriptors describe; models change}
+Do not put changing user state into descriptors. Do not put stable screen metadata into mutable components. Let descriptors name the screen's durable facts and models hold the current state.
+\end{principlebox}
+
+Descriptors are the answer to a quiet kind of duplication. A table column header, exported CSV header, persistence id, tooltip, preferred width, value accessor, renderer policy, and generated test name all refer to the same column. Without a descriptor, those facts scatter. With a descriptor, the column has a stable identity that can be used by generation, tests, resources, and Swing adapters.
+
+Descriptors are also how the book avoids reducing Corusco to a binding library. Bindings move changing state. Descriptors name stable shape. A form field has both: its descriptor says what the field is, while its field model says what the current user entered. A table column has both: its descriptor names the column and access policy, while the table model or observable list supplies current rows.
+
+\textbf{Bindings.} A binding connects a model fact to a component fact. A text-field binding mirrors raw text. A label binding mirrors status. A command adapter mirrors command state into a Swing action. A table binding adapts row lists and descriptors into a \api{JTable}. A validation binding turns problems into component decoration. Bindings are not free-floating glue. They have lifecycle. Closing a binding removes listeners and subscriptions it installed. A binding that lives longer than its screen can keep the screen alive or update components that are no longer relevant.
+
+Bindings should be boring when the boundary is good. A text binding should not decide business validity. A validation binding should not parse the domain object. A command adapter should not decide permissions. Those facts belong to models and presenters. The binding exists to keep the component and the model synchronized, to prevent feedback loops, and to clean up installed listeners. If a binding becomes a secret presenter, the boundary has moved to the wrong place.
+
+\textbf{Plain Swing first.} The plain Swing baseline for a text field is a \api{DocumentListener}. The listener reads text, parses it, updates a label, and enables a button. This is serviceable until the same state must appear in a dialog summary, a table cell, a command, and a test.
+
+\begin{migrationbox}{from listeners to models}
+Replace "when the document changes, update everything nearby" with "the field model changes; bindings and commands observe it". This changes the review question from "which listener remembered this case?" to "which model owns this fact?"
+\end{migrationbox}
+
+\textbf{A migration sequence.} Do not migrate a large Swing screen by replacing everything at once. Start by naming facts. Identify fields, commands, table columns, selection, validation rules, resources, help topics, and cleanup points. Then move one cluster at a time. First, extract commands. Replace repeated button/menu listeners with shared actions or Corusco commands. Second, extract field state for the most error-prone form. Third, extract table descriptors for tables with persistence, sorting, validation, or generated columns. Fourth, put listener and binding cleanup into a scope. Finally, consider annotation generation where stable facts are now clear. The sequence matters because generation amplifies clarity and confusion alike. If a team does not know which facts are stable, generated names will be unstable. If a team does know, generation removes repetition.
+
+The safest migration sequence usually follows pain. If a screen has duplicated Save enablement, extract the command first. If it has table-state bugs, extract row identity and column descriptors first. If it has validation drift, extract problems and field models first. If it leaks panels, introduce lifecycle scopes first. A plan that attacks the visible pain earns trust and leaves the screen better even before every Corusco feature is present.
+
+It is also acceptable for a screen to remain mixed for a while. A table may be descriptor-backed while the surrounding form still uses handwritten models. A form may use Corusco field models while a legacy chart remains a custom component. The boundary is not all-or-nothing. The test is whether each fact has a clear owner today and a plausible migration path tomorrow.
+
+\textbf{Testing by layer.} The boundary produces a testing strategy. Domain tests cover domain rules. Core/presentation tests cover values, form models, validation, commands, descriptors, and list transformations. Swing tests cover component bindings, table adapters, focus behavior, renderers, dialogs, and cleanup. This split keeps tests fast and meaningful. A validator test should not need a window. A command enablement test should not need a button. A table descriptor test should not need a \api{JTable}. Conversely, a renderer test or focus traversal test really does need Swing behavior on the EDT.
+
+\section{Fields, tables, and long-lived ownership}
+
+Text fields are the easiest place to see the boundary in miniature. The Swing \api{Document} owns the text mechanics: insertion, removal, filters, positions, undoable edits, input methods, and listener notification. A form field model owns the screen meaning: raw text, parsed value, parse failure, validation problems, dirty state, touched state, and baseline. Those two objects should cooperate. The document lets the user type. The field model decides what that typed text means for the form. A binding connects them. If the binding is well-written, user edits update the model with a user origin, and model resets update the document without a feedback loop.
+
+\begin{lstlisting}[caption={The boundary around one text field.}]
+// Component-owned mechanics:
+JTextField nameField = new JTextField();
+Document document = nameField.getDocument();
+
+// Application-owned presentation meaning:
+TextFieldModel<CustomerEdit, String> name = model.name;
+
+// Lifecycle-owned synchronization:
+scope.add(BindingFactory.textField(nameField, name));
+\end{lstlisting}
+
+The exact generated names vary by form, but the shape is stable. Component, model, and binding are three different responsibilities. When a test checks parsing or dirty state, it should use the form model. When a test checks that text appears in the field, it should use Swing.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\linewidth]{\textDocumentFigure}
+\caption{A text component is already a small model system. The document owns editing mechanics; the form field owns screen meaning; a binding keeps them synchronized without making either one pretend to be the other.}
+\label{fig:models-text-document}
+\end{figure}
+
+Figure~\ref{fig:models-text-document} is a useful antidote to the phrase "just read the text field." Reading the text may be enough at the end of a small dialog, but it is not enough when the screen must display parse errors, enable commands, show dirty state, support undo, accept input methods, and run validation before commit. The field is a view over a document; the document is an editing model; the form field is a presentation model. Treating all three as one string throws away information that Swing and Corusco both know how to preserve.
+
+\textbf{Intermediate invalid input.} A mature form must allow invalid intermediate text. Suppose a field edits an integer. The empty string may be invalid for the final form, but the user must be allowed to delete the old value before typing the new one. A field containing "-" may not yet be an integer, but it is a plausible intermediate step toward "-12". If the text field is the only state, programs often choose one of two bad policies. They either reject every intermediate value, making editing hostile, or they accept invalid values into domain state, making the rest of the application defensive. A field model avoids both. It can store raw text, preserve the last parsed semantic value, and report parse state separately.
+
+\begin{principlebox}{Raw text is not semantic value}
+Raw text belongs to editing. Parsed value belongs to meaning. Validation belongs to acceptability. A form model should keep those three facts separate.
+\end{principlebox}
+
+\textbf{Tables: data, columns, selection, and view.} Tables are the most common place where model boundaries collapse. A \api{JTable} has row data, column metadata, selection, sorting, filtering, rendering, editing, and persisted state. Plain Swing separates some of this already: \api{TableModel}, \api{TableColumnModel}, \api{ListSelectionModel}, and \api{RowSorter}. But application code often collapses meaning back into integers. There are three row identities to keep apart. The domain row is the business object or record. The model row index is the row's position in the table model. The view row index is the row's current visible position after sorting and filtering. A click gives a view row. The model stores model rows. The application usually cares about a row object or domain id.
+
+\begin{lstlisting}[caption={Do not treat view rows as model rows.}]
+int viewRow = table.getSelectedRow();
+if (viewRow >= 0) {
+    int modelRow = table.convertRowIndexToModel(viewRow);
+    CustomerRow row = tableModel.rowAt(modelRow);
+    selectedCustomer.setValue(row, ChangeOrigin.USER);
+}
+\end{lstlisting}
+
+The same distinction applies to columns. View columns can be reordered. Model columns have table-model positions. Application columns should have stable identities. Corusco table descriptors give those identities names.
+
+Tables also show why component state and presentation state must cooperate rather than compete. The table owns which cell editor is active. The selection model owns current selection mechanics. The sorter owns view-to-model mapping. The application may own selected customer id, selected row object, or selected row key. A binding can translate between these worlds. If the application instead stores "selected row 7" as meaning, sorting and filtering will eventually prove the lie.
+
+Column identity has the same shape. Users can reorder columns, hide them, resize them, and persist those choices. The application still needs to know which column is "customer credit limit" or "observation quality". A descriptor gives that column a durable identity. The \api{TableColumnModel} gives Swing a current presentation. Treating one as the other makes persistence and generation fragile.
+
+\textbf{Selection as presentation state.} Selection is not merely a visual highlight. It often drives detail panes, commands, validation summaries, and background loads. If selection remains trapped inside a component, other screen behavior must ask the component what is selected. That makes tests harder and can confuse view coordinates with meaning. The usual Corusco shape is an observable selected row value, selected id value, or selected key value. The table binding updates it when the user selects a row. Presenter code observes it. Commands derive enablement from it. A detail panel binds to it. Tests set it directly. Selection also has lifetime. Should selection survive refresh? Should it survive filtering? Should it clear when the selected row disappears? These are application decisions, not table defaults. They belong in the presentation model or presenter.
+
+\textbf{Master-detail ownership.} A \termdef{master-detail screen}{a screen where a primary selection controls a secondary view or editor} is one of the most common Swing business layouts. A customer table selects a customer; the detail form edits that customer. A project tree selects a node; the right side shows properties. A map selects a feature; the attribute panel shows fields. The shape is simple to draw and easy to implement incorrectly because the user sees one screen while the program contains several owners.
+
+The master owns a collection and a selected identity. The detail owns editable state for one selected item. The services own loading and saving. The domain model owns the customer, node, or feature outside the screen. The component tree owns focus, editors, selection mechanics, and layout. If these owners are not separated, refresh bugs become inevitable. The table reloads rows and the form still shows the old object. The form saves a changed object while the selection has moved. A slow detail load for row A finishes after row B is selected and overwrites row B's form. Each bug is a version of "selection was a highlight, not a model fact."
+
+A disciplined master-detail screen starts with a selected key or selected row value. The detail presenter observes that value and starts a load if necessary. The load captures the key, not the table row index. When the load completes, the callback checks that the key is still selected before installing the detail. If the form is dirty and selection changes, the presenter applies a policy: ask the user, prevent selection change, discard changes, save automatically, or keep a detached draft. The table should not accidentally decide that policy merely because its selection event arrived first.
+
+Dirty detail state is where many examples become dishonest. It is easy to show a table and a form bound to the same mutable object. The table cell changes because the form changes the object; the demo looks lively. In a real application this can bypass validation, undo, optimistic locking, audit trails, and cancel semantics. A safer pattern is to edit a draft or field model, then commit through a command. The table may show committed state, pending edited state, or a marker that the detail has uncommitted changes, but that choice is a presentation policy. It should not be an accidental side effect of sharing one mutable row object everywhere.
+
+Selection persistence is another policy that must be named. If a refresh returns a row with the same customer id, should selection survive? Usually yes. If a filter hides the selected row, should the detail remain visible? Sometimes yes, sometimes no. If sorting moves the selected row, should the viewport scroll to it? That depends on whether the refresh was user-requested, automatic, or caused by a local edit. A selected identity value gives the presenter a place to encode these rules. A selected view index does not.
+
+Master-detail screens also show why a presentation model can be smaller than it sounds. It may contain only selected id, row list, load state, detail form model, dirty flag, and command set. That is not ceremony; those are the facts the screen already has. The alternative is to hide them in table selection, current form text, disabled buttons, and listeners that remember the last request. Corusco's observable values, lists, forms, and task handles give those facts ordinary names. The UI becomes easier to test because the test can say "select customer 42, complete load for 42, then complete stale load for 41" without clicking through a table.
+
+\textbf{Disabled reasons.} Enabled state is not always enough. A command can be disabled because nothing is selected, because a task is running, because the user lacks permission, because the form is invalid, or because a prerequisite service is unavailable. Users and tests often need to know which reason applies. Plain Swing \api{Action} has enabled state but no standard disabled-reason model. Applications typically encode the reason in a tooltip or status label, if they encode it at all. A better presentation model can keep disabled reason as a value. A binding can then show it as tooltip text, status text, accessible description, or diagnostics.
+
+\begin{coruscobox}{disabled state}
+Corusco commands can be surrounded by values and resources that explain command state. The button should not be the only object that knows Save is disabled.
+\end{coruscobox}
+
+Disabled reasons need policy. If several reasons apply, which one should the user see? A dialog may prefer validation errors because the user can fix them immediately. A toolbar may prefer "busy" because the operation will become available soon. An administrator screen may prefer permission failure because no amount of editing will enable the command. That ordering belongs in presenter or command state, not in whichever component happens to refresh last.
+
+\textbf{Resources and help as model facts.} User-facing text is often treated as component decoration, but much of it is model metadata. A field label belongs to the field contract. A table header belongs to the column contract. A command name belongs to the command contract. A help topic belongs to the field, action, or screen concept. When text is embedded in components, it is hard to audit and generate. When descriptors refer to resource keys, text can be resolved late, tested, localized, and reused across components. This is why Corusco distinguishes typed keys. A resource key is not an action key. A help topic is not a field key. The type system should help the reader avoid mixing them.
+
+\textbf{MVP without ceremony.} Swing applications often use the words model-view-presenter or model-view-controller loosely. This book uses a pragmatic vocabulary. The \termdef{view}{the Swing component tree and its component-facing API} owns widgets and layout. The \termdef{presenter}{application code for one screen's behavior} owns workflow decisions, service calls, command handlers, and model coordination. The \termdef{presentation model}{observable state and descriptors used by the presenter and view} owns current screen facts. No base class is required. A small screen may have a panel and a few model objects. A large screen may have explicit presenter, view interface, generated bindings, and several model classes. The useful question is always the same: can behavior be tested without pretending the component tree is the only source of truth?
+
+Ceremony becomes harmful when it hides the screen instead of clarifying it. A three-field utility dialog may not need a presenter interface, dependency-injection module, generated view contract, and several files. But it still needs a truthful boundary if it has validation, command state, resources, or cleanup. The design should scale with the behavior, not with a pattern name. This is why the book prefers concrete ownership questions to architectural slogans.
+
+At the other end, a large screen benefits from a view contract because it prevents the presenter from rummaging through the component tree. The presenter asks for the name field, selected-row value, command set, or binding scope by stable contract. The view decides how those components are arranged. The model decides what the facts mean. This lets MigLayout and hand-tuned visual design coexist with generated binding code.
+
+\textbf{Generated view contracts.} Corusco generated forms can produce a view contract. This does not mean the generator creates the visual layout. It means generated binding code knows which components it needs: the name field, the active checkbox, the type combo box, and so on. The application panel implements that contract using ordinary Swing components arranged by MigLayout or another layout. This is a useful compromise. Generated code sees stable field identities. Handwritten code keeps layout and screen composition. The presenter can install generated bindings without giving up control over the visual design.
+
+Generated contracts should be read as executable documentation. If a generated companion requires \api{nameField()}, \api{activeBox()}, and \api{customerTypeCombo()}, the view contract tells the reader which components participate in the form. If the generated table companion exposes stable columns, it tells the reader which columns are durable application facts. The generator is not guessing. It is compiling decisions that should already be visible in annotations or descriptors.
+
+This is also why generated contracts should stay modest. A generator should not need to know that the Name field sits in the second MigLayout row, that the Help button appears in the south-east corner, or that the status strip uses a custom border. Those are visual design decisions owned by the view. The generator should know that a field with a stable key needs an editor component, that a command with a stable key needs an action adapter, and that a validation behavior needs a problem target. Generated code becomes maintainable when it depends on semantic names, not on incidental coordinates.
+
+Handwritten layout remains valuable precisely because the boundary is explicit. A dense business form often needs judgment: which fields align, which groups are visually close, which status belongs near a table, which commands are primary, which controls can collapse on narrow screens, and which warnings deserve room. MigLayout is good at expressing those choices. Corusco generation should provide the binding plan and stable names that make the screen behave; it should not replace the designer's responsibility to make the screen readable.
+
+The generated contract also gives reviewers a compact way to detect drift. If a field descriptor exists but no view component implements the contract, the screen cannot bind that field. If a component exists but no descriptor names it, perhaps it is pure component mechanics; perhaps it is an unnamed application fact. If a command is bound to a button but missing from the generated command set, the button may be a local one-off or a drifted duplicate. These mismatches are not automatically errors, but they are good review questions.
+
+Stable generated names are a form of documentation. A method named \api{customerNameField()} says more than a local variable named \api{textField1}. A generated companion named for a form or table says which domain concept the screen edits or displays. A column key used by a table descriptor, CSV export, persisted column width, tooltip resource, and test selector becomes a shared point of reference. The more surfaces an application has, the more valuable this stable naming becomes.
+
+There is a limit. Do not generate a contract for a screen fact that is still changing every day and not yet understood. Early prototypes benefit from direct Swing code because the team is still discovering the shape. Generation is best when the shape has stabilized enough to deserve names. The migration sequence in this chapter therefore starts with ownership, commands, field state, descriptors, and cleanup, and only then reaches for annotation processing. A generator should amplify a settled vocabulary, not freeze confusion.
+
+\textbf{Origins and feedback loops.} Two-way binding can create loops. The user types into a text field; the binding updates the model; the model notifies listeners; the binding updates the text field; the document fires another event. Good bindings use equality checks, update guards, and change origins to prevent useless cycles. \api{ChangeOrigin} is not a complete event-routing system, but it is useful diagnostic information. A value changed because of user input, model code, binding code, generated code, or system code. When behavior is surprising, origin can reveal whether an update came from the expected side of the boundary.
+
+Feedback loops are not limited to text fields. A table selection binding may update selected row state, which triggers a detail load, which refreshes the table, which changes selection again. A command may set busy state, which disables the command, which updates toolbar state, which changes focus. These loops are not always bugs; some are the screen's intended behavior. The point is to make them explicit enough to reason about. Origins, generation counters, equality checks, and scoped bindings are tools for keeping the loop honest.
+
+\textbf{Long-lived services and short-lived views.} The presentation boundary also protects lifetime. A screen is short-lived. A service may be application-long. If the screen registers directly with the service and never unregisters, the service keeps the screen alive. If a model subscription captures a panel and outlives the panel, the panel cannot be collected. This is why scopes appear repeatedly in Corusco examples. A scope is not only convenience. It records the fact that several relationships share the screen's lifetime. Closing the scope is part of closing the screen.
+
+Lifetime is where many otherwise clean model designs fail. A value can be well named and still leak a panel if its subscriber is never removed. A table descriptor can be immutable and still be surrounded by a state controller that lives too long. A task can publish to a sensible status value and still update a closed screen if cancellation and generation checks are missing. Boundaries must include cleanup, not only data ownership.
+
+The practical ownership sentence is: this screen owns these relationships until it closes. A scope turns that sentence into code. It should be created near the screen, passed to installers, and closed from the same lifecycle that hides or disposes the screen. When generated binding code participates, it should register its subscriptions with the same scope rather than invent a second lifetime.
+
+\textbf{A boundary review checklist.} During review, ask these questions before reading the details of a listener:
+
+\begin{itemize}
+\item What fact is changing?
+\item Who owns that fact?
+\item Is the fact component mechanics, presentation state, or domain state?
+\item Who observes it?
+\item What thread owns the mutation?
+\item How is the relationship removed?
+\item Can the behavior be tested at the owning layer?
+\end{itemize}
+
+This checklist turns vague unease into concrete engineering review. "This listener feels messy" becomes "this listener owns validation state, command state, and status text without a model or cleanup owner."
+
+\textbf{A boundary refactoring walkthrough.} Suppose an inherited customer editor has a search field, a result table, a detail form, Save and Refresh buttons, and a status line. The first temptation is to open the panel class and simplify listeners. Resist that temptation for a few minutes. The listeners are probably symptoms. The missing model boundary is the disease.
+
+Start with the search field. Its document contains current text, but the screen fact is search criteria. The criteria may be empty, syntactically valid, currently loading, or stale relative to the table. A presentation value named \api{searchText} or a small criteria model can own that fact. The document binding becomes mechanical: user edits update criteria; programmatic reset updates the document.
+
+Next inspect the result table. The table model exposes rows to Swing, but the application fact is the current row set and the selected customer identity. If refresh replaces every row and fires one broad event, the view may jump. If selection stores only a view index, sorting corrupts meaning. An observable list and selected-key value give the presenter facts that survive table mechanics.
+
+Then inspect the detail form. Each text field has a document, but the form owns editable state. The user's raw text, parsed value, validation problems, dirty state, and commit result should be visible before OK or Save is pressed. Without that form model, Save enablement, problem summaries, and cancel confirmation all have to scrape components or duplicate parsing.
+
+Now inspect commands. Refresh is not the Refresh button. Save is not the Save button. Delete is not a context-menu item. Each command has identity, resources, enablement, handler, and sometimes disabled reason. Buttons, menu items, toolbar entries, and key bindings are presentations. This one distinction removes a surprising amount of drift from old Swing screens.
+
+After commands, inspect user-facing text. A label beside a field, a table header, a button text, a tooltip, and a validation message may be strings in code today. Decide which ones are durable screen facts. Durable text deserves resource keys and usually belongs near descriptors. Temporary status text may be a value. Debug-only text may remain local. The point is not to resource every syllable; it is to stop pretending durable text is harmless decoration.
+
+Then inspect help and accessibility. If help is attached by setting tooltips directly on fields, it will collide with validation. If accessible names are copied by hand, they will drift from labels. A field descriptor that names label, tooltip, help topic, and problem target can coordinate these presentations. A behavior can decide how to compose them for the actual component.
+
+Now inspect busy state. Refresh may run while Save should be disabled. Save may run while Refresh should be disabled. A remote validation may be in progress while the user continues editing. Busy state is not a spinner. It is a presentation fact that commands, status text, overlays, and cancellation logic may observe. Model it before decorating it.
+
+Inspect error handling next. A failed service call should not become only a modal message box if the screen also needs status text, retry enablement, or diagnostics. Some errors belong to fields. Some belong to a command. Some belong to the whole screen. A problem target or status value gives the error a route. The message box can still exist, but it should not be the sole owner of the failure.
+
+After that, inspect cleanup. Every listener added to a long-lived object, every subscription, every timer, every table-state controller, and every task callback should enter a scope. The question is not whether Java can collect cycles. The question is whether a long-lived object still references a short-lived screen. A clear scope gives the review a place to look.
+
+Only now rewrite listeners. The document listener should update a field model or criteria value. The selection listener should update selected identity. The action listener should invoke a command. The service callback should publish a result to the appropriate model on the correct thread. The listener becomes a translation layer instead of a storage cabinet.
+
+This order gives small wins. Extracting search criteria improves tests even if the table remains old Swing. Extracting command state makes toolbar and menu behavior agree even if validation is still handwritten. Extracting selection identity fixes refresh bugs even before table descriptors arrive. A team can stop after any step and have a better screen.
+
+It also creates useful seams for examples. A book listing can show a small field model without rendering the whole dialog. A screenshot can show the same fact through text, tooltip, and command enablement. A test can assert that selection survives sorting without creating a frame. These examples are more educational than giant screens because each one demonstrates one boundary.
+
+The most common objection is that the refactoring introduces more objects. It does. The real comparison is not "one listener versus three classes"; it is "one listener plus all the rules hidden inside it versus named facts with tests." Small screens can keep small objects. Large screens need names because unnamed behavior is still behavior.
+
+Another objection is that Swing already has models, so Corusco models seem redundant. They are redundant only if they own the same fact. A \api{Document} owns editing mechanics; a field model owns form meaning. A \api{TableModel} adapts rows to Swing; an observable list may own row changes. A \api{ListSelectionModel} owns selection mechanics; a selected customer value owns workflow meaning. The layers overlap visually, not semantically.
+
+A final objection is performance. More models and bindings can sound expensive. In practice, precise models are usually faster because they avoid broad resets and repaint storms. They also make expensive work easier to move away from the EDT. The performance danger is not the existence of models; it is vague events, accidental feedback loops, and components forced to rediscover state after every change.
+
+This walkthrough should be read as a method, not a recipe. Some screens need form extraction first. Some need table identity first. Some need lifecycle cleanup before anything else because leaks distort every test. The stable rule is to locate the missing owner. Once ownership is clear, Corusco features become practical tools rather than a second layer of mystery.
+
+The reward is not architectural purity. The reward is a screen where behavior can be discussed in sentences: the search criteria owns the current filter; the row list owns data changes; the selected id owns workflow selection; the form model owns editable detail; commands own operations; descriptors own stable metadata; bindings synchronize components; scopes close relationships. Those sentences are how a large Swing program remains comprehensible.
+
+\textbf{A small before-and-after.} The following plain Swing sketch is not evil. It is merely a form that has outgrown its first shape.
+
+\begin{lstlisting}[caption={A listener doing too many jobs.}]
+nameField.getDocument().addDocumentListener(new DocumentAdapter() {
+    @Override
+    protected void changed() {
+        boolean valid = !nameField.getText().isBlank();
+        errorLabel.setText(valid ? "" : "Name is required");
+        saveButton.setEnabled(valid && !busy);
+        statusLabel.setText(valid ? "Ready" : "Fix validation errors");
+    }
+});
+\end{lstlisting}
+
+The listener observes a document, validates a field, updates error presentation, updates command state, and updates status. A better shape splits those facts.
+
+\begin{lstlisting}[caption={The same facts with named owners.}]
+TextFieldModel<CustomerEdit, String> name = model.name;
+ReadableValue<ProblemSet> problems = name.problemSet();
+MutableCommand save = commands.require(CustomerActions.SAVE);
+
+scope.add(BindingFactory.textField(nameField, name));
+scope.add(BindingFactory.labelText(statusLabel, presenter.status()));
+scope.add(BindingFactory.validationTooltip(nameField, problems));
+
+save.setEnabled(model.isCommittable() && !presenter.busy().value());
+\end{lstlisting}
+
+The exact APIs will vary by chapter and Corusco version, but the architecture is the point. The field model owns field state. The command owns command state. Bindings own component synchronization. The presenter coordinates policy.
+
+\begin{examplebox}{core values}
+\coreExample{} demonstrates observable value state outside Swing. Later chapters bind the same kind of state to components.
+\end{examplebox}
+
+The example is intentionally small. It shows that useful screen state can exist without a component. A selected customer value can emit changes. A status value can be derived. A subscription scope can own cleanup. This is the seed of the larger pattern.
+
+\textbf{Design drills.} A screen enables the Save button when three fields are valid. Later a menu item is added, then a toolbar button. Each copies part of the enablement rule. The correct model is one Save command whose enabled state is derived from form committability. The rule is written once, tested once, and presented many times. A table refresh replaces all rows and fires a broad data-changed event. The selected view row now points to a different customer or no customer. The correct model is selection by row identity or typed row value, with precise list changes where possible. If the selected row disappears, that is an application event that should be handled deliberately, not an accidental consequence of row indexes.
+
+Help installs a tooltip. Validation installs another tooltip. Disabled command explanation installs a third. Whichever runs last wins. The correct model is structured tooltip content or a behavior plan that composes tooltip contributors. A tooltip is a presentation surface, not an ownership boundary. The only way to test validation is to open a modal dialog, type text, and press OK. The form has no model. The correct move is to test parsing and validation in the form model, then use a smaller Swing test for dialog focus and button behavior. This does not eliminate Swing tests. It keeps them focused on Swing.
+
+There is a larger drill behind all four cases. For each visible symptom, ask which fact is missing an owner. Duplicated Save logic lacks command ownership. Disappearing selection lacks identity ownership. Tooltip conflict lacks composition ownership. Untestable validation lacks form-state ownership. The model boundary is not an aesthetic preference; it is a method for finding the absent owner.
+
+\textbf{Review notes.}
+
+\begin{itemize}
+\item Swing models are not obsolete; Corusco often adapts to them.
+\item A descriptor is immutable screen metadata, not changing user state.
+\item A binding is a lifecycle-owned connection, not the model itself.
+\item Generated code should meet handwritten code at the same public model boundary.
+\item Component state is valid when it describes widget mechanics; it is dangerous when it becomes the only owner of application behavior.
+\item Threading remains explicit: core changes are synchronous, Swing adaptation belongs on the EDT.
+\end{itemize}
+
+\textbf{Checklist for the boundary.}
+
+\begin{itemize}
+\item Domain state, presentation state, and component state are distinguishable.
+\item Important screen facts have names outside anonymous listeners.
+\item Commands are shared semantic operations, not button-local callbacks.
+\item Tables use stable row and column meaning, not only current view indexes.
+\item Validation produces structured problems, not only labels or thrown exceptions.
+\item Bindings and subscriptions have lifecycle owners.
+\item Tests cover models without Swing when Swing is not the subject.
+\end{itemize}
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Take a small form and classify each fact as domain, presentation, or component state.
+\item Identify one visible label that should be a resource key rather than a string literal.
+\item Write a command test that does not construct a button.
+\item Convert one document listener from "update three components" into "update one model value".
+\item Pick a table and list every place where column meaning depends on an integer or header string.
+\item Write a cleanup inventory for one screen: listeners, subscriptions, timers, tasks, table controllers, and bindings.
+\end{enumerate}
+\end{exercisebox}

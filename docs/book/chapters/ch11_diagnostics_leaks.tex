@@ -1,0 +1,509 @@
+\chapter{Diagnostics, EDT Watchdogs, Repaint Storms, and Leak Hunting}
+\label{ch:diagnostics-leaks}
+\chapterquote{A mature Swing application is observable: it can tell you when the EDT is blocked, what is repainting, and why a closed screen is still alive.}{A production-support requirement}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How do you make a Swing application explain freezes, repaint cost, focus problems, and memory retention?\\
+Primary APIs & \api{EventQueue}, \api{RepaintManager}, \api{AWTEventListener}, \api{KeyboardFocusManager}, \api{HierarchyListener}, \api{Timer}, \api{WeakReference}, JFR, and heap tools.\\
+Hidden difficulty & Many desktop failures leave no ordinary stack trace: listeners retain closed screens, timers keep firing, and the EDT is merely busy.\\
+Corusco contribution & Scopes, bindings, task handles, generated keys, descriptors, and typed problems give diagnostics stable names and cleanup owners.\\
+Payoff & Faster incident diagnosis, reproducible performance reports, confidence that disposed windows are collectible, and better tests for visual behavior.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Diagnostics as a Production Contract}
+
+\termdef{Observability}{the ability of a program to explain its state and recent behavior from intentionally collected evidence} is not a server-only concern. A Swing program is an interactive system with queues, mutable models, native peers, painting deadlines, keyboard focus, and long-lived object graphs. If the program cannot tell us what the event dispatch thread was doing, which component requested repaint, which screen still owns subscriptions, or which task completed after its view closed, then maintenance depends on memory and luck.
+
+The word \termdef{diagnostic}{a mechanism that helps identify the cause of a failure} should not be restricted to emergency tools. A component name is a diagnostic. A command id is a diagnostic. A table column descriptor is a diagnostic. A test key, a validation problem code, a task name, a lifecycle scope count, and a screenshot path are diagnostics. They are small pieces of identity that allow a later reader to connect a symptom to a concrete part of the program.
+
+Returning Swing programmers often expect diagnostics to mean printlns or a profiler. Those are useful, but they arrive late. The more reliable habit is to design screens so that important relationships can be described. A listener should have an owner. A background task should have a name and a cancellation path. A visual behavior should have a key. A table update should say whether it inserted rows, changed cells, or reset the entire model. The diagnostic surface is built from such ordinary facts.
+
+The failure modes in this chapter are familiar. A button freezes the application because its listener performs I/O on the event dispatch thread. A table scrolls poorly because a renderer allocates too much or because the model fires broad change events. A dashboard consumes CPU because a timer repaints the whole screen twenty times per second. A closed dialog remains in memory because a service listener still references its controller. A focus bug appears only when a table editor is active. Each failure is easier when the application leaves evidence.
+
+\begin{principlebox}{Instrument the invariants}
+Instrument what Swing assumes: EDT responsiveness, repaint locality, listener lifecycle, model event precision, focus ownership, and screen disposal. Bugs in these areas rarely announce themselves clearly.
+\end{principlebox}
+
+A useful diagnostic design begins with a small set of invariants. The event dispatch thread should process short UI work promptly. Painting should be requested only for stale pixels, not for unrelated surfaces. Layout should be invalidated only when geometry facts change. Long-lived objects should not retain short-lived screens after disposal. A background result should not update an obsolete generation of a screen. A diagnostic that checks one of these invariants is more valuable than a log line that merely says an operation began.
+
+There is a difference between collecting facts and flooding the log. Desktop applications can run for days; a diagnostic stream that logs every mouse move, repaint, document update, and focus change will bury the incident. Prefer bounded evidence: ring buffers, counters, histograms, last-known state, rate-limited warnings, and support commands that export a snapshot on demand. Diagnostics that can stay enabled are usually better than diagnostics that must be rebuilt during a crisis.
+
+The first design question is, "What would I need to know if this failed on a user's machine?" For a freeze, the answer is the EDT stack, recent commands, active modal dialogs, background tasks, and lock contention. For a repaint storm, the answer is dirty region area, component names, model events, timers, and animation state. For a leak, the answer is the retained path, subscriptions, timers, and screen lifecycle events. For a focus bug, the answer is the current focus owner, permanent focus owner, input maps, and active editor.
+
+The second question is, "Can a test ask the same question?" A support menu that dumps the component tree is useful; a test helper that reads stable component names is useful for the same reason. A repaint counter that reveals a storm in development can also protect a table example from firing full resets. A scope that can report open subscriptions helps both production support and unit tests. Good diagnostics tend to be reusable because they report facts rather than narratives.
+
+Figure~\ref{fig:diagnostics-watchdog} shows the kind of evidence this chapter wants. The screen does not merely say "slow." It connects a recent command, EDT latency, event identity, repaint area, and support-bundle policy. That combination is small enough to understand and specific enough to guide the next step.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\diagnosticsWatchdogFigure}
+\caption{A diagnostic snapshot should connect the symptom to recent UI facts: command identity, EDT latency, event type, repaint volume, and the policy for exporting evidence.}
+\label{fig:diagnostics-watchdog}
+\end{figure}
+
+\begin{examplebox}{diagnostics figures}
+The diagnostics screenshots are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. The generated files are \diagnosticsWatchdogFigure{} and \diagnosticsTreeFigure. The chapter cites compact class and figure names so the PDF remains readable.
+\end{examplebox}
+
+This chapter follows a plain-Swing-first order. We begin with the event queue and the watchdog because a frozen EDT disables almost every other diagnostic surface. We then examine repaint and layout churn, because visual cost is often scheduled in one place and observed in another. We turn to memory leaks, because listener ownership and timers can keep entire screens alive. Finally we join the topics through component-tree dumps, support bundles, Corusco scopes, and tests.
+
+Corusco does not replace the need to understand the Swing mechanisms. It makes several diagnostic relationships explicit. A \api{SubscriptionScope} can own listeners that plain Swing leaves scattered. A binding can describe the model and component it connects. A generated component key can name a field in tests and dumps. A task service can separate background work from EDT delivery. These features matter because a bug report rarely respects the boundary between architecture and pixels.
+
+Diagnostics also need a cost model. A text field that logs every document event in a development run is harmless. The same log in a production support session may record private data and produce megabytes per minute. An event queue monitor that stores one hundred slow events is usually safe. A monitor that stores every event object can retain component trees and create the leak it was meant to investigate. Every diagnostic should have a storage bound, a sampling rule, or an explicit lifetime.
+
+There is a design parallel with layout. A well-designed form uses gaps, alignment, and grouping so the reader sees structure. A well-designed diagnostic surface uses categories, names, and summaries so the maintainer sees structure. A raw dump may be needed at the end of an investigation, but the first report should answer the first questions: where was the EDT, what command was active, which component repainted, which screen remained alive, and which scope was not closed.
+
+Do not wait for an incident to decide which facts are important. A screen review should ask for diagnostic identity at the same time it asks for layout, validation, and command behavior. If a field is important enough to validate, it is important enough to have a problem target. If a table is important enough to persist column state, it is important enough to have stable column ids. If a task is important enough to show progress, it is important enough to have a task name.
+
+The style of this book is deliberately precise because vague desktop failures are expensive. "The screen is slow" is not an observation that leads to code. "The EDT spent 680 ms in customer refresh after the table model fired a full reset and the table repainted 1.6 million logical pixels" is an observation. It may still require work, but it names the next experiment.
+
+\section{EDT Latency and Event Dispatch Evidence}
+
+\termdef{Event dispatch thread}{the Swing thread that dispatches AWT events and runs most Swing callbacks} is the first diagnostic subject because it is the user-visible heartbeat of a Swing program. If the EDT is blocked, the window cannot repaint, buttons do not respond, focus cannot move, timers that fire on the EDT cannot run, and a busy indicator that would explain the delay may not appear. An unresponsive EDT is not one bug; it is a failure mode that hides other facts.
+
+The simple rule "do not block the EDT" remains correct, but it is not a diagnostic. A useful program needs to know when the rule was broken and what code was executing. The usual mechanism is an EDT watchdog. A background scheduler periodically posts a small ping to the event queue. If the ping is not processed within a threshold, the scheduler captures the EDT stack and reports that the UI has been unresponsive for a measured interval.
+
+The threshold should describe user experience rather than developer annoyance. A 20 ms dispatch may be visible during continuous pointer motion but harmless during a menu action. A 200 ms pause is noticeable. A one-second pause feels like a freeze in many workflows. Different applications will choose different thresholds, but the diagnostic should record actual latency, not merely a boolean label. Numbers allow trends and regressions to be compared.
+
+\begin{lstlisting}[caption={A small EDT watchdog that captures the blocked stack.}]
+public final class EdtWatchdog implements AutoCloseable {
+    private final ScheduledExecutorService scheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "edt-watchdog");
+                thread.setDaemon(true);
+                return thread;
+            });
+    private final AtomicLong lastPingNanos = new AtomicLong(System.nanoTime());
+    private final Duration threshold;
+
+    public EdtWatchdog(Duration threshold) {
+        this.threshold = threshold;
+    }
+
+    public void start() {
+        scheduler.scheduleAtFixedRate(() -> {
+            EventQueue.invokeLater(() -> lastPingNanos.set(System.nanoTime()));
+            long age = System.nanoTime() - lastPingNanos.get();
+            if (age > threshold.toNanos()) {
+                reportBlockedEdt(age);
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+    }
+
+    private void reportBlockedEdt(long ageNanos) {
+        Thread.getAllStackTraces().keySet().stream()
+                .filter(t -> t.getName().startsWith("AWT-EventQueue"))
+                .findFirst()
+                .ifPresent(t -> {
+                    System.err.printf("EDT unresponsive for %.1f ms%n",
+                            ageNanos / 1_000_000.0);
+                    for (StackTraceElement element : t.getStackTrace()) {
+                        System.err.println("  at " + element);
+                    }
+                });
+    }
+
+    @Override
+    public void close() {
+        scheduler.shutdownNow();
+    }
+}
+\end{lstlisting}
+
+The example is deliberately small. A production watchdog needs a rate limit, a way to suppress duplicate reports while the same freeze continues, and a path into the application's diagnostic sink. It should include Java version, OS, Look-and-Feel, active window, recent command identity, current task names, and a timestamp with monotonic duration. It should avoid doing expensive work in the watchdog thread after every missed ping; a diagnostic can make an incident worse if it overreacts.
+
+An EDT watchdog answers the question "the EDT did not return to the queue." It does not answer every performance question. Suppose a mouse-move listener takes 35 ms and returns before the watchdog threshold. The UI may feel sticky, but the watchdog never fires. For such cases, an event dispatch monitor is more useful. It measures how long each event takes to dispatch and records slow events by event class, source class, component name, and action command where available.
+
+Swing allows a custom \api{EventQueue} to be pushed onto the toolkit event queue. This is a powerful diagnostic hook and should be treated with respect. The wrapper must call the superclass dispatch method exactly once, must not throw diagnostic exceptions into application dispatch, and must keep overhead low. Measure first in development, then decide which aggregation is safe for support builds.
+
+\begin{lstlisting}[caption={Measuring slow event dispatch without logging every event.}]
+public final class TimingEventQueue extends EventQueue {
+    private final Duration slowThreshold;
+    private final Consumer<SlowEvent> sink;
+
+    public TimingEventQueue(Duration slowThreshold, Consumer<SlowEvent> sink) {
+        this.slowThreshold = slowThreshold;
+        this.sink = sink;
+    }
+
+    @Override
+    protected void dispatchEvent(AWTEvent event) {
+        long start = System.nanoTime();
+        try {
+            super.dispatchEvent(event);
+        } finally {
+            long elapsed = System.nanoTime() - start;
+            if (elapsed >= slowThreshold.toNanos()) {
+                sink.accept(SlowEvent.from(event, elapsed));
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+Do not confuse slow dispatch with wrong dispatch. A long-running action listener is one cause. A modal dialog can install nested event processing, so work may continue while the original call stack waits. A \api{SwingWorker.done} method may be short but may call a model operation that fires thousands of table events. A \api{DocumentListener} may be short for ordinary typing and slow when pasted text triggers validation. The diagnostic record should preserve enough context to distinguish these patterns.
+
+Nested event loops deserve particular suspicion. Dialogs, drag and drop, popup menus, and some native operations can process events while the initiating method has not returned. This is legal Swing behavior, but it breaks the naive idea that one user command is always a single stack from button click to completion. Diagnostics should treat command identity as contextual state with a start, end, and possible nested activity, not as a global variable that assumes no reentrancy.
+
+Thread dumps are the old and still excellent freeze diagnostic. A thread dump tells us whether the EDT is blocked on a lock, sleeping, performing I/O, painting, waiting for a modal result, or executing application code. Background threads may reveal the other side of a deadlock or a task that is holding a model lock while asking the EDT for a result. Teach support staff to capture thread dumps, and add a support command when the deployment environment makes external tools hard to use.
+
+The JDK gives several routes. A developer can use \api{jcmd} with \api{Thread.print}, an IDE, Java Mission Control, or platform tools. A packaged application can include a diagnostic action that writes a thread dump using the management APIs. The important part is not the tool name; it is rehearsing the capture before the first urgent report. A diagnostic that nobody knows how to invoke is not an operational capability.
+
+Java Flight Recorder is also useful for desktop programs. JFR can show CPU hotspots, allocation pressure, lock contention, file and socket I/O, and thread activity. It does not know that a particular stack is a bad Swing renderer or an overbroad table event, but it will show the allocation or CPU path caused by that renderer or event. Combine JFR with Swing-specific evidence: component names, model event counts, dispatch timing, and repaint area.
+
+Modern Java does not remove the EDT boundary. Virtual threads are excellent for blocking service calls and structured background work, but Swing components still belong to the event dispatch thread. A virtual thread that calls a slow repository is fine; its result must be delivered to the EDT through a controlled boundary. A virtual thread that directly updates a table model used by a \api{JTable} is still a Swing threading bug.
+
+\begin{pitfallbox}{The responsive-looking freeze}
+A command can keep repainting a progress bar and still be architecturally wrong if Cancel cannot run, focus cannot move, or the same command prevents validation from completing. Responsiveness is more than periodic painting; it is the ability to process relevant input and state changes.
+\end{pitfallbox}
+
+The most useful EDT diagnostic records recent commands. A command name gives the thread dump meaning. "EDT blocked in socket read" is useful. "EDT blocked in socket read while command customer.refresh was invoked from customer.toolbar.refresh" is better. If command identity is stable and typed, the log can connect the incident to tests, resources, help, shortcuts, and generated code.
+
+Corusco's command and task abstractions make this record easier because operations already have descriptors. A plain Swing \api{Action} can carry \api{Action.NAME}, but applications often use localized labels as names. A command descriptor can keep a stable id apart from its presentation text. A task service can remember task category, generation, cancellation state, and EDT delivery status. Diagnostics can then report facts without parsing button text.
+
+Deadlocks need special treatment because the EDT may be only one participant. A common pattern is a background thread that holds a model lock and calls \api{invokeAndWait}, while the EDT needs the same model lock to process the request. Another pattern is the EDT waiting for a future whose completion must run on the EDT. A watchdog stack tells us where the EDT waits; a full thread dump tells us which other thread owns the resource. Always capture all threads for freezes that may involve locks.
+
+Blocking I/O on the EDT is easy to condemn and still easy to reintroduce. File choosers, printer discovery, preference loading, image decoding, network checks, and lazy service initialization can all hide I/O behind apparently small calls. If a diagnostic records slow dispatches by command and stack, these regressions become visible during manual testing. If it only logs explicit service calls, the hidden cases survive.
+
+Modal dialogs require care in diagnostics because they can make a frozen workflow appear partially alive. A modal dialog may continue processing events while the calling method waits. That is often useful, but it can permit reentrant commands, stale validation, or nested task starts. Record modal state and active window when reporting slow dispatch. A thread dump without modal context can mislead the reader into assuming a simpler command flow than Swing is actually running.
+
+The event queue is not a transaction log. It records dispatch order, but application state may change from timers, document events, background completions, property changes, and model notifications within one user gesture. Diagnostics should therefore connect event timing with model and command context. The question is not only "which event was slow?" but "which screen fact changed during that event?"
+
+\section{Repaint, Layout Churn, and Visual Cost}
+
+\termdef{Repaint storm}{a pattern in which components repeatedly request broad or frequent repaint work beyond what the visible change requires} is common in rich desktop screens. The symptom is often "CPU is high" or "typing is slow." The cause may be a timer, broad model events, a renderer with side effects, a validation decoration loop, an animation that repaints a container, or painting code that schedules more painting. A profiler shows where time was spent; repaint diagnostics show why the work was scheduled.
+
+Swing repainting is asynchronous. Calling \api{repaint} marks pixels stale and returns. The \api{RepaintManager} may merge dirty regions, delay painting until pending events finish, and paint only the clipped portion. This makes repaint efficient when requests are local and meaningful. It also means that a bad scheduler can hide behind good painting code. The paint method may be innocent; it is simply being called too often or for too large an area.
+
+A diagnostic \api{RepaintManager} can record dirty rectangles by component class, component name, window, and time window. The first version should answer simple questions: which components requested repaint, how much total area did they dirty, how many requests occurred per second, and whether requests came from the EDT. More advanced versions can keep the largest rectangles, sample stack traces, or annotate screenshots.
+
+\begin{lstlisting}[caption={Counting dirty repaint area by component name.}]
+public final class RepaintStatsManager extends RepaintManager {
+    private final ConcurrentMap<String, LongAdder> areaByName =
+            new ConcurrentHashMap<>();
+
+    @Override
+    public void addDirtyRegion(JComponent c, int x, int y, int w, int h) {
+        if (w > 0 && h > 0) {
+            String key = c.getName() != null ? c.getName()
+                    : c.getClass().getSimpleName();
+            areaByName.computeIfAbsent(key, ignored -> new LongAdder())
+                    .add((long) w * h);
+        }
+        super.addDirtyRegion(c, x, y, w, h);
+    }
+
+    public Map<String, Long> snapshotAndReset() {
+        Map<String, Long> result = new TreeMap<>();
+        areaByName.forEach((name, area) -> result.put(name, area.sumThenReset()));
+        return result;
+    }
+}
+\end{lstlisting}
+
+The diagnostic manager should be optional. Some third-party components may legitimately repaint from unusual paths, and some Look-and-Feel implementations may request broad areas during transitions. Start by observing. After the house rules are clear, development builds may assert that application components request repaint on the EDT or that particular custom components repaint local rectangles during ordinary input.
+
+Layout churn is the geometry cousin of repaint storms. A screen that calls \api{revalidate} after every keystroke may force repeated layout of a large subtree. A validation label that appears and disappears can resize a panel while the user types. A table model that fires a full reset can disturb selection, sorter state, preferred widths, and repaint. The symptom is visual, but the cause is often state granularity.
+
+Measure layout churn by instrumenting the boundary where the application changes geometry. Log when optional panels become visible, when labels change from short to long text, when table models fire structural changes, and when scrollable components change preferred size. A simple counter can reveal that a form is revalidated hundreds of times during a paste operation. As with repaint, the goal is not to ban revalidation; it is to make broad geometry work intentional.
+
+Renderer code deserves special discipline. \api{JTable}, \api{JTree}, and \api{JList} use renderer components as stamps. A renderer method may be called for many visible cells during scrolling and repaint. It should configure the renderer from already-available state, not perform service calls, allocate heavy objects, mutate the model, install listeners, or trigger repaint. If a renderer appears in a profiler, ask whether it is slow itself or merely multiplied by too many repaint requests.
+
+Model event precision is a visual performance feature. If one cell changes, a table model should not usually fire "all data changed." A broad reset asks the table to forget too much. It may repaint the whole viewport, drop selection, rebuild sorter mappings, and make diagnostic evidence look like a table problem when the real problem is an imprecise model. Large-data chapters discuss this in more detail; here the diagnostic rule is simple: log model event type when investigating repaint cost.
+
+Painting diagnostics should include clipping. A custom component may be expensive because it repaints its full model even when the clip is small. The \api{Graphics} clip tells the component which pixels are stale. A chart, ruler, tree map, or large canvas can use that clip to avoid recomputing invisible work. When visual output is wrong, log both the requested dirty region and the clip observed by painting. They are related but not identical.
+
+HiDPI can complicate screenshots and visual diagnostics. Dirty rectangles are expressed in component coordinates, while the eventual destination may use a scale transform. A screenshot harness should use deterministic component sizes, stable Look-and-Feel setup, and known fonts where practical. Pixel-perfect assertions across platforms are fragile; structural screenshot checks and generated figures are usually more useful for documentation and regression examples.
+
+The component name again pays for itself. A repaint report that says \api{JPanel} dirtied two million pixels is weak. A report that says \api{customer.dashboard.totalPanel} dirtied that area after command \api{orders.refresh} gives maintainers a place to start. Naming every component is unnecessary, but naming diagnostic boundaries and major widgets is cheap and durable.
+
+\begin{detailbox}{Repaint evidence is scheduling evidence}
+When painting appears expensive, separate the cost of one paint from the number and size of paint requests. A flame graph may point at drawing code because that is where time is spent; a repaint log may reveal that a timer or model reset scheduled the work far too often.
+\end{detailbox}
+
+Corusco can reduce visual churn by moving state decisions out of components and into observable models with precise events. A validation behavior can update one field decoration when one problem changes. A table adapter can translate list changes into row events instead of full resets. A command can disable one presenter without forcing a layout rewrite. The important point is not that the library paints faster; it gives changes a shape that Swing can adapt efficiently.
+
+Plain Swing can do the same when written carefully. A custom \api{TableModel} can fire precise events. A presenter can keep a stable \api{Action}. A form can update a status label without changing its preferred size on every keystroke. The difference is that plain Swing leaves these as conventions scattered through listeners. Corusco turns many of them into reusable relationships that can be inspected, closed, and tested.
+
+Do not overlook validation feedback as a source of visual churn. A form that inserts and removes error labels while the user types may relayout the entire dialog repeatedly. A calmer design reserves space for feedback, uses a stable summary area, or decorates fields without changing the surrounding geometry. The diagnostic symptom is layout churn; the design fix is to separate changing semantic state from changing component structure.
+
+Animations should declare their frame budget. A blinking indicator, progress shimmer, or live chart may repaint periodically by design. That design should still know its frequency, dirty region, and stop condition. An animation that continues in a hidden tab is a lifecycle bug. An animation that repaints a whole window for a small marker is a repaint bug. A diagnostic counter lets the review distinguish intentional motion from accidental work.
+
+Look-and-Feel changes are useful stress tests. They alter fonts, borders, opacity assumptions, row heights, and UI delegate behavior. A screen that is barely stable under one Look-and-Feel may reveal layout churn or painting assumptions under another. When a visual defect appears only after a LAF switch, capture component bounds, UI class names, opacity, and repaint area before changing code.
+
+Screenshot generation can catch visual regressions before users do, but screenshots need semantic anchors. The harness should know which panel it renders, which data seed it uses, and which figure file it writes. If the image is blank, clipped, or produced at the wrong size, the build should fail or at least report a clear diagnostic. A stale screenshot silently included in a PDF is a documentation bug.
+
+\section{Leaks, Lifecycles, and Heap Evidence}
+
+\termdef{Memory leak}{in a managed runtime, an object remaining strongly reachable after its useful lifetime has ended} is especially subtle in Swing because the component may no longer be visible. The user closes a dialog. The native window is disposed. The panel is removed from its parent. Yet the panel remains reachable through a listener registered with a global service, a running timer, a static action registry, a background callback, or a cache. Garbage collection cannot reclaim objects that are still strongly referenced.
+
+The classic retention path is simple. A long-lived publisher owns a listener list. A screen registers a listener. The listener captures the controller. The controller holds the panel. The panel holds the component tree. Closing the window removes the tree from the visible hierarchy, but it does not remove the listener from the publisher. Opening and closing the same screen repeatedly grows memory and may also duplicate behavior.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\diagnosticsLeakFigure}
+\caption{Leak hunting starts with reference ownership. A long-lived root retains a screen through an installed relationship; a lifecycle scope gives that relationship a cleanup owner and a diagnostic handle.}
+\label{fig:diagnostics-leak-lifecycle}
+\end{figure}
+
+Figure~\ref{fig:diagnostics-leak-lifecycle} shows why Swing leaks are often architectural rather than exotic. The component tree may be disposed and invisible, yet the path from a long-lived service to a listener remains. The screen is not leaked because Swing forgot to remove it from a parent. It is leaked because application code installed a relationship and did not give that relationship a close operation. The heap dump later discovers the path; the design should have named it earlier.
+
+The important word is relationship. A listener registration is a relationship. A timer action is a relationship. A task callback is a relationship. A binding from a value to a component is a relationship. A table state controller attached to a column model is a relationship. A diagnostic overlay installed on a layered pane is a relationship. If one side of the relationship lives longer than the other, the relationship needs a lifecycle owner. Otherwise the shorter-lived side is at the mercy of the longer-lived side's collection policy, which usually means "never."
+
+The ownership rule should be written down: whoever installs a relationship must either remove it or hand it to a scope that will remove it. A relationship includes listeners, document filters, timers, table state controllers, row sorters with listeners, background callbacks, property-change listeners, global actions, preferences observers, help bindings, validation behaviors, and anything else that lets one object call another later. If the relationship crosses a lifecycle boundary, it needs an owner.
+
+\begin{lstlisting}[caption={A closeable subscription pattern for plain Swing code.}]
+public interface Subscription extends AutoCloseable {
+    @Override
+    void close();
+}
+
+public Subscription addCustomerListener(CustomerListener listener) {
+    listeners.add(listener);
+    return () -> listeners.remove(listener);
+}
+\end{lstlisting}
+
+A subscription object is boring, which is one reason it works. It turns an implicit reference in a listener list into an explicit value. A screen can store all subscriptions in a collection and close them during disposal. Tests can assert that the collection is empty after close. Diagnostic dumps can report the number of open subscriptions. The idea scales from a single listener to generated binding plans.
+
+Weak listeners are not a general solution. A weak listener can disappear while still needed if no strong owner keeps it alive. A wrapper left in a publisher list can still accumulate. A weak relationship also hides the question of lifecycle ownership. Use weak listeners when an API makes explicit removal impractical and when losing the listener is acceptable. For application code, prefer closeable ownership because it is testable and explainable.
+
+\api{javax.swing.Timer} is a frequent leak source. It fires on the EDT, which makes it convenient for UI updates and small animations. It also retains its listeners while running. A panel-owned timer that is not stopped can keep the panel alive after the panel is removed. A \api{java.util.Timer} or scheduled executor can leak differently: it fires away from the EDT and may retain tasks that later try to mutate Swing from the wrong thread.
+
+Tie timers to lifecycle. A component that should update only while displayable can start the timer when it becomes displayable and stop it when it becomes undisplayable. A controller-owned timer should be closed by the controller's disposal method. A task service should cancel or ignore obsolete work when the screen closes. The precise mechanism matters less than the invariant: no asynchronous source should outlive the screen by accident.
+
+\begin{lstlisting}[caption={Starting and stopping a Swing timer with displayability.}]
+public final class LiveClockLabel extends JLabel {
+    private final Timer timer = new Timer(1000, event -> updateTime());
+
+    public LiveClockLabel() {
+        addHierarchyListener(event -> {
+            long flags = event.getChangeFlags();
+            if ((flags & HierarchyEvent.DISPLAYABILITY_CHANGED) != 0) {
+                if (isDisplayable()) {
+                    timer.start();
+                } else {
+                    timer.stop();
+                }
+            }
+        });
+    }
+}
+\end{lstlisting}
+
+Displayability is useful but not universal. A tab may remain displayable while hidden. A component may be removed and re-added. A background refresh may belong to a document rather than one panel. Some screens need an explicit presenter lifecycle: create, attach, detach, dispose. The diagnostic should report the lifecycle vocabulary the screen actually uses, because vague words like "closed" and "inactive" are not enough during leak hunting.
+
+The practical leak test uses a weak reference. Open the screen, close it, remove strong references held by the test, request garbage collection several times, and assert that the weak reference clears. This is not a mathematical proof. Garbage collection is not deterministic, and test code can accidentally retain the object. But the test catches many ordinary mistakes and is excellent as a regression guard after a leak fix.
+
+\begin{lstlisting}[caption={A lightweight screen collectability probe.}]
+WeakReference<JFrame> reference;
+{
+    JFrame frame = createAndShowScreen();
+    reference = new WeakReference<>(frame);
+    frame.dispose();
+    frame = null;
+}
+for (int i = 0; i < 5 && reference.get() != null; i++) {
+    System.gc();
+    Thread.sleep(100);
+}
+assertNull(reference.get(), "closed screen should be collectible");
+\end{lstlisting}
+
+Run such tests carefully. Swing construction, disposal, and model updates should occur on the EDT. The test must not keep a local variable, lambda capture, screenshot, failure message, or static helper reference to the screen. A failed test should lead to heap analysis, not to blind insertion of null assignments. The retained path is the evidence.
+
+Weak-reference probes are best when they are narrow. A test that opens the entire application and expects every object to disappear is hard to diagnose. A test that opens one dialog, closes its scope, clears the last strong reference, and expects that dialog controller to disappear is much more useful. If it fails, the suspected relationship is close. If it passes, larger integration tests can still check that the same dialog is not retained by menus, global registries, or workspace-level services.
+
+The probe should also know what object it is testing. Testing the top-level \api{JFrame} is useful when the frame is the screen owner. Testing an inner panel may be better when the frame is reused by a workspace. Testing the presenter or controller may reveal service subscriptions even when Swing components are gone. Testing a component tree root may reveal renderer or editor retention. Pick the object whose lifetime the design promises, then make the promise executable.
+
+Garbage collection timing makes these tests inherently probabilistic, so keep the assertion conservative and the failure message precise. A helper can run several collections, allocate modest pressure, and wait briefly, but it should not turn into a long sleep that hides flakiness. When the probe fails, report the class under test, the lifecycle step that should have closed it, and the diagnostic hint for the expected owner. The next action should be heap inspection, not guessing.
+
+Heap dumps are most useful when entered with a hypothesis. "Closed invoice windows are retained" is a hypothesis. Search for the panel class, inspect incoming references, and follow paths to GC roots. If the path goes through a service listener list, the fix is disposal. If it goes through a timer, the fix is timer lifecycle. If it goes through a background future, the fix may be cancellation or generation checking.
+
+Reference ownership diagrams are the low-tech companion to heap dumps. Draw long-lived roots: application context, services, event buses, executors, timers, caches, static registries, open windows, and document models. Then draw screen-owned objects. Any reference from a long-lived root to a screen-owned object needs a lifecycle rule. This exercise is often faster than opening a heap dump and prevents mistakes before they ship.
+
+Behavior leaks are often noticed before memory leaks. A listener fires twice. A closed dialog still receives validation updates. A table refresh updates a tab that is no longer selected. A timer keeps repainting a removed panel. Treat these as lifecycle failures. Even if the heap size is still acceptable, the program has lost ownership of a relationship.
+
+The phrase "the screen owns it" should have code behind it. In plain Swing, that may be a presenter with a list of \api{Subscription} objects and timers. In Corusco, that may be a \api{SubscriptionScope}, \api{Disposable}, or \api{DetachableScope}. Generated bindings should install into a scope rather than scattering cleanup calls. Diagnostic dumps should be able to say which scope owns which installed behavior.
+
+\begin{coruscobox}{scopes make leaks visible}
+Corusco scopes do not make object retention impossible. They make relationship ownership explicit. A binding, task callback, table state listener, or validation behavior can be installed into a scope, and the scope can be closed, counted, tested, and reported in diagnostics.
+\end{coruscobox}
+
+Cancellation is part of leak prevention. A background task may not retain a panel forever, but it can deliver a stale result after the panel has been closed or replaced. Use cancellation tokens, generation counters, or screen scopes so that results are ignored when they no longer belong to the current view. A stale update is the behavioral twin of a memory leak: a past screen reaches into the present.
+
+Caches require a different discipline. A cache may intentionally retain images, row data, or descriptors beyond a screen's lifetime. That is not a leak if the cache has a bounded size, a key policy, and an eviction rule. It is a leak if the cache key accidentally includes a component, controller, or screen model that should have been temporary. Diagnostics should report cache sizes and key types when memory growth is investigated.
+
+Actions can leak screens too. A shared action registry that stores an \api{Action} implemented by a screen controller can keep the controller alive. A popup menu factory can retain an action with a listener that captures a table. A toolbar button removed from the hierarchy may no longer be visible, yet the action remains in an application map. Treat actions as long-lived unless their owner is explicit.
+
+Editors and renderers have their own lifecycle traps. A table editor component may keep a document listener after editing stops. A custom cell editor may subscribe to validation state and forget to unsubscribe when the editor is removed. Renderers should usually not own listeners at all, because they are stamps reused for many cells. Leak review should include table and tree editors, not only top-level panels.
+
+Cleanup order matters when relationships depend on one another. Cancel tasks before closing the scope that receives task callbacks. Stop timers before clearing models they read. Remove service listeners before disposing components that listener code may touch. A scope abstraction helps, but it cannot infer every dependency. Complex screens should document disposal order the same way they document startup order.
+
+A heap dump should be the beginning of a fix, not the end of the story. After finding the retained path, add a small regression test near the owner of the relationship. If the leak was a service subscription, test subscription cleanup. If it was a timer, test timer stop. If it was stale task delivery, test generation suppression. The full heap dump proved the case once; the focused test keeps it fixed.
+
+\begin{pitfallbox}{Closed is not collected}
+Disposing a window, removing a tab, or hiding a panel changes visibility and native resources. It does not by itself unregister listeners, stop timers, cancel futures, remove cache entries, or break references from services. Collection follows reachability, not visual state.
+\end{pitfallbox}
+
+\section{Component Trees, Focus, and Support Bundles}
+
+A \termdef{component tree dump}{a textual description of the Swing containment hierarchy and selected component facts} is one of the cheapest diagnostics in a desktop application. It reports classes, names, bounds, visibility, enabled state, displayability, showing state, opacity, focusability, accessible names, layout managers, and sometimes client properties. Many visual bugs become obvious when the tree is printed.
+
+Figure~\ref{fig:diagnostics-component-tree} shows the book's compact version of such a dump. The tree is not a replacement for a screenshot; it is the semantic index for the screenshot. It says which component is the table, what its stable name is, which scope owns relationships, whether tasks are active, and whether the leak probe succeeded after close.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\diagnosticsTreeFigure}
+\caption{A component tree dump should combine Swing facts with application facts: stable names, layout manager, focus owner, scope counts, active tasks, and leak-probe state.}
+\label{fig:diagnostics-component-tree}
+\end{figure}
+
+Component names should be stable, not localized. \api{customer.search.queryField} is a better diagnostic name than "Search" because the word Search may be translated, reused, or hidden. A generated key can also be copied to \api{JComponent.setName} so that tests, screenshots, accessibility review, and support tools share one identifier. The name is not user-visible; it is an engineering handle.
+
+Bounds in a tree dump are more useful than they sound. A component with size zero explains why it is not visible. A component outside its parent bounds suggests layout constraints or preferred size mistakes. A visible component inside a hidden ancestor explains contradictory logs. Displayable and showing are different facts; reporting both prevents confusion when a component exists but is not on screen.
+
+Focus diagnostics should be similarly concrete. Install a property-change listener on \api{KeyboardFocusManager} for \api{focusOwner} and \api{permanentFocusOwner} during focus investigations. Log component names, classes, enabled state, showing state, and whether an active editor is present. A focus bug that sounds mysterious in prose often becomes obvious when the log shows focus moving into a temporary editor, popup, or disabled component.
+
+\begin{lstlisting}[caption={Logging focus owner changes with component descriptions.}]
+KeyboardFocusManager manager =
+        KeyboardFocusManager.getCurrentKeyboardFocusManager();
+manager.addPropertyChangeListener("focusOwner", event -> {
+    System.err.println("focus: "
+            + describe(event.getOldValue())
+            + " -> "
+            + describe(event.getNewValue()));
+});
+\end{lstlisting}
+
+An \api{AWTEventListener} can observe broad event traffic, but it should be used narrowly. It can help identify which component receives mouse, key, window, and focus events. It can also create a noisy global tap that slows the program and records private input. Use masks, filters, and temporary support switches. Do not leave a global key logger in ordinary production behavior.
+
+Diagnostic menus are useful in internal builds and support modes. A menu may toggle repaint logging, show focus owner, dump the component tree, capture thread dumps, write a memory summary, export recent model events, or display EDT latency. Keep these commands out of ordinary workflows, but make them discoverable for the people who diagnose failures. A hidden command that only one developer remembers is fragile.
+
+The support bundle is the operational packaging of diagnostics. It might include thread dump, memory summary, Java and OS version, Look-and-Feel, monitor scale factors, open windows, active tasks, recent commands, repaint statistics, model event summaries, component tree dumps, log tail, and selected configuration. It should have a timestamp and application build id. It should be small enough to send and structured enough to inspect.
+
+Privacy is part of the diagnostic contract. Component names, file paths, usernames, server names, document titles, row values, and validation messages can expose sensitive information. A support bundle should document what it collects, redact where practical, and avoid dumping complete domain models unless explicitly requested. Diagnostics that users and administrators trust are more likely to be available when needed.
+
+Support bundles need tiers. A first-tier bundle might include build id, Java version, operating system, Look-and-Feel, monitor scale summary, thread dump, recent commands, active tasks, EDT latency samples, repaint summary, and component tree names without user data. A second-tier bundle might add selected log categories, model event summaries, sanitized validation codes, and cache sizes. A third-tier bundle might include domain-specific details after explicit user or administrator approval. The tiering should be product policy, not an engineer's improvisation during an incident.
+
+Redaction works best when diagnostics use stable ids from the beginning. A command id such as \api{customer.refresh} can be reported safely more often than a localized button label that may contain context. A problem code can be reported without the user's raw input. A table column key can be reported without dumping cell values. A component name can be reported without a screenshot. The more the application uses keys, descriptors, and codes, the less it has to choose between useless diagnostics and excessive disclosure.
+
+The bundle should also say what it omitted. If file paths are redacted, report that file paths were redacted. If domain row values are excluded, report counts rather than values. If screenshots are not included by default, say so. This matters because maintainers otherwise waste time looking for evidence that was deliberately not collected. A clear omission policy is part of observability.
+
+Finally, support bundle creation itself should be observable. The command should report where the bundle was written, how large it is, which categories were included, and whether any category failed. A support action that silently fails because a log file is locked or a directory is unwritable creates a second incident. Treat diagnostics as a product feature with error handling, progress, cancellation when expensive, and tests.
+
+Screenshots are evidence too, but they need context. A screenshot without component names can show a red border but not which validation problem produced it. A screenshot without data policy can leak customer information. A screenshot without deterministic setup may vary between platforms. The book examples use deterministic panels and FlatLaf styling so figures can support text rather than merely illustrate it.
+
+Accessibility information belongs in diagnostics. Accessible name, description, role, and state often reveal whether the visual screen has a semantic counterpart. A button with a blank accessible name may also be hard to find in tests. A field whose visible label, accessible name, tooltip, and problem target disagree is a maintenance bug even if the screen looks acceptable to one user.
+
+Component tree dumps should not become a substitute for architecture. If a presenter must search through the tree at runtime to find its field, the design may already be too implicit. Dumps are for diagnostics and tests, not for ordinary business logic. The application should know its important components through typed contracts, generated companions, or explicit view interfaces.
+
+\begin{detailbox}{The tree dump rule}
+Dump both Swing facts and application facts. Class and bounds explain geometry. Names and keys explain identity. Scope counts and task names explain lifecycle. Accessible names explain semantic presentation. One kind of fact rarely explains a desktop failure alone.
+\end{detailbox}
+
+When a dump is too large, summarize by screen boundary. Top-level windows, root panes, major panels, scroll panes, tables, editors, toolbars, and active overlays are usually more useful than every label. Provide a detailed mode when needed. Diagnostics should respect attention just as layout does; the goal is to guide the reader to the next question.
+
+The dump format should be stable enough for tests but readable enough for people. A line-oriented format with indentation is often sufficient. Include a version or header if support tools parse it. Keep volatile identity, such as object hash codes, out of ordinary output unless a detailed mode requests it. Stable dumps can be compared across runs; noisy dumps teach maintainers to ignore differences.
+
+Input diagnostics must be privacy-aware. A key event trace may reveal passwords, search text, or document content. A focus trace usually does not need the typed character. A transfer diagnostic may need the flavor and file count but not the entire file path. The useful diagnostic is often metadata rather than payload. Collect the least data that can answer the question.
+
+Support bundles should make time order clear. Use timestamps with a consistent clock and include monotonic durations for intervals. "Refresh started, EDT blocked, repaint burst, task cancelled, scope closed" is a story. The same facts without order are a pile. Desktop failures often involve a race between user input, background work, and repaint; ordering is therefore diagnostic content, not decoration.
+
+Screens that support plugins or generated extensions should include extension identity in dumps. A behavior installed by generated code, a validation rule contributed by a module, or a table column added by a feature flag can change the screen without changing the hand-written panel. When diagnostics omit extension identity, the base screen may be blamed for behavior it did not install.
+
+\section{Corusco Scopes, Tasks, and Testable Diagnostics}
+
+Corusco's diagnostic advantage comes from explicit relationships. A \api{ReadableValue} can report the current state without asking a widget. A \api{WritableValue} can expose the owner of a user-editable fact. A binding can name source, target, and phase. A problem set can list severity, target, and code. A task handle can report running, cancelled, failed, or completed. These are ordinary API facts, but they are also diagnostic facts.
+
+In plain Swing, a screen often grows by adding listeners. A document listener updates the Save button. A table selection listener updates the detail panel. A property-change listener updates a status label. A timer refreshes a chart. A background callback updates a model. None of these is bad alone, but the relationships can become invisible. Corusco asks the program to name many of them as values, commands, bindings, scopes, and tasks.
+
+\begin{migrationbox}{from callbacks to owned relationships}
+When migrating a screen, do not begin by replacing every listener. Begin with the relationships that cross lifetimes or duplicate state: service subscriptions, table selection, validation, command enablement, and background delivery. Put those relationships into scopes first. Diagnostics improve before the screen is fully converted.
+\end{migrationbox}
+
+A scope is both a cleanup tool and a review tool. During construction, the screen installs bindings, subscriptions, table controllers, and task callbacks into the scope. During disposal, the scope closes them. During diagnostics, the scope can report whether it is open, closed, or unexpectedly large. During tests, the scope can be asserted closed after the screen is disposed. That is a strong return from a small abstraction.
+
+Task services create another diagnostic boundary. A task should have a name, an owner, a cancellation path, and a delivery rule. The delivery rule says when and how results reach the EDT. If the user starts a second refresh before the first completes, generation counters or cancellation should prevent stale results from overwriting current state. Diagnostics should report both the old and new generations when stale results are suppressed.
+
+Busy UI should be modeled, not guessed. A busy overlay, disabled Refresh command, Cancel button, status label, and progress bar may all describe one task. If they are wired by unrelated listeners, they will drift. If they observe one task model, diagnostics can say why the UI is busy and which command or task owns that state. This is why background-work chapters place busy overlays near task handles.
+
+Validation diagnostics should distinguish parsing from validation. A field may contain raw text that cannot be parsed. Another field may parse but violate a business rule. A form may have an asynchronous warning that is stale because the user edited again. Corusco's problem model can preserve severity, target, origin, and generation. A red border alone cannot explain those distinctions.
+
+Tables need descriptor-level diagnostics. A table with generated descriptors can report stable table id, column ids, resource keys, current view order, hidden columns, sorter state, selection binding, and model event history. When a user says "the Amount column disappeared," the support bundle can distinguish hidden column state, localization, model schema, and Look-and-Feel painting. Plain Swing can store the same facts, but descriptors make the shape consistent.
+
+Generated component keys help connect screens, tests, and support bundles. A screenshot harness can find the field by key. A component tree dump can print the same key. A test can assert that an error target maps to the field. A help binding can use the key to find a help topic. The key is not decorative metadata; it is the common coordinate system for several maintenance tools.
+
+Conflict detection is a diagnostic feature. If two behaviors try to own the same tooltip, border, enabled state, or input binding, the program should know that. Silent overwrites create bugs that appear as timing or ordering mysteries. A generated behavior plan can report phases and installed behaviors so that a reader sees which feature owns which visual effect.
+
+The screenshot harness belongs in this chapter because visual documentation should be reproducible. A book figure that cannot be regenerated is a picture, not an example. The harness fixes Look-and-Feel, component size, seeded data, layout, and output path. A screenshot test may not compare every pixel, but it can assert that the expected component tree exists and that the generated image is nonempty.
+
+Core-only tests are still the cheapest diagnostics. A value mapping test, validation test, command enablement test, task-generation test, or table descriptor test can run without opening a window. Use Swing tests when the behavior genuinely depends on component hierarchy, focus, editing, or painting. The testing split keeps diagnostics fast and makes the remaining Swing tests meaningful.
+
+Leak tests should be targeted. A generated binding cleanup test should open the screen, close the scope, and assert that subscriptions are gone. A table state test should assert that listeners are removed from the model and column model. A task test should assert that a stale result is ignored. A full weak-reference screen test is valuable, but smaller ownership tests usually identify the failing relationship sooner.
+
+Instrumentation should have severity. An EDT pause over a hard threshold may be an error in development and a warning in support logs. A repaint burst may be a sampled metric unless it repeats. A listener count after scope close may be a test failure. A missing accessible name may be a review finding. Without severity, every diagnostic competes for equal attention and the reader learns to ignore all of it.
+
+Diagnostics also need vocabulary stability. If one screen calls a closed relationship "disposed," another calls it "detached," and a third calls it "inactive," support material becomes harder to read. Corusco's names are not perfect for every application, but consistent terms such as \api{Disposable}, \api{SubscriptionScope}, \api{DetachableScope}, and \api{TaskService} give teams a starting dictionary.
+
+The strongest diagnostic posture is preventive. During code review, ask which objects are long-lived, which are short-lived, which references cross that boundary, which tasks can finish late, which model events are broad, and which visual changes trigger layout or repaint. This review catches ordinary leaks and storms before a profiler or heap dump is needed.
+
+Book examples should obey the same rule. If an example appears in a screenshot, it should have deterministic data and a regeneration path. If it demonstrates a model concept, it should have a model-level test. If it demonstrates cleanup, it should expose a diagnostic that proves cleanup happened. The examples are not throwaway illustrations; they are small laboratories for the chapter's claims.
+
+Generated code should be inspectable during diagnostics. A generated binding companion that installs five behaviors should have names that appear in failure reports and source locations that appear in compiler diagnostics. When generated code fails silently, it becomes harder to debug than hand-written listener code. When it reports declarations, keys, phases, and generated class names, it becomes a precise part of the system.
+
+A diagnostic API should avoid making tests brittle. Expose stable facts, not incidental implementation order. A test can assert that the binding scope has no open subscriptions after close; it should not need to assert the exact private listener class name. A test can assert that a table update fired one row change; it should not depend on a debug string that was written for humans.
+
+Operational diagnostics and developer diagnostics can share mechanisms while using different policies. Development may throw on EDT violations, sample repaint stacks, and fail tests for missing keys. Support mode may collect warnings, redact data, and allow the user to continue. The distinction is policy, not architecture. The same named relationships feed both.
+
+\begin{coruscobox}{what Corusco changes}
+Corusco does not make Swing bugs disappear. It gives names and owners to relationships that plain Swing leaves implicit: values, commands, problems, descriptors, bindings, scopes, task handles, and generated keys. Diagnostics become smaller because the program can already state what exists.
+\end{coruscobox}
+
+\section{Review Drills and Operational Checklist}
+
+The first drill is an EDT freeze drill. Add a deliberately slow command to a development screen. Start the watchdog, invoke the command, and capture the diagnostic bundle. The bundle should show the command id, active window, EDT stack, task state, and recent events. Then fix the command by moving work off the EDT and delivering only the UI update back to Swing. Repeat the drill and compare the evidence.
+
+The second drill is a repaint storm drill. Create a timer that repaints a whole dashboard even when one label changes. Capture repaint area by component name, then replace the broad repaint with a local model update and component-specific repaint. The drill teaches an important lesson: painting code may remain unchanged while the scheduling cost disappears.
+
+The third drill is a leak drill. Build a screen that registers with a long-lived service and forgets to unregister. Open and close it several times, run the weak-reference probe, and inspect the retained path in a heap dump. Then introduce a closeable subscription or Corusco scope and prove the screen is collectible. This drill is worth doing once by hand; it changes how listener code looks in review.
+
+The fourth drill is a component-tree drill. Add a diagnostic action that dumps the current window tree with names, bounds, visibility, enabled state, displayability, focusability, accessible names, and layout managers. Use it to diagnose a hidden zero-size field, a wrong focus owner, and a missing accessible name. The exercise demonstrates that a dump is useful only when important components have stable names.
+
+The fifth drill is a stale-result drill. Start two background loads in quick succession and make the first finish last. Without generation checking, the older result may overwrite the newer state. With generation checking or cancellation, the older result is ignored and reported. The diagnostic record should show both generations so the behavior is not mysterious.
+
+Use the following checklist in code review and before relying on a screen in the book examples.
+
+\begin{itemize}
+\item Important commands, components, table columns, problems, and tasks have stable ids.
+\item The EDT watchdog or equivalent diagnostic can capture blocked stacks in development and support modes.
+\item Slow event dispatch is aggregated by event type, component name, command, or screen.
+\item Repaint diagnostics can report dirty area and request counts for major components.
+\item Broad table model events are justified; ordinary row or cell changes use precise events.
+\item Timers, subscriptions, task callbacks, bindings, and global listeners have an owner that closes them.
+\item Screen disposal tests cover the most important lifecycle scopes or weak-reference probes.
+\item Component tree dumps include Swing facts and application facts, not only class names.
+\item Diagnostic bundles include build, Java version, OS, Look-and-Feel, thread dump, recent commands, task state, and privacy policy.
+\item Screenshot examples are generated deterministically and refer to compact class or figure names in the text.
+\end{itemize}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Implement an EDT watchdog that rate-limits repeated reports and includes recent command identity.
+\item Push a timing \api{EventQueue} in a development build and aggregate slow dispatches by event class and component name.
+\item Build a diagnostic \api{RepaintManager} that reports dirty area per second for named components.
+\item Add a component-tree dump command and include names, bounds, visibility, displayability, focusability, accessible names, and layout manager names.
+\item Create a deliberate listener leak, find the retained path in a heap dump, and replace it with a closeable subscription scope.
+\item Tie a \api{javax.swing.Timer} to displayability, then test that it stops after the component is removed.
+\item Add generation checking to a background load and record stale-result suppression in diagnostics.
+\item Extend a screenshot harness so that it verifies the component has nonzero size before writing a PNG.
+\item Review one table model and replace any unjustified full reset with precise row or cell events.
+\item Write a support-bundle privacy note that lists collected facts and redaction rules.
+\end{enumerate}
+\end{exercisebox}
+
+The practical lesson is modest but strict. Diagnostics are not a separate phase after the screen is finished. They are the names, scopes, event shapes, and task boundaries that let the screen explain itself while it is running and after it has failed. A Swing application that can explain itself is easier to optimize, easier to test, and less frightening to operate.

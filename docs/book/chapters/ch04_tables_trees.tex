@@ -1,0 +1,534 @@
+\chapter{JTable and JTree at Serious Scale}
+\chapterquote{A table is not a spreadsheet-shaped JPanel; it is a protocol among models, columns, sorters, renderers, editors, and selection state.}{A warning from large data sets}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How do table and tree components remain correct and fast when data volume, sorting, editing, selection, expansion, and refresh complexity grow?\\
+Primary APIs & \api{JTable}, \api{TableModel}, \api{TableColumnModel}, \api{ListSelectionModel}, \api{RowSorter}, \api{TableRowSorter}, \api{JTree}, \api{TreeModel}, \api{TreePath}.\\
+Hidden difficulty & View indices and model indices diverge; broad model events destroy locality; renderers are reused; sorters and filters can dominate performance; tree rows are only a projection of expansion state.\\
+Payoff & Tables and trees that stay responsive with large models, preserve user context, render predictably, and accept Corusco descriptors without losing Swing's native strengths.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{A JTable Is Several Models, Not One Widget}
+
+\termdef{Table model}{the object that describes row-column data in model coordinates} is only the first part of a \api{JTable}. The table also has a \termdef{column model}{the object that describes visible columns, order, widths, and column selection}, a \termdef{selection model}{the object that describes selected view rows or columns}, and often a \termdef{row sorter}{the object that maps model rows to view rows and applies sorting or filtering}. A serious table is therefore a conversation among models, not a grid that happens to display objects.
+
+Many bugs begin with the phrase "row 17" because the phrase does not say which coordinate system owns the number. A selected row returned by \api{JTable.getSelectedRow} is a view row. A row stored in a \api{TableModel} is a model row. A row in a database query may be neither. Once sorting, filtering, or incremental loading is present, casual row arithmetic is no longer a small style issue; it is a correctness defect.
+
+\begin{principlebox}{Always name the coordinate space}
+Use names such as \api{viewRow}, \api{modelRow}, \api{viewColumn}, and \api{modelColumn}. In review, reject generic \api{row} and \api{column} variables in code that crosses sorting, filtering, column reordering, selection, or persistence boundaries.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\largeDataFigure}
+\caption{A large-data table example rendered through the book screenshot harness. The table is visually ordinary on purpose: the interesting part is not decoration, but whether row identity, sorting, rendering, and update precision remain ordinary under load.}
+\label{fig:large-data-table}
+\end{figure}
+
+Figure~\ref{fig:large-data-table} is the kind of table that reveals bad contracts. Ten rows do not test renderer allocation, sorting cost, selection preservation, or viewport repainting. A table with many rows and varied data forces the program to decide what is stored, what is computed, what is cached, and what can happen on the EDT. The sooner examples use deterministic but nontrivial data, the sooner hidden assumptions become visible.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\tableCoordinatesFigure}
+\caption{The same selected visual row has several meanings: view row, model row after sorter conversion, and stable domain identity. Good table code preserves all three without confusing them.}
+\label{fig:table-coordinate-systems}
+\end{figure}
+
+Figure~\ref{fig:table-coordinate-systems} shows why a selected row must be converted before the model is consulted. A row sorter can move rows. A filter can hide rows. A column model can reorder columns. The table view is what the user sees now; the model is what the application stores; the domain identity is what should survive refresh. The three often point at the same object, but they are not the same thing.
+
+\begin{examplebox}{tables}
+\largeDataExample{} supplies the large table in Figure~\ref{fig:large-data-table}. \api{BookVisualFigures} supplies Figure~\ref{fig:table-coordinate-systems}, Figure~\ref{fig:table-refresh-identity}, and Figure~\ref{fig:tree-path-identity}. These figures are captured by \api{BookFigureGenerator} through \screenshotHarnessExample{} so the screenshots remain generated artifacts rather than detached illustrations.
+\end{examplebox}
+
+The ordinary selection pattern is therefore conversion first, interpretation second. The code may feel longer than direct model access, but it documents the boundary. It also makes tests and reviews easier because every line says whether it is still in view space or has crossed into model space.
+
+\begin{lstlisting}[caption={Converting selected rows to model rows before reading the model.}]
+int[] viewRows = table.getSelectedRows();
+List<OrderId> selectedOrders = new ArrayList<>(viewRows.length);
+for (int viewRow : viewRows) {
+    int modelRow = table.convertRowIndexToModel(viewRow);
+    selectedOrders.add(orderModel.orderIdAt(modelRow));
+}
+\end{lstlisting}
+
+Columns deserve the same discipline. A visible column can move even when the model column is stable. Header drag, persisted user state, column visibility, and generated descriptors all make column position a presentation detail. Before code interprets a cell semantically, it should convert \api{viewColumn} with \api{convertColumnIndexToModel}. Before code persists a column preference, it should prefer a stable column id rather than either index.
+
+\termdef{Stable row identity}{a domain key that names the represented object independently of current row position} is the table equivalent of a primary key. Selection, row-specific busy state, validation problems, and detail panels should usually be stored by stable identity. View row is useful for painting and navigation. Model row is useful for model events and data access. Domain identity is useful for user context over time.
+
+The difference appears during refresh. A model may receive a new list of rows from a service. If selection is stored by view row, the selected visual row may now refer to a different order. If selection is stored by model row, sorting or filtering may still change meaning. If selection is stored by \api{OrderId}, the screen can resolve that id after refresh and select the corresponding current row if it still exists.
+
+The same difference appears during command execution. A Delete command should not delete "view row 3"; it should delete the selected domain ids. A Detail command should not open "model row 12"; it should open the current object represented by a stable id. A Copy command may deliberately use visible order, but even then it should convert view coordinates through the table boundary before reading values. Coordinate conversion is not an implementation detail. It is the point where the screen says what kind of meaning it is using.
+
+There are three coordinate spaces worth naming in nearly every table method. \termdef{View coordinates}{row and column positions in the current JTable presentation} are affected by sorters, filters, column reordering, and column visibility. \termdef{Model coordinates}{row and column positions in the TableModel} are affected by the model's current storage and event sequence. \termdef{Domain coordinates}{stable ids, descriptor keys, or query positions understood by the application} are the only coordinates that usually survive refresh and persistence. A method may cross from one space to another, but it should cross deliberately and only once where possible.
+
+This naming habit also helps beginners read existing Swing code. A table mouse event arrives in view coordinates because the pointer is over the presentation. A \api{TableModelEvent} reports model coordinates because the model changed. A persisted column width should use domain or descriptor coordinates because the width belongs to a user's idea of "Credit limit," not to whichever visual column index currently holds it. Once the spaces are named, many mysterious table bugs become ordinary boundary bugs.
+
+The column model is especially easy to underestimate. It is not merely storage for widths. It owns visible order, margins, selection, resizing behavior, and the current set of visible \api{TableColumn} objects. Hiding a column often means removing it from the column model while leaving the model column in the table model. That distinction lets a hidden id column still support sorting, export, validation, or detail loading. It also means code that iterates visible columns is not iterating all possible columns.
+
+The same idea applies to tables generated from descriptors. A generated column should not be "column 3" in application code. It should have a descriptor key, a value type, a header resource key, a persistence id, and perhaps renderer/editor policy. The Swing column may move or disappear; the descriptor identity remains. Corusco's table support later turns this principle into code, but plain Swing already benefits from thinking this way.
+
+Descriptor thinking can begin before code generation exists. A hand-written enum of columns is already better than scattered integers if it names value type, resource key, comparator, renderer, editor, export behavior, and persistence id. Later Corusco generation can replace the enum or generate it from annotated declarations, but the conceptual improvement is immediate: columns become named facts rather than positions. The table is then easier to review because every feature can point to a column identity.
+
+This is also the first place where table design meets layout design. MigLayout may place a table beside filters and below command buttons, but it cannot know whether a selected row still refers to the same customer. Conversely, the table should not hard-code parent sizes to preserve context. The parent layout owns screen geometry; the table boundary owns row, column, selection, sorting, and identity. Clean Swing screens keep those ownership lines visible.
+
+\section{Model Events, Sorters, Filters, and Editors}
+
+\api{AbstractTableModel} provides convenient fire methods, and the broadest method is often the easiest to call. That ease is dangerous. \termdef{Event precision}{firing a model event that describes the smallest truthful structural or value change} determines how much of the table, sorter, selection, and repaint system must reconsider its state. A broad event may look safe because it repaints everything. It often destroys user context.
+
+Figure~\ref{fig:table-refresh-identity} shows the refresh path that the rest of this section assumes. A screen captures stable user context before mutation, performs slow loading away from the EDT, applies one coherent model transaction on the EDT, fires precise events, and restores selection or viewport by identity. Each step has a different owner. When the steps are collapsed into "replace list and repaint table," the table may still display rows, but it no longer protects the user's place.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\tableRefreshFigure}
+\caption{A table refresh should preserve meaning, not merely repaint cells. Stable ids, a coherent model transaction, precise events, and viewport restoration are separate responsibilities.}
+\label{fig:table-refresh-identity}
+\end{figure}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.28\linewidth}X X}
+\toprule
+Event & Meaning & Cost of misuse\\
+\midrule
+\api{fireTableRowsInserted} & A contiguous model-row range was inserted. & Replacing it with data-changed may lose locality and selection adjustment.\\
+\api{fireTableRowsDeleted} & A contiguous model-row range was removed. & Wrong indices can corrupt view/model mapping and selection updates.\\
+\api{fireTableRowsUpdated} & Existing rows changed but row count/order in the model did not. & Too broad a range repaints and resorts too much.\\
+\api{fireTableCellUpdated} & One cell changed. & Too many individual calls can starve the EDT; batch when a burst is semantic.\\
+\api{fireTableDataChanged} & The table's data may have changed broadly. & Destroys locality; use after major resets, not as the default update.\\
+\api{fireTableStructureChanged} & Column identity/types changed. & Rebuilds columns and editors; often loses user column customizations.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+A serious table model should expose domain-specific mutation methods that mutate storage and fire the event atomically. It should not expose a raw list and hope callers remember which event to fire. The model is the only object that can enforce row counts, column classes, EDT confinement, and event ordering consistently.
+
+\begin{lstlisting}[caption={A model method that updates storage and event atomically on the EDT.}]
+public void replaceRows(int firstModelRow, List<OrderRow> replacements) {
+    checkEdt();
+    if (replacements.isEmpty()) {
+        return;
+    }
+    for (int i = 0; i < replacements.size(); i++) {
+        rows.set(firstModelRow + i, replacements.get(i));
+    }
+    fireTableRowsUpdated(firstModelRow,
+                         firstModelRow + replacements.size() - 1);
+}
+\end{lstlisting}
+
+The event should be fired after the model is internally consistent. Renderers, sorters, listeners, and selection code may ask for values as soon as they receive the event. If the model fires halfway through a mutation, the table can observe an impossible state. This is one reason batch operations should be designed deliberately rather than emitted as a stream of accidental intermediate events.
+
+The event should also match the coordinate space of the mutation. Table model events use model row indices. If the view is sorted, those indices are not the visible rows that the user sees. A model method that receives domain ids should resolve them to current model rows before firing. A view action that starts from selected rows should convert to ids or model rows at the boundary, then let the model mutate and fire its own model-space events. Mixing these responsibilities is how an apparently correct update repaints the wrong row after sorting.
+
+There is an important difference between a broad reset and a broad transaction. A broad reset says, "I cannot tell you what changed; assume everything." A broad transaction may update many rows but still describe ranges, inserted ids, removed ids, or moved blocks. Large tables often need broad transactions because many rows can change at once. They do not always need broad resets. Preserving this distinction is the difference between a table that calmly updates thousands of rows and a table that throws away selection, editing, sorter state, and scroll context whenever a service response arrives.
+
+Event coalescing is a useful tool when a burst of small updates arrives. If a background task delivers 500 individual cell changes, firing 500 events immediately may keep the EDT busy and produce unnecessary sorter work. Coalescing adjacent ranges or publishing a batch on a short cadence can be better. The coalescing rule must remain truthful: adjacent row updates can become a row-range update; unrelated structural changes may need a transaction object in the model layer before they become Swing events. Coalescing is not a license to call \api{fireTableDataChanged} because it is easy.
+
+\textbf{Column classes are part of the model contract.} \api{TableRowSorter} uses column classes to choose comparators. If every column returns \api{Object.class}, sorting may fall back to string conversion. That is slower and semantically wrong for numbers, dates, money, statuses, and domain identifiers. \api{getColumnClass} is not decoration for editors; it is sorting and rendering metadata.
+
+\begin{lstlisting}[caption={Column metadata as part of the table model contract.}]
+@Override
+public Class<?> getColumnClass(int modelColumn) {
+    return switch (modelColumn) {
+        case 0 -> OrderId.class;
+        case 1 -> Instant.class;
+        case 2 -> BigDecimal.class;
+        case 3 -> OrderStatus.class;
+        default -> Object.class;
+    };
+}
+\end{lstlisting}
+
+For domain types, install explicit comparators. A status should sort by workflow order, not localized display text unless that is truly the intended order. A monetary amount should sort numerically, not lexicographically. A date should sort by time, not by whatever string format happens to be visible under the current locale.
+
+\begin{lstlisting}[caption={Installing domain-specific comparators.}]
+TableRowSorter<OrderTableModel> sorter = new TableRowSorter<>(model);
+sorter.setComparator(OrderTableModel.TOTAL_COLUMN,
+        Comparator.comparing(BigDecimal.class::cast));
+sorter.setComparator(OrderTableModel.STATUS_COLUMN,
+        Comparator.comparingInt(value -> ((OrderStatus) value).sortOrder()));
+table.setRowSorter(sorter);
+\end{lstlisting}
+
+The sorter is often a hidden performance center because it is not inside renderer code. Updating one value in a sort column can move a row. Applying a filter can evaluate every row. A comparator that formats dates, parses strings, consults resources, or asks a service can dominate user-visible latency. Profile sorter and filter work with the same seriousness as painting.
+
+Sorting also affects user orientation. A table sorted by "Last order" may move a row immediately after the row is edited or refreshed. That movement can be correct, but it should not surprise the command layer. If the user edits a sort key, the editor may commit, the model may fire an update, the sorter may move the row, and selection restoration may need to find the same id in a new view row. If code keeps a view row from before the commit, it will act on the wrong object. The active-editor rule and the identity rule meet here.
+
+Some products deliberately suspend sorting during bulk updates. That can be humane when rows would otherwise jump while the user is reading. Other products keep live sorting because the table represents a ranked list and movement is the point. Swing can support either policy, but the policy should be named. Hidden sorter behavior is hard to test because it is triggered by data, not by an obvious UI command.
+
+\api{RowFilter} is elegant, but it can become expensive if each invocation performs formatting, regex compilation, database lookup, or allocation-heavy conversion. Filtering is called repeatedly across rows. Precompute normalized search terms, parsed ranges, and predicates outside the row method. If the filter is driven by a text field, consider debouncing or applying it after the user pauses rather than on every document event.
+
+\begin{lstlisting}[caption={A RowFilter that precomputes query state.}]
+public static RowFilter<OrderTableModel, Integer> containsText(String query) {
+    String needle = query.toLowerCase(Locale.ROOT).strip();
+    return new RowFilter<>() {
+        @Override
+        public boolean include(Entry<? extends OrderTableModel, ? extends Integer> e) {
+            OrderTableModel model = e.getModel();
+            int row = e.getIdentifier();
+            return model.searchTextAt(row).contains(needle);
+        }
+    };
+}
+\end{lstlisting}
+
+For very large data sets, decide whether filtering belongs in Swing at all. A database-backed table should not pretend that \api{RowSorter} is a query planner. The UI may display a window over a server-side result, or the domain layer may produce a filtered observable list. The table should still receive precise events, but the expensive search operation may live below the Swing boundary.
+
+Filtering has selection semantics. When the filter hides a selected row, did the selection disappear, become hidden, or remain part of a semantic selection outside the visible table? A batch operation screen may clear hidden selection to avoid acting on invisible rows. A search screen may keep the selected object in the detail panel because the user's task is still about that object. A monitoring table may keep hidden selection but show a status note. These are product decisions, and they cannot be implemented reliably if selection is only an array of view rows.
+
+Filters should also distinguish empty result, loading result, failed result, and stale result. A text filter that returns no rows is different from a server query that has not completed. A failed filter query is different from an empty query. A stale result being replaced is different from current data. Large-data tables become more understandable when these states are modeled and rendered explicitly instead of collapsed into a blank viewport.
+
+\textbf{Editors are live components.} Renderers are stamps; editors are temporary interactive components. Editing starts, an editor component is installed, the user interacts, and the editor either commits or cancels. A table model should not assume that visual editing means model mutation has already happened. Commit occurs through \api{stopCellEditing}; cancellation occurs through \api{cancelCellEditing}.
+
+Common bugs include losing edits when a Save command reads the model while a cell editor is still active, validating only after the editor has already committed invalid data, replacing the table model while an editor is active, or allowing sorting to move the edited row while the user is typing. These are not exotic edge cases. They happen in ordinary data-entry tables.
+
+\begin{lstlisting}[caption={Stop active editing before executing a command that reads table data.}]
+public static boolean stopEditing(JTable table) {
+    if (!table.isEditing()) {
+        return true;
+    }
+    TableCellEditor editor = table.getCellEditor();
+    return editor == null || editor.stopCellEditing();
+}
+\end{lstlisting}
+
+Call this kind of boundary before Save, Apply, Delete, navigation, refresh, and dialog acceptance commands that depend on current table values. If editing cannot stop because the value is invalid, the command should not pretend the model is complete. Later dialog chapters apply the same rule at form scale: active editors must be committed or canceled before workflow decisions are made.
+
+Live sorting during editing is a product decision. Some applications allow the edited row to move as soon as a sort-key value changes. Others suspend sorting during edit or bulk update, then sort once. Either policy can be correct. What is not correct is to let the row move accidentally and then read stale view coordinates after the event. Preserve selection and editing context by identity whenever movement is possible.
+
+Editors also need a parsing boundary. A text editor for money may contain an intermediate string that is not a \api{BigDecimal}. The table model should not be forced to store invalid domain values merely because the user is halfway through typing. A cell editor can own the raw editing text, a converter can attempt parsing, validation can report problems, and the model can accept only committed domain values. This is the table version of the form-model distinction later used by Corusco.
+
+When validation rejects a commit, focus and feedback matter. The editor may remain active with an inline marker. The table may show a tooltip or problem summary. The Save command may stay disabled with a reason. The important rule is that the user must know whether the value is still in the editor, in the model, or rejected. A table that silently refuses to stop editing makes users distrust every command that follows.
+
+Replacing a model while editing should be treated as a conflict. If the user edits a cell and a refresh arrives, the screen should decide whether to finish editing first, cancel editing, merge, show conflict, or postpone refresh. The default Swing APIs will not choose the product policy for you. A serious table should make the refresh path aware of active editing before it mutates storage or swaps models.
+
+\section{Renderers, Viewports, and Large Data}
+
+\termdef{Renderer component}{a component used as a reusable stamp rather than as a child installed for each cell} is a central Swing idea. A \api{JTable} with one million logical cells does not contain one million Swing components. It asks renderers to configure a small number of components repeatedly. This is why renderer implementations often override methods such as \api{validate}, \api{revalidate}, and \api{repaint} for performance.
+
+A renderer must be fast because it is called often. It must be stateless because the same instance is reused. It must be complete because any visual property not reset can leak from a previous cell. A renderer that sets a warning icon only in the warning branch will eventually show that icon on a normal row after scrolling. The bug feels random because the reuse order is controlled by painting, but the cause is deterministic.
+
+\begin{detailbox}{Renderers must be complete every time}
+Every renderer invocation must set all visual state it depends on: text, icon, font, foreground, background, border, opacity, tooltip, horizontal alignment, enabled state, and component orientation when relevant. It is not enough to set the exceptional state. The previous cell may have been exceptional.
+\end{detailbox}
+
+\begin{lstlisting}[caption={A renderer that resets state explicitly.}]
+public final class MoneyRenderer extends DefaultTableCellRenderer {
+    private final NumberFormat format = NumberFormat.getCurrencyInstance();
+
+    @Override
+    public Component getTableCellRendererComponent(
+            JTable table, Object value, boolean selected, boolean focus,
+            int viewRow, int viewColumn) {
+        super.getTableCellRendererComponent(table, value, selected, focus,
+                                            viewRow, viewColumn);
+        setHorizontalAlignment(TRAILING);
+        setIcon(null);
+        setToolTipText(null);
+        setText(value instanceof BigDecimal amount ? format.format(amount) : "");
+        if (!selected) {
+            int modelRow = table.convertRowIndexToModel(viewRow);
+            OrderTableModel m = (OrderTableModel) table.getModel();
+            setForeground(m.isOverdue(modelRow)
+                    ? UIManager.getColor("Actions.Red")
+                    : table.getForeground());
+            setBackground(table.getBackground());
+        }
+        return this;
+    }
+}
+\end{lstlisting}
+
+Even this example is intentionally conservative. A production renderer might resolve colors through resources, use descriptor-provided severity policy, or cache formatting in a row presentation object. The point is the reset rule. The renderer should read prepared state and configure presentation. It should not perform repository calls, start image loads, allocate heavy helpers per cell, or store durable row facts in renderer fields.
+
+Measure renderer allocation during a fast scroll. Creating borders, fonts, formatters, colors, icons, parsed values, or scaled images in every renderer call can produce enough garbage to cause pauses. Some allocation is harmless; repeated allocation in the hot path is not. Cache immutable presentation helpers outside the renderer path, and keep per-row mutable state in the model or in an identity-keyed cache with explicit invalidation.
+
+A renderer should also respect the Look-and-Feel's selected and focused state. The common mistake is to paint semantic color over selection. A warning row turns red; then the user selects it; the renderer keeps the red background and the selected foreground becomes unreadable. The safer pattern is to preserve selected foreground and background, then add a warning icon, border, secondary text, or other marker that coexists with selection. The Look-and-Feel chapter explains this as visual state ownership; tables make the problem frequent.
+
+Tooltips are renderer state too. A tooltip that explains a warning should be cleared on normal rows. A tooltip that depends on expensive validation should be precomputed or cached by row identity. A tooltip that contains localized text should refresh when resources change. Because renderers are reused, stale tooltip text is as real a bug as stale foreground color.
+
+Cell borders require care because renderers are stamp components. A border used for focus, validation, or selection may alter insets and perceived alignment. If every renderer call creates a new border, scrolling allocates. If a shared mutable border stores row state, rows leak state into one another. Prefer a small set of immutable borders chosen by state, or paint lightweight markers inside the renderer with well-understood insets.
+
+\textbf{Large models are about storage, not components.} A million-row model is not a million Swing components, but it may still be a million Java row objects, formatted strings, sort keys, validation objects, or resource lookups. Decide what is actually stored. A model that returns generated values on demand has different costs from a model that materializes everything. A sorter that builds a full mapping has different costs from a domain query that returns a page.
+
+Patterns for large tables include a page cache that loads immutable row chunks in the background and installs them on the EDT, a model that exposes a known row count but returns placeholder values for unloaded ranges, a domain query layer that sorts and filters server-side, and a stable row identity map that preserves selection through refresh. These are not mutually exclusive; serious tables often combine them.
+
+Lazy data must not lie. Returning an empty string for unknown values is tempting, but it lies to sorters, filters, accessibility, export, and commands. Unknown, loading, loaded, failed, and absent are different states. The table can render them compactly, but the model should keep the distinction so commands do not assume data is present and filters do not treat loading rows as empty rows.
+
+The model can represent these states with sealed types, records, or ordinary classes; the important part is that the state is explicit. A cell that is loading may sort after loaded cells, be excluded from export, and show a progress marker. A failed cell may offer retry and carry a diagnostic. An absent value may sort as empty but still be a legitimate loaded value. A table that collapses all three into an empty string cannot support correct commands or helpful diagnostics.
+
+The same honesty applies to row count. Some data sources know the total row count. Some know only that more rows may exist. Some support exact counts but computing them is expensive. A table model can expose a known count, a windowed count, or a sentinel row such as "Load more." Each choice affects scroll bars and user expectations. A scroll bar that implies one million known rows when the application has only loaded the first page is a promise; make sure the promise is true.
+
+Viewport-aware loading is usually better than row-by-row blocking. The model exposes placeholders immediately, starts background loads for visible ranges, coalesces completions, and fires precise updates when chunks arrive. If sorting requires unloaded values, decide explicitly whether to block sorting, sort by known metadata, or load a broader index. Do not let \api{getValueAt} accidentally trigger thousands of synchronous fetches on the EDT.
+
+Visible-range loading should be throttled. Fast scrolling can expose many ranges in a short time. Starting one task per row or per tiny strip can overwhelm the task service and produce stale completions. A range loader can expand the visible range by a prefetch margin, merge overlapping requests, cancel obsolete requests, and publish chunks by generation. The table remains a Swing component; the loading policy belongs to a presentation model or task service around it.
+
+Selection preservation by identity is essential for large data because refresh is normal. Rows may be reloaded after a filter change, after a server update, or after the user scrolls into a new page. Capture selected ids, update the model, then restore selection by resolving ids to current model rows and then to view rows. If an id no longer exists, clear it deliberately or report that the item disappeared.
+
+\begin{lstlisting}[caption={Preserving selection by stable domain identity.}]
+Set<OrderId> selected = selectedOrderIds(table, model);
+model.replaceAll(newRows);
+restoreSelectionById(table, model, selected);
+\end{lstlisting}
+
+The restoration step should be careful about timing. If a sorter is installed, model updates may cause resorting before view coordinates are final. Restore selection after the model and sorter have reached a coherent state, usually on the EDT after the update sequence. Do not capture selection by view row before a refresh and then apply the same view row after the sorter has moved everything.
+
+\api{JViewport} adds another performance dimension. A table inside a scroll pane is clipped. Scrolling can copy existing pixels and repaint newly exposed strips. Renderer discipline, row height stability, and model event precision all help the viewport avoid unnecessary work. A broad model event can cause the table to repaint far more than the visible change required.
+
+Row height deserves attention. Variable row heights can be useful, but they complicate visible-range calculation and scrolling performance. Fixed row height is often a good tradeoff for large business tables. If row height depends on fonts, theme changes may require layout invalidation. If row height depends on data, a row update may become both a data event and a geometry event. Name that policy early.
+
+A viewport also changes how repaint bugs are perceived. If a renderer leaks state, the bug may appear only after scrolling because the stamp component has been reused. If a model fires broad events, the viewport may flash or lose smooth scrolling. If row height changes without revalidation, the visible range may be wrong. If a lazy load completes for a range that is no longer visible, the user may not notice until selection jumps. Viewport testing should therefore include fast scrolling, partial repaints, theme font changes, and updates outside the visible region.
+
+Large tables should avoid auto-resize surprises. \api{JTable.AUTO\_RESIZE\_ALL\_COLUMNS} can be useful in small views and frustrating in data grids where users care about widths. Horizontal scrolling, column resizing, and persisted widths are product decisions. They also interact with MigLayout: the table's parent may give it more or less width, but the column model decides how that width is distributed. A serious screen should name whether columns stretch, scroll, hide, or preserve fixed widths.
+
+Column width calculation can be expensive if it scans all rows. Autosizing a column by measuring every value in a million-row model is usually wrong. Sample visible rows, use descriptor-provided preferred widths, measure headers and representative values, or let users adjust widths. If a column is server-backed or lazily loaded, width measurement should not force loading every cell. Width policy is part of large-data design, not a finishing touch.
+
+\section{JTree Paths, Expansion, and Lazy Children}
+
+A \api{JTree} is harder than a table because visible rows are a projection of expanded paths over a hierarchical model. Row number is even more transient than in a sorted table. A \termdef{TreePath}{a sequence of model objects from root to a node in the current tree model} is the primary Swing coordinate. Selection, expansion, editing, drag-and-drop, and lazy loading should usually be expressed in paths or domain identities, not rows.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\treeIdentityFigure}
+\caption{A tree screenshot makes the identity problem visible: visible row is temporary, \api{TreePath} is the current route, and stable node ids are needed when refresh or lazy loading replaces model objects.}
+\label{fig:tree-path-identity}
+\end{figure}
+
+Figure~\ref{fig:tree-path-identity} shows a small tree with expanded branches and a selected child. The visible row is useful for painting and keyboard navigation, but it is not durable. The path is more meaningful because it describes a route through the current model. A domain path made of stable node ids is more durable still because it can survive model objects being replaced during refresh.
+
+Tree models fire events for insertion, removal, change, and structure change. As with tables, precision matters. A broad structure change can collapse expansion state, clear selection, reload lazy nodes, and make the user lose place. A precise nodes-inserted event lets the tree update locally and keep context. The easy event is often the most visually destructive event.
+
+Trees add one more identity problem: object identity and domain identity may diverge. A tree model might rebuild node objects after every refresh while the represented domain ids stay the same. A \api{TreePath} contains the current path objects, so old paths may not compare equal after rebuild. Preserving expansion then requires mapping path components to stable ids before refresh and resolving ids to new path objects after refresh. Otherwise the code preserves references to objects the model no longer uses.
+
+\begin{lstlisting}[caption={Capturing expanded domain paths.}]
+List<List<NodeId>> expandedIds(JTree tree, Object root) {
+    List<List<NodeId>> result = new ArrayList<>();
+    Enumeration<TreePath> paths =
+            tree.getExpandedDescendants(new TreePath(root));
+    if (paths != null) {
+        while (paths.hasMoreElements()) {
+            result.add(toNodeIds(paths.nextElement()));
+        }
+    }
+    return result;
+}
+\end{lstlisting}
+
+In real code, \api{toNodeIds} maps each path component to stable identity. Restoring expansion then asks the new model to resolve those identities back to current path objects. If a node no longer exists, restoration fails locally rather than collapsing the whole tree mysteriously. This is the tree version of preserving table selection by row identity.
+
+The resolver should report partial failure. If a parent still exists but one child disappeared, the tree can expand to the parent and select nothing, or show a status note that the selected node is gone. If the root changed completely, the screen may intentionally reset expansion. What matters is that the policy is visible in code. A failed path lookup should not silently become "collapse everything" unless that is truly the product decision.
+
+Lazy trees often display nodes whose children are not loaded yet. The renderer may show a busy icon or a placeholder label, but it should not start loading. Rendering must be side-effect free. Trigger loading from expansion events, explicit commands, or a presentation model that observes expansion state. Starting background work from a renderer call is the same mistake as starting a database query from \api{getValueAt}.
+
+\begin{lstlisting}[caption={Loading children when a node is expanded, not when it is rendered.}]
+tree.addTreeWillExpandListener(new TreeWillExpandListener() {
+    @Override
+    public void treeWillExpand(TreeExpansionEvent event) {
+        Node node = (Node) event.getPath().getLastPathComponent();
+        if (!node.childrenKnown()) {
+            loader.loadChildren(node.id());
+        }
+    }
+
+    @Override
+    public void treeWillCollapse(TreeExpansionEvent event) {
+        // Usually no work. Avoid unloading too aggressively.
+    }
+});
+\end{lstlisting}
+
+If loading is asynchronous, insert a placeholder child such as "Loading..." on the EDT, then replace it with real children when results arrive. Preserve expansion state by identity. If the load fails, represent failure explicitly rather than pretending the node has no children. Unknown, loading, loaded-empty, loaded-with-children, and failed are different states for trees just as they are for lazy tables.
+
+The placeholder itself should have identity. A generic string child named "Loading..." is acceptable in a demo, but production code usually benefits from a node type such as \api{LoadingNode}, \api{FailedNode}, or \api{LoadMoreNode}. The renderer can then display the state, commands can offer retry, accessibility can describe it, and model code can replace the placeholder precisely. If the placeholder is just a localized label, the tree model has to rediscover meaning from display text.
+
+Expansion-driven loading should avoid duplicate loads. A user may expand, collapse, and expand quickly. The model may receive two expansion events for a node whose first load is still running. A generation counter, per-node loading flag, or task registry should prevent duplicate work and stale replacement. If the first request finishes after a newer request, the node should apply only the current result.
+
+Tree renderers obey the same stamp rule as table renderers. The renderer must configure all visible state from the current node, selected state, expanded state, leaf state, focus state, and row. It must not keep durable node state in renderer fields. It must not start loading. If it shows a warning, busy mark, or disabled state, that state should come from the model or a node presentation adapter.
+
+Expansion policies are product decisions. Some screens keep expanded nodes after refresh by identity. Some collapse nodes whose children changed too much. Some auto-expand a path to a newly selected search result. Each policy can be implemented, but the policy should be explicit. A tree that randomly collapses after update is usually a tree whose refresh code used structure change because it did not have an identity model.
+
+Search policies are a useful example. A tree search may filter nodes, highlight matching nodes, or auto-expand ancestor paths to visible matches. Each behavior has a different cost and user experience. Filtering a tree can hide ancestors and make paths confusing. Highlighting preserves context but may require many expansions. Auto-expansion may surprise users by opening large parts of the tree. The right policy depends on the task, but the implementation should still preserve identity and avoid row-number shortcuts.
+
+Dragging and editing add more boundaries. A drag source should carry domain identity or path identity, not a visible row. An editor should commit or cancel before a command reads the model. A rename operation should fire a precise node-changed event. A move operation should fire remove and insert events or a structure change only when the model cannot express the move precisely.
+
+Tree accessibility depends on the same identity discipline. A screen reader needs names, roles, expanded/collapsed state, level, and selection. If the tree model uses meaningful node objects and paths, the accessibility layer has information to expose. If the tree is painted or refreshed as an anonymous pile of rows, accessibility and keyboard navigation become afterthoughts.
+
+\section{Corusco Descriptors, Observable Lists, and Table State}
+
+Corusco does not replace \api{JTable} or \api{JTree}. It gives the application a way to name the facts that Swing otherwise exposes as integer positions and ad hoc listeners. A Corusco table descriptor can name columns, value readers, value types, resource keys, renderer/editor hints, validation targets, persistence ids, and help topics before the Swing table is created. That metadata makes Swing's moving parts easier to review.
+
+\begin{coruscobox}{descriptors before indexes}
+Corusco table support is valuable because column meaning becomes explicit. Swing may still reorder columns, sort rows, and reuse renderers, but application code can talk about descriptor keys, row identity, problem targets, resources, and table state rather than whatever visual index exists at the moment.
+\end{coruscobox}
+
+This is not merely a generation convenience. A bug report says that the "Status" column sorts incorrectly. With descriptor-backed code, the developer can find the status column key, value type, comparator, renderer policy, resource key, and persistence id. With integer-based code, the developer searches for constants and hopes column movement or localization did not hide the real meaning.
+
+Observable lists are the natural model input for many tables. A list change can say that rows were inserted, removed, replaced, moved, or cleared. That precision can become table model events, selection preservation, and repaint locality. If every list update is collapsed into "data changed," the table loses information the model already had. Corusco's observable-list adapters should preserve as much precision as Swing can consume.
+
+The adapter should be explicit about what precision survives. A contiguous insertion maps naturally to \api{fireTableRowsInserted}. A contiguous removal maps naturally to \api{fireTableRowsDeleted}. A replacement maps to update if row identity and row count remain stable. A move may be represented as remove plus insert in Swing unless the surrounding model has a better way to preserve selection. A filtered projection may turn one source change into no visible change, an update, an insertion, or a removal. These conversions are small algorithms, not boilerplate.
+
+Batch delivery matters because observable lists often receive grouped changes. If the source list publishes a batch, the Swing adapter should not always explode it into hundreds of immediate events. It may preserve the batch, coalesce ranges, suspend sorting briefly, or compute a transaction. The adapter's policy should be documented because it directly affects table performance and user context. "Observable" is not enough; the shape of the observation matters.
+
+Large data requires a careful bridge. An observable list may represent only the loaded window, or it may represent a filtered projection, or it may represent metadata for rows whose details are loaded lazily. The table descriptor should not force one storage strategy. It should make row identity, value access, loading state, and event conversion explicit enough that the chosen strategy remains testable.
+
+A descriptor can help a windowed model avoid pretending to be a full list. It can say which columns are available for unloaded rows, which columns require detail loading, which values can be sorted server-side, which values can be filtered locally, and which values should display placeholders. This metadata lets a table screen be honest about partial knowledge. A generated descriptor that treats every column as equally loaded and equally cheap hides the most important large-data facts.
+
+Problem sets are useful in tables because validation and status often appear at cell, row, or object level. A cell renderer can show a warning icon based on a problem target. A tooltip can explain the problem. A command can be disabled until selected rows have no blocking problems. These surfaces should not each recompute validation by reading table cells. They should observe the same problem model.
+
+Problem targeting should use descriptor identity. A problem for \api{creditLimit} should not be stored as "column 4" because column order changes and optional columns exist. A problem for customer C-102 should not be stored as "row 7" because sorting, filtering, and refresh change row numbers. A target made from row id and column key can decorate the table, populate a summary, guide focus, and survive column movement. This is where Corusco's typed keys and table descriptors make ordinary Swing renderers safer.
+
+Table state persistence is another descriptor problem. Column order, width, sort keys, visibility, and user choices should be stored by stable ids, not by localized headers or current visual indexes. If a user widens the "Credit limit" column, the saved state should still apply after localization, after a new optional column is inserted, or after generated code changes the table construction order.
+
+Persistence also needs version tolerance. A later release may remove a column, split one column into two, rename a descriptor, or change default widths. The loader should ignore unknown persisted ids, apply known ids, and have a migration path for renamed ids when preserving user state matters. Failure to load a table because an old column id is unknown is not a user-friendly outcome. The table should start with reasonable defaults and perhaps log the ignored state.
+
+Sort persistence should be reviewed separately from column order. A user may hide a column but still sort by it, or sorting by a hidden column may be disallowed. A descriptor can say whether a column is sortable, whether hidden sorting is legal, and whether sorting is local or server-side. Persisted sort keys should be validated against current descriptor policy before they are applied.
+
+Lifecycle ownership matters because table screens install many listeners: model listeners, selection listeners, sorter listeners, column model listeners, editor listeners, resource listeners, validation listeners, and background task listeners. A screen that leaks any of these may keep large models, images, or service references alive. Corusco scopes make the listener set visible and closeable.
+
+The lifecycle list should include renderers and editors when they own resources. A renderer that holds an icon cache, resource listener, or theme listener needs a cleanup story. An editor that installs document listeners or validation bindings needs one too. Many renderers are stateless and need no disposal; that is ideal. The point is to make stateful exceptions visible. A table screen is often long-lived, but "long-lived" is not the same as "never disposed."
+
+Commands belong outside table plumbing. Delete selected rows, open detail, export, refresh, copy, and apply filter should be commands with stable identity and enablement. The command can ask the table boundary for selected domain ids after active editing is stopped. It should not reach through arbitrary view rows and assume they still mean the same objects after sorting.
+
+Command enablement should be derived from semantic selection. Delete is enabled when selected ids are deletable, not merely when view rows are selected. Export may be enabled for a visible selection even when some details are still loading, or it may require loaded rows. Open detail may be enabled for one selected id and disabled for multiple selected ids. These distinctions belong in command state, and the table boundary should supply selected identities and active-editor status rather than forcing commands to inspect Swing internals.
+
+MigLayout often surrounds these tables. A table may sit beside filters, above command buttons, below a status strip, or inside a split pane. MigLayout handles the parent geometry. The table handles row geometry, column state, sorting, selection, and renderers. A clean screen does not make a layout manager compensate for table identity mistakes, and it does not make table code hard-code parent sizes.
+
+Testing is where the descriptor approach pays back. Core tests can assert descriptor ids, value readers, comparators, and validation targets. Model tests can assert event conversion. EDT tests can assert selection preservation and active-editor commit behavior. Screenshot tests can render a table state with sorted rows, moved columns, warnings, and persisted widths. Each layer proves a different part of the contract.
+
+Screenshot tests should be state-rich. A descriptor-backed table screenshot should show at least one moved column, one selected row, one warning or validation marker, one formatted value, and one loading or stale state if the screen supports background refresh. A tree screenshot should show expanded paths, a selected node, a loading or failed child, and enough siblings to reveal row projection. The screenshot is not a glamour shot; it is a contract sample.
+
+Core-only tests are still the cheapest tests. A descriptor can be tested without Swing to prove that "Credit limit" has a resource key, value type, comparator, editor policy, export formatter, and persistence id. A list adapter can be tested with synthetic observable-list changes. A problem target can be tested against row id and column key. Swing tests should then verify the boundary, not rediscover every descriptor fact through pixels.
+
+\section{Worked Example and Review Drills}
+
+Imagine a customer table with 250,000 logical rows backed by a service. The screen shows name, state, credit limit, last order, risk, and validation status. Users can sort, filter, edit credit limit, preserve selection during refresh, open a detail panel, and export selected rows. The table uses FlatLaf, sits in a MigLayout screen, and eventually becomes a Corusco descriptor-backed table. The challenge is not drawing cells. The challenge is preserving meaning while the view changes.
+
+The row model should expose \api{CustomerId}. Selection stores ids. The detail panel observes the selected id and loads details. Refresh updates rows by id where possible, fires precise events, and restores selection by id. If the selected customer disappears, the screen says so deliberately. A selection that silently moves to another customer is a severe data-entry bug.
+
+The table model should expose accurate column classes and domain values. \api{BigDecimal} remains \api{BigDecimal}; \api{CustomerState} remains an enum or domain type; dates remain date/time objects. Renderers format for display. Sorters compare domain values. Export uses domain values or explicit export formatting. Converting everything to strings in the model makes every later operation less trustworthy.
+
+Filtering should not compile a regex or allocate a normalized string for every row on every keystroke. The filter command prepares normalized query state. The model may maintain search text per row. For server-backed data, the filter may become a service query instead of a \api{RowFilter}. The UI should expose loading and stale-result states rather than blocking the EDT while pretending the filter is local.
+
+Editing credit limit should stop active editing before Save. Validation should distinguish parsing from business validation. A parse failure may keep the editor open. A business warning may allow commit but create a problem target. The renderer can show the problem, the tooltip can explain it, the command can inspect it, and the dialog workflow can decide whether warnings block closing.
+
+Column state should persist by descriptor id. If a user moves "Risk" next to "Name," the state stores the risk column id. If the application later inserts a "Region" column, the saved risk width and order remain meaningful. If state was stored by index, the new column would shift everything. If state was stored by localized header text, translation could break it.
+
+The first performance budget is renderer cost. Scrolling should not allocate formatters, icons, borders, or service calls. The second budget is sorter/filter cost. Filtering should not block keystrokes. Sorting should not parse display text. The third budget is event precision. A single row update should not reset column state, selection, and scroll position. A useful table chapter teaches all three budgets because users experience them as one thing: responsiveness.
+
+The refresh workflow begins before the service call. The screen captures the current presentation context: selected customer ids, visible rectangle or leading visible row identity, active sort keys, filter text, and active editor state. It stops editing if the refresh will replace edited values, or it refuses refresh until editing is committed or canceled. This capture is not premature ceremony; it is the only way to distinguish "new data arrived" from "the user's place vanished."
+
+The service call then runs outside the EDT. It should not mutate the table model directly. It returns rows, a diff, a page, a version, or an error. If the user changes filters while the call is in progress, a generation counter or cancellation token decides whether the old result is still relevant. A stale result should not repaint a table that now represents a different query.
+
+When the result reaches the EDT, the model applies it as a transaction. Rows that changed by id are updated. Rows that disappeared are removed. Rows that appeared are inserted. If computing an exact diff is too expensive, the model may choose a broader reset, but that choice should be explicit and measured. The difference between "we cannot afford a diff" and "we did not think about a diff" is the difference between engineering and habit.
+
+After the transaction, the model fires events in an order that describes the final state coherently. It should not fire an update for a row that is about to be removed, and it should not fire insertion before the row exists. Listeners are allowed to ask the model for data during event delivery. This is why model mutation and event firing belong in the same abstraction.
+
+Selection restoration follows identity, not position. For each selected id, the table asks the updated model for its current model row, then asks the table for the current view row. If the row is filtered out, the selection may remain in the screen's semantic selection model while not appearing visually, or it may be cleared with a status message. Both policies are defensible. What is not defensible is selecting whatever row now happens to occupy the old view position.
+
+Scroll restoration is similar but less obvious. Some screens restore the leading visible row by identity. Some restore a proportional scroll position. Some keep the selected row visible. The right policy depends on the task. A log viewer may prefer time continuity; an account table may prefer selected customer continuity. The table code should name the policy because users experience scroll jumps as lost context even when selection survives.
+
+Sorting can be suspended during a bulk transaction if live movement would make the table twitch. After the update, the sorter can sort once. Alternatively, live sorting can remain enabled if the table preserves selection and scroll by identity. The important rule is consistency. A table that sometimes sorts during update and sometimes sorts after update is difficult to test and unpleasant to use.
+
+Filtering also has a presentation policy. A selected row may disappear because the filter excludes it. The detail panel may still show the selected object, or it may clear selection because the object is no longer visible. A search table may keep hidden selection so users can relax the filter and return to the same object. A batch-edit table may clear hidden selection to prevent invisible operations. Again, policy should be explicit.
+
+The editing workflow should be drawn as a state machine before it is implemented. Idle, editing, committing, rejected, canceled, and model-updated are different states. If validation rejects a value, the editor should remain active or return focus with an explanation. If commit succeeds but sorting moves the row, the user should not lose the edited object. If refresh arrives while editing, the screen must choose whether local edit wins, refresh waits, or conflict is shown.
+
+Renderer state should be prepared by row presentation objects when formatting is expensive. A row presentation can hold display strings, severity, tooltip text, icon keys, sort keys, and problem targets derived from the domain row. It can be rebuilt when the row changes. The renderer then reads prepared values and sets component properties. This trades a little memory for stable scroll performance and clearer separation.
+
+Row presentation should not become a second domain model. It is a cache of view-facing facts. Its invalidation rule should be narrow: it changes when the domain row, locale, resource theme, format policy, or validation state changes. If that list becomes too long, the code should say so. A cache without a named invalidation rule is just a future bug with better performance today.
+
+Column descriptors help organize row presentation. A descriptor can say which value reader supplies the raw value, which formatter or renderer policy presents it, which comparator sorts it, which resource key names it, and which problem target belongs to it. The descriptor is not a magic layer above Swing. It is a table of decisions that were otherwise scattered through integer-index switches.
+
+A descriptor-backed table also makes screenshots more honest. The screenshot can show moved columns, warnings, and sorted rows while the code behind it shows stable descriptor ids. Without that metadata, a screenshot is only a picture of a grid. With it, the screenshot is evidence that visible state and semantic state agree.
+
+The export workflow is another useful test. Export should not scrape formatted strings from visible cells unless the export format is explicitly "what the user sees." It should usually read domain values or descriptor-provided export values, in model or query order chosen by the command. Sorting and filtering may apply, but column visibility may or may not apply depending on product rules. A table that cannot explain export semantics probably has muddled column semantics.
+
+Copy-to-clipboard has a different policy. Users often expect copied cells to match visible order and visible formatting. That means copy code may use view rows and view columns deliberately, convert each coordinate to model/descriptor identity, and ask for a clipboard representation. The important point is not that export and copy use the same path. The important point is that each path names its coordinate space and formatting policy.
+
+Accessibility uses still another representation. A screen reader needs names, values, row/column positions, selection state, error state, and sometimes descriptions. If validation problems exist only as painted icons, accessibility cannot report them. If columns exist only as localized header strings and integer indexes, accessibility metadata becomes brittle. Descriptor and problem identities make accessible text less accidental.
+
+A table's context menu is a common source of coordinate mistakes. The mouse event arrives in view coordinates. The menu command may act on selected domain ids, the row under the pointer, or both. If right-click also changes selection, that policy must be consistent with keyboard invocation. The command should not store the view row in the menu item and use it later after sorting. Resolve identity at the boundary.
+
+Drag-and-drop follows the same rule. A drag payload should carry domain ids or transferable values, not view row numbers. A drop location may be expressed as a view row and insertion mode, then converted to a model location or domain insertion target. If sorting is active, inserting "at row 5" may be meaningless unless the model defines what such insertion means under sort. Some tables should disable reordering while sorted.
+
+Column reordering is not only a visual preference. It changes how users scan data and how keyboard navigation feels. Persisting column state should therefore happen after the column model is built and before the user begins serious work. Applying persisted state too early may fail because columns do not exist yet. Applying it too late may visibly jump the table. The lifecycle point is part of the table contract.
+
+Column visibility adds another identity problem. A hidden column may still participate in sorting, filtering, export, or validation. A descriptor can represent a column that is not currently visible. The Swing column model represents visible columns. Confusing these layers leads to bugs where hiding a column breaks export or where showing a column resets widths. The model's column universe and the view's visible columns should be separate ideas.
+
+Row height and font changes deserve a policy too. A table may use fixed row height for performance and density. It may adjust row height when the Look-and-Feel font changes. It may support multiline rows, in which case row height becomes data-dependent and repaint/layout behavior becomes more complex. The policy should be chosen for the screen's task, not inherited accidentally from a renderer that happens to prefer more space.
+
+Validation in editable tables should distinguish cell validity, row validity, and batch validity. A cell may parse correctly but make the row inconsistent. Several selected rows may be individually valid but invalid as a batch operation. A problem model can represent these targets separately. The table renderer, tooltip, summary panel, and command enablement can then present the same structured facts.
+
+Background loading should expose stale state. If the user sees rows from an earlier query while a new query loads, the table should say so through a status line, overlay, or subtle indicator. Otherwise a user may act on data that is about to disappear. The rendering code is simple; the important part is the modeled distinction between loaded current data, loaded stale data, loading, failed, and empty.
+
+Failure rows are better than silent emptiness. If a page fails to load, a lazy table can show a retry row or a cell-level failure state. If a tree node fails to load children, the node can display a failed placeholder. Commands can offer retry. Sorting and filtering should understand that failure is a state, not an empty value. Honest failure states make support easier because the screen communicates what it knows.
+
+The same workflow can be applied to a tree. Before refresh, capture selected node ids and expanded domain paths. Load or compute new data away from the EDT. Apply a diff on the EDT. Fire precise tree events where possible. Restore expansion and selection by identity. If a node disappeared, report or clear it deliberately. The tree API differs from the table API, but the preservation habit is the same.
+
+Tree lazy loading adds one extra state: a parent may be known to have children even when those children are not loaded. Some models add a dummy child to make the expansion handle visible. Others implement a node type whose child count is known. The renderer may show "Loading..." after expansion. The critical rule is honesty: unknown children, known-empty children, and failed loading should not collapse into the same visual state.
+
+Testing this workflow can be layered. A pure model test verifies that a refresh diff for ids A, B, and C produces the intended insert/update/delete events. A selection test verifies that selected id B remains selected after B moves. A sorter test verifies comparator behavior for domain values. A renderer test verifies reset behavior. An EDT test verifies active-editor stop. A screenshot test verifies the combined visual state.
+
+The screenshot should intentionally include stressors. Use long names, missing values, warning severities, moved columns, selected rows, sorted order, and a visible loading or failed state. A perfectly clean table screenshot may be prettier, but it teaches less. The book's screenshots should make contracts inspectable.
+
+There is also a maintenance workflow. When adding a column, the developer should add a descriptor id, value reader, header resource, type, comparator policy, renderer/editor policy, export policy, and persistence behavior. If this checklist is not centralized, columns accrete half-implemented behavior. A descriptor-backed table makes the missing piece more visible.
+
+When removing a column, persisted state needs migration or tolerance. Old user preferences may mention a column id that no longer exists. The table should ignore unknown ids or map them through a migration table. Failing at startup because a user once moved a now-deleted column is not acceptable. This is another reason persistence should be keyed by stable ids and versioned policy, not raw Swing column objects.
+
+The workflow's final rule is restraint. Not every table needs every abstraction. A five-row preferences table may be fine with a small custom model. A one-million-row service table needs more structure. The book should teach the direction of travel: start with correct coordinate names and precise events; add descriptors, observable lists, caches, and persistence when the screen's complexity justifies them. Complexity should buy clarity, not merely architecture.
+
+A useful middle ground is the "serious small table." It may have only fifty rows, but it supports editing, validation, column persistence, copy, export, and background refresh. Such a table benefits from descriptor identity even without large-data caching. Conversely, a read-only diagnostic table with thousands of generated rows may need renderer discipline and event precision but not editable descriptors. The deciding factor is not row count alone; it is the number of contracts the table must honor.
+
+This is why table examples in the book should not be only miniature grids. A miniature grid is useful for explaining the API, but it cannot reveal scroll pressure, identity restoration, event breadth, renderer allocation, lazy data states, or column persistence. The companion examples should therefore include both compact snippets and larger seeded screens.
+
+The same rule applies to trees. A three-node tree teaches \api{TreePath}; it does not teach refresh, loading, expansion restoration, failure state, or command enablement. The chapter's tree figure is small enough to read, but the surrounding text deliberately names the larger contracts that a production tree must honor.
+
+The disappearing selection case study is the standard warning. A table refreshes from the server every minute. The model replaces all rows and fires \api{fireTableDataChanged}. Users complain that selection disappears, scroll position jumps, and the detail panel changes. The data team says the rows are the same. The UI team says the table was notified. Both are correct, but the event destroyed identity and locality.
+
+The sorter bottleneck case study is quieter. A comparator formats dates using a localized formatter. Sorting 100,000 rows becomes slow, and profiling points at formatting rather than painting. The fix is to compare \api{Instant} or a precomputed sort key and let the renderer format visible cells. Sorting is model work; formatting is presentation work.
+
+The tree collapse case study mirrors the table refresh. A tree model receives new server data and fires a root structure change. Every expanded path becomes suspect. Selection by row is lost. Lazy nodes reload. The user sees the tree collapse. The better design computes a diff by node identity, fires precise events when possible, and captures expansion by domain path when a broad change is unavoidable.
+
+The renderer allocation case study appears during fast scrolling. A renderer creates a new \api{NumberFormat}, a new border, and a scaled icon for each cell. The table is correct at rest and unpleasant under motion. The fix is not to abandon Swing; it is to treat renderer calls as a hot path. Prepare immutable helpers once, cache by stable policy, and reset component state every time.
+
+The large-data drill is simple and humbling. Build a generated table model with one million logical rows. Add sorting, filtering, selection preservation, active editing, row updates, and screenshot states. Measure which operations are linear, which allocate, which block the EDT, and which destroy context. An API that feels instant at 1,000 rows may be structurally wrong at 1,000,000.
+
+The refresh drill is smaller and should be run often. Select a row, move a column, scroll halfway down, start editing a cell, then trigger a refresh that updates, inserts, and removes rows. The screen should either preserve context or explain why it cannot. If the row changes identity, the column order resets, the scroll jumps to the top, or editing is silently lost, the table has failed a user workflow even if every individual API call was legal.
+
+The tree drill mirrors it. Expand several branches, select a leaf, start loading another branch, then refresh the underlying model with some nodes changed and one selected node removed. The tree should restore the surviving expansion paths, report the removed selection deliberately, avoid duplicate loads, and keep failed/loading states explicit. A tree that collapses everything after each refresh is often telling the reader that node identity was never modeled.
+
+The example-design rule is therefore strict. A table or tree example in this book should not be satisfied by showing that cells appear. It should demonstrate at least one moving boundary: sorting with identity, filtering with hidden selection policy, active editing before commands, precise events during refresh, column movement with descriptor ids, lazy loading with honest states, or expansion restoration by domain path. The screenshot should reveal the state, and the accompanying code should make the ownership inspectable.
+
+This rule is useful for authors as well as readers. If an example cannot explain what happens to selection, editing, loading, validation, and persistence, it is probably still an API sketch rather than a book example. API sketches have a place in listings, but the companion project should carry examples far enough that screenshots and tests exercise the contracts the prose recommends.
+
+The same expectation applies when a chapter refers to Corusco. Corusco should not appear as a decorative final paragraph after a plain Swing example. The example should show which Swing fact becomes a descriptor key, observable-list change, problem target, command state, task state, or scoped subscription. The advantage is then visible: fewer unnamed indexes, fewer ad hoc listeners, and a clearer path from model fact to table behavior.
+
+When that path is visible, a reader can translate the lesson back to plain Swing or forward to generated Corusco companions without changing the underlying table contract.
+
+That continuity is the point of the chapter and its screenshots.
+
+Every serious table example should make that continuity testable and repeatable in CI and locally as well, always.
+
+\textbf{Review questions.} Which coordinate space is this row or column in? What identity survives refresh? Does this event describe the smallest truthful change? Does this renderer set every property it depends on? Can active editing be stopped before commands read the model? Does sorting compare domain values or display strings? Can selection and expansion be restored after refresh? Does lazy loading represent unknown, loading, failed, and loaded states honestly?
+
+\textbf{Corusco review questions.} Does every generated or descriptor-backed column have a stable key, value type, resource key, renderer/editor policy, and persistence id? Are observable-list changes converted with useful precision? Are problem targets attached to rows or cells by identity? Are subscriptions owned by the screen scope? Can tests assert the descriptor contract without showing a table?
+
+\textbf{Checklist for large JTable/JTree work.} Name variables by coordinate space. Fire the narrowest correct model event. Override \api{getColumnClass} accurately. Install comparators for domain types. Keep renderers stateless and allocation-light. Stop active editing before commands read or replace model data. Preserve selection and expansion by domain identity. Avoid expensive work inside \api{RowFilter.include}, \api{getValueAt}, and renderer methods. Load lazy tree children from expansion events, not renderer calls. Persist column and sort state by descriptor ids. Represent loading and failure as states. Test model contracts independently from visible UI tests.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Create a table with sortable rows and column reordering. Find every place where view/model conversion is required.
+\item Replace \api{fireTableDataChanged} with precise row events in a model. Measure selection preservation and repaint reduction.
+\item Build a renderer that allocates a new \api{NumberFormat} per cell. Profile it, then cache safely.
+\item Implement selection preservation by stable ID across sorting, filtering, and data refresh.
+\item Write a \api{RowFilter} that accidentally recompiles a regex per row. Fix it and compare filtering time.
+\item Implement lazy tree loading with a placeholder child and asynchronous replacement.
+\item Capture tree expansion state by domain IDs, refresh the model, and restore expansion.
+\item Create an editor validation rule that rejects invalid input before committing to the model.
+\item Attach a recording listener to a table model and assert exact event ranges for insert, update, and delete operations.
+\item Convert a column-index-based table to descriptor ids and list every bug that becomes easier to review.
+\end{enumerate}
+\end{exercisebox}

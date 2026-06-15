@@ -1,0 +1,22 @@
+\chapter*{Preface}
+\addcontentsline{toc}{chapter}{Preface}
+
+This field manual is for programmers who want to build durable \swing{} applications in modern Java, with \corusco{} as the library that gives repeated presentation concerns explicit names. It no longer assumes that the reader is already advanced. A returning Swing programmer, or a moderate beginner who knows Java well, should be able to begin with the first part and then grow into the advanced chapters.
+
+The scope is \jdk{} and later. The official API surface is still the \api{java.desktop} module, which contains AWT, Swing, accessibility, Java 2D, imaging, printing, and related desktop APIs. The module has not turned Swing into a new framework; rather, modern JDKs make it practical to combine the old toolkit with records, virtual threads, annotation processing, better packaging, improved observability, and careful engineering discipline.
+
+The book is organized as a climb. The first part refreshes Swing, layout, models, and practices. The second part keeps the advanced mechanics: painting, event dispatch, rendering, tables, focus, overlays, Look-and-Feel delegates, text internals, data transfer, accessibility, diagnostics, and modern Java. The later parts explain how \corusco{} turns common screen facts---fields, commands, tables, validation, resources, help, lifecycle, bindings, tasks, generated companions, and tests---into explicit Java contracts.
+
+The style is intentionally conservative and deliberately reminiscent of older systems texts. Code listings prefer plain Java and small helper APIs over magic. Tables use compact, page-safe forms. Exercises are included because Swing is best learned by disturbing invariants and observing how the system responds. \miglayout{} is treated as the normal layout tool for serious screens, and \flatlaf{} is used in the companion examples so screenshots resemble a contemporary desktop application.
+
+\section*{How to read this manual}
+
+You can read the chapters sequentially, but the manual is more useful as a laboratory guide. Each chapter contains concepts, details that are easy to miss, example code, checklists, and exercises. Build small programs for each topic. Use assertions, thread checks, repaint logging, heap dumps, and platform-specific tests. Swing rewards empirical verification.
+
+\section*{Notation}
+
+Class and method names are printed in monospace and indexed where useful. The phrase \edt{} is used for the AWT/Swing event dispatch thread. "Model" means a Swing model such as \api{TableModel} when the surrounding context is Swing-specific; otherwise the text says "domain model", "presentation model", or "\corusco{} model" explicitly.
+
+\section*{A note on sources}
+
+The reference section lists official JDK 25 documentation pages and core Java desktop APIs used as normative anchors. The interpretive guidance, examples, and engineering heuristics are original synthesis intended for experienced developers.

@@ -1,0 +1,1317 @@
+\chapter{Compile-Time Generation}
+\label{ch:compile-time-generation}
+\chapterquote{Generated code should be boring enough to inspect and useful enough to remove repetition.}{The generation rule}
+
+\begin{chaptermap}
+Core question & What does Corusco generate, why is it generated at compile time, and how should application code consume the generated companions without losing design control?\\
+Primary annotations & \api{@SwingForm}, \api{@TextField}, \api{@DateField}, \api{@ComboBox}, \api{@CheckBox}, \api{@SwingTable}, \api{@Column}, \api{@UiAction}, validation annotations, and \api{@Help}.\\
+Generated outputs & Field keys, resource keys, problem codes, descriptors, form models, view contracts, behavior plans, binding facades, table descriptors, command descriptors, command factories, and deterministic companion names.\\
+Build topic & Annotation-processor configuration, generated-source inspection, processor diagnostics, generated-source compiler tests, modular builds, and stale-output hygiene.\\
+Companion example & \generationExample.\\
+\end{chaptermap}
+
+\section{Generation is a compile-time agreement}
+
+Corusco generation starts from an ordinary Java source declaration and ends in
+ordinary Java source. A record annotated with \api{@SwingForm} describes an
+editable value shape. A record annotated with \api{@SwingTable} describes a
+row shape and its table columns. A presenter method annotated with
+\api{@UiAction} describes a user operation. The processor reads those
+declarations during javac annotation processing, validates them, and writes
+generated companions beside the annotated source type. Runtime code imports
+the generated classes. It does not scan annotations reflectively after the
+application has already started.
+
+\termdef{Compile-time generation}{in Corusco} means that javac is part of the
+UI metadata pipeline. The compiler sees the annotated source. The processor
+sees the compiler model of that source through \api{javax.lang.model}. The
+processor writes Java files. The compiler then compiles those Java files with
+the rest of the program. The generated classes can be opened in the IDE,
+searched with normal code search, checked by tests, packaged by Gradle, and
+included in a runtime image. This is a very different contract from a runtime
+metadata scanner that discovers annotations after startup.
+
+The agreement has three sides. The annotated source promises stable facts:
+field ids, column ids, action ids, resource ids, validation constraints, help
+topics, and supported component shapes. The processor promises deterministic
+generated Java and useful diagnostics when the promise is broken. Application
+code promises to consume the generated companions as ordinary code, not to
+reconstruct ids by string convention and not to edit generated files by hand.
+When all three sides are kept, generation removes mechanical work without
+making the screen mysterious.
+
+\termdef{Generated companion}{in this chapter} is a generated class or
+interface whose name is derived from the annotated source. A form record named
+\api{CustomerEdit} may produce \api{CustomerEditFields},
+\api{CustomerEditResources}, \api{CustomerEditProblems},
+\api{CustomerEditDescriptors}, \api{CustomerEditFormModel},
+\api{CustomerEditView}, \api{CustomerEditBehaviorPlan}, and
+\api{CustomerEditBindings}. A table row record named \api{CustomerRow} may
+produce \api{CustomerRowColumns}, \api{CustomerRowTableResources},
+\api{CustomerRowTableDescriptor}, and \api{CustomerRowTableBindings}. A
+presenter class named \api{CustomerPresenter} may produce
+\api{CustomerPresenterActions}. The names are long enough to say what they are
+and regular enough to be guessed during review.
+
+\begin{principlebox}{generated means inspectable}
+Generated code may be repetitive. It should not be mysterious. If a binding,
+descriptor, key, or command factory is surprising, open the generated source
+and read it like Java.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\behaviorPlanFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\coruscoTableDescriptorFigure}
+\end{minipage}
+\caption{Generated companions become visible through behavior plans and descriptor-backed tables. The generated Java bridges annotated source to ordinary Swing screens.}
+\label{fig:generation-visual-companions}
+\end{figure}
+
+Figure~\ref{fig:generation-visual-companions} shows two places where generated
+facts become visible. A behavior plan installs field bindings, validation
+decoration, help, and focus behavior into a view. A table descriptor gives a
+\api{JTable} stable columns, resource keys, renderable values, and state
+metadata. Neither figure implies that generation owns the whole screen. The
+panel is still a panel. The table is still a table. MigLayout, FlatLaf, table
+renderers, presenters, and application services remain ordinary code. The
+generated part is the repeated contract that would otherwise be handwritten in
+several places.
+
+This chapter is therefore not a chapter about a GUI builder. A GUI builder
+tries to own component placement and often stores design in a special format.
+Corusco generation owns metadata and routine wiring. Layout remains visible in
+Swing code. Workflow remains visible in presenters and services. Business
+rules remain visible in domain code. If a generated class contains a surprising
+business decision, either the generator is doing too much or the application is
+placing the wrong fact in an annotation.
+
+Generation is also not dependency injection. It does not discover services,
+build repositories, or decide which task executor a presenter should use. It
+can generate command descriptors for presenter methods, but the presenter is
+still the object that knows how to save, delete, refresh, or export. It can
+generate form validation rules for supported field constraints, but
+cross-record business validation remains Java code. The boundary should feel
+conservative. Generation is useful because it removes repetition from boring
+places, not because it promises to design the application.
+
+For a reader new to Corusco, generated source is often the shortest tutorial.
+Open an annotated record. Open the generated fields companion and see typed
+keys. Open the generated resources companion and see typed resource ids. Open
+the form model and see \api{TextFieldModel} and \api{FieldModel} instances.
+Open the behavior plan and see direct calls to Swing behavior factories. The
+processor implementation is important, but generated output explains the
+runtime surface that application code will actually use.
+
+\section{Stable source declarations}
+
+Generation is appropriate only when the source declaration already contains a
+stable screen fact. A record component annotated as a text field contains a
+field name, owner type, value type, and component intent. A table component
+annotated as a column contains a row type, value type, column order, width
+policy, resource ids, and persistence id. A no-argument presenter method
+annotated as a UI action contains an operation identity, text resource id,
+tooltip resource id, optional shortcut metadata, optional mnemonic, and
+toggle-style flag. The processor is allowed to copy those facts into several
+companions because the facts already belong to the declaration.
+
+\termdef{Stable id grammar}{for current generated metadata} is deliberately
+small. The accepted ids use letters, digits, dots, underscores, dashes, and
+slashes. This is enough for resource namespaces, feature prefixes, and
+human-readable diagnostics. It is not an invitation to encode the entire
+screen structure into a string. Prefer \api{customer/edit/name} to
+\api{leftPanelRowThreeNameTextField}. Prefer \api{customer/save} to
+\api{saveButtonAction}. The id should name the UI contract, not the current
+component placement.
+
+\begin{tabularx}{0.96\linewidth}{@{}p{0.23\linewidth}p{0.24\linewidth}X@{}}
+\toprule
+Source kind & Stable id role & Generated uses\\
+\midrule
+\api{@SwingForm} & Form prefix & Field ids, resource ids, problem codes, component contracts, descriptors\\
+\api{@SwingTable} & Table prefix & Table id, default column ids, table-state boundary, descriptor ownership\\
+\api{@Column} & Column id & Column key, header key, tooltip key, persistence id, order, width metadata\\
+\api{@UiAction} & Action id & Action key, command descriptor, resource keys, command factory, command set\\
+\api{@Help} & Help and tooltip ids & Help topic metadata and optional static tooltip resource ids\\
+\bottomrule
+\end{tabularx}
+
+Changing an id is a compatibility decision. Generated field keys may appear in
+tests. Generated resource keys may appear in localization bundles. Generated
+column persistence ids may appear in saved table layouts. Generated action ids
+may appear in diagnostics, command palettes, help, or user shortcuts. A
+renamed Java record component may be a refactoring; a changed generated id may
+be a migration. The distinction is crucial when a screen has shipped.
+
+Source retention is part of the design. The annotations are retained for the
+compiler, not for runtime reflection. This keeps runtime modules smaller, keeps
+startup simple, and gives javac the chance to reject invalid metadata while the
+source element is still present. A modular application does not need to open
+packages for reflective scanners merely so a UI framework can discover
+annotations at runtime. The generated companions are the runtime API.
+
+\begin{pitfallbox}{runtime annotation nostalgia}
+Do not write runtime code that searches for \api{@SwingForm},
+\api{@SwingTable}, or \api{@UiAction}. Runtime code should use generated
+companions. The annotations are compile-time inputs.
+\end{pitfallbox}
+
+The current processor supports specific source shapes. A form source is a
+non-generic record annotated with \api{@SwingForm} and at least one field-kind
+annotation on a record component. A table source is a non-generic record
+annotated with \api{@SwingTable} and at least one \api{@Column}. A UI action
+source is a no-argument \api{void} method enclosed by a type. These limits are
+not arbitrary. Records give the processor stable component names, value types,
+constructor shape, and component order. No-argument action methods give command
+factories a direct invocation target without inventing argument injection.
+
+Field-kind annotations are mutually exclusive. A component is a text field, a
+date field, a combo box, or a check box for generated form purposes. A
+component with both \api{@TextField} and \api{@CheckBox} is not a richer field;
+it is an ambiguous declaration. The processor rejects it. Similar strictness
+appears in table metadata: duplicate column ids are rejected, invalid widths
+are rejected, and conflicting tooltip declarations are rejected. Generation
+works best when invalid ambiguity is a compile error rather than a surprising
+runtime choice.
+
+Generated code should not be used to hide unstable decisions. A field label is
+presentation and belongs in resources. A help topic is stable routing metadata
+and may be generated from \api{@Help}. A validation constraint such as
+\api{@Length(max = 80)} is stable enough for generation when it is part of the
+screen contract. A database uniqueness check, a permission rule, or a
+workflow-dependent warning is usually application code. If an annotation value
+would need access to services, task state, current user, or network results, it
+probably is not a good generation input.
+
+The package layout reinforces this boundary. Form annotations live under
+\api{cz.auderis.corusco.annotations.form}. Table annotations live under
+\api{cz.auderis.corusco.annotations.table}. Validation annotations live under
+\api{cz.auderis.corusco.annotations.validation}. Command annotations live
+under \api{cz.auderis.corusco.annotations.command}. Help annotations live under
+\api{cz.auderis.corusco.annotations.help}. Import the package that matches the
+source element. Older root-package imports are not the contract; using them
+should fail like any other stale source.
+
+A source declaration should be readable without knowing the processor
+implementation. The annotation names should say what kind of UI contract is
+being declared. The id should say where the fact belongs. The Java type should
+say what value shape is being edited, rendered, or invoked. If a reviewer must
+open the processor to understand whether a field is a text editor, combo box,
+table column, or command, the source declaration is not carrying enough
+meaning. Generated code can be verbose; annotated source should remain crisp.
+
+It follows that annotation attributes should not be used as a private language
+for application behavior. A field annotation that says \api{@TextField} is
+clear. A validation annotation that says \api{@Length(max = 80)} is clear. An
+imagined annotation that says \api{@OnSave("when valid and admin and not
+archived")} would be the wrong direction. The moment an attribute starts to
+need boolean algebra, service lookup, permissions, or sequencing, Java code is
+the better notation. Corusco's generator should make the simple declarations
+worth writing, not turn complex workflow into strings.
+
+Generated ids should be chosen as if logs will print them. In production,
+diagnostics may say that \api{ActionKey[customer/save]} is disabled, that
+\api{FieldKey[CustomerEdit:book/customer/edit/name]} has a problem, or that a
+resource id is missing. A readable id shortens debugging. A misleading id
+creates a second bug in every diagnostic. This is another reason to avoid
+visual placement names. When a component moves, a log that still says
+\api{left-column-field-two} becomes worse than useless. It suggests the wrong
+screen location.
+
+The default ids produced from record component names are conveniences, not
+carelessness. They are good when the component name already expresses the UI
+contract. A component named \api{creditLimit} under a form id
+\api{customer/edit} naturally becomes \api{customer/edit/credit-limit}. If the
+Java component name is a temporary abbreviation, change the annotation id
+explicitly or rename the component before the screen ships. Generated defaults
+are easiest to live with when Java names are chosen with the same care as API
+names.
+
+One declaration may generate several resource ids. A form field may need a
+label, tooltip, accessible description, and validation messages. A table column
+may need a header, tooltip, export label, and help topic. A command may need
+visible text, tooltip, menu text, toolbar text, and accessible description.
+The current generator emits the supported core set, and application code may
+add adjacent keys for richer presentation. The important convention is that
+the family remains systematic. A resource author should be able to see that
+\api{customer/edit/name/label} and \api{customer/edit/name/help} belong to the
+same field.
+
+\section{Generated forms from records}
+
+\api{@SwingForm} marks a record as a generated form source. Record components
+describe editable input. The record itself is the committed value shape: the
+object that can be passed to domain code after editing succeeds. The generated
+form model is the mutable editing shape: it owns parse state, field models,
+validation state, dirty state, and guarded result creation. This separation
+matches the form chapter's central rule. Widgets are not the only place where
+state lives.
+
+\begin{lstlisting}[caption={Annotated form source used by the companion example.}]
+@SwingForm(id = "book/customer/edit")
+public record CustomerEdit(
+        @TextField
+        @Required
+        @Length(max = 80)
+        String name,
+
+        @TextField
+        String status) {
+}
+\end{lstlisting}
+
+The generated \api{CustomerEditFields} companion contains
+\api{TextFieldKey<CustomerEdit,String>} constants for \api{name} and
+\api{status}. The generated resource companion contains label and tooltip
+resource keys. The generated problem companion contains problem codes such as
+\api{book/customer/edit/name/required} and
+\api{book/customer/edit/name/length}. The generated descriptors companion
+contains \api{FieldDescriptor} values in record component order. The generated
+form model contains \api{TextFieldModel} instances, registered fields, a
+generated rule set, and a \api{createResult} method that constructs the record
+from parsed values.
+
+\begin{lstlisting}[caption={A generated field key has stable id, owner type, and value type.}]
+public static final TextFieldKey<CustomerEdit, String> NAME =
+        TextFieldKey.of("book/customer/edit/name",
+                CustomerEdit.class, String.class);
+\end{lstlisting}
+
+This constant is more than a convenient string. It is the field identity used
+by validation, problem targets, bindings, tests, diagnostics, and resource
+review. If a test enters text by the generated field key, the test does not
+depend on the English label or the component's row in the panel. If a problem
+points at the generated field key, focus resolution can find the correct
+component through the generated view contract or a component-key mapping. The
+generated key gives several subsystems one stable way to talk about the same
+field.
+
+Generated form models are plain Java objects and should be tested as such. A
+test can construct \api{CustomerEditFormModel} from an original record, write
+raw text into \api{model.name}, inspect parse state, inspect
+\api{model.problems()}, and call \api{toResult} when valid. No Swing component
+is required for that test. This is one of the strongest reasons to generate a
+form model rather than bind directly to widgets. The edit contract can be
+tested before the view is assembled.
+
+The generated model also fixes a subtle ownership problem. Without a form
+model, raw editor text, parsed values, parse failures, validation problems,
+dirty state, and result construction tend to live in different listeners.
+Generation gives them a single predictable home. Text fields own raw text and
+conversion state. Field models own semantic values. The form model aggregates
+problems and produces the committed record only when the current edit state is
+valid. A view binding mirrors editor changes into the model; it does not
+become the model.
+
+Converters are part of that ownership. A generated \api{@TextField}
+\api{BigDecimal} component should not leave every panel to decide how blank
+text, parse failure, scale, and formatting are represented. The generated
+model can use the standard converter path. A specialized application may still
+replace or extend conversion policy, but the default screen does not need a
+new anonymous document listener for every numeric field. This is the kind of
+mechanical consistency generation is meant to provide.
+
+Dirty state should be read from the model, not inferred from component events.
+A generated form model starts from an original record and can compare current
+field values with that original shape. The Save command can observe the form's
+dirty and problem state. A Cancel workflow can ask whether there are unsaved
+changes. A screenshot test can place the form in clean, dirty, invalid, and
+valid states without clicking through a complete UI. If dirty state is hidden
+inside one button listener, none of those workflows can share it reliably.
+
+Touched state is a related but different concern. A field may be dirty because
+data was loaded programmatically. A field may be touched because the user
+visited it. Validation presentation often depends on touched state: showing
+every possible error before the user edits anything can make a form feel
+hostile, while hiding parse errors after user input is dishonest. Generated
+form metadata gives the application stable field identities and model objects;
+the presentation policy can decide how touched, dirty, and problem state are
+shown.
+
+\begin{lstlisting}[caption={Using a generated form model without Swing.}]
+CustomerEdit original = new CustomerEdit("Ada", "Active");
+CustomerEditFormModel model = new CustomerEditFormModel(original);
+
+model.name.setRawText("Grace Hopper", ChangeOrigin.USER);
+
+assertThat(model.problems().hasErrors()).isFalse();
+assertThat(model.toResult().name()).isEqualTo("Grace Hopper");
+\end{lstlisting}
+
+Field-kind annotations choose generated model and view shapes. A
+\api{@TextField} for \api{String}, \api{Integer}, \api{int},
+\api{BigDecimal}, or \api{LocalDate} produces a \api{TextFieldModel} and a
+\api{JTextField} view method. A \api{@DateField} currently uses a text-field
+model with the built-in \api{LocalDate} converter but expresses date-specific
+intent. A \api{@ComboBox} produces a \api{FieldModel} and a
+\api{JComboBox<T>} view method; enum-valued combo boxes may also produce
+generated option lists. A \api{@CheckBox} produces a \api{FieldModel} and a
+\api{JCheckBox} view method. The generated view contract is narrow because it
+exists only to expose the components the behavior plan needs.
+
+The generated descriptor companion is the bridge from fields to surrounding
+metadata. A descriptor can point to the field key, label resource, tooltip
+resource, help topic, constraints, and display order. Dialog construction,
+problem summaries, help routing, and tests can all ask the descriptor for the
+same facts. A hand-written application can build equivalent descriptors, but
+it is easy to forget one resource key or give one problem code a different
+prefix. Generation removes that clerical risk for supported field kinds.
+
+The generated view contract should remain small. If the behavior plan needs a
+name field, the contract should ask for a name field. It should not expose the
+whole panel, the layout manager, the parent dialog, or every helper label. A
+small contract lets tests provide a minimal implementation and lets the
+application replace the visual panel without rewriting generated bindings. It
+also prevents generated code from reaching into view details that belong to
+design and application code.
+
+Generated bindings should be reversible. Installing text-field bindings,
+validation tooltips, help behavior, and focus behavior creates listener
+relationships. Those relationships need a lifecycle scope. A generated
+\api{CustomerEditBehaviorPlan.install} method should add bindings to a scope
+owned by the view or dialog. Closing that scope should detach document
+listeners, value subscriptions, and input-map entries. Generation is useful
+only if it removes listener sprawl without creating hidden listener leaks.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\bindingFormFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\dialogValidationFigure}
+\end{minipage}
+\caption{Generated form metadata feeds ordinary field models and Swing validation behavior. The generated view contract identifies components; the handwritten view still owns layout and density.}
+\label{fig:generation-form-output}
+\end{figure}
+
+Figure~\ref{fig:generation-form-output} is deliberately visual. Generation
+does not remove the need to design a screen. It gives the screen typed field
+models, descriptors, validation metadata, and binding entry points. A
+handwritten panel still arranges labels and editors with MigLayout. It still
+chooses grouping, scrolling, command placement, and visual density. The
+generated view contract lets the binding plan talk to the panel without
+knowing the panel's concrete class.
+
+Validation annotations are intentionally limited to common field-local rules.
+\api{@Required} creates a required constraint and problem code. \api{@Length}
+applies to string text fields. \api{@Regex} applies to string text fields and
+requires a nonblank pattern. \api{@DecimalRange} applies to
+\api{BigDecimal} text fields and requires at least one valid bound.
+\api{@IntRange} applies to integer text fields. These constraints are good
+generation inputs because they are local, declarative, and stable. A rule that
+requires a server call, depends on a permission service, or compares several
+records belongs in Java validation code.
+
+Generated problem codes matter because validation messages often need stable
+identity. A required-name problem may have a message resource, a help link, a
+test assertion, and analytics. If the problem is only an English message, all
+of those uses become fragile. If the problem has a generated
+\api{ProblemCode}, the message can be localized and the test can still assert
+the problem identity. The generated form model supplies the routine codes;
+application validation can add richer problem codes when needed.
+
+\api{@Help} on a generated form field contributes optional tooltip and help
+topic metadata. The tooltip id is a resource identity. The help topic is a
+stable help target. The generated descriptor can carry both, and Swing
+behaviors can compose them with validation problems and disabled reasons.
+Again, the generator does not open a help viewer. It supplies the durable
+metadata that a help behavior and help service can use.
+
+Generated options for enum combo boxes should be treated as convenient default
+metadata, not as a complete option service. Enum declaration order is a fine
+initial option order for small stable classifications. A dynamic option list
+from a database, user permissions, or remote service remains application-owned.
+The generated view contract can still expose a combo box, and the application
+can still bind an observable option list where appropriate. Generation should
+not turn dynamic product data into compile-time constants merely because
+combo boxes exist.
+
+The important habit is to read the generated model once. In the companion
+example, the generated \api{CustomerEditFormModel} constructs text field
+models from the original record, registers them with the form model, builds a
+rule set for required and length validation, exposes descriptors, and
+constructs a new \api{CustomerEdit} from parsed field values. There is no
+reflection puzzle. The generated model is Java code that a careful developer
+could have written by hand and would not want to write repeatedly.
+
+\section{Generated tables from records}
+
+\api{@SwingTable} marks a record as a generated table row source. Record
+components annotated with \api{@Column} become table columns. Unannotated
+components remain part of the row record but are ignored by table metadata
+generation. This is useful when a row carries an internal id, cached status,
+or detail object that should not appear as a visible column. Generation
+follows the annotations, not every property reachable from the row.
+
+\begin{lstlisting}[caption={Annotated table source used by the companion example.}]
+@SwingTable(id = "book/customer/table")
+public record CustomerRow(
+        @Column(header = "customer/name", width = 180)
+        String name,
+
+        @Column(header = "customer/status", width = 90)
+        String status) {
+}
+\end{lstlisting}
+
+The generated \api{CustomerRowColumns} companion contains a table key, column
+keys, \api{Column} instances, and \api{ColumnDescriptor} instances. The
+generated \api{CustomerRowTableResources} companion contains header and
+tooltip resource keys. The generated \api{CustomerRowTableDescriptor}
+contains a \api{TableDescriptor<CustomerRow>} and a factory for an
+\api{ObservableTableModel}. The generated bindings companion installs table
+models and selection bindings into Swing views. The table chapter explains
+these runtime classes in detail; here the point is how generation gives them
+stable source.
+
+This generated table surface solves the old \api{JTable} column-index problem.
+In handwritten Swing, column zero may mean name in one method, status in
+another method, and id in a renderer after a later edit. A generated
+\api{ColumnKey<CustomerRow,String>} names the column independently from its
+current view index. A generated descriptor can preserve record-component order
+as the default order while table state, sorting, filtering, and visibility
+operate with stable column identity. The code still has to respect view and
+model coordinates, but it no longer needs to guess what an integer column
+means.
+
+Generated column value extraction is also a performance boundary. A descriptor
+can call a record accessor directly. The table model does not need reflective
+property lookup for every cell. That matters in large tables, especially when
+sorting, filtering, repainting, and tooltips all ask for cell values. Direct
+generated accessors are simple Java calls that JIT compilation can understand.
+The generator supplies the repetitive adapter code once instead of making each
+table author handwrite a switch statement.
+
+Column metadata is richer than a header. The \api{@Column} annotation can
+declare a column id, header resource id, optional tooltip resource id,
+persistence id, width, minimum width, maximum width, order, initial
+visibility, sort capability, filter capability, hideability, and editability.
+Defaults are derived from the table id and record component name. The defaults
+are helpful, but they are not free to change once persisted state or resource
+bundles depend on them.
+
+Table state is where stable ids become concrete. A user may resize, reorder,
+hide, show, and sort columns. The table-state controller can persist those
+preferences by table id and column persistence id. If a display header changes
+from \api{"Customer"} to \api{"Name"}, saved state should still restore the
+same column. If the generated column id changes accidentally, saved state may
+be lost or applied to the wrong column. This is why column ids and
+persistence ids are generated metadata, not visible labels.
+
+\begin{migrationbox}{rename the resource, not the column}
+If a table header changes for copyediting or localization, change the header
+resource. Change a generated column id only when the column's durable identity
+has changed and a table-state migration has been considered.
+\end{migrationbox}
+
+Generated table descriptors also help with large-data discipline. The
+descriptor says which column extracts which value and which columns are
+sortable, filterable, editable, or hideable. An \api{ObservableTableModel}
+created from that descriptor can report precise cell and row changes when the
+observable row source changes. A generated descriptor does not make a million
+rows cheap by itself, but it prevents a common source of table slowness:
+index-based column code scattered through renderers, sorters, and export
+helpers.
+
+Editable generated columns require special caution. A record is immutable, so
+an editable column must create an updated row value, usually by calling the
+record constructor with one component changed. The processor can generate
+helpers for supported editable columns, but the application still owns the
+policy around editing. Is the edit committed immediately? Does it mark the
+row dirty? Does it require validation? Does it update a remote source? Does it
+preserve selection? Generated code can provide the mechanical updater; the
+workflow remains application code.
+
+Selection binding is another reason to generate table metadata. A table
+selection can be represented as selected view row, selected model row, selected
+row object, selected row id, or selected column. Handwritten screens often mix
+these. A generated table binding can install a model and bind selection
+through the standard table-selection helpers. The presenter can then observe a
+\api{WritableValue<CustomerRow>} or row id value instead of reading
+\api{JTable.getSelectedRow()} in every command. Generated metadata does not
+remove Swing's coordinate systems, but it gives the application a consistent
+place to cross them.
+
+Filtering and sorting should respect generated column capabilities. A column
+marked not sortable should not receive a sorter toggle merely because it is
+visible. A column marked not filterable should not appear in a filter builder
+unless application policy overrides the descriptor. Generated descriptors make
+these capabilities reviewable. They also make table preference dialogs and
+column visibility menus easier to build because the metadata is typed and
+ordered.
+
+Generated table resources should be audited before table screenshots are
+taken. Header resources affect width, wrapping, tooltip text, accessibility
+names, export labels, and screenshot diffs. If a generated header key is
+missing, a table may still render something, but the screenshot will review a
+fallback rather than the intended UI. A table-resource test can iterate the
+generated resources companion and require all headers. This is cheap compared
+with debugging a PDF figure that silently used placeholder text.
+
+A table descriptor is also a documentation object. A developer reading the
+generated descriptor can see which columns exist, their order, widths, value
+types, editability, and resource keys. In a rich client with dozens of
+business tables, that generated descriptor is often easier to inspect than the
+final Swing table after column state, renderers, and filters have been
+installed. The descriptor is the table's declared contract; the \api{JTable}
+is one presentation of that contract.
+
+Tooltips and help topics on columns deserve the same separation as form fields.
+A column header tooltip is a resource. A help topic is a durable help target.
+A cell problem is a problem with a row and column target. A renderer may show
+a visual marker. A table-cell tooltip binding may compose the problem, static
+help, and F1 hint. Generated column metadata gives each concern a stable
+column identity. It does not collapse them into one text string.
+
+Generated table bindings should be read as installation helpers, not as a
+replacement for table design. A table can still use custom renderers, row
+sorters, Glazed Lists integration, selection models, column visibility menus,
+and state persistence. The generated binding can install the model and
+selection wiring. The application then adds specialized visual and behavioral
+policy. This is the same division as generated forms: generated code owns
+repeated contracts, not the whole screen.
+
+The companion example's generated \api{CustomerRowTableDescriptor} is a good
+file to open. It constructs a \api{TableDescriptor} from generated columns and
+offers a \api{tableModel} factory for an observable row source. This is boring
+code. That is the point. If every table in the application needs the same
+shape of descriptor and model factory, the processor should write it once
+consistently rather than asking developers to type and review the same pattern
+again and again.
+
+\section{Generated actions and command metadata}
+
+\api{@UiAction} marks a no-argument \api{void} method as a generated UI action
+source. The processor validates the method shape and writes an owner-specific
+actions companion. For each action it generates an \api{ActionKey}, text
+resource key, optional tooltip resource key, \api{ActionDescriptor}, command
+factory, and command-set factory. The annotated method remains application
+code. The generated companion supplies the stable command metadata and the
+mechanical factory path.
+
+\begin{lstlisting}[caption={Annotated presenter actions.}]
+final class CustomerPresenter {
+    @UiAction(
+            id = "customer/save",
+            text = "customer/save/text",
+            tooltip = "customer/save/tooltip",
+            mnemonic = KeyEvent.VK_S,
+            acceleratorKey = KeyEvent.VK_S,
+            acceleratorModifiers = InputEvent.CTRL_DOWN_MASK)
+    void save() {
+        service.save(form.toResult());
+    }
+
+    @UiAction(id = "customer/active", selectable = true)
+    void toggleActive() {
+        activePreview.setValue(!activePreview.value(), ChangeOrigin.USER);
+    }
+}
+\end{lstlisting}
+
+The generated descriptor is an \api{ActionDescriptor}. The generated command
+factory returns a \api{MutableCommand}. The generated command-set factory
+returns a \api{CommandSet}. Swing views can adapt those commands through
+\api{SwingActionAdapter} or generated command behaviors. Tests can require the
+command by generated action key. Resource tests can require generated command
+text keys. Menu construction can iterate generated descriptor lists. A
+shortcut can be installed from the generated accelerator metadata. One
+annotated method thus becomes a coherent operation identity across many Swing
+surfaces.
+
+The generated action companion should be read as operation metadata, not as a
+presenter replacement. The presenter still owns state such as dirty flags,
+validation problems, selected rows, permissions, and busy values. The
+generated command factory can create a mutable command that calls the annotated
+method. Application code can then wire enablement and selected state from the
+presenter's observable values. This preserves the command chapter's rule: the
+operation has stable identity, but runtime availability is live state.
+
+Generated factories are useful even when a screen needs custom command
+construction. A presenter may ignore the generated factory and use the
+generated descriptor with a custom handler that starts a task, wraps errors,
+or records telemetry. That is still a good use of generation. The descriptor,
+keys, resources, and action id remain compiler-visible and shared across
+surfaces. Generation should not force every command through one factory style
+when application workflow needs a richer command object.
+
+Command-set factories help with review. A generated \api{commands(owner)}
+method can expose every annotated action in deterministic order. A menu
+builder, toolbar builder, command palette, or test can inspect the same set.
+Hidden listeners become easier to spot because they do not appear in the
+generated action vocabulary. A reviewer can ask why a visible button is not
+backed by a generated or handwritten command descriptor. This question often
+finds old Swing code that bypasses enablement and shortcut policy.
+
+Selectable actions deserve a clear ownership model. The \api{selectable} flag
+marks toggle-style action metadata. The generated factory should use a toggle
+command path, and Swing toggle controls should observe the command's selected
+value. The annotation does not decide where the selected state ultimately
+comes from. A presenter may keep it in a model value, derive it from current
+view state, or update it in the handler. What generation supplies is the
+metadata that this command has selected state at all. That prevents a toolbar
+toggle and check-box menu item from being generated as ordinary one-shot
+actions by accident.
+
+Descriptors are not buttons. Generated action text and tooltip ids are
+resources, not visible strings. Mnemonic and accelerator values are metadata,
+not installed key bindings. The Swing integration layer decides where a
+descriptor is presented: menu, toolbar, popup menu, button row, command
+palette, or root-pane key binding. This division is important because the same
+operation may have several surfaces with different density and focus policy.
+Generation names the operation; the view presents it.
+
+The processor currently rejects methods with parameters and methods that do
+not return \api{void}. That may seem strict, but it keeps generated command
+factories direct. A generated factory can call \api{owner.save()} without
+inventing an argument source. If an operation requires a selected row, current
+form state, or application service, the presenter method can read those facts
+from presenter state. If an operation needs a parameter supplied by the caller,
+it is probably not a simple UI action command and should be modeled more
+explicitly.
+
+Duplicate action ids are rejected within one owner. This protects command
+sets, menu descriptors, diagnostics, tests, and resource keys. If two methods
+have the same action id, either one of them is a duplicate presentation of the
+same operation and should not have its own generated action, or they are
+different operations and need different ids. The processor should not guess.
+
+Accelerator metadata has its own validation. A nonzero accelerator modifier
+mask without an accelerator key is invalid. This catches source declarations
+that cannot produce a meaningful key stroke. Platform-specific accelerator
+policy may still override generated defaults during installation. The
+descriptor supplies a stable default; the view or application policy decides
+where and whether to install it.
+
+Generated action companions commonly expose descriptor lists for menus and
+toolbars. Treat those lists as defaults, not immutable product design. A menu
+may include all descriptors. A toolbar may show only frequent operations. A
+popup menu may include context-sensitive actions after selection refresh. A
+command palette may include operations that have no visible button. The same
+generated descriptors can feed several policies because they are operation
+metadata rather than component instances.
+
+The \generatedActionExample{} companion demonstrates generated action metadata
+on a small source class. It is worth reading together with the command chapter.
+The generation chapter explains how the descriptor appears. The command
+chapter explains how the descriptor becomes runtime command state and Swing
+actions. The important habit is not to stop at the generated descriptor. A
+real screen still needs command enablement, selected-state ownership, task
+handoff, error policy, and lifecycle cleanup.
+
+The same action id may appear in resources, tests, documentation, telemetry,
+and persisted shortcut preferences. This is why \api{@UiAction(id = "...")}
+must be treated as more than a method decoration. Renaming \api{save()} to
+\api{saveCustomer()} is a Java refactoring. Renaming \api{customer/save} is a
+contract change. If a generated action id is already used outside the source
+file, migrate it deliberately or keep the id stable while refactoring the
+method name.
+
+Generated action descriptors are also useful for accessibility. If a toolbar
+uses icon-only buttons, the generated text resource can supply an accessible
+name and the tooltip resource can help supply an accessible description. If a
+menu uses localized text, the action id still identifies the operation. If a
+shortcut is shown in help, the descriptor provides the default accelerator.
+Accessibility metadata should not be recreated independently for each
+presentation of the same command.
+
+\section{Build integration and generated source}
+
+Annotation processing is a build concern. The annotations belong on the
+compile classpath because source code imports them. The processor belongs on
+the annotation-processor path because javac invokes it during compilation.
+Runtime code should not need the processor jar to start the application. This
+separation keeps generated metadata available at compile time without turning
+the processor into runtime infrastructure.
+
+\begin{lstlisting}[caption={Typical Gradle dependency shape.}]
+dependencies {
+    implementation project(":corusco-core")
+    implementation project(":corusco-swing")
+    implementation project(":corusco-annotations")
+    annotationProcessor project(":corusco-processor")
+}
+\end{lstlisting}
+
+The exact module names and dependency scopes may differ in a project, but the
+shape should remain clear. The application compiles against core, Swing, and
+annotation APIs. The compiler invokes the processor. The generated sources are
+compiled into the same source set as the annotated source. At runtime, the
+application uses generated classes and Corusco runtime libraries, not the
+processor.
+
+Generated source directories should be visible to the IDE and marked as
+generated. Developers should be able to navigate to a generated class from an
+import, set a breakpoint if debugging generated behavior is useful, and read
+the source in code review. They should not edit generated files. If a
+generated file is wrong, edit the annotated source or the processor. Manual
+changes to generated output are build artifacts that will disappear or, worse,
+mislead the next reader.
+
+Stale generated source is a build smell. If an annotation is removed and the
+old generated class remains visible, clean the build and inspect source-set
+configuration. Gradle's Java compilation tasks should treat generated sources
+as task output so obsolete files do not masquerade as current contracts. Stale
+output can be especially confusing with generated companions because their
+names are predictable. A class named \api{CustomerEditFields} may still compile
+even after the annotated form source changed. A clean build is the first test.
+
+In modular applications, generated classes belong to the module that owns the
+annotated source. They do not automatically require public exports. A view
+package may use generated companions internally. A test module may require
+access to those packages. A public API module should not export generated UI
+helpers merely because they exist. The module boundary should reflect the
+application contract, not the presence of generated files.
+
+Annotation processing and jlink packaging should remain boring. The runtime
+image needs the compiled generated classes and runtime Corusco modules. It
+does not need javac or the annotation processor. If a packaged application
+tries to load processor classes at startup, something has crossed the
+compile-time boundary incorrectly. The packaging chapter returns to runtime
+images; the generation-specific point is simple: generated source is compiled
+away into ordinary classes before packaging.
+
+Resource files are adjacent but separate. Generated resource keys tell the
+application which resources are expected. They do not write localized text
+into a bundle unless a separate tooling step chooses to do that. A build may
+include a resource audit that iterates generated resource keys and verifies
+that required bundles contain values. That audit should run before screenshot
+generation, because missing labels make visual review noisy and hard to
+interpret.
+
+Multi-module builds need an explicit ownership rule. If a form source lives in
+one module and a Swing view lives in another, the generated companions must be
+on the consuming module's compile path. That may mean moving the annotated
+source to a shared UI-model module, moving the view into the same module, or
+exporting a generated package intentionally. Do not solve this by copying
+generated files between modules. Generated files are outputs of their source
+module. Copying them creates a stale-shadow problem that the compiler cannot
+explain well.
+
+IDE configuration should make generated code visible but visually distinct.
+Developers need completion for generated companions and navigation from
+generated constants to usages. They also need to know that editing a generated
+file is the wrong fix. Most IDEs mark generated source roots differently. Use
+that feature. A generated file that looks like handwritten source invites
+manual edits; a generated file that cannot be navigated invites distrust.
+
+Continuous integration should include at least one clean build path. Incremental
+builds are valuable during development, but generation bugs and stale-output
+bugs often hide in incremental state. A clean CI build proves that annotated
+sources alone are sufficient to recreate the generated companions. If clean CI
+and incremental local builds disagree, the generated-source task boundaries
+need attention before application code is blamed.
+
+Publishing generated artifacts requires a deliberate policy. An application
+module normally publishes compiled classes that include generated companions.
+A library module may expose generated companions as part of its API if other
+modules are expected to use them. That decision makes generated names and ids
+more compatibility-sensitive. If generated companions are internal, keep them
+in non-exported packages. If they are public, document them like public API.
+
+Generated source should not be committed by default unless the project has a
+specific reason. Committing generated files can make diffs noisy and create
+merge conflicts. Not committing them requires reliable processor configuration
+and generated-source visibility. Some projects choose to publish generated
+source jars for debugging; that is different from treating generated output as
+hand-maintained source. The rule is not universal, but the policy should be
+explicit.
+
+Generated sources are also useful for documentation and examples. The book's
+companion examples compile annotated sources through the real processor. The
+chapter can then refer to \generationExample{} as an anchor without copying a
+long generated class into the text. If a listing needs to show generated
+shape, it should show a small excerpt and tell the reader which example
+produces the full source. This prevents the book from becoming a second,
+stale copy of generated output.
+
+\begin{examplebox}{generation}
+\generationExample{} is the navigation anchor for the book's generated
+customer example. The annotated records \api{CustomerEdit} and
+\api{CustomerRow} live in the same package. Their generated companions are
+emitted next to those source types during the \api{corusco-examples} build.
+\end{examplebox}
+
+When upgrading Corusco, generated source is a review artifact. A processor
+change may alter generated names, ids, descriptors, import shape, or behavior
+installation. Some changes are improvements. Some are compatibility breaks.
+Review representative generated output before accepting a processor upgrade in
+a large application. A generated-source test can lock down the project-specific
+contracts that matter most.
+
+\section{Diagnostics and generated-source tests}
+
+Good generation fails early and locally. If \api{@SwingForm} is applied to a
+class instead of a record, the processor should report that the annotation is
+supported only on records. If a record component has both \api{@TextField} and
+\api{@CheckBox}, the processor should report that only one field-kind
+annotation may be present. If \api{@Length} is placed on a
+\api{BigDecimal} text field, the processor should report that length applies
+to string text fields. The error should point at the source declaration the
+developer can fix, not at a generated file that failed later.
+
+Diagnostics are part of the generated API because they teach the rules. A
+developer encountering generation for the first time will learn from processor
+messages as much as from documentation. Messages should use the annotation
+names, source type names, conflicting ids, and expected constraints. A message
+that says \api{"invalid metadata"} wastes the compiler's opportunity. A
+message that says \api{"Duplicate @Column id in CustomerEdit:
+customer/search/name"} tells the developer exactly which contract is broken.
+
+The processor test suite should contain both success and failure cases.
+Success cases prove that representative annotated sources generate the
+expected companions. Failure cases prove that invalid source is rejected with
+useful messages. These are not merely processor tests. They are examples of
+the contract that application teams rely on. When the processor changes, the
+tests say which generated shapes and diagnostics are intentionally stable.
+
+\begin{lstlisting}[caption={Generated-source compiler tests exercise the real javac path.}]
+GeneratedSourceCompilation result =
+        GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile("demo/CustomerEdit.java", source);
+
+assertThat(result.success()).isTrue();
+result.assertGeneratedSourceContains(
+        "demo/CustomerEditFields.java",
+        "TextFieldKey.of(\"customer/name\"");
+\end{lstlisting}
+
+\api{GeneratedSourceCompiler} exists for this kind of focused test. It writes
+source text into a temporary compilation directory, runs javac with the
+provided processors, stores generated sources under a known generated-output
+directory, and returns success status plus readable diagnostics. The companion
+\api{GeneratedSourceCompilation} can return generated source text or assert
+that generated source contains important snippets. This is more realistic than
+calling processor internals directly because it exercises javac, the
+annotation-processing API, source paths, generated output, and diagnostics
+together.
+
+Generated-source tests should be small. A test for duplicate table column ids
+does not need a complete application. It needs one annotated record with two
+columns declaring the same id. A test for action parameter rejection needs one
+annotated method with a parameter. A test for generated form view contracts
+needs one record with representative field kinds. Small samples make
+diagnostics clear and keep processor tests fast enough to run frequently.
+
+There is a trap in testing generated output too literally. The exact import
+order, whitespace, or line wrapping of generated source is rarely the public
+contract. Important constants, type names, descriptor calls, method names,
+diagnostic messages, and key ids are often the contract. Generated-source
+tests should assert the parts that matter. If every formatting detail is
+locked, refactoring the generator becomes unnecessarily expensive.
+
+Application tests should complement processor tests. A processor test can
+prove that \api{CustomerEditFormModel} contains a text field model for
+\api{name}. A core form test can instantiate the generated model and verify
+parse and validation behavior. A Swing test can implement the generated view
+contract and install the generated behavior plan. A resource test can require
+generated resource keys. A screenshot test can use the same generated view
+contract and resources to render a stable screen. Each layer tests a different
+boundary.
+
+Generated behavior plans deserve lifecycle tests. Create a minimal view
+implementation, a generated form model, and a \api{BehaviorScope}. Install the
+generated plan, change the document text, and assert that the model changes.
+Close the scope, change the document again, and assert that the disposed
+binding no longer updates the model. This test is small, but it protects the
+promise that generation removes listener sprawl without leaving listeners
+behind. It is also much faster than testing the same fact through a full
+dialog workflow.
+
+Generated action companions deserve command tests. Create an owner object with
+annotated methods, build the generated command set, require a command by
+generated action key, and execute it. Then test descriptor metadata separately:
+text resource id, tooltip id, selectable flag, mnemonic, accelerator, and
+descriptor ordering. The execution test proves the factory path. The metadata
+test proves the generated command contract. Mixing all of this into a button
+click test makes failures harder to diagnose.
+
+Generated table descriptors deserve model tests. Build an observable row list,
+create the generated table model, and assert column count, names, value
+extraction, column classes, editability, and precise update events. If a column
+is editable, test the generated row updater or the application policy around
+it. If table state persistence uses generated persistence ids, test that those
+ids are the expected stable values. A screenshot can then focus on visual
+rendering rather than discovering that the descriptor is wrong.
+
+Generated resource tests should be data-driven. A generated resources
+companion often contains constants that can be listed directly or through a
+small project convention. The test should require all mandatory labels and
+headers in the sample resource set. Optional tooltips may be resolved with
+fallbacks, but a missing required command text should fail before the screen is
+opened. This is especially important for the book examples, because PDF
+screenshots should show deliberate text rather than missing-resource markers.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\testingKeysFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\testingHarnessFigure}
+\end{minipage}
+\caption{Generated keys are useful in tests because they separate the mechanics of finding components from the visual review of rendered text and layout.}
+\label{fig:generation-testing-output}
+\end{figure}
+
+Figure~\ref{fig:generation-testing-output} connects generated metadata to the
+testing chapter. A generated view contract can give a test typed component
+handles. A screenshot harness can render the real Swing panel with FlatLaf and
+MigLayout. The harness should find components by generated keys or view
+contract methods, while the screenshot itself shows real localized text. This
+keeps test mechanics stable when text changes and keeps visual review honest
+when text does change.
+
+Diagnostics should also protect stable-id grammar. Invalid ids should fail at
+compile time, not later when a resource lookup fails or table state cannot be
+restored. The processor should reject blank ids, duplicate ids in a local
+scope, invalid tooltip conflicts, invalid width ranges, invalid validation
+bounds, unsupported field kinds, and inconsistent accelerator metadata. A
+strict processor may feel less forgiving during the first compile, but it is
+more humane than letting a malformed screen reach runtime.
+
+\section{Review, migration, and versioning}
+
+Generated code changes the shape of review. A reviewer should inspect three
+things: the annotated source, the generated source contract, and the
+handwritten code that consumes the generated companions. The annotated source
+answers whether the stable facts are correct. The generated source answers
+whether the processor interpreted them as expected. The handwritten code
+answers whether the screen still owns layout, workflow, and application
+policy. Skipping any one of these views makes generation either too trusted or
+too feared.
+
+The generated naming map should be memorized by the team. It is small enough:
+\api{CustomerEditFields} for field keys, \api{CustomerEditResources} for form
+resources, \api{CustomerEditProblems} for problem codes,
+\api{CustomerEditDescriptors} for field descriptors,
+\api{CustomerEditFormModel} for editable model state, \api{CustomerEditView}
+for the Swing component contract, \api{CustomerEditBehaviorPlan} for direct
+behavior installation, and \api{CustomerEditBindings} for the binding facade.
+Tables and actions have similarly predictable names. Predictability is not a
+cosmetic feature. It is what lets a developer navigate the generated surface
+without consulting a manual on every change.
+
+\begin{tabularx}{0.96\linewidth}{@{}p{0.30\linewidth}X@{}}
+\toprule
+Generated area & Review questions\\
+\midrule
+Fields and resources & Are ids stable, readable, and independent from visible text?\\
+Problems and validation & Are generated constraints field-local, and are richer rules still in Java?\\
+View contracts & Does the handwritten view own layout while satisfying the generated contract?\\
+Behavior plans & Are installed behaviors reversible and scoped to the view lifecycle?\\
+Table descriptors & Are column ids and persistence ids durable enough for saved state?\\
+Action descriptors & Do buttons, menus, toolbars, and shortcuts share command identity?\\
+Build setup & Are annotations on the compile path and processors on the processor path?\\
+\bottomrule
+\end{tabularx}
+
+Migration should be incremental. Start with a form whose handwritten metadata
+is already repetitive. Annotate the record, generate the form model and keys,
+and keep the existing panel layout. Add tests for generated model behavior and
+resource presence. Then install generated behavior into the panel. After that,
+migrate table descriptors or action descriptors. Each slice should reduce one
+class of duplication while preserving the user's visible workflow. A
+big-bang migration makes it hard to tell whether a failure is a processor bug,
+a changed id, a changed resource, a changed layout, or a changed workflow.
+
+Do not migrate only the annotations. A record with \api{@SwingForm} is useful
+when application code uses the generated companions. If the panel still
+creates unrelated field keys by hand, tests still search for labels, and
+validation still emits raw strings, generation has become decoration. The
+payoff comes when fields, resources, problems, behavior, and tests share the
+generated identity.
+
+Do not migrate layout into generation by accident. When a team first sees a
+generated view contract, it is tempting to ask the generator to produce the
+panel too. Resist that as the default. Layout is where product design, user
+workflow, density, grouping, and accessibility meet. MigLayout makes ordinary
+handwritten layout concise enough to review. Generated code can require a
+\api{nameField()} method and install a binding. It should not decide that the
+name field belongs in row three, column two of every application dialog.
+
+Versioning belongs in the migration plan. If a generated column id changes,
+write or consider a table-state migration. If an action id changes, review
+shortcuts, command palettes, help topics, and tests. If a form field id
+changes, review resources, problem messages, screenshot fixtures, and
+component keys. If a generated class name changes because the source type was
+renamed, decide whether external tests or examples refer to it. The compiler
+will catch some references. It will not migrate saved table state or external
+documentation by itself.
+
+Generated source can make deprecation easier. A processor may keep an old
+resource key constant for a release while introducing a new one, or a table
+state migration may map old persistence ids to new ids. Such compatibility
+features should be explicit and temporary. Silent aliasing forever makes the
+generated surface harder to reason about. The usual rule applies: stable ids
+are durable; changed ids are migrations; migrations should be named.
+
+Resource authors should be included in the contract. Generated resource keys
+are not merely Java constants. They are work items for localization and UX
+copy. A resource audit can list generated keys missing from a locale. A
+pseudo-localization screenshot run can show whether generated labels and table
+headers still fit. A generated key naming scheme that resource authors can
+read will reduce mistakes. A scheme full of Java implementation names will
+spread Swing internals into localization work.
+
+Generated code should be read more often during processor development than
+during everyday application work. In normal screen work, a developer may read
+the generated companions for a new form or table and then trust the pattern.
+When changing the processor, read many generated companions. Check small
+forms, enum combo boxes, validation combinations, editable tables, action
+metadata, and module boundaries. The processor is a multiplication tool; a
+small bad assumption can appear in every generated screen.
+
+Review generated diffs by intent. A processor refactoring that only changes
+import ordering should not be described as a UI behavior change. A processor
+change that renames generated constants is a source compatibility change. A
+change that alters generated ids is a resource, test, and persistence
+compatibility change. A change that alters behavior-plan installation order
+may be a runtime behavior change. Sorting generated diffs into these
+categories keeps review focused on consequences rather than line count.
+
+Generated naming should avoid clever compression. A file named
+\api{CustomerEditBinds} is shorter than \api{CustomerEditBindings}, but the
+longer name is clearer and matches the vocabulary used elsewhere. Generated
+code is read in moments of uncertainty: when a build fails, a binding behaves
+strangely, or a test cannot find a key. Clear generated names reduce the cost
+of those moments. They also make book listings and documentation easier to
+write without long explanations.
+
+Migration from handwritten metadata should leave bridges only temporarily. It
+is acceptable to introduce generated field keys while an old presenter still
+uses handwritten problem codes. It is risky to keep both systems forever. Two
+parallel identity systems mean two places for bugs. Plan the migration slice,
+add tests, move consumers to generated companions, and remove obsolete
+handwritten constants when the slice is complete. Generated code should
+replace repetition, not add a second layer beside it.
+
+When a processor limitation blocks a migration, prefer an explicit handwritten
+bridge to an annotation contortion. If a field kind is not supported, declare
+the field key and descriptor by hand for that field. If a table column needs a
+special renderer, keep the generated descriptor for identity and install the
+renderer explicitly. If an action needs arguments, write a custom command
+using generated resource keys where useful. Such bridges are honest. Forcing a
+limited annotation to mean something it does not support creates future
+confusion.
+
+Documentation should name both the annotation and the generated result. Saying
+``add \api{@SwingForm}'' is not enough. Say that the source will generate a
+form model, field keys, descriptors, resources, a view contract, a behavior
+plan, and bindings facade. Saying ``add \api{@UiAction}'' is not enough. Say
+that it generates an action key, descriptor, resource keys, command factories,
+and descriptor lists. Readers learn generation best when the input and output
+are always paired.
+
+\section{Boundaries that should remain handwritten}
+
+It is worth naming what generation should not own, because otherwise every
+annoying repetition begins to look like an annotation request. The first
+boundary is layout. A generated view contract can require methods for
+components. A generated behavior plan can bind them. The panel layout should
+still be reviewed as Swing code. A business screen with dense forms, nested
+tables, split panes, command rows, and validation summaries needs design
+judgment. An annotation on a record component cannot see the whole screen.
+
+The second boundary is service workflow. A generated action factory can call
+\api{owner.save()}. It should not know which repository is used, whether a
+transaction spans several aggregates, whether a confirmation dialog appears,
+or whether a virtual thread task is started. Those decisions need application
+context and tests. Generation gives the action stable identity and a command
+factory; the presenter owns the workflow.
+
+The third boundary is cross-field and cross-record validation. Field-local
+constraints such as required text and length are good generation inputs.
+Validation that compares start and end dates, calls a server, checks
+permissions, or depends on a selected row is ordinary Java validation. It can
+still emit generated problem codes or target generated field keys. It should
+not be squeezed into annotation attributes merely to make a form look more
+generated.
+
+The fourth boundary is dynamic choice data. A generated enum option list is
+acceptable because enum constants are compile-time facts. A list of customers,
+roles, countries, project templates, or remote statuses is not the same kind
+of fact. Such data may need loading, filtering, permissions, localization, and
+refresh. Generate the field identity and view contract; bind the dynamic
+options through application state.
+
+The fifth boundary is rendering policy. A generated table column can have a
+value type, width, resource keys, and editability. It should not decide the
+custom renderer for a GIS geometry, a financial sparkline, or a color-coded
+risk cell unless the project deliberately adds a narrow generated renderer
+contract. Renderers often require visual and performance review. Generated
+metadata can supply column identity and value extraction while renderers stay
+explicit.
+
+The sixth boundary is security. A generated command descriptor can name the
+Delete operation. It should not decide whether the current user may delete the
+selected customer. Permission checks belong in presenters, command enablement,
+services, or policy objects. Generated ids can help diagnostics and help
+messages explain permission decisions, but the authority should be explicit
+application code.
+
+The seventh boundary is long-running work. A generated command factory may
+call a presenter method that starts a task. It should not choose the task
+service, cancellation policy, stale-result strategy, progress model, or busy
+overlay. Those topics belong to the lifecycle and background-work chapters.
+Generation can reduce wiring around commands and fields. It should not make
+concurrency implicit.
+
+These boundaries are not a limitation of the processor. They are what keep
+generated code useful. A generator that tries to own layout, services,
+security, rendering, dynamic data, and concurrency becomes a second
+application framework hidden behind annotations. Corusco's better role is
+smaller and sharper: generate stable identity, descriptors, models, and
+routine behavior entry points; let application code express the screen.
+
+The boundary can be tested in code review with a simple question: could this
+decision be made correctly by looking only at the annotated source element?
+If the answer is yes, generation may be appropriate. A record component's
+value type and field id can be known from the component. A table column's
+default width and resource id can be declared on the component. An action's
+default shortcut can be declared on the method. If the answer is no because
+the decision depends on several fields, current user, selected row, loaded
+data, application mode, or visual grouping, the decision should remain in
+ordinary code.
+
+This question prevents both underuse and overuse. Underuse appears when every
+field key, resource key, problem code, and descriptor is handwritten even
+though the record declaration already says the necessary facts. Overuse
+appears when annotations begin to encode workflow, layout, permissions, or
+service calls. The useful middle is broad enough: stable keys, descriptors,
+routine models, routine table metadata, and routine command metadata. That is
+where Corusco generation should be strong.
+
+\section{Worked review of the companion example}
+
+Open \generationExample{} as a navigation anchor, then open the two annotated
+records in the same package. \api{CustomerEdit} is a generated form source.
+\api{CustomerRow} is a generated table source. The source code is intentionally
+small, because the generated companions are the thing to inspect. After the
+examples module compiles, the generated-source directory contains companions
+beside those records. The generated files are not meant to be edited. They are
+meant to be read.
+
+The form source starts with \api{@SwingForm(id = "book/customer/edit")}. That
+id becomes the prefix for generated field ids and problem codes. The
+\api{name} component is a text field with required and length constraints.
+The \api{status} component is a text field without extra validation. From
+those facts, the processor emits two text field keys, descriptor constants,
+resource keys, problem codes for the name constraints, a form model, a view
+contract, behavior plan, and bindings facade. None of that requires runtime
+reflection over the record.
+
+The generated \api{CustomerEditFields} file is the simplest inspection point.
+It contains \api{NAME} and \api{STATUS} constants. Their ids are
+\api{book/customer/edit/name} and \api{book/customer/edit/status}. Their owner
+type is \api{CustomerEdit}. Their value type is \api{String}. A reader can
+now predict the generated descriptors and problem targets. The file is short
+and boring. This is exactly what generated key companions should be.
+
+The generated \api{CustomerEditFormModel} is more instructive. Its constructor
+requires an original \api{CustomerEdit}. It creates text field models using
+the generated keys and string converters. It registers those models with the
+abstract form infrastructure. It builds a rule set that validates required and
+length constraints for the name field. It exposes descriptors in record
+component order. Its \api{createResult} method constructs a new
+\api{CustomerEdit} from parsed field values. Reading that class explains how
+generated field metadata becomes a mutable edit model.
+
+The generated \api{CustomerEditView} is a contract, not a panel. It requires
+methods that return the Swing components used by the behavior plan. A
+handwritten panel may use MigLayout and FlatLaf, add labels and command rows,
+wrap fields in a scroll pane, or compose the form into a larger workspace. As
+long as it implements the generated contract, the generated behavior plan can
+install text-field bindings and validation behavior. The panel remains real
+Swing code.
+
+The table source starts with \api{@SwingTable(id = "book/customer/table")}.
+The \api{name} column declares a header resource id and width. The
+\api{status} column does the same. The generated columns companion contains
+the table key, column keys, descriptors, and column instances. The generated
+resources companion contains header keys. The generated table descriptor
+constructs a \api{TableDescriptor} from the generated columns and provides an
+\api{ObservableTableModel} factory. The generated bindings companion can
+install the model and bind selection.
+
+Now perform the compatibility review. If the visible header text should change,
+change the resource value associated with \api{customer/name} or choose a
+better header resource id. If the column should keep saved width and order,
+do not change the column id or persistence id casually. If the status field
+becomes a combo box in the form, update the field-kind annotation and inspect
+the generated model, view contract, and options. If the screen needs a new
+Refresh command, add \api{@UiAction} to the presenter and inspect the
+generated action descriptor.
+
+Finally, decide what the example does not show. It does not show generated
+layout. It does not show service workflow. It does not show a real resource
+bundle. It does not show table-state migration. It does not show a dynamic
+combo-box option source. Those omissions are not accidental. The example is a
+generation example: annotated source in, generated companions out. The other
+chapters show how those companions participate in real screens.
+
+\section{Exercises and checklist}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Annotate a small record with \api{@SwingForm}. Build the module and list
+every generated companion by name.
+\item Open the generated form model and identify which lines construct field
+models, which lines build validation rules, and which lines create the result
+record.
+\item Add \api{@Help(topic = "...")} to a generated form field. Find the help
+topic in the generated descriptor and explain how F1 behavior would use it.
+\item Annotate a table row record with two columns. Change only the header
+resource id and explain why saved table state should not be affected.
+\item Create an invalid table source with duplicate \api{@Column} ids and
+write a generated-source compiler test that asserts the diagnostic.
+\item Add \api{@UiAction} to a no-argument presenter method. Find the generated
+action key, descriptor, command factory, and command-set factory.
+\item Decide whether a cross-field validation rule belongs in an annotation or
+in Java validation code. Justify the boundary.
+\item Run a clean build and verify that obsolete generated companions disappear
+after an annotation is removed.
+\item Inspect a generated view contract and implement it in a MigLayout panel
+without letting generated code own layout.
+\item Review one generated id as if it were already referenced by resources,
+tests, help, and persisted UI state. Decide whether renaming it is safe.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{center}
+\textbf{Generation checklist.}
+\end{center}
+
+\begin{itemize}
+\item Put annotations on stable source facts, not transient workflow choices.
+\item Treat generated ids as compatibility-sensitive once screens are used.
+\item Keep annotations on the compile classpath and processors on the
+annotation-processor path.
+\item Keep generated source visible in the IDE and marked as generated.
+\item Read generated companions during review when annotations change.
+\item Use generated keys and descriptors instead of reconstructing ids by hand.
+\item Keep layout, service workflow, security, concurrency, dynamic options,
+and specialized rendering in handwritten code unless a narrow generated
+contract is deliberately designed.
+\item Test processor contracts with generated-source compiler tests.
+\item Test generated form models without Swing and generated behavior plans
+with EDT Swing tests.
+\item Audit generated resource keys before screenshot generation.
+\item Migrate incrementally: form metadata, table metadata, and action
+metadata can move one slice at a time.
+\item Clean the build when generated source appears stale.
+\end{itemize}
+
+The proper attitude toward generated code is neither suspicion nor reverence.
+It is source code produced by a tool the project controls. Read it when the
+contract matters. Test it when the contract must remain stable. Improve the
+processor when many generated files need the same change. Keep handwritten
+code where judgment belongs. Done this way, compile-time generation gives
+Swing applications a rare advantage: the repetitive contracts are checked by
+the compiler, while the screen remains ordinary Java that a developer can
+understand.

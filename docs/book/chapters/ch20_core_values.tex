@@ -1,0 +1,1418 @@
+\chapter{Core Values and Observable State}
+\label{ch:core-values}
+\chapterquote{One changing fact deserves one owner and one observable contract.}{The value principle}
+
+\begin{chaptermap}
+Core question & How does Corusco represent one changing screen fact without depending on Swing?\\
+Primary APIs & \api{ReadableValue}, \api{WritableValue}, \api{SimpleValue}, \api{MappedValue}, \api{DerivedValue}, \api{MasterDetailValue}, \api{LoadableValue}, \api{ValueChangeEvent}, and \api{ChangeOrigin}.\\
+Plain Swing baseline & Labels, buttons, selections, and fields often begin as component state plus listeners; the chapter separates the underlying facts from the widgets.\\
+Swing connection & Swing bindings mirror values into labels, fields, status text, selection state, commands, busy indicators, and overlays.\\
+Companion example & \coreExample.\\
+\end{chaptermap}
+
+\section{A value is a small model}
+
+\termdef{Observable value}{in Corusco} is a scalar model with a current value and
+a subscription contract. It is smaller than a form model, smaller than a table
+model, and larger than a variable. A variable can be read and written; an
+observable value can also tell interested code when the effective value changes.
+
+This is the first important Corusco idea because many Swing screens begin by
+letting widgets own facts. A \api{JLabel} owns the current status text. A
+\api{JButton} owns whether Save is enabled. A \api{JTable} owns the selected row.
+A \api{JTextField} owns the current input. This works for a demonstration. It
+does not scale when the same fact must appear in a toolbar, menu, dialog
+summary, keyboard shortcut, status line, test, and generated binding.
+
+The value contract moves the fact out of the widget:
+
+\begin{lstlisting}[caption={One changing fact with an explicit owner.}]
+WritableValue<String> selectedCustomerName = SimpleValue.of("Ada Lovelace");
+
+Subscription subscription = selectedCustomerName.subscribe(event -> {
+    System.out.println(event.oldValue() + " -> " + event.newValue());
+});
+
+selectedCustomerName.setValue("Grace Hopper", ChangeOrigin.USER);
+subscription.close();
+\end{lstlisting}
+
+Nothing in this listing depends on Swing. The same value could later feed a
+label, a window title, a command, or a test assertion. The widget is no longer
+the only place where the fact exists.
+
+\begin{principlebox}{small models first}
+Before inventing a presenter hierarchy, ask whether the screen fact is simply
+one observable value. A selected row, busy flag, disabled reason, active tab,
+status message, or committed filter text often is.
+\end{principlebox}
+
+\textbf{Readable and writable contracts.}
+
+\api{ReadableValue<T>} has two obligations. It returns the current value through
+\api{value()}, and it accepts subscribers through \api{subscribe}. The
+subscription returns a \api{Subscription}, which is the caller's cleanup handle.
+\api{WritableValue<T>} adds \api{setValue}. The default \api{setValue(value)}
+uses \api{ChangeOrigin.MODEL}; callers may supply another origin when the
+difference matters.
+
+\begin{lstlisting}[caption={The shape of the core contract.}]
+public interface ReadableValue<T> {
+    T value();
+    Subscription subscribe(ValueChangeListener<T> listener);
+}
+
+public interface WritableValue<T> extends ReadableValue<T> {
+    default void setValue(T value) {
+        setValue(value, ChangeOrigin.MODEL);
+    }
+
+    void setValue(T value, ChangeOrigin origin);
+}
+\end{lstlisting}
+
+The contract is deliberately small. It does not say "EDT". It does not say
+"background thread". It does not say "component". Built-in values deliver events
+synchronously on the thread that performs the mutation, and equal effective
+values do not produce events. That policy is simple enough to test and simple
+enough to reason about.
+
+\begin{pitfallbox}{values are not hidden dispatchers}
+Do not assume that a Corusco core value will marshal events to Swing for you.
+Thread ownership belongs at the Swing boundary. If a value is consumed by Swing,
+mutate it on the EDT or adapt it before Swing observes it.
+\end{pitfallbox}
+
+\textbf{Effective changes.}
+
+A value change event represents an effective change, not merely a call to a
+setter. Built-in implementations compare old and new values with
+\api{Objects.equals}. Setting the same value again is silent. This is an
+important difference from many hand-written listener systems, where every setter
+call fires and listeners must defend themselves from redundant work.
+
+\begin{lstlisting}[caption={Repeated equal values do not create useful events.}]
+SimpleValue<String> mode = SimpleValue.of("view");
+List<String> events = new ArrayList<>();
+
+mode.subscribe(event -> events.add(event.oldValue() + ":" + event.newValue()));
+mode.setValue("edit");
+mode.setValue("edit");
+mode.setValue("view");
+
+// events contains "view:edit" and "edit:view"
+\end{lstlisting}
+
+This policy keeps derived values, bindings, and status updates from repainting
+for no semantic reason. It also means that "refresh even if equal" is a
+different operation. If a screen needs an explicit refresh signal, model that as
+a command, generation value, or event source rather than abusing a scalar value.
+
+\textbf{The event object.}
+
+\api{ValueChangeEvent<T>} carries four pieces of information: the source value,
+the old value, the new value, and the \api{ChangeOrigin}. Old and new values may
+be null. The source and origin are never null.
+
+The old value is useful for differential updates, undo stacks, and diagnostics.
+The new value is the current fact. The source is useful when a listener observes
+more than one value. The origin is the part that ordinary Swing listeners do not
+have.
+
+\begin{lstlisting}[caption={Using old value, new value, source, and origin.}]
+ValueChangeListener<CustomerRow> listener = event -> {
+    if (event.origin() == ChangeOrigin.USER) {
+        auditSelection(event.oldValue(), event.newValue());
+    }
+    refreshStatusFor(event.source().value());
+};
+\end{lstlisting}
+
+Do not overuse the source. Most code should subscribe to one value and already
+know what it observes. But the source is part of the contract because it makes
+composition possible without losing identity.
+
+\textbf{Change origins.}
+
+\termdef{Change origin}{in Corusco} is a small value describing why a mutation
+occurred. Built-in origins include \api{USER}, \api{MODEL}, \api{BINDING},
+\api{GENERATED}, and \api{SYSTEM}. Applications may create additional origins
+with \api{ChangeOrigin.of}.
+
+Origins are not a security system and not a replacement for commands. They are a
+diagnostic and feedback-control tool. They answer questions that listeners
+otherwise guess:
+
+\begin{itemize}
+\item Did this update come from the user or from loading a record?
+\item Did a generated binding write the value while synchronizing a component?
+\item Did a system reset clear the field?
+\item Should this listener write back, or would that create a feedback loop?
+\end{itemize}
+
+\begin{lstlisting}[caption={Distinguishing user and model changes.}]
+selectedCustomer.subscribe(event -> {
+    if (event.origin() == ChangeOrigin.USER) {
+        rememberRecentSelection(event.newValue());
+    }
+});
+
+selectedCustomer.setValue(rowFromTable, ChangeOrigin.USER);
+selectedCustomer.setValue(rowFromInitialLoad, ChangeOrigin.MODEL);
+\end{lstlisting}
+
+In a table selection binding, this distinction matters. A user click should be
+reported as user-originated. A presenter selecting a row after loading data is
+model-originated. Both changes may lead to the same selected row, but they have
+different meaning.
+
+\begin{coruscobox}{origins at the Swing boundary}
+Corusco Swing bindings write user-originated component edits with
+\api{ChangeOrigin.USER}. Presenter-originated changes retain their model origin
+when they update components. This makes feedback loops easier to detect and
+keeps tests from asserting only the final value.
+\end{coruscobox}
+
+\textbf{Subscriptions are resources.}
+
+Subscribing installs a listener. A listener is a resource. A resource needs an
+owner. This is the most mundane rule in the chapter, and one of the most
+important.
+
+Swing programs often leak because the visual component disappears but a listener
+or task callback still references it. Corusco makes the cleanup handle visible:
+\api{subscribe} returns a \api{Subscription}. Closing it removes the listener.
+The close operation is idempotent.
+
+\begin{lstlisting}[caption={A screen owns the subscriptions it creates.}]
+final class CustomerStatusPresenter implements AutoCloseable {
+    private final List<Subscription> subscriptions = new ArrayList<>();
+
+    CustomerStatusPresenter(ReadableValue<CustomerRow> selected,
+            WritableValue<String> statusText) {
+        subscriptions.add(selected.subscribe(event -> {
+            CustomerRow row = event.newValue();
+            statusText.setValue(row == null ? "No customer" : row.displayName());
+        }));
+    }
+
+    @Override
+    public void close() {
+        subscriptions.forEach(Subscription::close);
+        subscriptions.clear();
+    }
+}
+\end{lstlisting}
+
+Later chapters use scopes to group subscriptions and Swing bindings. The core
+lesson is already visible: if you install a relationship, you must own its
+removal.
+
+\section{SimpleValue}
+
+\api{SimpleValue<T>} is the ordinary mutable implementation. It stores one
+current value, accepts subscribers, compares effective changes, and emits
+synchronous events. Use it for presentation facts owned by a presenter or model.
+Do not use it as a global variable with better manners.
+
+\begin{lstlisting}[caption={Simple presentation facts.}]
+SimpleValue<Boolean> busy = SimpleValue.of(false);
+SimpleValue<String> statusText = SimpleValue.of("Ready");
+SimpleValue<CustomerRow> selectedCustomer = SimpleValue.empty();
+\end{lstlisting}
+
+The important design question is not "can this be a \api{SimpleValue}?" It
+usually can. The question is "who owns this value?" A screen presenter may own a
+busy flag. A long-lived application model may own the active workspace. A dialog
+form may own dirty state. Ownership should follow lifetime.
+
+\begin{pitfallbox}{observable globals}
+Replacing global mutable variables with global observable values does not fix
+global state. It merely makes the global state louder. Prefer values whose
+lifetime matches the feature they represent.
+\end{pitfallbox}
+
+\textbf{MappedValue.}
+
+\api{MappedValue<A,B>} is the one-source derived case. It observes a source
+value and exposes a mapped value. This is useful for labels, command enablement,
+tooltip fragments, and small view-state conversions.
+
+\begin{lstlisting}[caption={A display value derived from a selected row.}]
+ReadableValue<CustomerRow> selected = presenter.selectedCustomer();
+
+MappedValue<CustomerRow, String> title = MappedValue.of(selected, row ->
+        row == null ? "Customers" : "Customer: " + row.displayName());
+\end{lstlisting}
+
+Without a mapped value, the code is usually written as a listener that updates a
+nearby variable or component. The dependency then hides inside the listener. With
+a mapped value, the dependency is itself a model object and can be subscribed to,
+tested, and closed.
+
+\textbf{DerivedValue.}
+
+\api{DerivedValue<T>} generalizes mapping to multiple dependencies. Use it when
+the output depends on more than one value: Save enablement depends on dirty
+state, validation problems, and busy state; status text may depend on selection
+and load state; a dialog title may depend on mode and current record.
+
+\begin{lstlisting}[caption={Derived command enablement.}]
+DerivedValue<Boolean> canSave = DerivedValue.of(
+        () -> form.dirty().value()
+                && !form.problems().value().hasErrors()
+                && !busy.value(),
+        form.dirty(),
+        form.problems(),
+        busy);
+\end{lstlisting}
+
+This listing also shows a useful test shape. A test can change dirty state,
+problems, and busy state, then assert \api{canSave.value()} and its emitted
+events. No button is required. The button binding is a later concern.
+
+\begin{principlebox}{derived before listener}
+When a listener merely recomputes a value from other values, consider a derived
+value. The dependency graph becomes visible, and the listener body disappears.
+\end{principlebox}
+
+\textbf{Avoiding derived-value soup.}
+
+Derived values can also be overused. A screen with fifty tiny derived values and
+no names for higher-level concepts may be as hard to read as a screen with fifty
+listeners. Group related facts into a presenter or form model when the
+relationships become a vocabulary of their own.
+
+The test is language. If you can name the derived value as a domain of the
+screen, keep it. \api{canSave}, \api{primaryStatusText}, and
+\api{selectedCustomerTitle} are good names. If the name becomes
+\api{labelTextWhenDirtyAndLoadedButNotSaving}, the concept may need a state
+object instead.
+
+\textbf{Master-detail values.}
+
+Master-detail screens are common in Swing. Selecting a customer loads orders.
+Selecting a project loads tasks. Selecting a file loads metadata. Hand-written
+Swing code often puts this relationship inside a table selection listener. The
+listener reads the selected row, calls a loader, updates detail fields, handles
+empty selection, and remembers cleanup. That is too much work for a listener.
+
+\api{MasterDetailValue<M,T>} models the relationship between a master value and
+a detail value. The master is observable. The detail is loaded from the master.
+When the master changes, the detail updates.
+
+\begin{lstlisting}[caption={Detail value follows the selected master.}]
+SimpleValue<CustomerId> selectedCustomerId = SimpleValue.empty();
+
+MasterDetailValue<CustomerId, CustomerDetails> details =
+        MasterDetailValue.of(selectedCustomerId, repository::loadDetails);
+
+selectedCustomerId.setValue(new CustomerId(42), ChangeOrigin.USER);
+\end{lstlisting}
+
+The example is synchronous because core values are synchronous. If detail
+loading may block, move the loading into a task chapter pattern or use a
+loadable/task boundary. The conceptual relationship is still master-detail:
+selection determines detail.
+
+\textbf{Loadable values.}
+
+\api{LoadableValue<T>} represents a lazily or explicitly loaded scalar value.
+It is useful when constructing the screen should not immediately construct the
+expensive value, or when a cached value can be detached and later reloaded. A
+loadable value keeps the loading policy close to the value rather than scattered
+through listeners.
+
+\begin{lstlisting}[caption={A cached scalar value with explicit loading.}]
+AtomicInteger loads = new AtomicInteger();
+LoadableValue<String> customerName =
+        LoadableValue.of(() -> "customer-" + loads.incrementAndGet());
+
+String first = customerName.value();
+String second = customerName.value(); // Cached according to the value contract.
+customerName.detach();
+String third = customerName.value();  // Loaded again.
+\end{lstlisting}
+
+The exact caching and detaching behavior belongs to the implementation contract.
+The design idea is simple: loading is not an accidental side effect hidden in a
+label update. It is part of the value model.
+
+\section{Null as a state}
+
+Corusco values may contain null. That is a practical choice because Swing and
+desktop workflows often have absent selection, empty optional fields, and
+not-yet-loaded data. But null should still be designed. A null selected row is
+reasonable. A null status text is usually poor design. A null validation problem
+set is unnecessary when an empty \api{ProblemSet} exists.
+
+When the set of states grows beyond "present or absent", prefer a state object:
+\api{Idle}, \api{Loading}, \api{Ready}, and \api{Failed} are clearer than a
+value plus several flags plus null.
+
+\textbf{Plain Swing baseline.}
+
+The plain Swing version of a status update usually looks like this:
+
+\begin{lstlisting}[caption={Component-owned status.}]
+table.getSelectionModel().addListSelectionListener(event -> {
+    int viewRow = table.getSelectedRow();
+    if (viewRow < 0) {
+        statusLabel.setText("No customer selected");
+        editButton.setEnabled(false);
+        return;
+    }
+    int modelRow = table.convertRowIndexToModel(viewRow);
+    CustomerRow row = model.rowAt(modelRow);
+    statusLabel.setText(row.displayName());
+    editButton.setEnabled(true);
+});
+\end{lstlisting}
+
+This is not terrible code. It may be exactly right for a small utility panel.
+The problem appears when menu items, detail panes, tests, and persistence also
+need selected-customer state. Then the status label and button listener are the
+wrong owners.
+
+\textbf{Corusco treatment.}
+
+The Corusco version names the selected row, derives the status, and binds the
+component later.
+
+\begin{lstlisting}[caption={Value-owned status.}]
+WritableValue<CustomerRow> selectedCustomer = SimpleValue.empty();
+
+ReadableValue<String> statusText = MappedValue.of(selectedCustomer, row ->
+        row == null ? "No customer selected" : row.displayName());
+
+ReadableValue<Boolean> canEdit = MappedValue.of(selectedCustomer,
+        Objects::nonNull);
+\end{lstlisting}
+
+The table selection binding writes \api{selectedCustomer}. The label binding
+reads \api{statusText}. The button or command binding reads \api{canEdit}. Each
+relationship can be closed when the screen closes. Tests can assert the model
+without constructing the table.
+
+\textbf{Testing value state.}
+
+Core values are intentionally easy to test. A good value test does not click a
+button merely to prove that a derived value works. It mutates the source values,
+records events, and asserts final state and origins.
+
+\begin{lstlisting}[caption={Testing derived state directly.}]
+SimpleValue<Boolean> dirty = SimpleValue.of(false);
+SimpleValue<Boolean> busy = SimpleValue.of(false);
+SimpleValue<ProblemSet> problems = SimpleValue.of(ProblemSet.empty());
+
+DerivedValue<Boolean> canSave = DerivedValue.of(
+        () -> dirty.value() && !problems.value().hasErrors() && !busy.value(),
+        dirty, problems, busy);
+
+dirty.setValue(true, ChangeOrigin.USER);
+assertThat(canSave.value()).isTrue();
+
+busy.setValue(true, ChangeOrigin.SYSTEM);
+assertThat(canSave.value()).isFalse();
+\end{lstlisting}
+
+The Swing binding should have its own small test, but it should not be the only
+test of the state rule.
+
+\textbf{When a value is not enough.}
+
+Use a value for one changing fact. Use a form model for a group of editable
+fields with parsing, validation, dirty state, and commit/reset semantics. Use an
+observable list for a changing collection. Use a command for an operation with
+enabled state, selected state, resources, and invocation. Use a task handle for
+background work. A value is the atom of presentation state, not the whole
+periodic table.
+
+\begin{migrationbox}{from listener variables to values}
+During migration, look for private fields that are changed by listeners and read
+by other listeners. If the field represents one screen fact, replace it with a
+\api{SimpleValue}. If it represents several facts, introduce a named model
+instead.
+\end{migrationbox}
+
+\textbf{Worked example.}
+
+\begin{examplebox}{core values}
+\coreExample{} creates selected-customer state, derived status text, and scoped
+cleanup. The example is deliberately Swing-free so the state contract can be
+tested directly before a component binding is introduced.
+\end{examplebox}
+
+Read the example by following ownership. Which object owns the source value?
+Which object owns the derived value? Which code owns the subscription? Which
+change is user-originated and which is model-originated? If those answers are
+clear, the eventual Swing code will have fewer surprises.
+
+\textbf{Review notes.}
+
+Values make state visible, but they do not make design automatic. A value with a
+bad name is still a bad name. A value with the wrong lifetime still leaks. A
+value mutated from the wrong thread still violates a Swing boundary if Swing is
+observing it. The contract is intentionally small so ownership remains visible.
+
+The first useful question is whether the fact has a single owner. A selected
+customer, current filter text, busy flag, status message, or active problem set
+often does. A complex form, editable table, or workflow state machine often
+does not. If a value begins to carry several meanings in its name, such as
+\api{state} or \api{modeAndSelection}, it is no longer helping the reader. Split
+the fact or introduce a model with named members.
+
+The second question is lifetime. A value owned by a presenter may outlive the
+Swing component that displays it. A value owned by a dialog should normally die
+with the dialog. A global preference value may live for the application. The
+value API deliberately does not guess these lifetimes. Subscriptions and
+derived values must be registered with the object that knows when the
+relationship ends.
+
+Origins are useful when a value participates in feedback. A text field update
+from the user and a model reset from the application may produce the same new
+string, but they do not have the same meaning. A binding may suppress a loop
+when it sees that the model change came from the component it just updated. A
+test may assert that accepting a baseline produces a model-originated change
+rather than pretending it was user input.
+
+Derived values should be pure in spirit even when their implementation is
+ordinary Java. They should read source values and compute a result. They should
+not mutate components, start tasks, or write back to their sources. Once a
+derived value has side effects, a reader cannot reason about it as state
+anymore. Use a subscription or command handler for effects; use a derived value
+for a fact.
+
+Null deserves an explicit policy. Sometimes absence is naturally represented by
+\api{null}, as with no selected row in a simple screen. Sometimes a domain type
+should use an optional-like wrapper or a sealed hierarchy to distinguish absent,
+loading, failed, and available states. The important part is consistency. A
+screen where some values use null, some use empty strings, and some use sentinel
+objects forces every binding to rediscover absence rules.
+
+Mapped values are most helpful when they turn a domain-shaped fact into a
+presentation-shaped fact. A selected row becomes a status string. A problem set
+becomes a boolean committable flag. A task handle becomes an enabled state. The
+mapping is not a place to hide policy that belongs elsewhere. If computing the
+mapping requires several domain services or user permissions, the presenter
+probably needs a named method or model rather than an inline lambda.
+
+Master-detail values are another ownership test. The master value says which
+object is current. The detail value loads or derives data for that object. A
+late detail result for an old master must not replace the current detail. This
+is the same stale-result problem seen in background tasks, only expressed as
+state. The value abstraction helps because the master relationship is explicit
+and can be closed or invalidated.
+
+Loadable values should be honest about their states. "No value yet" is not the
+same as "loading", "failed", or "loaded empty". A screen that collapses all of
+those into null cannot explain itself to the user. The view may display a simple
+message, but the model should know which state it is in. That distinction also
+makes tests clearer: one can assert that retry changes failed to loading, then
+loading to loaded.
+
+Threading policy should remain at the boundary. Core values are useful outside
+Swing and should not smuggle Swing assumptions into their center. If a value is
+observed by Swing, adapt or subscribe at the EDT boundary. If a value is updated
+from background work, decide where the handoff occurs. This keeps the core
+model testable and lets non-Swing tests run without an event queue.
+
+Values are often the first Corusco object introduced during migration because
+they have low ceremony. That does not mean every field in a class should become
+a value immediately. Start with facts that are read in more than one place,
+facts whose changes should be tested, and facts whose current listener owner is
+clearly wrong. Leave local temporary variables alone. Good migration makes
+state clearer; it does not turn every line into framework vocabulary.
+
+The payoff appears in code review. Instead of searching through listeners to
+discover why Save is enabled, the reviewer can inspect a derived
+\api{canSave}. Instead of asking whether a closed panel still receives updates,
+the reviewer can find the scope that owns the subscription. Instead of clicking
+a UI to prove a status message, a test can update the selected value and assert
+the mapped text. These small gains compound across a Swing application.
+
+\section{Designing Value Graphs in Real Screens}
+
+A value by itself is simple. A screen made of values is not automatically simple.
+The useful design object is the \termdef{value graph}{the small directed graph of
+source values, derived values, subscriptions, bindings, and command facts owned
+by one presenter or workflow}. In a good value graph, facts flow from owners to
+observers. Source values receive user or model mutations. Derived values compute
+secondary facts. Bindings and command adapters present those facts to Swing.
+Effects happen at explicit subscription or command boundaries. The graph can be
+read without opening a debugger.
+
+This vocabulary is deliberately modest. Corusco values are not a spreadsheet, not
+a transaction engine, and not a hidden reactive runtime. They are small
+synchronous model objects that make dependency edges visible. That is enough to
+remove much of the uncertainty from Swing code. A reviewer can ask: what is the
+source of this fact, what values depend on it, who owns the subscriptions, and
+where do effects occur? If the answer is spread across anonymous listeners on
+five components, the screen is still under-modeled.
+
+Start a value graph by naming source facts. A source fact is a fact that some
+owner is allowed to write directly: selected customer, current filter text,
+dirty flag, active tab, busy flag, current problem set, current load state, or
+chosen export target. A source fact should have one clear owner. A text binding
+may write \api{filterText} with a user origin. A repository load may write
+\api{loadState} with a model or system origin. A dialog controller may write
+\api{dirty}. Several components may observe these values, but the writing policy
+should not be scattered.
+
+Derived facts come next. A derived fact answers a question from source facts:
+can the Save command run, what should the status line say, is the detail pane
+visible, should the table show the empty-state overlay, what tooltip should a
+disabled command show? When a listener only recomputes such a fact, make the
+fact explicit. The result is not only less code; it is a better sentence. The
+screen no longer says "when this checkbox changes, update these three widgets."
+It says "committable is dirty and valid and not busy."
+
+\begin{lstlisting}[caption={One presenter value graph in ordinary Java.}]
+final class CustomerPresenter implements AutoCloseable {
+    private final SimpleValue<CustomerRow> selected = SimpleValue.empty();
+    private final SimpleValue<String> filterText = SimpleValue.of("");
+    private final SimpleValue<Boolean> dirty = SimpleValue.of(false);
+    private final SimpleValue<Boolean> busy = SimpleValue.of(false);
+    private final SimpleValue<ProblemSet> problems =
+            SimpleValue.of(ProblemSet.empty());
+
+    private final DerivedValue<Boolean> canSave = DerivedValue.of(
+            () -> dirty.value()
+                    && !busy.value()
+                    && !problems.value().hasErrors(),
+            dirty, busy, problems);
+
+    private final DerivedValue<String> statusText = DerivedValue.of(
+            () -> selected.value() == null
+                    ? "No customer selected"
+                    : "Selected " + selected.value().displayName(),
+            selected);
+
+    @Override
+    public void close() {
+        canSave.close();
+        statusText.close();
+    }
+}
+\end{lstlisting}
+
+The listing is intentionally not a framework showcase. It is a readable state
+graph. A component layer can later bind a table selection to \api{selected}, a
+text field to \api{filterText}, a button or command to \api{canSave}, and a
+status label to \api{statusText}. The presenter can be tested without creating
+any component. The values have names that a code reviewer can discuss.
+
+A good source value has a strong name and a narrow type. \api{selectedCustomer}
+is better than \api{selected}. \api{selectedCustomerId} may be better still when
+the table row object is a view adapter and the durable identity is an id.
+\api{loadState} is better than three booleans named \api{loading},
+\api{loaded}, and \api{failed}. \api{currentMode} may be too vague unless the
+mode type is a small explicit hierarchy. The chapter's first rule, one changing
+fact per value, depends on the type being honest about the fact.
+
+Records and sealed types help when a scalar value has several meaningful states.
+A loading screen is rarely just null or not null. It may be idle, loading,
+loaded with data, loaded empty, failed, refreshing existing data, or cancelled.
+A single \api{ReadableValue<LoadState>} can express that vocabulary more clearly
+than several booleans and a nullable exception. The value remains scalar, but the
+state it carries is structured.
+
+\begin{lstlisting}[caption={A scalar value can carry a structured state.}]
+sealed interface CustomerLoadState {
+    record Idle() implements CustomerLoadState {}
+    record Loading(String query) implements CustomerLoadState {}
+    record Loaded(List<CustomerRow> rows) implements CustomerLoadState {}
+    record Failed(String query, Throwable cause) implements CustomerLoadState {}
+}
+
+SimpleValue<CustomerLoadState> customers =
+        SimpleValue.of(new CustomerLoadState.Idle());
+\end{lstlisting}
+
+This is often better than making every detail independently observable. A
+listener that observes \api{loading}, \api{rows}, \api{error}, and \api{query}
+may see intermediate combinations that never make sense to the user. A single
+state value says which combinations are legal. Derived values can still expose
+presentation facts such as \api{isBusy}, \api{emptyMessage}, or
+\api{retryEnabled}. The source remains one coherent fact.
+
+Equality is part of the graph. Built-in values compare effective changes with
+\api{Objects.equals}. Records are useful because their equality usually matches
+their visible state. Mutable objects are dangerous when stored in values because
+the value cannot see internal mutation. If a \api{List} is stored inside a
+value and later modified in place, no setter call occurs and no value event is
+published. For changing collections, use an observable list. For scalar values,
+prefer immutable records, ids, enums, or small state objects.
+
+\begin{pitfallbox}{mutable payloads in scalar values}
+A \api{SimpleValue<List<Row>>} does not become an observable list. If callers
+mutate the list in place, observers see no change event and derived values may
+remain stale. Use immutable list snapshots for scalar state, or use the
+observable-list chapter's collection model when the collection itself changes.
+\end{pitfallbox}
+
+Derived values should be pure in spirit. The supplier should read dependencies
+and compute a result. It should not write a source value, mutate a component,
+start a repository call, or show a dialog. This is not moralism; it prevents
+cycles. If \api{canSave} recomputes and writes \api{dirty}, and \api{dirty}
+causes \api{canSave} to recompute, the graph has become a hidden control flow
+machine. Effects belong in command handlers or explicitly owned subscriptions.
+
+Some cycles are legitimate at the Swing boundary, but they should be controlled.
+A text field binding reads a model value and writes a model value. A checkbox
+binding does the same. A table selection binding reads model selection and writes
+model selection. The binding must prevent endless echo by comparing values and by
+using origins when the distinction matters. Core values make this possible
+because equal values are silent and each event carries origin. They do not make a
+bad feedback design good.
+
+\begin{lstlisting}[caption={A derived value should compute, not cause effects.}]
+DerivedValue<Boolean> canDelete = DerivedValue.of(
+        () -> selected.value() != null
+                && !busy.value()
+                && permissions.value().mayDeleteCustomers(),
+        selected, busy, permissions);
+
+selected.subscribe(event -> {
+    if (event.origin() == ChangeOrigin.USER) {
+        auditSelection(event.newValue());
+    }
+});
+\end{lstlisting}
+
+The first block computes a fact. The second block performs an effect. Keeping
+them separate makes each one easier to test. The derived value test changes
+selection, busy state, and permissions. The audit test changes selection with a
+user origin and with a model origin. A button click is not needed to prove either
+rule.
+
+Reading several values directly is sometimes enough, but it is not always a
+stable design. Suppose a Save command reads \api{dirty}, \api{problems}, and
+\api{busy} at invocation time. That may be correct. Suppose a button, menu item,
+keyboard shortcut, toolbar state, status text, and test all need the same
+enablement. Then the enablement should be a named derived value. The distinction
+is reuse and meaning. One local decision can be local code. A repeated screen
+fact deserves a value.
+
+There is no automatic transaction across several values. If code sets
+\api{busy} to true and then clears \api{selectedCustomer}, observers may see both
+changes separately. Often that is fine. Sometimes it is not. When a group of
+facts must change as one conceptual state, introduce a single state record or a
+higher-level model method that updates observers according to the model's
+contract. Do not assume that three independent values will behave like one
+transaction merely because they are updated in adjacent lines.
+
+\begin{lstlisting}[caption={A combined screen mode avoids impossible states.}]
+sealed interface DetailState {
+    record Empty() implements DetailState {}
+    record Loading(CustomerId id) implements DetailState {}
+    record Ready(CustomerId id, CustomerDetails details) implements DetailState {}
+    record Failed(CustomerId id, String message) implements DetailState {}
+}
+
+SimpleValue<DetailState> detailState =
+        SimpleValue.of(new DetailState.Empty());
+\end{lstlisting}
+
+The combined state does not prevent every bug, but it narrows the legal space.
+There is no state where the detail is both loading and failed, or ready without
+an id. Derived values can expose the parts the view needs: \api{detailVisible},
+\api{busyMessage}, \api{retryEnabled}, and \api{currentDetails}. The model still
+has one source of truth.
+
+Mapping and deriving are also documentation tools. The code
+\api{MappedValue.of(selectedCustomer, CustomerRow::displayName)} says that the
+display name follows selection. A listener named \api{selectionChanged} might do
+the same thing, or it might update ten unrelated widgets. The value object has a
+smaller contract. This is why derived values belong in the presenter, not hidden
+inside arbitrary component factories. A generated binding can install the
+relationship, but the presenter's model should tell the story.
+
+Choose where to expose values carefully. A presenter may expose
+\api{ReadableValue<Boolean>} for \api{canSave} and keep the writable dirty flag
+private. A form model may expose field values through field models rather than
+raw writable values. A task handle may expose busy and progress as readable
+values while task control remains with a service. Exposing a writable value is a
+promise that the caller may write it. If the caller should only observe, expose
+the readable interface.
+
+\begin{lstlisting}[caption={Expose readable facts, keep writable ownership local.}]
+final class CustomerScreenModel {
+    private final SimpleValue<Boolean> dirty = SimpleValue.of(false);
+    private final DerivedValue<Boolean> canSave;
+
+    CustomerScreenModel(ReadableValue<ProblemSet> problems,
+            ReadableValue<Boolean> busy) {
+        canSave = DerivedValue.of(
+                () -> dirty.value()
+                        && !busy.value()
+                        && !problems.value().hasErrors(),
+                dirty, busy, problems);
+    }
+
+    ReadableValue<Boolean> canSave() {
+        return canSave;
+    }
+
+    void markDirty(ChangeOrigin origin) {
+        dirty.setValue(true, origin);
+    }
+}
+\end{lstlisting}
+
+This pattern is especially useful with generated code. Generated bindings often
+need readable facts for labels, enabled state, visible state, problems, and
+tooltips. They should not receive write access unless the generated behavior is
+the intended owner of a user edit. The type boundary is small, but it prevents
+whole classes of accidental writes.
+
+Origins should remain stable diagnostic ids. A custom origin created with
+\api{ChangeOrigin.of} should be named as a stable fact, not as a sentence that
+changes whenever a method is renamed. Good custom origins include
+\api{import.customers}, \api{restore.preferences}, and \api{generated.form}.
+Poor origins include \api{some button thing} or a localized message. Origins may
+appear in diagnostics and tests; treat them like keys.
+
+The event source should usually be boring. Most listeners observe one value and
+already know the source. The source becomes useful when a diagnostic listener or
+small adapter observes several values. For example, a presenter test may record
+all changes to \api{dirty}, \api{canSave}, and \api{statusText}. The source lets
+the test distinguish events without wrapping each listener manually. Production
+code should not build clever dispatch systems around source identity unless the
+design truly needs one.
+
+Value graphs are not a replacement for commands. A command has identity,
+resources, enablement, optional selected state, shortcuts, and invocation
+behavior. A value can model the command's enabled fact or disabled reason, but
+clicking Save is not setting \api{canSave} to true. The command chapter will
+return to this boundary. For now, remember that values describe facts; commands
+perform operations.
+
+Value graphs are not a replacement for forms. A form field has raw text, parsed
+value, validation problems, dirty state, touched state, and commit/reset policy.
+A scalar value is one part of that story. A form model groups those facts and
+gives them workflow meaning. If a chapter example uses a simple
+\api{SimpleValue<String>} for a text field, that is a teaching simplification,
+not a recommendation to replace every field model with a raw value.
+
+Value graphs are not a replacement for observable lists. A list has insertions,
+removals, replacements, permutations, filters, sorters, selected ids, and table
+adapters. A scalar value may contain the selected id, the current filter string,
+or the list load state. The rows themselves need collection semantics when they
+change. Using a scalar list snapshot is acceptable when the entire collection is
+loaded or replaced as one fact, but it is not the same as precise large-data
+updates.
+
+\begin{principlebox}{one abstraction per kind of change}
+Use a value for one changing scalar fact, an observable list for collection
+membership and ordering, a form model for editable field workflow, a command for
+an operation, and a task handle for background work. Confusion begins when one
+abstraction is asked to impersonate all the others.
+\end{principlebox}
+
+There is a practical reading order for a value graph. First read source values
+and their owners. Then read derived values and ask whether their suppliers are
+pure. Then read subscriptions and ask which ones perform effects. Then read
+bindings and ask which side may write. Finally read close or detach methods and
+make sure every owned relationship dies. This order is faster than reading from
+top to bottom in a component class because it follows the architecture rather
+than the sequence of constructor calls.
+
+The same order helps during debugging. If a label is wrong, find the value bound
+to the label. If that value is mapped, inspect the source. If the source is
+wrong, inspect who writes it and with what origin. If the source is right but
+the label is wrong, inspect the binding. If events continue after closing the
+screen, inspect the subscription owner. A design that supports this debugging
+path is already better than one that requires breakpoints in every listener.
+
+\section{Lifecycle, Tests, and Migration Reviews}
+
+Values look harmless because they are small. Their lifecycle still matters. A
+\api{SimpleValue} owned by a presenter can be collected when the presenter is
+collected. A \api{MappedValue} or \api{DerivedValue} owns subscriptions to its
+dependencies and must be closed when the owning presenter closes. A
+\api{MasterDetailValue} owns a master subscription and a cached detail. A
+\api{LoadableValue} may keep a cached object and subscribers. None of these
+relationships should survive the screen that made them useful.
+
+The implementation contracts are intentionally explicit. A mapped value computes
+its initial value immediately, subscribes to its source, recomputes
+synchronously when the source changes, and emits only when the mapped value
+changes. Closing it removes the source subscription, clears listeners, and makes
+later subscriptions empty. A derived value does the same for one or more
+dependencies. This is why derived and mapped values should be fields of an owner
+that has a close method, not temporary objects created and forgotten in a view
+factory.
+
+\begin{lstlisting}[caption={A presenter owns the derived values it creates.}]
+final class DetailPresenter implements AutoCloseable {
+    private final DerivedValue<Boolean> canReload;
+    private final MappedValue<DetailState, String> titleText;
+
+    DetailPresenter(ReadableValue<DetailState> state,
+            ReadableValue<Boolean> busy) {
+        canReload = DerivedValue.of(
+                () -> state.value() instanceof DetailState.Failed
+                        && !busy.value(),
+                state, busy);
+        titleText = MappedValue.of(state, this::titleFor);
+    }
+
+    @Override
+    public void close() {
+        canReload.close();
+        titleText.close();
+    }
+}
+\end{lstlisting}
+
+The close method is not ceremonial. It expresses ownership. Later chapters will
+replace manual lists of close calls with scopes, but the responsibility remains
+the same. If a derived value subscribes to a long-lived application preference
+and the screen never closes it, the preference value may keep the screen graph
+reachable. That is a leak with a polite API.
+
+Loadable and detachable values add another lifecycle distinction. Closing is
+about the owner being finished. Detaching is about releasing cached data while
+the owner may be reused. A reusable view tab may detach detail data when hidden
+and reload it when shown. A support inspector may invalidate cached diagnostics
+after a model change. A wizard page may release a preview object while keeping
+field state. Detach is not a value-change event by itself; refresh is the
+operation that reloads and notifies if the effective value changes.
+
+\begin{lstlisting}[caption={Detach releases cached data without pretending to edit it.}]
+LoadableValue<CustomerPreview> preview =
+        LoadableValue.of(() -> repository.loadPreview(currentId.value()));
+
+CustomerPreview first = preview.value();  // load
+CustomerPreview again = preview.value();  // cached
+
+preview.detach();                         // release cache
+
+CustomerPreview reloaded = preview.value();
+\end{lstlisting}
+
+The loader runs on the caller's thread. That sentence is easy to overlook and
+important. A loadable value is not a background task. If the loader can block,
+do not call it from painting or from an EDT action without a task boundary. Use
+the task chapter's patterns to load in the background and publish a value on the
+EDT. A loadable value is a synchronous cache abstraction; background work is a
+separate concern.
+
+Master-detail values combine lazy attachment with a master subscription. The
+detail loader receives the current master, which may be null. When the detail is
+attached and the master changes, the detail reloads and notifies if the
+effective detail changes. When detached, a master change invalidates the stale
+association but does not load until the next access. This is a precise contract
+and worth explaining to readers because it avoids hidden repository calls while
+a collapsed detail pane is not visible.
+
+\begin{lstlisting}[caption={Master changes reload attached details only.}]
+SimpleValue<CustomerId> selectedId = SimpleValue.empty();
+MasterDetailValue<CustomerId, CustomerDetails> details =
+        MasterDetailValue.of(selectedId, repository::loadDetails);
+
+details.detach();                         // detail pane hidden
+selectedId.setValue(new CustomerId(10));   // no eager load while detached
+
+CustomerDetails visible = details.value(); // load when pane needs it
+\end{lstlisting}
+
+This pattern is not a cure for slow repositories. If \api{loadDetails} blocks,
+the call to \api{details.value()} blocks. The proper architecture may be a
+master value that starts a cancellable task and a detail state value that
+receives results. The synchronous master-detail value is still useful for cheap
+derived models, cached in-memory details, and examples where the relationship is
+more important than threading.
+
+Testing core values should be direct and small. A test for \api{SimpleValue}
+sets a new value and records one event. A test for effective equality sets an
+equal value and records no event. A test for origins writes with user and model
+origins and asserts the difference. A test for a derived value mutates sources
+and asserts the recomputed value. A test for close closes a derived value and
+then mutates the source. No robot, no window, and no EDT are required.
+
+\begin{lstlisting}[caption={Testing close semantics without Swing.}]
+SimpleValue<Integer> source = SimpleValue.of(1);
+DerivedValue<Integer> doubled =
+        DerivedValue.of(() -> source.value() * 2, source);
+List<Integer> observed = new ArrayList<>();
+
+doubled.subscribe(event -> observed.add(event.newValue()));
+doubled.close();
+source.setValue(2, ChangeOrigin.MODEL);
+
+assertThat(observed).isEmpty();
+assertThat(doubled.value()).isEqualTo(2);
+\end{lstlisting}
+
+The last assertion reflects the current implementation contract: closing stops
+dependency notifications; it does not erase the last computed value. A test like
+this is useful because it documents what "closed" means for readers and for
+future maintainers. If a later implementation changes closed-value behavior, the
+test will force a deliberate decision.
+
+Test origins as behavior, not decoration. It is not enough to assert that the
+final value is correct after a table click or model load. If origins are used to
+prevent feedback loops or to drive audit behavior, they are part of the
+contract. A table selection binding should write user-originated changes for
+user gestures. A presenter restoring selection after loading should use a model
+origin. A generated binding may use a generated or binding origin according to
+the binding contract. Tests should make these distinctions visible.
+
+\begin{lstlisting}[caption={Recording origins as part of the rule.}]
+SimpleValue<CustomerRow> selected = SimpleValue.empty();
+List<ChangeOrigin> origins = new ArrayList<>();
+selected.subscribe(event -> origins.add(event.origin()));
+
+selected.setValue(rowFromUserClick, ChangeOrigin.USER);
+selected.setValue(rowFromRestore, ChangeOrigin.MODEL);
+
+assertThat(origins).containsExactly(ChangeOrigin.USER, ChangeOrigin.MODEL);
+\end{lstlisting}
+
+Avoid tests that assert only listener counts. A listener count may prove that an
+event fired, but not that the event carried the correct old value, new value,
+source, and origin. Prefer tests that record the event object. The event object
+is the contract. It is also how diagnostics will explain the screen later.
+
+Migration from plain Swing should be incremental. Do not rewrite the whole
+screen into values on the first pass. Find one fact that is currently stored in
+a component or private field and read in several places. Selected row is a common
+candidate. Save enablement is another. Status text is another. Introduce one
+source value, derive one or two presentation facts, and bind the existing
+components. Run tests. Then repeat. Each step should reduce the number of places
+where the fact is guessed.
+
+\begin{lstlisting}[caption={The first migration step names selected identity.}]
+// Before: listeners read table.getSelectedRow() wherever they need selection.
+private final SimpleValue<CustomerId> selectedCustomerId = SimpleValue.empty();
+
+void tableSelectionChanged() {
+    CustomerId id = selectedIdFromTable();
+    selectedCustomerId.setValue(id, ChangeOrigin.USER);
+}
+
+ReadableValue<Boolean> hasSelection =
+        MappedValue.of(selectedCustomerId, Objects::nonNull);
+\end{lstlisting}
+
+The first version may still have a table listener. That is acceptable. The
+improvement is that the listener writes a named fact instead of updating every
+dependent component. Later a Corusco table binding can write the same value. The
+rest of the screen does not need to know which mechanism provided selection.
+
+Look for listener fields during migration. A class with fields named
+\api{selectedRow}, \api{isDirty}, \api{currentError}, or \api{busy} that are
+written by listeners and read elsewhere is asking for values. A class with
+private booleans used only inside one method is not. Good migration does not
+make simple local logic more abstract. It names state that already escaped.
+
+Look for repeated enablement code. If \api{saveButton.setEnabled},
+\api{saveMenuItem.setEnabled}, and a key binding all compute the same condition,
+introduce \api{canSave}. If every computation is slightly different, do not
+paper over the difference with a value until the policy is clear. The value
+should express one rule, not average several inconsistent rules.
+
+Look for status strings built in listeners. Status text often starts as harmless
+UI feedback and becomes a cross-cutting summary of selection, load state,
+validation, and task progress. A mapped or derived status value is easier to
+test and localize. It is also easier to replace with a richer status object when
+the screen grows.
+
+Look for background callbacks that write components directly. A callback that
+sets a label and enables a button after a repository call is mixing task result,
+state mutation, and presentation. A better shape is: task result arrives at the
+EDT boundary, presenter writes a state value, derived values update status and
+enablement, bindings update components. This shape is slightly more vocabulary
+up front and much less guesswork later.
+
+\begin{migrationbox}{from callback mutation to model mutation}
+When an asynchronous callback updates several Swing components, introduce a
+single state value for the result first. Then derive component-facing facts from
+that state. The callback should publish the model result, not become a second
+view constructor.
+\end{migrationbox}
+
+Reviewers should be suspicious of values created inside paint, renderer, or
+editor methods. A table cell renderer should not create a \api{SimpleValue} for
+each cell. A custom component should not allocate derived values during painting.
+Values are model objects with lifetimes; renderers and paint methods are
+presentation passes. If a renderer needs derived presentation state, prepare it
+in the model or descriptor layer and let the renderer read it.
+
+Reviewers should also be suspicious of subscriptions created without visible
+ownership. A call to \api{subscribe} whose result is ignored is usually a bug.
+There are rare cases where a value owns the listener internally and returns a
+subscription to satisfy the API, but application code should normally keep the
+subscription in a scope, field, or derived object. The cleanup handle exists to
+be used.
+
+\begin{lstlisting}[caption={Ignoring a subscription hides lifecycle.}]
+// Smell: who closes this listener?
+statusText.subscribe(event -> statusLabel.setText(event.newValue()));
+
+// Better: put the binding or subscription in a scope owned by the screen.
+subscriptions.add(statusText.subscribe(event ->
+        statusLabel.setText(event.newValue())));
+\end{lstlisting}
+
+The better listing is still not the final Corusco binding style. It is the
+minimum responsible plain Java style. Later chapters introduce scopes and
+binding factories to reduce this boilerplate. The ownership idea must be learned
+before the helper API can be trusted.
+
+Value design affects accessibility and help. A label's visible text, accessible
+description, tooltip, help topic, and validation summary often derive from the
+same field state. If those strings are all built independently inside
+components, they drift. If the relevant state is modeled, each presentation
+surface can derive its own text from the same fact. This is one reason values
+appear early in the book: they are not merely convenience wrappers; they are the
+first defense against semantic duplication.
+
+Value design affects screenshots too. A screenshot harness can set source
+values directly to produce deterministic states: no selection, selected row,
+busy load, validation failure, failed detail load. If those states are hidden in
+component internals, screenshot setup becomes a script of clicks and timing
+assumptions. Model-owned values make visual documentation easier to generate and
+easier to trust.
+
+Finally, value design affects generated code. Annotation processors can generate
+bindings, behavior plans, command adapters, and companion tests only when there
+are stable names and contracts to attach to. A generated plan can bind
+\api{statusText} to a label. It cannot reliably discover that three anonymous
+listeners collectively mean "selected customer status." Corusco generation is
+more useful when the handwritten presenter has already named the screen facts.
+
+The review standard for this chapter is therefore practical. A reader should be
+able to take a small Swing screen, identify component-owned facts, move one fact
+into a value, derive two dependent facts, bind existing widgets, write a core
+test, and close the subscriptions. That is enough to change the shape of the
+codebase. The advanced chapters build from that move, not around it.
+
+\section{Common Value Patterns}
+
+The first common pattern is selected identity. Plain Swing often asks a table for
+its selected view row whenever a command runs. That couples every command to the
+table, the sorter, and the current selection model. A value-based screen usually
+names the selection once. The table binding writes a domain id or row object.
+Commands, status text, detail loading, and tests read the value. This is the
+same table lesson from earlier chapters expressed as a scalar fact: the selected
+thing is not the same as the selected pixel row.
+
+\begin{lstlisting}[caption={Selection as a domain value, not a table coordinate.}]
+SimpleValue<CustomerId> selectedCustomerId = SimpleValue.empty();
+
+DerivedValue<Boolean> hasSelection = DerivedValue.of(
+        () -> selectedCustomerId.value() != null,
+        selectedCustomerId);
+
+MappedValue<CustomerId, String> selectionStatus = MappedValue.of(
+        selectedCustomerId,
+        id -> id == null ? "No customer selected" : "Customer " + id.value());
+\end{lstlisting}
+
+This pattern also clarifies persistence. If a screen remembers selection across
+refresh, it should remember a stable id, not a view row. If a generated table
+binding receives a selected-id value, it can restore selection after sorting or
+loading by looking for the id. If the selected object disappears, the value can
+be set to null with a model origin and the rest of the screen responds. The
+table is no longer the only owner of selection.
+
+The second pattern is disabled reason. Many screens have a boolean
+\api{canSave}. Users often need more than a disabled button. They need to know
+why Save is disabled: no changes, validation errors, background save in
+progress, missing permission, or read-only record. A boolean is enough for
+enablement. A reason value is better for status text, tooltip text, help, tests,
+and diagnostics.
+
+\begin{lstlisting}[caption={Model disabled reason before adapting it to a button.}]
+sealed interface SaveState {
+    record Enabled() implements SaveState {}
+    record Disabled(String reason) implements SaveState {}
+}
+
+DerivedValue<SaveState> saveState = DerivedValue.of(() -> {
+    if (busy.value()) {
+        return new SaveState.Disabled("Save is already running");
+    }
+    if (!dirty.value()) {
+        return new SaveState.Disabled("No changes to save");
+    }
+    if (problems.value().hasErrors()) {
+        return new SaveState.Disabled("Fix validation errors first");
+    }
+    return new SaveState.Enabled();
+}, busy, dirty, problems);
+\end{lstlisting}
+
+The button binding may map \api{SaveState.Enabled} to \api{setEnabled(true)}.
+The tooltip binding may map a disabled state to a reason. A command test may
+assert that validation errors win over dirty state. A help overlay may use the
+same reason. This is not overengineering when the reason is visible in several
+places. It is ordinary modeling.
+
+The third pattern is committed text versus editing text. A text field often
+changes on every keystroke, but not every keystroke should rebuild a table
+filter, query a repository, or mark a preference dirty. Sometimes the screen
+needs two values: \api{draftFilterText} and \api{committedFilterText}. The field
+binding writes the draft. Pressing Enter or clicking Apply writes the committed
+value. The table filter observes the committed value. A status label may observe
+both and report that a draft differs from the applied filter.
+
+\begin{lstlisting}[caption={Draft and committed values separate typing from policy.}]
+SimpleValue<String> draftFilter = SimpleValue.of("");
+SimpleValue<String> committedFilter = SimpleValue.of("");
+
+DerivedValue<Boolean> filterDirty = DerivedValue.of(
+        () -> !Objects.equals(draftFilter.value(), committedFilter.value()),
+        draftFilter, committedFilter);
+
+void applyFilter() {
+    committedFilter.setValue(draftFilter.value(), ChangeOrigin.USER);
+}
+\end{lstlisting}
+
+This pattern prevents a common Swing problem: a document listener becomes a
+search engine. The user types one character and the screen reloads. The user
+types another character and the previous load races the next load. A value graph
+lets the screen say when text is merely being edited and when it becomes a
+screen policy.
+
+The fourth pattern is busy as a modeled fact rather than a disabled-component
+storm. Plain Swing code often disables every relevant widget at task start and
+reenables it at task end. The error paths then forget one widget. A value-based
+screen writes \api{busy}. Commands derive enablement from it. Overlays derive
+visibility from it. Status text derives a message from it. Tests assert the
+state transition once.
+
+\begin{lstlisting}[caption={Busy state as a source for several presentation facts.}]
+SimpleValue<Boolean> busy = SimpleValue.of(false);
+
+DerivedValue<Boolean> controlsEnabled =
+        DerivedValue.of(() -> !busy.value(), busy);
+
+MappedValue<Boolean, String> busyStatus = MappedValue.of(
+        busy,
+        active -> active ? "Loading customers..." : "Ready");
+\end{lstlisting}
+
+A boolean busy value is sometimes too small. If the screen can load customers,
+save a record, export a report, and refresh permissions independently, use a
+task-state model or separate busy facts. A single global \api{busy} becomes
+misleading when several operations can overlap. The pattern is not "one busy
+flag everywhere"; it is "model the busy facts that the screen actually needs."
+
+The fifth pattern is preference shadowing. Application preferences may be
+long-lived, while a dialog edits a temporary copy. The dialog should not write
+the global preference value on every keystroke if Cancel should discard changes.
+Use dialog-local draft values and commit them explicitly. The global preference
+value may be observable so open screens can react after OK. The dialog-local
+values die with the dialog.
+
+\begin{lstlisting}[caption={A preference dialog edits local values and commits.}]
+SimpleValue<String> draftTheme = SimpleValue.of(preferences.theme().value());
+SimpleValue<Integer> draftPageSize =
+        SimpleValue.of(preferences.pageSize().value());
+
+void commitPreferences() {
+    preferences.theme().setValue(draftTheme.value(), ChangeOrigin.USER);
+    preferences.pageSize().setValue(draftPageSize.value(), ChangeOrigin.USER);
+}
+\end{lstlisting}
+
+This pattern is small but important for user trust. OK and Cancel semantics are
+state ownership semantics. If the dialog writes global values while the user is
+still browsing options, Cancel becomes a lie. Values make the two lifetimes
+visible: draft lifetime and application preference lifetime.
+
+The sixth pattern is value-backed diagnostics. A support panel can subscribe to
+selected ids, load state, busy state, problem count, and command state. It can
+show those facts without reaching into components. It can also record recent
+origin transitions. This turns "the UI looked wrong" into a small timeline:
+filter changed by user, task started by system, selection cleared by model,
+problems updated by validation, save disabled because busy. That timeline is
+only possible if facts are modeled before pixels.
+
+\begin{lstlisting}[caption={A tiny diagnostic event line from a value change.}]
+String describe(ValueChangeEvent<?> event) {
+    return event.source().getClass().getSimpleName()
+            + " "
+            + event.oldValue()
+            + " -> "
+            + event.newValue()
+            + " origin="
+            + event.origin();
+}
+\end{lstlisting}
+
+The source class name alone is not enough for production diagnostics, but the
+shape is useful. Real diagnostics should include stable keys or field names.
+Generated companions can help by assigning keys to values, commands, and
+components. The core value event already contains the four facts that matter:
+source, old value, new value, and origin.
+
+The seventh pattern is the boundary between value and view lifecycle. A value
+owned by a long-lived model may outlive several views. A binding from that value
+to a label should not. When the view opens, it subscribes. When the view closes,
+it unsubscribes. The value remains. This pattern is common for preferences,
+workspace selection, logged-in user, connection state, and application theme.
+It is also where memory leaks appear if subscriptions are ignored.
+
+\begin{lstlisting}[caption={Long-lived value, short-lived view subscription.}]
+final class StatusView implements AutoCloseable {
+    private final Subscription subscription;
+
+    StatusView(ReadableValue<String> applicationStatus, JLabel label) {
+        label.setText(applicationStatus.value());
+        subscription = applicationStatus.subscribe(event ->
+                label.setText(event.newValue()));
+    }
+
+    @Override
+    public void close() {
+        subscription.close();
+    }
+}
+\end{lstlisting}
+
+This is plain Java and intentionally repetitive. Corusco binding scopes reduce
+the repetition later. The important lesson is that the value's lifetime and the
+view relationship's lifetime are different. A global status value is fine. A
+global subscription from that value to a closed label is not.
+
+The eighth pattern is replacing sentinel component state. Swing components often
+use visible strings as state: a combo box item named "All", a label containing
+"No selection", a text field containing a placeholder, a disabled button
+tooltip. These strings are presentation, not durable state. A value should hold
+the semantic fact, such as \api{Optional<CustomerId>} or a small filter mode.
+The component adapter can render "All" or "No selection" according to resources.
+
+\begin{lstlisting}[caption={Semantic filter mode instead of magic combo text.}]
+sealed interface CustomerFilterMode {
+    record All() implements CustomerFilterMode {}
+    record ActiveOnly() implements CustomerFilterMode {}
+    record AssignedTo(UserId userId) implements CustomerFilterMode {}
+}
+
+SimpleValue<CustomerFilterMode> filterMode =
+        SimpleValue.of(new CustomerFilterMode.All());
+\end{lstlisting}
+
+This pattern matters for localization and tests. A test can assert
+\api{CustomerFilterMode.All} without knowing how "All" is translated. A help
+system can describe the selected mode from a resource key. A generated binding
+can render the combo item without making the visible string the state.
+
+The ninth pattern is value-backed review notes in examples. Each substantial
+example should make the value graph discoverable: source values at the top,
+derived values nearby, subscriptions owned by a scope, and Swing construction
+after state construction. This order helps the reader. It also helps screenshots
+because the harness can set source values before painting. Examples that hide
+values inside anonymous listeners teach the opposite of this chapter.
+
+The tenth pattern is knowing when to stop. A small modal confirmation dialog may
+not need a value graph. A one-off label updated once after construction may not
+need a \api{SimpleValue}. A local variable inside one action listener is still a
+good Java local variable. Corusco is most useful where a fact crosses boundaries:
+several components, several commands, several tests, several lifecycle phases, or
+generated code. Use that crossing as the trigger.
+
+These patterns repeat across the later chapters. Observable lists use selected
+ids and filter text. Forms use field state, dirty state, and problem state.
+Commands use enabled facts and disabled reasons. Task services publish busy and
+progress facts. Bindings connect values to Swing components. Generated code
+needs stable names for the same facts. The core value chapter is therefore not a
+detour before the "real" library. It is the small grammar from which the later
+sentences are built.
+
+When choosing a pattern, prefer a decision made from the reader's point of view.
+If the fact is written in one place and read in one place, plain Java may be
+enough. If the fact is written in one place and read by several components,
+commands, tests, or generated bindings, use a value. If the fact is computed
+from other facts, use a mapped or derived value. If the fact is an operation,
+use a command. If the fact is a collection, use an observable list. If the fact
+is one part of an editable field, use a form or field model. This decision table
+is simple, but it prevents the two common errors: hiding shared state in
+components and using values for problems that need a richer model.
+
+The same decision can be made by looking at failure reports. "The Save button is
+enabled when it should not be" points to a derived value or command enablement.
+"The row changes but the detail panel still shows the old customer" points to a
+selected-id value, master-detail relationship, or stale task generation. "The
+field says invalid but the OK button is still enabled" points to a problem set
+and a committable derived value. "The label is translated differently from the
+tooltip" points to duplicated presentation text rather than a modeled fact plus
+resources. Each bug report names a missing or misplaced fact.
+
+A value can be too small, too large, or just right. Too small: five booleans that
+can represent impossible combinations. Too large: one mutable screen object
+named \api{state} whose fields are changed in place and never publish effective
+changes. Just right: one immutable state record for a coherent mode, or one
+scalar value for a fact that truly changes independently. The art is not in
+using the most values. The art is in choosing the facts a reader can verify.
+
+Generated code benefits from this discipline because generation likes stable
+edges. A generated binding can say "bind this readable value to this component
+property." A generated command adapter can say "observe this readable enabled
+fact." A generated test companion can say "set this source value and assert this
+component state." Generation cannot rescue a screen whose state exists only as
+side effects inside listeners. The handwritten value graph is therefore the
+contract that generation can safely extend.
+
+Corusco's value API is intentionally small because the difficult part is not the
+method count. The difficult part is architectural honesty. Which object owns the
+fact? Which code may write it? Which values derive from it? Which subscribers
+perform effects? Which lifecycle closes the relationship? Which tests prove the
+rule? If a chapter reader can answer those questions for a screen, the later
+Corusco features will feel like helpers rather than magic.
+
+One last review habit is useful: draw the value graph on paper for a troublesome
+screen. Put writable values on the left, derived values in the middle, Swing
+components and commands on the right, and subscriptions or bindings as arrows.
+Mark each arrow with its owner. Mark each write with an origin. Mark each
+background handoff with an EDT boundary. The diagram usually exposes the bug
+before the debugger does: an unowned subscription, a component writing a fact it
+should only display, a derived value doing work, or a global value pretending to
+be dialog-local state.
+
+This paper exercise also explains why the API stays small. The value graph is
+not meant to impress the reader with machinery. It is meant to make ordinary
+screen state inspectable. Once the graph can be read, the rest of the Corusco
+stack has somewhere honest to attach.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Find a label whose text is updated from more than one listener. Name the
+underlying fact and model it as a \api{ReadableValue<String>}.
+\item Convert a selected-row integer into a typed selected-row value. Decide how
+to represent "nothing selected".
+\item Write a derived value for Save enablement using dirty state, problem
+state, and busy state.
+\item Add a test that records \api{ChangeOrigin.USER} and
+\api{ChangeOrigin.MODEL} transitions separately.
+\item Create a \api{MappedValue} for a window title. Close it and verify that
+later source changes do not notify the closed mapping.
+\item Identify one place where a value is not enough and a form model or command
+would be the better abstraction.
+\end{enumerate}
+\end{exercisebox}
+
+\textbf{Checklist.}
+
+\begin{itemize}
+\item Use one value for one changing presentation fact.
+\item Keep EDT dispatch at the Swing boundary, not inside core values.
+\item Treat every subscription as a resource with a visible owner.
+\item Prefer mapped or derived values to listener chains that update nearby
+variables.
+\item Use \api{ChangeOrigin} when feedback loops, diagnostics, or tests need to
+know why a value changed.
+\item Model absent selection deliberately; do not let null spread without a
+meaning.
+\item Close derived, mapped, master-detail, and loadable values when their
+lifetime ends.
+\item Test value rules without constructing Swing components.
+\end{itemize}

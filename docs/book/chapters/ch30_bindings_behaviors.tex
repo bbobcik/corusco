@@ -1,0 +1,1365 @@
+\chapter{Bindings and Behavior Scopes}
+\label{ch:bindings-behaviors}
+\chapterquote{A binding is a small promise: this component and this model will mirror each other until the owner closes the promise.}{The binding rule}
+
+\begin{chaptermap}
+Core question & How should Swing components be connected to Corusco models without unowned listener code?\\
+Primary APIs & \api{Binding}, \api{BindingScope}, \api{BindingFactory}, \api{BehaviorScope}, \api{ViewBehavior}, \api{BehaviorDescriptor}, \api{BehaviorPhase}, \api{BehaviorCardinality}, \api{StandardBehaviors}, and \api{SwingEdt}.\\
+Plain Swing baseline & Component listeners, document listeners, action maps, tooltips, borders, and focus behavior are ordinary Swing machinery; bindings give the machinery an owner.\\
+Corusco connection & Direct bindings handle simple component/model links; behaviors handle repeatable component capabilities and generated plans.\\
+Companion example & \swingIntegrationExample.\\
+\end{chaptermap}
+
+\section{A binding is owned synchronization}
+
+\termdef{Binding}{in Corusco Swing} is a disposable relationship between Swing
+state and model state. It usually installs component listeners, subscribes to
+model values, initializes component state, guards against feedback loops, and
+removes its work when closed. A binding is not merely a helper method that
+copies one value once. It is a live relationship with a lifetime.
+
+Plain Swing has all the necessary primitives. A text field has a document. A
+document accepts listeners. A model has values. A label can be updated. The
+problem is ownership. Who removes the document listener? Who removes the value
+subscription? Who prevents a model update from echoing back as a user edit? A
+binding answers those questions.
+
+\begin{lstlisting}[caption={A direct text-field binding.}]
+Binding binding = BindingFactory.textField(nameField, form.name);
+
+// Later, when the view closes:
+binding.close();
+\end{lstlisting}
+
+The binding does not own \api{nameField} and does not own \api{form.name}. It
+owns the relationship it installed between them.
+
+\begin{principlebox}{relationship ownership}
+If code installs synchronization between a component and a model, the same code
+path should expose a close handle for that synchronization.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\bindingFormFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\behaviorPlanFigure}
+\end{minipage}
+\caption{Bindings and behaviors are visible relationships over ordinary Swing components: a form mirrors model state, and a generated plan installs named capabilities into one lifecycle scope.}
+\label{fig:bindings-behavior-screens}
+\end{figure}
+
+A binding is easiest to misunderstand when it is introduced as less code. It is
+less handwritten listener code, but that is not its main purpose. Its main
+purpose is to make a relationship explicit enough that a reviewer can ask
+ordinary engineering questions about it. Which side initializes first? Which
+events are considered user edits? Which events are considered model refreshes?
+How is feedback suppressed? What state is restored on close? Which objects are
+owned by the binding, and which objects merely participate in it? A helper that
+copies text from a field into a model answers almost none of these questions. A
+binding should answer all of them.
+
+Initialization is the first contract. When \api{BindingFactory.textField} is
+installed, the component is initialized from \api{TextFieldModel.rawText}. This
+direction is not arbitrary. The form model is the durable screen state. The
+text field is a Swing presentation of that state. If the field happened to
+contain old designer text, previous dialog contents, or a value left by a test,
+the binding should not treat that text as a fresh user edit merely because the
+listener has just been installed. The model speaks first; then user edits are
+observed.
+
+This rule is especially important in dialogs and generated forms. A dialog may
+reuse a panel class for several records. A generated form model may be built
+from a record snapshot. The visual components may be constructed before the
+model is available, because layout code wants concrete components. Binding
+installation is the moment when the model and the components are joined. If the
+join direction is vague, initialization bugs look like validation bugs, dirty
+tracking bugs, or mysterious "field changed during open" bugs.
+
+The second contract is origin. Corusco value changes carry enough information
+to distinguish user-originated updates from programmatic updates when the model
+supports it. Text and selected-state bindings write with
+\api{ChangeOrigin.USER}. A presenter can then distinguish a user's keystroke
+from a reset button, a background load, or an apply operation. That distinction
+is not decorative. Dirty flags, validation timing, undo grouping, command
+enablement, and support diagnostics all depend on knowing whether a change came
+from the person at the keyboard or from application code.
+
+Plain Swing listeners frequently lose this fact. A document listener observes a
+document change, but the document does not know whether the application called
+\api{setText} or the user typed a character. A careless listener therefore
+marks a form dirty while a model is being loaded, or fires validation while a
+field is being initialized. Binding code cannot make every semantic decision
+for the application, but it can preserve the origin at the boundary where Swing
+events become Corusco model changes.
+
+The third contract is feedback suppression. A two-way relationship has a simple
+failure mode: model update sets component text; component document event writes
+the same text back to the model; model emits another change; the component is
+set again. Some loops terminate because the value is equal. Some do not,
+especially when formatting, parsing, trimming, or validation changes the text.
+Even a terminating loop can produce duplicate events and confusing origin
+metadata. Corusco bindings use a feedback guard around programmatic component
+updates so component listeners do not reinterpret them as user edits.
+
+This is one reason the binding should be narrow. If a text binding also tries
+to own a border, tooltip, status label, dirty marker, and command state, the
+feedback story becomes harder to inspect. A direct text binding should
+synchronize text. A validation tooltip binding should own tooltip text. A
+validation border binding should own border decoration. Narrow relationships
+make the feedback guard local and make cleanup obvious. Rich screens are built
+by composing narrow bindings, not by writing one omniscient listener.
+
+The fourth contract is cleanup. Closing a binding removes the listeners and
+subscriptions that the binding installed. It does not dispose the text field.
+It does not dispose the form model. It does not clear the resource bundle or
+release the presenter. The distinction matters because Swing views have
+lifetimes that are shorter than application models. A dialog may close while
+the model snapshot remains useful for tests. A tool window may be hidden and
+shown again. A generated plan may be installed for one view activation and
+closed before the next. Cleanup must detach the relationship without pretending
+to own the participants.
+
+The fifth contract is restoration. Some bindings are pure subscriptions and do
+not restore final component state. \api{BindingFactory.labelText} removes the
+value subscription when closed, but it does not restore the label's old text.
+That is usually the right contract: the label was a view of current state, and
+its final text is harmless after the view is closing. Other bindings
+temporarily claim a component property and must restore it. A validation border
+binding snapshots the original border and restores it on close. A tooltip
+binding snapshots the original tooltip slot and restores it on close. A status
+binding restores the shared status label when the focus relationship ends.
+
+These policies should be written down because restoration bugs often survive
+manual testing. A dialog opens, shows an error border, closes, opens again, and
+the new instance inherits a border that belonged to the previous activation. Or
+a help tooltip is installed, the presenter is replaced, and the old help text
+remains. A binding that changes component state temporarily should have a
+visible restoration rule. A binding that intentionally leaves the component in
+the current state should say so as well.
+
+The sixth contract is the dispatcher boundary. A core \api{ReadableValue} does
+not become Swing-aware because a Swing component subscribes to it. The binding
+factory methods require the EDT because they install listeners and mutate
+components. If a background task produces model changes that are observed by
+Swing bindings, an EDT adaptation must sit between worker completion and Swing
+state. The failure should happen near installation or update delivery, not as a
+random component exception later.
+
+This is also a documentation virtue. When a binding requires the EDT, examples
+should show it being installed from view construction, presenter activation, a
+dialog factory, or an EDT-aware test harness. They should not imply that any
+thread may bind a component because the underlying core value is thread-neutral.
+The core package and the Swing package cooperate precisely because each keeps
+its own boundary honest.
+
+Finally, a binding should be boring to close. Calling \api{close} twice should
+not remove different things the second time. Adding a binding to a closed scope
+should not leave a relationship half-installed. Closing in reverse order should
+handle dependencies where later visual decorations depend on earlier primary
+bindings. These are lifecycle details that handwritten listener code rarely
+addresses until a screen is reopened many times in a test. Corusco's binding
+scope exists so those details become ordinary, not heroic.
+
+\textbf{EDT confinement.}
+
+Corusco Swing binding factories require the Event Dispatch Thread. They install
+Swing listeners and mutate Swing components. Core values do not dispatch to the
+EDT automatically. Therefore the boundary is explicit: call binding installation
+on the EDT, update Swing components on the EDT, and use an EDT adapter or task
+callback when background work feeds a bound model.
+
+\api{SwingEdt.requireEdt} is deliberately strict. Failing fast is better than
+quietly installing a binding that sometimes updates a component from a worker
+thread.
+
+\begin{pitfallbox}{the core/swing split}
+A \api{ReadableValue} is toolkit-neutral. A \api{BindingFactory} method is
+Swing-specific. Do not expect the former to enforce the rules of the latter.
+\end{pitfallbox}
+
+This split is the organizing idea of Corusco Swing. Core models describe screen
+facts without opening a window: raw field text, parsed values, dirty state,
+problem sets, command state, row lists, and table descriptors. Swing bindings
+then adapt those facts to concrete components. A \api{JTextField} can display
+raw text, but the form model owns the raw text. A \api{JButton} can display an
+operation, but the command owns the operation identity. A \api{JTable} can show
+rows, but the table descriptor owns column meaning. Once this separation is
+understood, bindings stop looking like a convenience wrapper and start looking
+like the boundary where the two worlds meet.
+
+The boundary is deliberately explicit. If a background task changes a core
+value and that value is observed by a Swing binding, the task still needs a
+Swing-aware callback path or an EDT adapter. This may feel stricter than some
+listener code written in old applications, but the strictness pays for itself.
+The bug is found where the boundary is crossed, not later as a random repaint,
+document, or selection failure.
+
+\textbf{Direct binding contracts.}
+
+\api{BindingFactory.textField} binds a \api{JTextField} to a
+\api{TextFieldModel}. It initializes the component from raw text, installs a
+document listener, propagates user document changes to the model with
+\api{ChangeOrigin.USER}, observes model raw-text changes, and closes both
+listener and subscription when closed.
+
+The phrase "raw text" matters. The binding does not bind the field directly to
+the semantic value. It binds Swing text to \api{TextFieldModel.rawText}. Parsing
+and semantic value protection remain in the form model.
+
+\begin{lstlisting}[caption={Text binding preserves invalid intermediate input.}]
+TextFieldModel<CustomerEdit, BigDecimal> limit = form.creditLimit;
+Binding binding = BindingFactory.textField(limitField, limit);
+
+limitField.setText("12,");       // User-originated document change in real UI.
+ProblemSet parseProblems = limit.problems();
+\end{lstlisting}
+
+The listener code is not gone. It is inside a tested binding with feedback
+guards and cleanup.
+
+\textbf{Selected-state binding.}
+
+\api{BindingFactory.selected} binds an \api{AbstractButton} to a Boolean
+\api{FieldModel}. This covers check boxes, radio buttons, and toggle buttons.
+The component is initialized from the model. User item events write
+\api{ChangeOrigin.USER}. Model events update the button while a guard prevents
+echo writes.
+
+\begin{lstlisting}[caption={Checkbox state belongs to the model.}]
+FieldModel<CustomerEdit, Boolean> active = form.active;
+Binding binding = BindingFactory.selected(activeCheckBox, active);
+\end{lstlisting}
+
+This is especially valuable when the same Boolean is also represented by a menu
+item or command. One model owns the fact; controls present it.
+
+\textbf{Label and status bindings.}
+
+Some bindings are one-way. \api{BindingFactory.labelText} initializes a label
+from a readable string value and updates it when the value changes. It does not
+restore the previous label text on close. \api{BindingFactory.statusText}
+temporarily publishes status text while a component owns focus and restores the
+previous status on focus loss or close.
+
+These differences are part of the binding contract. A binding should document
+what it restores and what it leaves as final state. Without that documentation,
+closing a view becomes guesswork.
+
+\textbf{Validation decorations.}
+
+Validation feedback is not the same as value synchronization. A text binding
+mirrors text. A validation tooltip binding observes problems and writes a
+tooltip. A validation border binding observes problems and decorates a component
+border. These concerns should be separate so they can be combined, tested, and
+closed independently.
+
+\begin{lstlisting}[caption={Separate binding concerns for one field.}]
+scope.add(BindingFactory.textField(nameField, form.name));
+scope.add(BindingFactory.validationTooltip(nameField, form.name.problemSet()));
+scope.add(BindingFactory.validationBorder(nameField, form.name.problemSet()));
+\end{lstlisting}
+
+The component has one visual surface, but several relationships contribute to
+it. When this pattern repeats across generated fields, direct manual binding can
+become verbose. That is where behaviors enter.
+
+\textbf{Binding scopes.}
+
+\api{BindingScope} owns bindings for one view or dialog lifecycle. It is the
+Swing-specific counterpart to the core subscription scope. Add each binding as
+the view is assembled; close the scope when the view closes.
+
+\begin{lstlisting}[caption={A direct binding scope.}]
+final class CustomerFormPanel extends JPanel implements AutoCloseable {
+    private final BindingScope bindings = new BindingScope();
+
+    CustomerFormPanel(CustomerEditForm form) {
+        bindings.add(BindingFactory.textField(nameField, form.name));
+        bindings.add(BindingFactory.selected(activeBox, form.active));
+        bindings.add(BindingFactory.labelText(statusLabel, form.statusText()));
+    }
+
+    @Override
+    public void close() {
+        bindings.close();
+    }
+}
+\end{lstlisting}
+
+This is already a significant improvement over listener sprawl. But it still
+requires handwritten installation order and duplicate patterns for every field.
+
+\section{Direct bindings in real screens}
+
+Direct bindings are the right starting point because they keep the machinery
+visible. A moderate beginner can open a panel constructor, see a
+\api{BindingScope}, see a text field binding, see a selected-state binding,
+and see the scope close with the panel. Nothing has been generated yet. No
+behavior descriptor has to be understood before the first benefit appears. The
+screen is still ordinary Swing: \api{JTextField}, \api{JCheckBox},
+\api{JLabel}, \api{JPanel}, MigLayout, and listeners under the surface. The
+difference is that the listener relationships now have names and lifetimes.
+
+The first real-screen rule is to install bindings after static component setup
+and before user interaction. Set columns, renderers, input verifiers, component
+names, accessible static text, and layout constraints before binding when those
+properties are construction facts. Then install the binding and let it own the
+properties it promises to own. If code calls \api{nameField.setText} after
+\api{BindingFactory.textField} has been installed, the write may be a genuine
+programmatic model operation expressed through Swing, or it may be an accidental
+fight with the model. Prefer changing the model when the bound fact changes.
+Use direct component writes after binding only when the binding contract says
+they are part of the relationship.
+
+Text fields are the clearest example. A text component has a \api{Document};
+the document has listeners; the form model has raw text, parse state, semantic
+value, and problems. The binding joins the document to raw text. It does not
+make parsing a Swing concern. It does not require every intermediate text to be
+a valid semantic value. This is why a user can type the beginning of a decimal
+or date without the component immediately erasing the text. Raw text belongs to
+the editing experience; semantic value belongs to the form model once parsing
+and validation allow it.
+
+This distinction is an important bridge from Swing to Corusco. A beginner may
+ask why a binding is not simply \api{JTextField} to \api{BigDecimal}. The answer
+is that editing is not assignment. The string \api{"12,"} may be a perfectly
+reasonable intermediate text in a locale-aware decimal field and still not be a
+valid \api{BigDecimal}. A field model can remember the raw text, keep the last
+valid semantic value, and expose a problem. A direct Swing listener that writes
+straight to a \api{BigDecimal} property either rejects intermediate text too
+early or invents error state beside the model. Binding to raw text keeps the
+editing boundary explicit.
+
+Text areas follow the same rule but increase the importance of ownership.
+Large text areas may participate in document undo, line wrapping, scroll panes,
+and validation summaries. A text-area binding should still be narrow: document
+to raw text. Word count, dirty marker, save command, and validation decoration
+can observe model facts or document-derived values separately. This keeps the
+text area from becoming a private model hidden in a widget.
+
+Selected-state bindings look simpler, but they teach the same lesson. A
+checkbox's selected state mirrors a Boolean field. User item events write with
+\api{ChangeOrigin.USER}; model changes update the checkbox under a feedback
+guard. If the same Boolean also appears as a menu item, toolbar toggle, or
+filter chip, the Boolean field remains the fact. The controls are presentations
+of it. Plain Swing often lets each control become a little source of truth,
+with synchronization listeners trying to keep the controls equal. Direct
+bindings reverse the direction: one model fact, many possible presentations.
+
+Button enabled-state binding is intentionally one-way. A command or readable
+Boolean says whether the button is enabled. The user does not edit the enabled
+state by clicking a disabled button. This sounds obvious, but it is a good
+review test. A two-way binding should exist only when the user can directly edit
+the model fact through the component. A one-way binding is the right tool when
+the component presents a derived fact. Overusing two-way binding is another
+form of hidden ownership confusion.
+
+Labels are also one-way. A status label, total count label, selected-customer
+label, or validation summary label presents a readable value. Closing the
+binding removes the subscription. It does not need to restore old text unless
+the label is shared and temporarily claimed. This difference between an owned
+label and a shared status label is small but practical. A panel-owned label dies
+with the panel. A status label in a shell may outlive the field that borrowed
+it while focused. The binding's restoration policy follows the lifetime of the
+component property it claims.
+
+Status bindings show how focus state enters the relationship. The component
+does not permanently own the status bar. It borrows it while focused, snapshots
+the old text, publishes its status, follows status value changes while active,
+and restores the snapshot when focus leaves or the binding closes. That is much
+harder to implement correctly with one focus listener per field and no close
+handle. It is also the kind of detail that users notice: status text that stays
+behind after focus moves makes the screen feel unreliable.
+
+Validation decoration should be composed from facts, not duplicated from parse
+logic. A field model exposes problems. A tooltip binding converts those
+problems into tooltip text according to policy. A border binding converts
+problem severity into component border state. A summary panel may observe the
+same problem set and render a list. The binding chapter must insist on this
+separation because otherwise validation becomes invisible listener code again.
+If a tooltip listener recomputes validation by reading the text field, it is
+not a tooltip binding; it is a second validation engine hiding in Swing code.
+
+Tooltip ownership deserves special care because Swing gives each component one
+tooltip text slot. Validation, disabled reason, static field help, and F1 help
+indicator all want to explain the same component. If each concern writes the
+slot independently, the last writer wins and the losing explanations disappear.
+\api{BindingFactory.composedTooltip} and the corresponding standard behavior
+exist so the slot has one owner and several contributors. The result is not
+only better text; it is better lifecycle. The original tooltip can be restored
+on close because one binding owns the slot.
+
+Borders have a similar but more visual conflict. A Look-and-Feel may install a
+border that encodes focus, error state, disabled state, or theme density. A
+validation border binding that simply replaces it with a red line may be
+acceptable as a minimal implementation, but production decoration often needs a
+composed border or a layer-based mark that respects the original border. The
+important binding contract remains: snapshot what you replace, update only what
+you own, and restore on close. Later chapters on dialogs and validation can
+refine the visual policy; this chapter establishes the ownership rule.
+
+Accessible text is not decoration in the trivial sense. It is secondary to the
+primary value binding, but it is part of the component's public contract. A
+binding or behavior can set accessible name and description from field
+metadata, resources, or explicit text, and restore the previous values on
+close. Doing this through the same scope as other component relationships has a
+useful side effect: tests can construct a field, install the plan, and assert
+that visible text, tooltip, validation, and accessible description agree. The
+screen becomes easier to audit for both visual and nonvisual users.
+
+The direct-binding assembly order can be described as a small ritual. Build
+models. Build components. Apply static component configuration. Lay out the
+components. Create a scope. Add primary value bindings. Add one-way
+presentation bindings. Add validation and tooltip bindings. Add focus or status
+bindings. Store the scope in the owning view or presenter. Close the scope when
+the view closes. The ritual is not bureaucracy; it prevents the two common
+failures of Swing wiring: hidden listeners that never die and properties that
+have several owners.
+
+\begin{lstlisting}[caption={Direct binding assembly order for a small form.}]
+final class CustomerSummaryPanel extends JPanel implements AutoCloseable {
+    private final BindingScope bindings = new BindingScope();
+
+    CustomerSummaryPanel(CustomerEditForm form, JLabel shellStatus) {
+        JTextField name = new JTextField(24);
+        JCheckBox active = new JCheckBox();
+        JLabel summary = new JLabel();
+
+        setLayout(new MigLayout("fillx", "[][grow]", "[][][]"));
+        add(new JLabel("Name"));
+        add(name, "growx, wrap");
+        add(new JLabel("Active"));
+        add(active, "wrap");
+        add(summary, "span 2, growx");
+
+        bindings.add(BindingFactory.textField(name, form.name));
+        bindings.add(BindingFactory.selected(active, form.active));
+        bindings.add(BindingFactory.labelText(summary, form.summaryText()));
+        bindings.add(BindingFactory.composedTooltip(
+                name, form.name.problemSet(), null,
+                "Customer display name", true));
+        bindings.add(BindingFactory.validationBorder(name, form.name.problemSet()));
+        bindings.add(BindingFactory.statusText(name, shellStatus, "Edit customer name"));
+    }
+
+    @Override
+    public void close() {
+        bindings.close();
+    }
+}
+\end{lstlisting}
+
+The listing is deliberately direct. It does not use a behavior scope because
+the reader should first see the relationships plainly. The same form could be
+assembled by generated behavior plans later, but the generated plan should not
+hide any concept that is absent here. It should merely remove repetition and
+add conflict metadata.
+
+Direct bindings also help migration because they have a small blast radius.
+Pick one field with a document listener. Replace only the document listener
+with \api{BindingFactory.textField}. Keep the rest of the screen unchanged.
+Add the binding to a scope and close the scope where the old listener would
+have been removed if the old code had supported removal. Then replace tooltip
+and border wiring. Then replace status text. This path lets a large legacy
+screen become more disciplined without a rewrite.
+
+During migration, look for writes that cross the binding boundary. If old code
+still calls \api{nameField.setText} from a presenter after the field is bound,
+ask whether it should instead call \api{form.name.setRawText} with model
+origin. If old code reads \api{nameField.getText} during save, ask whether it
+should read the form model's parsed value or raw text. If old code inspects a
+tooltip to decide whether a field is valid, ask why it is not reading the
+problem set. Each of these questions moves state out of widgets and back into
+models.
+
+Direct bindings should be tested by behavior, not by implementation trivia.
+Install the binding on the EDT. Assert initial component state. Simulate a
+user-like component change and assert the model. Change the model and assert
+the component. Close the binding or scope. Change one side again and assert the
+other side no longer follows. For a tooltip or border binding, assert both the
+active state and the restored state. These tests are small, repetitive, and
+valuable because they guard the lifecycle contract rather than a single visual
+snapshot.
+
+The direct-binding style has a natural limit. When five fields all need the
+same text binding, validation tooltip, validation border, accessible text, and
+select-all-on-focus behavior, handwritten direct bindings become a recipe
+copied many times. Copying is tolerable for two fields and dangerous for
+twenty. One field forgets restoration. Another gets tooltip before validation.
+A third misses accessible text. The answer is not to invent a larger helper
+method that hides everything. The answer is a behavior plan: keep each
+capability named, but let metadata and generated code assemble the repeated
+list.
+
+\section{Behavior scopes and generated plans}
+
+\termdef{View behavior}{in Corusco Swing} is a named, ordered, lifecycle-owned
+component capability. Text binding, selected-state binding, validation tooltip,
+validation border, composed tooltip, select-all-on-focus, accessible text,
+help-on-F1, command binding, and busy overlay can all be behaviors.
+
+A behavior does not touch a component when it is created. It becomes active when
+a \api{BehaviorScope} installs it with a \api{BehaviorContext}. Installation
+returns a \api{Binding}; the scope owns that binding.
+
+\begin{lstlisting}[caption={Installing behaviors rather than individual bindings.}]
+BehaviorScope scope = new BehaviorScope(helpService);
+
+scope.install(nameField, List.of(
+        StandardBehaviors.textFieldBinding(form.name),
+        StandardBehaviors.composedTooltip(
+                form.name.problemSet(), null, "Customer display name", true),
+        StandardBehaviors.validationBorder(form.name.problemSet()),
+        StandardBehaviors.selectAllOnFocus()));
+\end{lstlisting}
+
+The list is longer than a single binding call because the example is explicit.
+Generated plans can produce the list from annotations and descriptors.
+
+A behavior is not a magic listener. It is a component responsibility with
+metadata. That metadata is the difference between a plan and a pile of helper
+objects. Before installation, the behavior can say: this is my key; this is my
+phase; I may appear once or many times; I do or do not occupy the component's
+primary binding slot. The scope can then reason about the list before the list
+quietly changes a live Swing component. This is a modest idea, but it is the
+reason generated view plans can be safe enough to use in ordinary code.
+
+The key should describe a responsibility rather than an object instance. The
+built-in \api{StandardBehaviorKeys.TEXT\_BINDING} key means "primary text
+component binding." It does not mean "the particular object returned by this
+factory call." The tooltip key means "the component tooltip slot is owned by
+this behavior." The select-all key means "focus gained selects all text." A
+stable responsibility key lets tests and diagnostics ask which capabilities are
+installed without depending on anonymous class names or generated object
+identity.
+
+This has an important review consequence. If a custom behavior's key is
+\api{test/my-behavior} or \api{misc/field-hook}, the key is not helping. It
+should be named after the component responsibility: \api{interaction/nudge-on-arrow},
+\api{decoration/dirty-marker}, \api{binding/date-text}, or
+\api{interaction/open-chooser}. Generated plans and tests become readable only
+when keys are readable. A behavior key is not user-facing text, but it is
+developer-facing documentation.
+
+Phases are deliberately few. \api{BehaviorPhase.BINDING} installs primary value
+relationships. \api{BehaviorPhase.DECORATION} installs visual, tooltip, and
+accessibility state that decorates the component. \api{BehaviorPhase.INTERACTION}
+installs focus, key, help, status, and other user-interaction affordances. More
+phases would make ordering look more precise than it really is. The goal is not
+to encode every presenter workflow in phase order. The goal is to prevent
+primary synchronization, decoration, and interaction from depending on whatever
+order an annotation processor, list builder, or refactoring happened to
+produce.
+
+The phase model also supports reverse cleanup. If a binding is installed first,
+a decoration second, and an interaction third, closing in reverse order removes
+the interaction before the decoration and the decoration before the primary
+binding. That is usually the least surprising dependency order. A focus status
+behavior may depend on the component still existing; a validation decoration
+may depend on model state still being available; the primary binding is the
+foundation. Reverse close is not a universal proof of correctness, but it is a
+sound lifecycle default and matches the subscription-scope discipline used in
+the core package.
+
+Cardinality answers a different question from phase. Phase says when a behavior
+is installed. Cardinality says whether another behavior with the same key may
+coexist on the same component. A tooltip owner should be single because Swing
+has one tooltip string slot. A validation border should be single because two
+border owners cannot both restore the same original border correctly. A command
+or key behavior may be multiple if each instance owns a distinct key, command,
+or action slot. The descriptor should express the truth of the component
+resource being used.
+
+Primary binding conflict is stricter than ordinary single-cardinality. Two
+different behavior keys may still both claim to be primary bindings. A text
+binding and a hypothetical formatted-value binding could have different keys
+and still be incompatible on the same field because both want to own the main
+component/model synchronization. This is why \api{BehaviorDescriptor.primaryBinding}
+sets both single cardinality and the primary-binding conflict flag. The scope
+tracks primary binding by component, not merely by key.
+
+The distinction prevents a subtle bug in extensible systems. Suppose a generated
+plan installs a standard text binding. A handwritten extension later installs a
+custom masked-text binding with its own key. Duplicate-key detection would not
+catch the conflict because the keys are different. Primary-binding conflict
+detection does catch it because both behaviors claim the primary slot. The
+failure appears when the screen is assembled, before the user discovers that
+typing in the field updates two models or alternates between two formatters.
+
+\begin{lstlisting}[caption={Descriptor choices encode component responsibility.}]
+BehaviorDescriptor text =
+        BehaviorDescriptor.primaryBinding(StandardBehaviorKeys.TEXT_BINDING);
+
+BehaviorDescriptor tooltip =
+        BehaviorDescriptor.single(StandardBehaviorKeys.TOOLTIP,
+                BehaviorPhase.DECORATION);
+
+BehaviorDescriptor command =
+        BehaviorDescriptor.multiple(BehaviorKey.of("interaction/command"),
+                BehaviorPhase.INTERACTION);
+\end{lstlisting}
+
+The example is schematic, but the categories matter. The text binding owns the
+main data flow. The tooltip owns one Swing slot. The command interaction may be
+multiple when several command bindings install different actions. A custom
+behavior should be able to justify its descriptor in these terms. If it cannot,
+the behavior probably mixes responsibilities.
+
+Behavior context is intentionally narrow. It gives the behavior the target
+component, the owning scope, and optional services such as help. It does not
+give the behavior arbitrary access to the application. This keeps behavior
+installation from becoming a second dependency-injection system. A behavior may
+need a help service to open F1 help. It may need a resource-resolved string
+captured at factory time. It may need a command object captured by a command
+behavior. It should not discover repositories, windows, database sessions, or
+presenter workflows by reaching through global state.
+
+The help behavior illustrates the context boundary. The behavior factory
+captures a \api{HelpTopic}. During installation, the context supplies the
+\api{HelpService} from the owning behavior scope. The behavior then installs an
+input-map and action-map entry for F1 and restores the previous entries during
+cleanup. The help service is not global, and the target component is not hidden.
+Tests can create a scope with a fake service, install the behavior, invoke the
+action, and assert the request.
+
+Generated behavior plans should remain direct. The processor-generated
+\api{CustomerEditBehaviorPlan} does not invent a runtime reflection engine. It
+calls view accessors and installs ordinary standard behaviors. For a text field
+it installs text binding, validation tooltip, validation border, and
+select-all-on-focus. For a checkbox it installs selected-state binding. The
+generated plan is valuable precisely because it is boring. A reader can open it
+and see the same calls a careful developer would have written by hand.
+
+\begin{lstlisting}[caption={The shape of a generated text-field plan.}]
+scope.install(view.nameField(), List.of(
+        StandardBehaviors.textFieldBinding(model.name),
+        StandardBehaviors.validationTooltip(model.name.problemSet()),
+        StandardBehaviors.validationBorder(model.name.problemSet()),
+        StandardBehaviors.selectAllOnFocus()
+));
+\end{lstlisting}
+
+The generated code still leaves layout to the view. This is an important design
+choice for a Swing book that recommends MigLayout. A generated form plan should
+not decide where fields are placed, how dense the dialog is, which controls
+belong in a toolbar, or how a business screen adapts to resizing. The plan owns
+repeatable behavior, not geometry. That separation keeps generated code useful
+in serious Swing screens instead of turning it into a form designer with the
+usual limitations of form designers.
+
+Generated and handwritten behavior can therefore cooperate. The generated plan
+installs the standard field capabilities. The handwritten presenter may add
+status text, F1 help, a field-specific chooser key, a diagnostic dirty marker,
+or a command binding. Because both generated and handwritten behaviors pass
+through the same scope, they share conflict detection and cleanup. The custom
+addition does not need to know whether the standard behaviors were generated or
+written by hand; it only needs to obey the same descriptor contract.
+
+The reverse is also true: generated code cannot protect the screen from
+relationships installed outside the scope. If a legacy listener is added
+directly to the field and writes another model, the behavior scope cannot see
+it. During migration, direct listener code should be treated as outside the
+plan and reviewed accordingly. The goal is not to forbid all direct listeners.
+Some local Swing interactions are best written directly. The goal is to keep
+model synchronization, repeated decoration, and generated capabilities inside a
+scope where they can be ordered, inspected, and closed.
+
+Failure during behavior installation should be considered a plan defect. A
+duplicate single-cardinality key means two behaviors want the same component
+responsibility. A second primary binding means two behaviors want the same
+source of truth. A missing help service means a behavior requiring help was
+installed into a scope that cannot provide it. A behavior that throws while
+installing has not completed its contract. The tests in the codebase deliberately
+assert these failures because silent partial installation is worse than early
+rejection.
+
+There is one nuance: if a behavior fails during installation after earlier
+behaviors were already installed, the scope still owns the earlier returned
+bindings. Closing the scope remains necessary. This is normal lifecycle
+engineering. A caller that catches an installation failure should close the
+scope or let the owning construction failure path close it. Generated plans
+should usually fail fast and abort view activation. Handwritten assembly code
+should be equally strict unless it is intentionally installing optional
+capabilities with local fallback.
+
+The behavior-scope API exposes installed keys for tests. This is not meant to
+replace effect assertions. A good test may assert that a generated plan
+installed \api{StandardBehaviorKeys.SELECT\_ALL\_ON\_FOCUS}; another test may
+simulate focus and assert selected text. The key assertion proves the plan
+contains a capability. The effect assertion proves the capability works. Both
+are useful at different levels. Generated-code tests often care about the key
+set; component behavior tests care about the visible and interactive effect.
+
+The small size of \api{BehaviorPhase}, \api{BehaviorKey}, and
+\api{BehaviorDescriptor} is deliberate. They are not a grand UI framework. They
+are enough metadata to make assembly deterministic, inspectable, and safe
+against common conflicts. Swing itself still supplies components, listeners,
+input maps, action maps, tooltips, borders, focus events, and painting. Corusco
+supplies ownership and plan structure around those mechanisms.
+
+\textbf{Behavior descriptors.}
+
+\api{BehaviorDescriptor} names a behavior with a \api{BehaviorKey}, phase,
+cardinality, and primary-binding conflict policy. This metadata lets a
+\api{BehaviorScope} validate a plan before silent double installation.
+
+Without descriptors, installing two text bindings on the same field might
+appear to work until events bounce between two models. With descriptors, primary
+binding conflict is a defined error.
+
+\begin{coruscobox}{conflict detection}
+Corusco behavior scopes detect duplicate single-cardinality behaviors and
+multiple primary bindings on the same component. The failure happens during
+installation, not after a user reports strange text-field behavior.
+\end{coruscobox}
+
+\textbf{Phases.}
+
+Behaviors are sorted by \api{BehaviorPhase} before installation. Phases let a
+plan say that primary bindings, decorations, help, and other capabilities have
+a deterministic order. This is useful for generated code and tests. It also
+prevents accidental dependence on list order in annotation processing.
+
+Do not put business policy into phase ordering. Phases are for installation
+structure, not for modeling domain workflows.
+
+\textbf{Cardinality.}
+
+Some behaviors may appear more than once. Others should appear at most once per
+component. Tooltip behavior is a good example. Swing components have one
+tooltip slot, so two independent tooltip writers would conflict. A composed
+tooltip behavior should own that slot and combine contributors.
+
+\api{BehaviorCardinality.SINGLE} lets the scope reject duplicate behavior keys.
+This is better than letting the last installed behavior win silently.
+
+\textbf{Primary bindings.}
+
+A primary binding is the behavior that owns the main value synchronization for a
+component: text field to text model, checkbox to Boolean model, combo box to
+selection model, and so on. A component should not normally have two primary
+bindings. The behavior scope tracks this and throws a
+\api{BehaviorConflictException} when a second primary binding is installed.
+
+\begin{pitfallbox}{two masters}
+If one text field is bound to two text models, neither model is clearly the
+owner. Reject the plan; do not attempt to arbitrate with listener ordering.
+\end{pitfallbox}
+
+\textbf{Behavior context.}
+
+\api{BehaviorContext} provides the target component, the owning behavior scope,
+and optional services such as \api{HelpService}. Custom behaviors should obtain
+application services from context or explicit constructor arguments, not from
+globals. This keeps tests and generated plans predictable.
+
+\textbf{Generated behavior plans.}
+
+Generated \api{@SwingForm} companions can produce behavior plans for a view
+interface. The application still writes the panel and lays it out with
+MigLayout. The generated plan installs standard bindings and decorations based
+on descriptors.
+
+This division is intentional:
+
+\begin{itemize}
+\item The handwritten view owns component construction and layout.
+\item The generated plan owns repetitive field behavior.
+\item The behavior scope owns installed bindings.
+\item The presenter or form model owns state.
+\end{itemize}
+
+\begin{migrationbox}{from generated panel to generated behavior}
+Do not require generation to own layout. Let MigLayout and the handwritten view
+own geometry. Let generated companions own the repetitive synchronization plan.
+\end{migrationbox}
+
+\textbf{Manual and generated behavior can coexist.}
+
+A generated behavior plan should not make handwritten behavior impossible. Real
+screens always have a few local decisions: a special status hint, a custom
+formatter, a field-specific key binding, or a diagnostic border used only in one
+tool window. The behavior scope is designed so generated and handwritten
+behaviors can be installed into the same lifecycle, provided they obey the same
+descriptor rules.
+
+\begin{lstlisting}[caption={Generated plan plus one local behavior.}]
+BehaviorScope scope = new BehaviorScope(helpService);
+
+CustomerEditBehaviorPlan.install(scope, view, form, resources);
+scope.install(view.creditLimitField(), List.of(
+        new SelectAllOnDoubleClick()));
+\end{lstlisting}
+
+The local behavior should not bypass the scope by installing unmanaged
+listeners. If it participates in the same component, it should participate in
+the same conflict and cleanup policy.
+
+\textbf{Behavior failure modes.}
+
+Behavior installation can fail before a screen is shown. This is preferable to
+silent drift. A duplicate single-cardinality tooltip behavior means two writers
+want one tooltip slot. A second primary binding means two models want one
+component. A missing help service means a help behavior cannot open topics. A
+custom behavior that mutates Swing off the EDT violates the scope contract.
+
+Treat these failures as plan errors, not as runtime annoyances. The screen
+assembly code should be easy to inspect, and generated plans should have tests
+that prove their expected behavior keys.
+
+\textbf{Restoration policy.}
+
+Some bindings restore previous component state when closed; others do not.
+Status-text binding restores a shared status label. Validation border binding
+should restore the previous border. Label text binding usually does not restore
+old text because the final label content may simply be the current state.
+
+Custom behaviors must decide and document restoration policy. Closing a
+behavior that temporarily owns a component property should leave the component
+in a coherent state. A behavior that permanently initializes a property should
+say so.
+
+\begin{center}
+\textbf{Binding and behavior review table.}
+\end{center}
+
+\noindent\begin{tabularx}{\linewidth}{@{}p{0.30\linewidth}X@{}}
+\toprule
+Observation & Review question\\
+\midrule
+Component has two model listeners & Is there one primary binding too many?\\
+Tooltip changes unpredictably & Should the contributors be composed by one behavior?\\
+Generated plan and local code both bind text & Which binding owns the raw text?\\
+Close does not remove a focus listener & Which binding or behavior owns cleanup?\\
+Custom behavior reaches a global service & Should the service enter through context?\\
+Test inspects private listener arrays & Can installed behavior keys express the assertion?\\
+\bottomrule
+\end{tabularx}
+
+\textbf{Custom behaviors.}
+
+Write custom behaviors as small reversible units. A custom behavior should
+install one capability and return a binding that undoes it. If it installs a
+listener, close removes the listener. If it changes a border and promises
+restoration, close restores the old border. If it registers a key binding, close
+removes or restores the previous mapping.
+
+\begin{lstlisting}[caption={Custom behavior shape.}]
+final class SelectAllOnDoubleClick
+        implements DecorationBehavior<JTextField> {
+    @Override
+    public BehaviorDescriptor descriptor() {
+        return BehaviorDescriptor.single(
+                BehaviorKey.of("select-all-on-double-click"),
+                BehaviorPhase.DECORATION);
+    }
+
+    @Override
+    public Binding install(BehaviorContext<JTextField> context) {
+        MouseListener listener = new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent event) {
+                if (event.getClickCount() == 2) {
+                    context.component().selectAll();
+                }
+            }
+        };
+        context.component().addMouseListener(listener);
+        return () -> context.component().removeMouseListener(listener);
+    }
+}
+\end{lstlisting}
+
+The behavior is small and reversible. It does not know the whole form.
+
+\section{Restoration, composition, and custom reversible behavior}
+
+The hardest part of a reusable Swing behavior is not usually installation. It
+is leaving. Installing a focus listener, tooltip, border, key binding, action
+map entry, or client property is straightforward. Restoring the previous state
+is where careless abstractions leak. A behavior that works in a demo can fail
+when a dialog is reopened, when another behavior uses the same component slot,
+when Look-and-Feel changes, or when tests install and close the plan several
+times in one JVM. A good behavior is therefore designed from its close method
+backward.
+
+The close method should undo exactly what installation owned. If installation
+adds a listener, close removes that listener and no other listener. If
+installation replaces a border, close restores the border that was present at
+installation time, unless the behavior participates in a composed border system
+with a different documented policy. If installation writes an input-map key,
+close restores the previous mapping or removes the mapping when none existed.
+If installation subscribes to a model value, close closes the subscription. If
+installation sets a client property, close restores or removes that property
+according to the previous state. These rules sound mechanical because they are.
+Mechanical lifecycle rules are the ones most worth encoding.
+
+\api{helpOnF1} is a good restoration example. The behavior obtains the focused
+input map, action map, F1 keystroke, previous input mapping, and previous action
+for the generated action key. Installation writes the new mapping and action.
+Cleanup restores the old mapping and old action. This is more careful than
+calling \api{inputMap.remove} and \api{actionMap.remove} unconditionally,
+because the component may have had a meaningful F1 action before the behavior
+was installed. A reusable behavior should be a guest in the component, not an
+owner of everything the component previously knew.
+
+Tooltip composition is the example where restoration and cardinality meet. A
+component has one tooltip text property. Validation, disabled reason, static
+help, and F1 help indication all want to contribute. If each contributor is a
+separate behavior with its own tooltip writer, restoration becomes impossible:
+which behavior owns the original tooltip, and which behavior restores it last?
+The composed tooltip behavior solves this by making the tooltip slot a single
+owned behavior and treating validation and disabled reason as inputs. The
+tooltip slot is single-cardinality; the information sources are multiple model
+facts.
+
+This is the pattern to copy for other single slots. A component has one border
+property. It has one accessible name and one accessible description. It has
+specific input-map keys. It has specific action-map keys. If several behaviors
+need to influence one slot, either compose the inputs under one behavior or use
+a deliberately designed composition object. Do not let unrelated behaviors
+race to write the same Swing property. Last-writer-wins is not a lifecycle
+policy.
+
+Sometimes the correct composition boundary is visual rather than property-based.
+Validation border, focus ring, dirty marker, and busy mark may all want to
+decorate a component. Replacing borders for every mark can become brittle under
+Look-and-Feel changes. A \api{JLayer}, parent overlay, or painting behavior may
+be a better owner for visual marks that cross component boundaries or that
+should not disturb the component's original border. The behavior system does
+not force every decoration into a border; it only asks that whichever mechanism
+is chosen has a key, phase, cardinality, and close contract.
+
+Custom behaviors should be small enough to review in one sitting. If a behavior
+needs to know the whole form, coordinates between several components, and a
+presenter service, it may be a screen workflow rather than a reusable component
+capability. A behavior that adds select-all-on-focus is reusable. A behavior
+that opens a date chooser for one field may be reusable if it owns one
+component and one action. A behavior that validates two fields, enables a
+button, changes a table selection, and calls a repository is not a behavior; it
+is presenter logic trying to hide as view assembly.
+
+A useful test is the sentence "this component can..." A text field can select
+all on focus. It can open help on F1. It can show a validation tooltip. It can
+bind raw text to a model. It can publish status while focused. These are
+component capabilities. "When the user changes credit limit, reload pricing
+rules and update the table" is not a component capability. It is workflow. The
+workflow may use commands, tasks, values, and bindings, but it should not be
+installed as a tiny component behavior merely because it happens to start from
+a field event.
+
+Custom behavior factories should validate required collaborators early. If a
+behavior needs a model value, command, resource text, or topic, the factory can
+check nulls before returning the behavior object. If it needs a context service
+such as help, installation can fail with a clear message when the scope lacks
+that service. This split keeps construction failures near construction and
+context failures near installation. A behavior that waits until the user presses
+F1 to discover there is no help service has failed too late.
+
+The behavior object itself should not usually be stateful across installations.
+It may capture immutable collaborators such as a model, resource string,
+command, topic, or policy. It should be careful with mutable per-component
+state. The same behavior instance might be reused accidentally across
+components, or a generated plan might create new instances for each component.
+The safest design is for \api{install} to allocate per-component listener
+state, snapshot previous component state, and return a binding that closes that
+state. Captured mutable state should be intentional and documented.
+
+Client properties are sometimes a pragmatic bridge. A behavior may set a
+component client property for a renderer, overlay, test key, or diagnostic
+marker. Client properties are ordinary Swing state, so the same restoration
+rule applies. Snapshot whether the property existed and what value it had.
+Close should restore the old value or remove the property if it was absent. A
+behavior that leaves a diagnostic property behind can confuse later tests and
+support tools.
+
+Input maps and action maps need particular care because they are layered by
+focus condition. A behavior that installs \api{WHEN\_FOCUSED} F1 help should
+not accidentally modify \api{WHEN\_ANCESTOR\_OF\_FOCUSED\_COMPONENT}. A behavior
+that installs Enter-to-commit in a text field should consider whether the text
+component already uses Enter for another purpose. For single-line fields,
+Enter often commits. For text areas, Enter inserts a newline unless the product
+explicitly changes that behavior. The behavior descriptor cannot answer that
+product question; the factory choice must.
+
+Key behaviors should prefer input maps and action maps over low-level key
+listeners when they represent commands. The built-in \api{commitOnEnter}
+behavior uses a key listener because it is deliberately small and text-component
+specific, but command-oriented behaviors should usually use Swing's key binding
+system. Key bindings cooperate better with focus traversal, Look-and-Feel, and
+action enablement. A custom behavior should choose the Swing mechanism that
+matches the responsibility, not the one that is shortest to type.
+
+Busy overlays show a different kind of custom behavior. The target is a
+\api{JLayer}, not the wrapped view. The behavior observes a readable busy value
+and asks the layer to repaint while active. It does not own the business task
+that produces busy state. It does not decide whether commands are disabled. It
+does not load data. It owns the visual overlay relationship between a busy fact
+and a Swing layer. That narrowness is why the same behavior can be reused in
+dialogs, tables, and full screens.
+
+Command behaviors belong in the same family. A button, menu item, toolbar
+item, or key binding adapts a command's identity, enabled state, selected state,
+text, icon, tooltip, and handler to Swing. The command owns the operation. The
+behavior owns the component relationship. This prevents the classic Swing
+problem where one toolbar button is disabled, the menu item remains enabled,
+and the key binding still fires. One command fact should drive every Swing
+surface that presents it.
+
+Custom behavior tests should be explicit about restoration. Record the initial
+listener count, input-map value, action-map value, border, tooltip, accessible
+text, or client property. Install the behavior. Assert the installed effect.
+Close the scope. Assert the previous state. Then, when useful, mutate the model
+after close and assert the component no longer follows. These tests are not
+overly defensive. They document the lifecycle contract that makes the behavior
+safe to generate and repeat.
+
+The most common custom-behavior mistake is to return \api{Binding.noop} or an
+empty close action after installing real state. That is acceptable only for a
+behavior that truly installs no disposable or restorable state. If a behavior
+adds a listener and returns no cleanup, it has turned a view activation into a
+memory and behavior leak. If a behavior changes a component property and
+returns no restoration, it has made close order irrelevant because close cannot
+repair anything. The code may still pass a visual smoke test; it fails the
+lifecycle contract.
+
+Another mistake is to perform model mutation during installation. Installation
+should adapt current model state to the component and install listeners for
+future changes. It should not decide that a field is invalid, trigger a save,
+open help, or run a task merely because a component exists. Those actions
+belong to models, presenters, commands, or tasks. A behavior installation that
+has side effects beyond component setup is difficult to test and dangerous in
+generated plans because generation may install it earlier or more often than a
+handwritten presenter once did.
+
+The better mental model is that a behavior is a small adapter with a passport.
+The adapter knows how to install one component capability. The passport is its
+descriptor: key, phase, cardinality, and primary-binding conflict. The scope
+checks passports, admits behaviors in order, owns their close handles, and can
+report which passports are installed. This is enough structure to make Swing
+assembly safe without pretending that Swing has stopped being Swing.
+
+\section{Plain Swing baseline}
+
+The plain Swing version of a field setup may look like this:
+
+\begin{lstlisting}[caption={Handwritten field wiring.}]
+nameField.getDocument().addDocumentListener(new DocumentListener() {
+    @Override
+    public void insertUpdate(DocumentEvent event) {
+        form.name.setRawText(nameField.getText(), ChangeOrigin.USER);
+    }
+    @Override
+    public void removeUpdate(DocumentEvent event) {
+        form.name.setRawText(nameField.getText(), ChangeOrigin.USER);
+    }
+    @Override
+    public void changedUpdate(DocumentEvent event) {
+        form.name.setRawText(nameField.getText(), ChangeOrigin.USER);
+    }
+});
+
+form.name.problemSet().subscribe(event ->
+        nameField.setToolTipText(primaryProblemText(event.newValue())));
+\end{lstlisting}
+
+This code omits feedback guards, EDT assertions, close handles, tooltip
+composition, border restoration, and conflict detection. A careful developer can
+add all of them. Corusco's value is that the careful version becomes the
+ordinary version.
+
+\textbf{From plain Swing to Corusco.}
+
+Use direct bindings when there are only one or two relationships and a generated
+plan would be noise. Use behaviors when capabilities repeat, when generated
+companions participate, or when conflict detection matters. Use a scope in both
+cases.
+
+The decision is not "framework or raw Swing". It is "which relationships are
+repeated enough to deserve metadata and a plan?"
+
+Adoption usually works best in layers. Start by replacing one ad hoc document
+listener with a direct binding and putting that binding into a scope. Then move
+validation tooltip and border logic into separate bindings. When the same
+sequence appears on several fields, introduce behaviors or generated behavior
+plans. This keeps the migration understandable: each step gives one existing
+relationship a clearer owner. A large screen does not need to jump from raw
+Swing to generated plans in one commit.
+
+The important discipline is that the old listener must actually disappear. If a
+component is bound through Corusco and still has an old listener that writes to
+the same model, ownership is no clearer than before. During review, look for
+"parallel wiring": a binding installed in one method and a listener installed in
+another method, both trying to keep the same fact synchronized. That is a sign
+that the migration stopped halfway.
+
+\textbf{Testing bindings and behaviors.}
+
+Binding tests should run on the EDT. They should assert initial component state,
+component-to-model propagation, model-to-component propagation, and cleanup.
+Behavior tests should also assert installed behavior keys, ordering when phases
+matter, and conflict detection.
+
+\begin{lstlisting}[caption={Behavior conflict test shape.}]
+BehaviorScope scope = new BehaviorScope();
+
+scope.install(nameField, List.of(
+        StandardBehaviors.textFieldBinding(form.name)));
+
+assertThatThrownBy(() -> scope.install(nameField, List.of(
+        StandardBehaviors.textFieldBinding(form.nickname))))
+        .isInstanceOf(BehaviorConflictException.class);
+\end{lstlisting}
+
+\textbf{Worked example.}
+
+\begin{examplebox}{bindings}
+\swingIntegrationExample{} contains direct bindings and behavior-style
+installation in compact form. Read it by following lifetimes: model lifetime,
+component lifetime, binding lifetime, and scope lifetime.
+\end{examplebox}
+
+\textbf{Review notes.}
+
+Bindings are attractive because they remove listener code from the view. That
+does not mean every relationship should be hidden. Use names and descriptors
+that make the installed plan inspectable. A generated plan should be boring to
+read, not magical.
+
+Good binding code should be inspectable at two levels. At the local level, a
+reader should be able to see that \api{nameField} is bound to \api{form.name},
+that validation problems decorate the same component, and that the scope closes
+with the panel. At the generated-plan level, a reader should be able to open the
+generated behavior plan and recognize the same facts: primary text binding,
+tooltip, border, help, accessibility, and interaction behavior. If generated
+code hides the relationship so well that the reader cannot reconstruct it, the
+plan needs better names or smaller generated units.
+
+The simplest binding is a promise between two mutable places: when one changes,
+the other is brought into agreement. That promise is easy to say and surprisingly
+easy to get wrong. Initial synchronization must choose a direction. User edits
+must not be mistaken for model resets. Programmatic model changes must not loop
+back as fresh user edits. Cleanup must remove every listener installed to keep
+the promise. A handwritten listener can satisfy all of these rules, but the
+rules are usually scattered.
+
+Corusco bindings put the promise into one object. The object can assert the EDT
+boundary, install component and model listeners together, apply feedback guards,
+and return a close handle. This is not meant to make Swing invisible. It is meant
+to make synchronization reviewable. A binding whose source, target, direction,
+origin policy, and lifetime are visible is easier to trust than three anonymous
+listeners that happen to cooperate.
+
+Behaviors become useful when a component has several independent promises. A
+text field may have a primary text binding, validation tooltip, validation
+border, dirty marker, help key, accessibility name, and focus-selection rule.
+Those promises should not all live in one large "bind everything" method. They
+also should not be installed in random order by unrelated code. A behavior plan
+keeps them separate while still letting the screen install them as a coherent
+unit.
+
+Phases prevent accidental ordering from becoming policy. A primary value binding
+should be established before decoration that depends on the field model. A
+tooltip composer should run after contributors have been registered. A focus
+behavior should not override a validation behavior merely because its method was
+called later. Naming phases turns order from folklore into data that generated
+plans and tests can inspect.
+
+Cardinality is the other half of conflict detection. A text field can have one
+primary text binding, but several tooltip contributors. A component can have one
+accessible-name owner, but several optional visual decorations. If all behaviors
+are treated as independent, duplicate primary bindings silently fight. If all
+behaviors are treated as exclusive, useful composition becomes impossible. The
+behavior descriptor should say which kind of relationship it installs.
+
+Generated behavior plans are most valuable when they are dull. A generated form
+view contract says which components exist. The generated descriptors say which
+field each component represents. The behavior plan says which standard
+relationships should be installed. The handwritten view still chooses geometry
+and component construction. The generated plan merely prevents every screen from
+rewriting the same binding recipe by hand.
+
+Custom behaviors should be small and reversible. A behavior that installs a key
+binding should remove that key binding. A behavior that changes a border should
+restore the previous border or cooperate with a composed border policy. A
+behavior that listens to a model should close its subscription. If a custom
+behavior needs five services and several unrelated components, it is probably a
+presenter workflow, not a reusable view behavior.
+
+There is a useful migration smell: a method named \api{wireListeners}. It often
+contains model synchronization, command enablement, tooltip updates, validation
+decoration, focus behavior, and cleanup omissions in one place. Do not replace
+the whole method at once. Extract one promise, give it a binding or behavior,
+and close it through a scope. Repeat until the method either disappears or
+contains only genuinely local listener work.
+
+The behavior scope is not a dependency injection container. It should know what
+relationships are installed on which components and how to close them. It should
+not become the place where repositories, presenters, resources, and every
+application service are discovered. Keep the context narrow. Pass only the
+metadata and services a behavior needs to install its component relationship.
+
+The most useful tests are deliberately mechanical. Install the plan. Verify the
+component has the expected value. Change the component and observe the model.
+Change the model and observe the component. Close the scope and verify later
+changes do not cross the boundary. Add a duplicate primary behavior and assert a
+conflict. These tests may look repetitive, but they defend the invariants that
+make generated plans safe to use.
+
+\section{Migration, testing, and review scenarios}
+
+A good migration from listener-heavy Swing to Corusco bindings rarely begins
+with generation. It begins with naming one relationship. Find a document
+listener that writes field text to a model. Replace it with a direct binding.
+Put the binding in a scope. Close the scope when the panel or dialog closes.
+Run the screen. Then find the tooltip listener that recomputes validation and
+replace it with a problem-set tooltip binding. Then replace the border
+decoration. This order is intentionally conservative: each step removes one
+unowned relationship and gives it an explicit lifecycle.
+
+The migration should be reviewed by looking for remaining duplicate ownership.
+If the same field is bound to a model and also has an old listener that writes
+the model, the screen has not improved. If a generated plan installs tooltip
+behavior and a presenter later calls \api{setToolTipText} directly, the tooltip
+slot has two owners. If a behavior installs F1 help and old key-listener code
+also opens help, key routing has two owners. Corusco makes ownership visible,
+but it cannot make code outside the scope disappear. The reviewer must look for
+parallel wiring and remove it deliberately.
+
+One useful migration artifact is a relationship inventory. For each important
+component, list the model fact it presents, validation facts it decorates,
+commands it invokes, focus behavior it owns, help topic it opens, accessible
+metadata it exposes, and cleanup owner. The inventory need not be a permanent
+document. It is a way to discover that one field has eight relationships hidden
+in three methods and two anonymous listeners. After migration, the same
+inventory should map naturally to direct bindings or behaviors in one scope.
+
+Generated plans should be introduced when the inventory repeats. A single
+custom field does not justify generation. Ten text fields that all use the same
+form-model pattern do. The generated plan should be compared with the manual
+inventory: text binding, validation tooltip, validation border, select all on
+focus, accessible text when metadata is available, help when topic metadata is
+available. If generation omits a capability, either the generator should grow
+or the handwritten extension should add the capability through the same scope.
+Do not patch generated omissions with unscopeable listeners.
+
+Testing follows the same layers. Core model tests prove that raw text, parsed
+value, problems, dirty state, and command enablement behave without Swing.
+Direct binding tests prove that a Swing component mirrors one model fact and
+cleans up. Behavior tests prove that a reusable capability installs and
+restores its Swing state. Generated-plan tests prove that the right behaviors
+are installed for generated view contracts. Screenshot tests prove that the
+assembled screen looks coherent. These layers are complementary; none should
+be asked to prove everything.
+
+A direct binding test should be almost boring. Construct a model and component
+on the EDT. Install the binding. Assert initial component state. Perform a
+user-like component change. Assert the model and, when relevant, the origin or
+problem state. Perform a model change. Assert the component. Close. Change the
+component again. Assert the model no longer follows. The value of the test is
+not the number of lines saved. The value is that the relationship's lifetime is
+executable documentation.
+
+A behavior test adds descriptor checks. Install a behavior list in an
+intentionally scrambled order and assert that \api{installedBehaviorKeys}
+reports binding, decoration, and interaction phases in the expected order.
+Install two tooltip behaviors and assert a duplicate-key conflict. Install two
+primary bindings with different keys and assert a primary-binding conflict.
+Install a help behavior without a help service and assert the failure message.
+These tests are close to the source because they are testing assembly rules,
+not business meaning.
+
+Generated-plan tests should avoid overfitting to generated formatting. The
+source generator can change indentation or helper names without changing the
+plan contract. Tests can compile a sample annotated record, call the generated
+plan, and inspect behavior keys or effects on components. Processor tests may
+also assert that generated source contains important calls when those calls are
+part of the public generation contract. Use source-text assertions sparingly
+and prefer compiled behavior when possible.
+
+The most useful screen-level test is often a hybrid. Use \api{SwingMvpTester}
+or an EDT harness to construct the view and presenter. Query the behavior scope
+for expected behavior keys on named components. Then interact with the
+components and assert model state. Finally close the presenter or view and
+assert that behavior keys are gone or that model changes no longer reach the
+components. This test proves the plan is installed, observable, and disposable
+in the same lifecycle that the real screen uses.
+
+Screenshot tests belong after these tests, not instead of them. A screenshot
+can reveal a missing validation border, a stale tooltip policy visible in a
+hover capture, a busy overlay that covers the wrong component, or a command
+button that remains enabled. It cannot reliably prove that cleanup removed a
+document listener. It cannot prove that user origin is preserved. It should be
+the visual smoke layer on top of model and binding tests.
+
+Code review can use a small checklist. Does every installed relationship have
+a close owner? Does the scope live for exactly one view or dialog activation?
+Are bindings installed and closed on the EDT? Is there only one primary binding
+per component? Does tooltip ownership go through a composed tooltip when
+several facts contribute? Does a custom behavior restore what it replaces? Do
+generated and handwritten behaviors enter the same scope? Are old direct
+listeners removed after migration? The checklist is short because the model is
+simple: relationships must be named, ordered, conflict-checked, and closed.
+
+There are also signs that a binding abstraction has gone too far. A behavior
+that hides significant business rules is a problem. A generated plan that
+builds layout is a problem when the application needs MigLayout-grade control.
+A binding that accepts a whole presenter and calls arbitrary methods is a
+problem because it becomes impossible to know what relationship it owns. A
+scope that is stored globally is a problem because scopes are lifecycles, not
+registries. Corusco's Swing integration is intentionally modest: it structures
+component relationships; it does not replace presenter design.
+
+The converse problem is refusing abstraction after the pattern is obvious. A
+form with twenty fields should not hand-write the same text binding, tooltip,
+border, and focus behavior twenty times. A screen with several buttons and menu
+items should not manually copy command enabled state into each surface. A table
+screen should not manually synchronize selection indexes to model ids in three
+places. When the same relationship pattern repeats, a behavior, descriptor, or
+generated plan is not ornament. It is the mechanism that keeps repeated Swing
+machinery consistent.
+
+The final migration habit is to keep examples executable. A chapter listing
+that says "install generated behavior plan here" is useful only if an example
+actually compiles through the annotation processor or mirrors the generated
+plan for a documented reason. The companion examples should contain at least
+one direct binding example, one behavior-scope example, one generated plan
+example, and tests that close the scopes. This keeps the book honest: every
+claimed simplification must survive javac and an EDT test.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Replace one document listener with \api{BindingFactory.textField} and add
+a cleanup test.
+\item Split a field setup into primary binding, validation tooltip, validation
+border, and focus status behavior.
+\item Install two primary bindings on one component in a test and verify the
+conflict.
+\item Write a custom reversible behavior that installs a key binding and
+removes it on close.
+\item Decide whether a small one-off panel should use direct bindings or a
+behavior plan. Write down the reason.
+\item Add a behavior-scope test that inspects installed behavior keys for one
+generated field.
+\end{enumerate}
+\end{exercisebox}
+
+\textbf{Checklist.}
+
+\begin{itemize}
+\item Use direct bindings for one simple model/component relationship.
+\item Use behaviors when capabilities repeat or generated plans must cooperate.
+\item Install and close bindings on the EDT.
+\item Close scopes with the owning view or dialog.
+\item Keep primary value binding separate from validation and tooltip
+decoration.
+\item Verify conflict detection for primary bindings and single-cardinality
+behaviors.
+\item Write custom behaviors as small reversible units.
+\item Avoid turning behavior scopes into dependency injection containers.
+\end{itemize}

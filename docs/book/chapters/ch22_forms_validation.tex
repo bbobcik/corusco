@@ -1,0 +1,1328 @@
+\chapter{Forms, Conversion, Validation, and Problems}
+\label{ch:forms-validation}
+\chapterquote{A user must be allowed to type an invalid intermediate value without corrupting the last meaningful value.}{The form model rule}
+
+\begin{chaptermap}
+Core question & How does Corusco model editable forms without letting Swing fields own the business contract?\\
+Primary APIs & \api{FormModel}, \api{FieldModel}, \api{TextFieldModel}, \api{ParseState}, \api{Problem}, \api{ProblemSet}, \api{ProblemTarget}, \api{ProblemSeverity}, \api{Validators}, \api{RuleSet}, and \api{AsyncFieldValidation}.\\
+Plain Swing baseline & \api{JTextField} stores text, but a robust form needs raw text, semantic value, parse state, validation problems, dirty state, and commit policy.\\
+Swing connection & Field bindings, validation tooltips, validation borders, dialog validation, problem summaries, and problem-focus resolution.\\
+Companion example & \swingIntegrationExample.\\
+\end{chaptermap}
+
+\section{Forms are not bags of components}
+
+A form is a contract for editing a value. A Swing panel is one possible visual
+arrangement of that contract. Confusing the two is the beginning of many Swing
+validation problems. A \api{JTextField} can store the characters the user typed.
+It cannot, by itself, say which typed value is still semantically valid, whether
+the user has touched the field, whether the field differs from its original
+baseline, whether a parse failure should block commit, which resource key names
+the validation message, or which component should receive focus when the user
+presses OK.
+
+\termdef{Form model}{in Corusco} is the UI-independent object that owns editable
+field state, validation problems, reset behavior, dirty-state baselines, and
+commit to a result. A form model can be bound to Swing, tested without Swing, or
+used by generated companions.
+
+\begin{lstlisting}[caption={The core form contract.}]
+public interface FormModel<R> {
+    ProblemSet problems();
+    boolean isCommittable();
+    void reset();
+    void acceptCurrentValues();
+    R toResult();
+}
+\end{lstlisting}
+
+The contract is small, but it asks the right questions. Can the form currently
+commit? What problems explain the answer? What is the baseline? What is the
+result? Swing components are not mentioned.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\textValidationFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\dialogValidationFigure}
+\end{minipage}
+\caption{Form state appears visually as raw text, parse state, validation summaries, borders, and dialog commit policy. The model owns the facts before the Swing components present them.}
+\label{fig:forms-validation-screens}
+\end{figure}
+
+\textbf{Parsing is not validation.}
+
+\termdef{Parsing}{in form editing} asks whether raw text can be converted into a
+semantic Java value. \termdef{Validation}{in form editing} asks whether a
+semantic Java value is acceptable for the business rule. These are different
+questions and should be modeled separately.
+
+A user typing a credit limit may temporarily type \api{12,}. In some locales
+that text may be incomplete. The last semantic value might still be
+\api{12}. The field should display exactly what the user typed, but the form
+should not corrupt the last meaningful value. A validation rule such as "credit
+limit must not exceed 10000" should run after a decimal value exists, not while
+the text is unparsable.
+
+\begin{pitfallbox}{the exception-shaped form}
+Normal user input mistakes are not exceptional program failures. Treat parse
+and validation failures as data. Reserve exceptions for broken converters,
+services, or programmer errors.
+\end{pitfallbox}
+
+\textbf{Raw text and semantic value.}
+
+\api{TextFieldModel<O,T>} exists because a text field has two simultaneous
+truths. The raw text is what the user sees and edits. The semantic value is the
+last parsed Java value. On parse success, both move forward. On parse failure,
+raw text moves forward, the semantic value remains protected, parse state
+records failure, and a parse problem targets the field.
+
+\begin{lstlisting}[caption={Text editing preserves invalid intermediate input.}]
+TextFieldModel<CustomerEdit, BigDecimal> creditLimit =
+        new TextFieldModel<>(
+                CustomerFields.CREDIT_LIMIT,
+                new BigDecimal("10.00"),
+                Converters.bigDecimal(EmptyTextPolicy.REJECT));
+
+creditLimit.setRawText("12,", ChangeOrigin.USER);
+
+String visibleText = creditLimit.rawText().value();
+BigDecimal semanticValue = creditLimit.value();
+ParseState<BigDecimal> parseState = creditLimit.parseState().value();
+ProblemSet parseProblems = creditLimit.problems();
+\end{lstlisting}
+
+The important observation is that none of these values is redundant. Raw text is
+needed for display. Semantic value is needed for business logic. Parse state is
+needed for explanation. Problems are needed for presentation, summaries, tests,
+and commit policy.
+
+\textbf{ParseState.}
+
+\api{ParseState<T>} is the explicit state of conversion. A parsed state carries
+the raw text and the parsed value. A failed state carries raw text, the previous
+semantic value, and a parse problem. This avoids a common Swing anti-pattern:
+storing unparsable text in a domain field merely because the text field changed.
+
+\begin{lstlisting}[caption={Interpreting parse state.}]
+return switch (field.parseState().value()) {
+    case ParseState.Parsed<BigDecimal> parsed ->
+            "Parsed " + parsed.value();
+    case ParseState.Failed<BigDecimal> failed ->
+            failed.problem().message();
+};
+\end{lstlisting}
+
+Use this interpretation at the presentation boundary. The form model should own
+the state; the view should decide how to display it.
+
+\textbf{FieldModel.}
+
+\api{FieldModel<O,T>} models a field whose current value is already semantic.
+It owns a typed \api{FieldKey}, a current value, dirty state, touched state, and
+the original dirty-state baseline. It is suitable for check boxes, combo boxes,
+radio groups, and fields whose component already edits the semantic type.
+
+\begin{lstlisting}[caption={A semantic field model for a checkbox.}]
+FieldModel<CustomerEdit, Boolean> active =
+        new FieldModel<>(CustomerFields.ACTIVE, true);
+
+active.setValue(false, ChangeOrigin.USER);
+boolean dirty = active.isDirty();
+boolean touched = active.isTouched();
+\end{lstlisting}
+
+The distinction between dirty and touched is essential. Dirty means the current
+semantic value differs from the baseline. Touched means the user interacted with
+the field. A field can be touched but not dirty if the user changes a value and
+changes it back. A field can be dirty because a model load changed it, even
+though the user did not touch it.
+
+\begin{principlebox}{dirty is not touched}
+Dirty protects data from accidental loss. Touched protects the user from
+premature scolding. Use both.
+\end{principlebox}
+
+\textbf{Baselines, reset, and accept.}
+
+Every editable form needs a baseline. Reset returns fields to the baseline.
+Accepting current values changes the baseline to the current values. These
+operations are not the same as saving to a database, although a save operation
+often calls \api{acceptCurrentValues} after it succeeds.
+
+\begin{lstlisting}[caption={Typical save baseline flow.}]
+if (form.isCommittable()) {
+    CustomerEdit result = form.toResult();
+    repository.save(result);
+    form.acceptCurrentValues();
+}
+\end{lstlisting}
+
+This sequence says: produce a committed result, save it, and only then treat the
+current field values as clean. If saving fails, dirty state should remain dirty.
+
+\section{Problems as data}
+
+\termdef{Problem}{in Corusco} is an immutable description of parse, validation,
+or feedback trouble. It has a stable code, severity, target, source, and
+diagnostic message. \api{ProblemSet} is an immutable deterministic collection of
+problems. Adding or filtering returns a new set.
+
+\begin{lstlisting}[caption={A validation problem with stable identity.}]
+Problem requiredName = Problem.validation(
+        ProblemCode.of("customer/name/required"),
+        ProblemSeverity.ERROR,
+        ProblemTarget.field(CustomerFields.NAME),
+        "Name is required");
+
+ProblemSet problems = ProblemSet.of(requiredName);
+\end{lstlisting}
+
+The message is diagnostic text. User-facing localization should use resource
+descriptors or application presentation code. The stable code and target are the
+important contract. They let tests assert the problem without depending on a
+translated sentence.
+
+\begin{coruscobox}{structured failure}
+Corusco forms return problem sets for ordinary user mistakes. They do not force
+normal validation paths into exceptions, labels, or component client properties.
+\end{coruscobox}
+
+\textbf{Targets.}
+
+A problem target answers "where does this problem belong?" Common targets are a
+form, a field, or a table cell. Targeting matters because the same problem can
+be displayed in several places: an inline border, a tooltip, a dialog summary,
+a status line, or a test assertion. If the problem has no target, the UI must
+guess.
+
+For beginners, the practical rule is simple. If a validation rule concerns one
+field, target that field. If it concerns several fields, target the form or the
+most useful recovery field and include a summary. If it concerns a table cell,
+target the row and column identity, not the current view coordinates.
+
+\textbf{Severity.}
+
+Severity is not decoration. It affects commit policy and presentation priority.
+An error usually blocks commit. A warning may allow commit but should be visible.
+Informational problems may explain formatting or policy. \api{ProblemSet} can
+answer whether it contains errors and can return problems ordered by severity.
+
+\begin{lstlisting}[caption={Committability based on problem severity.}]
+public boolean isCommittable() {
+    return !problems().hasErrors();
+}
+\end{lstlisting}
+
+Do not encode severity only in message text. A string that begins with "Warning"
+is not a model.
+
+\textbf{Validation rules.}
+
+Validation should be deterministic and side-effect-light. A rule reads semantic
+model state and returns a \api{ProblemSet}. It should not update labels, show
+dialogs, or mutate unrelated fields. Those are presentation decisions.
+
+\begin{lstlisting}[caption={Conceptual validation rule.}]
+FieldValidator<String> required =
+        Validators.required(ProblemCode.of("customer/name/required"));
+
+ProblemSet nameProblems = required.validate(CustomerFields.NAME, name.value());
+\end{lstlisting}
+
+The exact helper used by generated code may be richer, but the principle is the
+same: validation returns structured problems. It does not push messages into
+components.
+
+\textbf{Rule sets and dependencies.}
+
+A form-level rule often depends on specific fields. A date range rule depends on
+start date and end date. A credit rule may depend on customer type and credit
+limit. Corusco \api{RuleSet} can collect validation rules with dependency and
+timing metadata so generated or handwritten form models know which rules to
+refresh.
+
+This is a maintenance advantage. In ordinary Swing code, a document listener on
+one field may remember to validate a second field. In generated or model-backed
+code, the dependency is declared where the rule is defined.
+
+\begin{migrationbox}{validation dependencies}
+When a listener in field A updates the error label for field B, write down the
+rule dependency. That dependency belongs in validation metadata or a form model,
+not in the document listener.
+\end{migrationbox}
+
+\textbf{Plain Swing baseline.}
+
+A small Swing form often starts like this:
+
+\begin{lstlisting}[caption={Component-owned parsing and validation.}]
+saveButton.addActionListener(event -> {
+    try {
+        BigDecimal limit = new BigDecimal(limitField.getText());
+        if (limit.compareTo(BigDecimal.ZERO) < 0) {
+            errorLabel.setText("Limit must not be negative");
+            return;
+        }
+        save(new CustomerEdit(nameField.getText(), limit));
+    } catch (NumberFormatException ex) {
+        errorLabel.setText("Limit is not a number");
+    }
+});
+\end{lstlisting}
+
+This code may be acceptable for a throwaway dialog. But it does not let the
+screen show parse failure before Save. It does not expose dirty state. It does
+not make problems testable without clicking. It does not distinguish diagnostic
+messages from localized UI text. It does not preserve the last valid semantic
+value.
+
+\section{Corusco treatment}
+
+The Corusco version moves parsing, semantic value, dirty state, touched state,
+and problems into models:
+
+\begin{lstlisting}[caption={Model-owned form state.}]
+final class CustomerEditForm implements FormModel<CustomerEdit> {
+    final TextFieldModel<CustomerEdit, String> name;
+    final TextFieldModel<CustomerEdit, BigDecimal> creditLimit;
+    final FieldModel<CustomerEdit, Boolean> active;
+
+    @Override
+    public ProblemSet problems() {
+        return name.problems()
+                .addAll(creditLimit.problems())
+                .addAll(validateSemanticRules());
+    }
+
+    @Override
+    public boolean isCommittable() {
+        return !problems().hasErrors();
+    }
+}
+\end{lstlisting}
+
+The Swing panel binds text fields and controls to this model. The dialog OK
+button observes \api{isCommittable} or a derived value. The tooltip policy reads
+problem sets. Tests mutate the model directly.
+
+\textbf{Active editor commit.}
+
+Swing tables and some formatted controls have active editors. Pressing OK in a
+dialog must first commit the active editor; otherwise the model may contain the
+previous value while the user sees a newer value in the editor. This is a classic
+Swing bug. It appears as "OK ignored my last edit".
+
+Corusco dialog and binding helpers should make active-editor commit part of the
+standard workflow. A form model alone cannot solve it because the edit may still
+be in a Swing editor component. The boundary must be explicit: commit component
+editor, update model, validate, then produce result.
+
+\textbf{Async validation.}
+
+Some validation requires a service: checking that a customer name is unique,
+that a remote code exists, or that the current user may perform an operation.
+This is \termdef{asynchronous validation}. It should not block the EDT, and it
+must handle stale results.
+
+\api{AsyncFieldValidation} binds a field value, a task service, and an async
+validator. It tracks generations so a late result for an old value cannot
+overwrite the current value's problems. It exposes problems as a readable value.
+
+\begin{lstlisting}[caption={Conceptual async validation shape.}]
+AsyncFieldValidation<CustomerEdit, String> uniqueName =
+        AsyncFieldValidation.bind(
+                CustomerFields.NAME,
+                nameField.semanticValue(),
+                taskService,
+                (key, value, cancellation) -> repository.validateName(value));
+
+ReadableValue<ProblemSet> asyncProblems = uniqueName.problems();
+\end{lstlisting}
+
+The exact field accessor depends on the model. The policy does not: launch work
+away from the EDT, cancel or ignore stale work, and publish structured problems.
+
+\begin{pitfallbox}{stale validation}
+If the user types "Ada" and then "Adal", the result for "Ada" must not overwrite
+the current field state when it completes late.
+\end{pitfallbox}
+
+\textbf{Dialogs and commit policy.}
+
+The form chapter is the core counterpart to the dialog chapter. A dialog should
+not ask each component whether OK may proceed. It should ask the form model
+whether a result can be produced. If the answer is no, it should display or focus
+the most useful problem. If the answer is yes, it should call \api{toResult}.
+
+A good OK flow is:
+
+\begin{enumerate}
+\item Commit the active Swing editor.
+\item Refresh or observe current validation state.
+\item If blocking problems exist, display and focus them.
+\item If no blocking problems exist, call \api{toResult}.
+\item Close or continue according to dialog policy.
+\end{enumerate}
+
+This flow is boring. That is its virtue. Every dialog should not invent it
+again.
+
+\textbf{Testing forms.}
+
+Test form models before testing Swing bindings. A model test should mutate raw
+text, semantic fields, and validators, then assert raw text, parse state,
+problems, dirty state, touched state, committability, and committed result.
+
+\begin{lstlisting}[caption={Testing invalid intermediate input.}]
+form.creditLimit.setRawText("bad", ChangeOrigin.USER);
+
+assertThat(form.creditLimit.rawText().value()).isEqualTo("bad");
+assertThat(form.creditLimit.value()).isEqualByComparingTo("10.00");
+assertThat(form.creditLimit.parseState().value())
+        .isInstanceOf(ParseState.Failed.class);
+assertThat(form.problems().hasErrors()).isTrue();
+\end{lstlisting}
+
+The Swing test can then be narrow: typing in the field updates the model; problem
+state decorates the component; pressing OK follows dialog policy.
+
+\textbf{Worked example.}
+
+\begin{examplebox}{forms}
+\swingIntegrationExample{} includes form and binding code that can be read beside
+this chapter. The core lesson is not the visual layout; it is the separation
+between raw text, semantic value, problems, and dialog behavior.
+\end{examplebox}
+
+\textbf{Review notes.}
+
+Do not let validation disappear into labels. Do not let parsing throw ordinary
+user mistakes into exception control flow. Do not let dirty state mean whatever
+the current listener happens to update. A form model is the place where these
+concepts become named and testable.
+
+The first design question for a form is what result it promises to produce. A
+dialog that edits a customer record, a preferences panel that writes settings,
+and a search form that produces criteria are all forms, but they do not promise
+the same kind of result. Naming the result keeps the field models honest. Each
+field exists because it contributes to that result, explains why the result
+cannot be produced yet, or records user intent that must be carried into the
+workflow.
+
+This is why raw text and semantic value must remain separate in text fields. The
+user is allowed to type an intermediate string that is not yet a value. A
+decimal field may temporarily contain a minus sign, a date may be halfway typed,
+and a required field may be empty while the user is moving through the dialog.
+If the model stores only the semantic value, these intermediate states are lost.
+If the model stores only text, command logic and domain code must parse again and
+again.
+
+Validation should report structured facts rather than perform immediate UI
+theatre. A red border, tooltip, summary row, disabled OK button, and status
+message are presentations of problems; they are not the problems themselves.
+Once problems have severity, code, target, and text resource, the UI can choose
+the right presentation for the current context. The same problem may appear as a
+field decoration in a dialog and as a row-level message in a review table.
+
+Severity is an agreement with workflow. An error blocks result creation. A
+warning may allow OK but should remain visible. Information may guide the user
+without affecting committability. If severity is hidden inside label colors,
+tests cannot assert policy and dialogs cannot behave consistently. A
+\api{ProblemSet} makes the policy explicit: which problems block, which merely
+decorate, and which target deserves focus first.
+
+Dirty state is often confused with invalidity. A pristine form may be invalid
+because required data is absent in the original object. A dirty form may be
+valid because the user fixed the issue. A touched field may not be dirty because
+the user restored the original value. Keeping these states separate prevents
+annoying cancel prompts, premature validation displays, and incorrect Save
+enablement.
+
+Touched state exists for kindness. It lets a form delay some messages until the
+user has interacted with a field while still keeping the full validation model
+available to OK and tests. A strict accounting screen may show all errors from
+the beginning. A friendly data-entry dialog may initially show only blocking
+summary state, then decorate individual fields after they are touched. The model
+can support both policies because touched state is not the same as validation.
+
+Cross-field validation should be written as a rule over the form, not as a
+listener attached to whichever component happened to be edited first. A credit
+limit may depend on customer status. A date range depends on both dates. A
+shipping option depends on address and account permissions. The rule belongs to
+the form model because the dependency is semantic; component listeners are only
+one way the relevant values change.
+
+Asynchronous validation adds another boundary. The form should expose that a
+check is running and should remember which value the check belongs to. The
+repository should perform the slow work. The task service should keep work off
+the EDT. The callback should publish problems only if the value is still
+current. Mixing those responsibilities into a document listener produces exactly
+the stale-result bug that users experience as validation flicker.
+
+Dialog OK is a commitment protocol, not just a button press. The UI must commit
+active editors, update models, ask the form whether the result is available,
+focus or summarize blocking problems, and only then create the result. This
+sequence should be boring enough to reuse. A form model supplies the stable
+facts; the dialog shell supplies the Swing ceremony.
+
+The best model tests read like small editing stories. Start from an original
+record. Type bad text. Observe that the raw text changed while the semantic
+value did not. Type good text. Observe that the parse problem disappeared and
+the value changed. Reset the form. Observe dirty and touched state. Accept the
+baseline. Observe that the current value is no longer dirty. Those stories catch
+more defects than visual tests that merely click OK once.
+
+The Swing binding tests can then stay narrow. They should prove that a
+\api{JTextField} edits the correct \api{TextFieldModel}, that problem state
+reaches the expected decoration, and that dialog buttons observe
+committability. They need not retest every validation rule through mouse and
+keyboard input because the rules already live in the model. This division keeps
+the test suite fast and the screen behavior credible.
+
+The final form-design check is whether every visible validation behavior has a
+model fact behind it. A red border, disabled OK button, warning icon, tooltip,
+summary row, and dirty marker should all be explainable from field models,
+problem sets, touched state, dirty state, or busy state. If a decoration cannot
+be traced back to a model fact, it will be hard to test and harder to keep
+consistent across dialogs.
+
+\section{Designing the result contract}
+
+A form should be designed from the result backward. This sounds obvious, yet
+many Swing forms are designed from components forward: place a label, place a
+text field, add another field, add OK, and later decide what object should be
+created. That order encourages the panel to become the model. A result-first
+design asks what the user is trying to commit, which editable facts contribute
+to that result, which facts merely guide editing, and which facts are visual
+support. The answer may be an immutable record, a command request, a search
+criteria object, a preferences delta, or no single object at all. The form
+model's type parameter is the first sentence of that answer.
+
+The \api{FormModel<R>} contract is deliberately small because the result
+contract should not be hidden under ceremony. \api{problems} explains the
+current obstacles and feedback. \api{isCommittable} answers whether a result is
+available. \api{reset} restores the current baseline. \api{acceptCurrentValues}
+changes the dirty baseline without changing the represented result.
+\api{toResult} materializes the committed value and must fail when the form is
+not committable. A small contract is not a small idea. It is a discipline: the
+form is either able to produce its promised result, or it can say why not.
+
+\api{AbstractFormModel} gives this discipline a useful default shape. A
+handwritten or generated subclass registers its \api{FieldModel} and
+\api{TextFieldModel} instances, implements \api{createResult}, and optionally
+overrides \api{validationProblems}. The base class aggregates parse problems,
+adds semantic validation problems, resets fields, accepts current values as the
+new baseline, and blocks \api{toResult} while an error remains. The base owns
+registration lists, not Swing components. This is important: the form model can
+be tested as a model and then bound to one or several Swing views.
+
+\begin{lstlisting}[caption={A result-first form model skeleton.}]
+final class CustomerEditFormModel
+        extends AbstractFormModel<CustomerEdit> {
+
+    final TextFieldModel<CustomerEdit, String> name =
+            register(new TextFieldModel<>(
+                    CustomerFields.NAME, original.name(), Converters.string()));
+
+    final TextFieldModel<CustomerEdit, BigDecimal> creditLimit =
+            register(new TextFieldModel<>(
+                    CustomerFields.CREDIT_LIMIT,
+                    original.creditLimit(),
+                    Converters.bigDecimal(EmptyTextPolicy.REJECT)));
+
+    final FieldModel<CustomerEdit, Boolean> active =
+            register(new FieldModel<>(
+                    CustomerFields.ACTIVE, original.active()));
+
+    @Override
+    protected CustomerEdit createResult() {
+        return new CustomerEdit(
+                name.value(),
+                creditLimit.value(),
+                active.value().value());
+    }
+}
+\end{lstlisting}
+
+The skeleton is intentionally ordinary. The result is created from semantic
+values, not from Swing components. The text fields preserve raw editing state,
+but \api{createResult} uses the semantic values only after committability has
+been checked. A generated form model follows the same rule: generated fields,
+descriptors, validators, and result creation exist so the result contract is
+stable and inspectable.
+
+The baseline is part of the result contract because editing is temporal. A
+customer editor opens with one customer value. The user changes fields. The
+user may reset, cancel, save, or keep editing after a save failure. Without a
+baseline, the form cannot answer "what would reset do?" or "is it safe to close
+without confirmation?" A baseline is not necessarily the database value. In a
+wizard, the baseline may be the state at the beginning of the current page. In
+a preferences dialog, it may be the values when the dialog opened. In an
+import-review screen, it may be the parsed file state after automatic cleanup.
+The form model should make that choice explicit.
+
+\api{reset} and \api{acceptCurrentValues} are therefore workflow operations.
+\api{reset} says that current edits are abandoned in favor of the baseline.
+\api{acceptCurrentValues} says that current semantic values are now considered
+the baseline. A successful save commonly calls \api{acceptCurrentValues}; a
+failed save should usually not. A successful Apply operation may accept the
+baseline while leaving the dialog open. A successful OK operation may not need
+to accept because the dialog closes, but accepting can still be useful if the
+same model survives in a larger screen. These choices should be written in the
+dialog or presenter, not smuggled into a button listener.
+
+Dirty state is only meaningful relative to that baseline. A field is dirty when
+its current semantic value differs from the original value remembered by its
+field model. A text field whose raw text is unparsable can be touched and can
+have parse problems even while its semantic value remains unchanged. This can
+surprise code that treats dirty as "the characters in the text box changed."
+Corusco's split is more useful: dirty says the semantic value differs from the
+baseline; touched says the user interacted with the field; parse state says
+whether raw text currently represents a semantic value.
+
+Consider a credit-limit field whose baseline is \api{100.00}. The user selects
+the field, deletes the text, types \api{-}, then types \api{-5}, then changes
+it back to \api{100.00}. During the first edit the field is touched. During the
+invalid intermediate text, the raw text changed, the semantic value remains
+protected, and a parse problem may exist. During \api{-5}, parsing may succeed
+and semantic validation may reject the value. At the end, the field may still
+be touched but no longer dirty. A single boolean named \api{changed} cannot
+describe this story. The form model can.
+
+Touched state is not merely a convenience for prettier validation. It is a
+policy hook. A form may initially contain a required but empty field. Should
+the field show a red border immediately? In an accounting screen, perhaps yes:
+the user opened the form to fix known errors. In a small creation dialog,
+perhaps no: the user has not yet had a chance to type. Touched state lets the
+presentation layer distinguish "this fact blocks commit" from "this fact should
+be loudly decorated right now." The problem exists in the model either way.
+The visual policy can be kind without lying.
+
+The result contract also prevents accidental partial commits. A form whose
+\api{isCommittable} returns false should not return a half-formed result from
+\api{toResult}. This is not only defensive programming. It protects maintainers
+from ambiguous workflow. If a caller wants a partial object for preview, name a
+different method or a different model. The committed result should mean that
+the form's blocking problems were absent at the time the result was created.
+The exception raised by \api{toResult} on an uncommittable form is the model
+refusing to pretend.
+
+\begin{detailbox}{result creation is not validation}
+The \api{createResult} method of an \api{AbstractFormModel} should normally
+assemble already-validated semantic values. It should not discover ordinary
+parse or validation failures for the first time. Those failures belong in
+\api{problems} so the UI can explain them before commit.
+\end{detailbox}
+
+The result-first habit also helps when there is no classic OK button. A search
+panel may produce criteria on every change. A filter form may produce a
+predicate. A preferences page may produce a diff. A bulk-edit panel may produce
+a command request that applies to selected rows. These are still forms in the
+chapter's sense if they own editable state, problems, baseline, and result
+policy. They may not use \api{JDialog}, but they still benefit from a
+\api{FormModel}-shaped contract.
+
+\section{Conversion as a boundary, not a nuisance}
+
+Text is deceptively simple. A \api{JTextField} contains a \api{Document}; a
+\api{Document} stores characters and participates in input methods, undo,
+filters, caret movement, and document events. That does not mean the
+application has a value. The application has a value only after conversion has
+interpreted the characters according to the field's type, locale, empty-text
+policy, and formatting rules. Conversion is the boundary where editing becomes
+meaning.
+
+A converter has two directions. Formatting turns a semantic value into text.
+Parsing turns text into a semantic value or a parse failure. Both directions
+should be considered when designing a field. A date may format as
+\api{2026-06-14} in one screen and as a localized date in another. A decimal
+may accept a comma in a locale-aware converter. An optional field may format a
+\api{null} value as an empty string. A required field may still allow an empty
+string as raw text while producing a parse or validation problem. These
+policies should be explicit because users edit text, while the application
+commits values.
+
+\api{TextFieldModel} exists to keep this boundary honest. It owns raw text,
+parse state, parse problems, dirty state, touched state, and a semantic
+\api{FieldModel}. When \api{setRawText} succeeds, the semantic field advances
+and parse problems are cleared. When parsing fails, raw text still advances,
+the semantic value remains the previous good value, touched state is marked,
+and a parse problem targets the field. This gives the user freedom to edit
+without forcing the rest of the application to defend itself against corrupted
+semantic state.
+
+The previous semantic value in \api{ParseState.Failed} is more than a nice
+detail. It makes possible a stable preview, a stable dependent field, and a
+stable command rule while the user repairs text. Suppose a tax-rate field
+drives a calculated preview. If the user temporarily types \api{.}, the
+preview can either hold the last meaningful calculation or show that the input
+is not currently usable. What it should not do is treat \api{.} as zero,
+overwrite the model with nonsense, and then run business rules against the
+nonsense. The failed parse state gives the presenter a truthful choice.
+
+Parsing and validation should not duplicate each other. If text cannot be
+parsed as a date, a date-range validator should not also report that the date
+is outside the range. The user needs one precise first problem: the text is not
+a date. \api{RuleSet.Builder.field} encodes this policy. A rule for a parsed
+text field checks the field's parse problems and skips semantic validation when
+parse errors are already present. This is not hiding errors. It is preserving
+the order of explanation. First make the text a value; then ask whether the
+value is acceptable.
+
+\begin{lstlisting}[caption={RuleSet skips semantic validation after parse failure.}]
+RuleSet<CustomerEditFormModel> rules =
+        RuleSet.<CustomerEditFormModel>builder()
+                .field(CustomerFields.CREDIT_LIMIT,
+                        form -> form.creditLimit,
+                        Validators.decimalRange(
+                                BigDecimal.ZERO,
+                                new BigDecimal("10000.00"),
+                                "Credit limit is outside the allowed range"))
+                .build();
+\end{lstlisting}
+
+In this example the range rule is meaningful only when a decimal exists. If the
+raw text is \api{abc}, the \api{TextFieldModel} owns the parse problem and the
+range rule stays silent. If the raw text parses to \api{-1}, the parse state is
+fine and the range rule may report a validation problem. The distinction makes
+error summaries shorter and user repair paths clearer.
+
+Empty text deserves special treatment because it is both common and ambiguous.
+An empty string in a required field may mean "the user has not entered the
+value yet." An empty string in an optional numeric field may mean \api{null}.
+An empty string in a search field may mean "no filter." An empty string in a
+code field may be syntactically invalid. Do not make one global converter
+policy do all jobs. The converter and validator together should explain
+whether empty raw text is parseable, whether the resulting semantic value may
+be absent, and whether absence blocks commit.
+
+Formatted values are another source of accidental hostility. A converter that
+reformats raw text on every keystroke may fight the user's cursor. A currency
+field that inserts grouping separators while the user types can move the caret
+and make editing unpleasant. A form model should preserve raw text; a binding
+or editor policy can decide when to reformat. Common policies are: format on
+reset, format on commit, format when focus leaves the field, or format only
+when model changes originate from code rather than user typing. The important
+point is not which policy wins universally. The important point is that the
+policy is explicit.
+
+Input methods make this caution stronger. International text input may involve
+composition before committed characters appear in the document. Key listeners
+that try to parse individual keystrokes are brittle. Document and binding
+updates should treat the field as text edited by Swing's text machinery.
+Parsing raw text after document changes is reasonable; assuming every key press
+is a final character is not. The accessibility and input chapter returns to
+this point, but form code should already avoid shortcutting text components.
+
+The converter itself should be deterministic and side-effect-light. It should
+not query a remote service, update labels, or mutate other fields. If parsing a
+value requires a remote lookup, then the local parse result is probably an id,
+code, or raw token, and the remote lookup is validation or enrichment. Keeping
+conversion local keeps editing responsive and testable. A slow converter is
+just another way to block the EDT.
+
+\begin{pitfallbox}{formatting as validation}
+Do not silently repair user text and call that validation. Trimming surrounding
+space may be harmless in one field and destructive in another. Normalization is
+a domain policy. If it changes meaning, make it visible in the model or result.
+\end{pitfallbox}
+
+There are valid cases for strict input filters. A field that accepts only a
+single digit, a mask that represents a fixed code, or a custom editor with a
+small finite vocabulary may reject impossible edits before they reach the
+model. But filters should be used carefully. A filter that rejects every
+intermediate invalid state can make ordinary editing impossible. The user must
+be able to delete the old value before typing the new one. The
+\api{TextFieldModel} approach is usually kinder: accept raw text, preserve the
+last semantic value, and report parse state.
+
+\section{Problems, targets, and presentation policy}
+
+A problem is a routed fact. It is not merely a message. Corusco's
+\api{Problem} record contains a stable code, severity, target, source, and
+diagnostic message. The code lets tests, generated code, and resource lookup
+identify the problem without depending on wording. The severity lets workflow
+decide whether commit is blocked. The target tells the UI where recovery
+belongs. The source distinguishes parse, validation, and other producers. The
+message is useful for tests and logs, but user-facing localization belongs in
+resources and presentation policy.
+
+\api{ProblemSet} is immutable and deterministic. Adding problems returns a new
+set. Filtering returns a new set. Iteration preserves insertion order.
+Severity-ordered views are stable for problems of equal severity. The class
+does not deduplicate. That last rule is deliberate. If two validators report
+the same problem, the transport should not silently decide whether that is a
+bug, a merge opportunity, or two independent findings. Presentation code can
+merge or suppress duplicates when it has the proper context.
+
+Targeting is the difference between feedback and noise. A problem targeted at
+\api{ProblemTarget.field(CustomerFields.NAME)} can decorate the name field,
+appear in a summary link that focuses the name field, contribute to the name
+field's accessible description, and be asserted by a model test. A form-wide
+problem can appear above the form or in a status area. A table-cell problem can
+decorate a row and column identity without relying on current view coordinates.
+A component target can be used when the relevant UI element is not naturally a
+field. Without targets, every presentation is guesswork.
+
+Problem targets should use stable identities, not visible text. A field label
+may be localized. A table row may move. A table view column may be reordered.
+A component may be nested in another panel. A \api{FieldKey},
+\api{ComponentKey}, row identity, or column identity survives those changes.
+This is the same identity discipline used elsewhere in the book: what the user
+sees is presentation; what the program routes through should be stable.
+
+Severity is equally practical. \api{ProblemSeverity.ERROR} normally blocks
+commit. \api{ProblemSeverity.WARNING} and \api{ProblemSeverity.INFO} normally
+do not, unless a caller applies stricter policy. The declaration order is the
+natural order from least severe to most severe, which means severity filters
+and sorting have a predictable foundation. The UI should not infer blocking
+policy from colors, icons, or message prefixes. A yellow icon is presentation;
+a warning severity is model data.
+
+A form may have several presentation channels for the same problem. Inline
+decoration helps the user see where to fix a field. A tooltip can provide a
+short explanation. A summary helps in long forms and supports keyboard
+navigation. Accessible descriptions make problems available to assistive
+technology. Status text can explain why a command is disabled. The problem
+model should feed these channels; none of them should be the original source
+of truth. Otherwise they will drift.
+
+The display policy should answer three questions. Which problems are shown
+immediately? Which problems block commit? Which problem receives focus after a
+failed commit attempt? The answers need not be identical. A strict form may
+show all errors immediately. A gentle form may show field-level decorations
+only after touch, while still blocking OK on untouched required fields. A
+failed OK may focus the most severe field problem or the first problem in
+reading order. A warning may remain in the summary after a successful parse but
+not block OK. These policies belong in the dialog or binding layer over the
+\api{ProblemSet}.
+
+\begin{lstlisting}[caption={Selecting a focus target from structured problems.}]
+Optional<Problem> focusProblem = form.problems()
+        .bySeverityDescending()
+        .stream()
+        .filter(problem -> problem.target()
+                instanceof ProblemTarget.Field<?, ?>)
+        .findFirst();
+\end{lstlisting}
+
+The snippet is not a complete focus resolver, because real focus policy should
+also consider field visibility, enabled state, current page, table row
+visibility, and possibly touched state. It shows the key point: once problems
+have targets and severities, focus policy can be written as policy. Without
+targets, focus policy becomes string matching or a list of special cases.
+
+Messages need a similar policy. The \api{Problem} message is diagnostic text.
+It is useful for tests, logs, and early examples. A production application
+usually wants resource-backed, localized text. The stable problem code and
+target can select a resource. The field descriptor can supply a label resource.
+The presentation layer can combine them: "Customer name is required" may come
+from a validation message template and a field label. Keeping this composition
+out of the validator makes validators reusable and testable.
+
+The problem source is a small but useful diagnostic. A parse problem and a
+validation problem can have the same target but different remedies. A parse
+problem asks the user to make text into a value. A validation problem asks the
+user to make the value acceptable. A task or service problem may ask the user
+to retry, wait, or change connectivity. Source also helps presentation avoid
+duplicating messages. If parse failed, semantic validation for that field
+should usually be skipped. If async validation failed unexpectedly, the UI may
+show a different tone from an ordinary "name already exists" validation result.
+
+\begin{coruscobox}{problem sets are presentation-neutral}
+Corusco does not say whether a problem appears as a red border, icon, tooltip,
+summary row, accessible description, or disabled reason. It gives those
+presentations one structured fact to observe.
+\end{coruscobox}
+
+Problem ordering should not be accidental. \api{ProblemSet} preserves insertion
+order, so rule registration order can express reading order or workflow
+priority. The severity view then places severe problems first while retaining
+registration order within the same severity. This lets a form produce stable
+summaries. Stable summaries matter for screenshots, tests, and user trust. A
+summary that changes order on every validation pass makes the form feel
+unstable even if the underlying problems are correct.
+
+The route from problem to component should be reversible enough for tests.
+Given a field key, a binding should know which component displays the field.
+Given a problem target, a focus resolver should know which component can
+receive focus. Given a component, diagnostics should be able to report the
+field or component key. Corusco generated view contracts and component keys
+help here, but the principle is independent: validation feedback should be
+routed by identity, not by searching visible labels.
+
+Some problems are intentionally not field-local. A date range may target the
+form because neither date alone is wrong. A summary may also choose a recovery
+field, usually the field the user should edit first. A table import may target
+a row when the entire row conflicts with existing data. A connection failure
+may target the form or command. Do not force every problem into a field. Do
+ensure every problem has a target whose presentation policy is known.
+
+\section{Validation lifecycle and asynchronous checks}
+
+Validation has a lifecycle. It is not a single call hidden behind OK. A form may
+validate on every change, after focus loss, before commit, after a background
+service returns, after a dependent field changes, or after a table row is
+edited. Different rules belong at different moments. Corusco's
+\api{ValidationTiming} names two common moments: \api{ON\_CHANGE} and
+\api{ON\_COMMIT}. The core does not schedule those moments; it lets form models,
+generated plans, and Swing bindings choose which rules to run.
+
+Immediate validation is useful when feedback helps the user continue. A
+required field, length rule, range rule, or format-sensitive dependency may be
+cheap enough to run whenever relevant values change. Commit validation is
+useful when the rule is expensive, cross-cutting, or too noisy during ordinary
+typing. A rule that checks whether a date range overlaps an existing booking
+may not need to run on every keystroke. A rule that enforces final agreement
+with several fields may be better saved for OK or Apply.
+
+\api{RuleSet} gives validation rules a typed dependency list. A rule that
+depends on start date and end date should say so. A rule that depends on
+customer type and credit limit should say so. This avoids the old Swing pattern
+where a listener on start date updates an error label for end date because the
+developer remembered the relationship in one place but not another. Dependency
+metadata is executable documentation: it tells generated or handwritten code
+which rules are affected by a changed field.
+
+\begin{lstlisting}[caption={A cross-field rule with explicit dependencies.}]
+RuleSet<CustomerEditFormModel> rules =
+        RuleSet.<CustomerEditFormModel>builder()
+                .form(List.of(CustomerFields.START_DATE,
+                              CustomerFields.END_DATE),
+                        form -> validateDateRange(
+                                form.startDate.value(),
+                                form.endDate.value()))
+                .build();
+\end{lstlisting}
+
+The validator in the example reads semantic values. It should not inspect text
+fields, labels, or borders. If either text field has parse problems, the form
+model can decide whether the cross-field rule should skip, return no
+additional problems, or report a form-level problem about incomplete input. The
+important point is that this is a semantic rule over the model, not a side
+effect of editing one component.
+
+Validation should be side-effect-light. A field validator returns a
+\api{ProblemSet}. A form validator returns a \api{ProblemSet}. They should not
+show message boxes, mutate unrelated fields, enable buttons, or install
+listeners. Those actions belong to presenters and bindings. Side-effect-light
+validators are easy to test. They are also easier to generate because the
+annotation processor can wire rules without guessing which UI side effects a
+lambda performs.
+
+The built-in \api{Validators} helpers follow this shape. \api{required}
+returns a problem for \api{null} and blank strings. Range validators accept
+missing optional values and report one field-targeted problem when a present
+value is outside bounds. Regex validators treat absent strings as acceptable
+unless combined with \api{required}. Date validators use a \api{Clock}, which
+keeps tests deterministic. These details matter because validators are
+reusable model code, not ad hoc UI fragments.
+
+Clock injection deserves a small pause. A rule such as "date must be in the
+future" can become nondeterministic if it reads the system clock directly. A
+test written at midnight or across a time-zone boundary can fail for reasons
+unrelated to the form. A validator that accepts \api{Clock} says time is an
+input. The book uses deterministic examples for screenshots; validators should
+show the same discipline in model tests.
+
+Asynchronous validation is a different lifecycle. A rule that queries a
+repository, server, cache, or filesystem should not block the EDT. It should
+also not publish stale results. The user can type faster than the service can
+answer. If the form validates \api{Ada}, then the user types \api{Adal}, then
+the service returns the old \api{Ada} result, the old result must not overwrite
+the current field's problems. This is the bug generation counters are designed
+to prevent.
+
+\api{AsyncFieldValidation} owns one asynchronous validation relationship. It
+observes a semantic \api{ReadableValue}, submits work to a \api{TaskService},
+exposes observable problem and busy values, and uses a
+\api{GenerationCounter} so only the current generation may publish problems.
+Closing the controller invalidates generations, removes the value
+subscription, cancels tracked tasks, clears handles, and publishes not-busy
+state. This is not merely validation code. It is lifecycle code.
+
+\begin{lstlisting}[caption={Async validation is a lifecycle-owned relationship.}]
+AsyncFieldValidation<CustomerEdit, String> uniqueName =
+        AsyncFieldValidation.bind(
+                CustomerFields.NAME,
+                form.nameValue(),
+                taskService,
+                (key, value, cancellation) ->
+                        repository.validateUniqueName(value, cancellation));
+
+scope.add(uniqueName);
+\end{lstlisting}
+
+The exact accessor may differ in generated code, but the ownership rule is
+stable. The async validator does slow work through the task service. The
+controller owns subscription and task handles. The scope closes it with the
+screen. The form or presenter observes its problems and busy state. The text
+field does not own the remote query.
+
+Busy state from async validation has presentation consequences. A field may
+show a small pending indicator. A summary may say that validation is still
+running. OK may be disabled while blocking async validation is current, or OK
+may run a final commit validation that waits for or rechecks the service. Both
+policies can be valid. What is not valid is letting a late background callback
+enable OK after the user changed the field. Current generation and current
+value must agree.
+
+Async failure also needs policy. \api{AsyncFieldValidation} converts validator
+exceptions and task-submission failures into a field-targeted error problem
+with \api{ASYNC\_VALIDATION\_FAILED}. That default is useful because unexpected
+validation failure should be visible and should usually block commit. A product
+may choose a more specific message or recovery path, but the problem still has
+a code, severity, target, and source. It is not a stack trace dropped into a
+label.
+
+Cancellation is cooperative. A task service can cancel a task handle, and the
+validator receives a cancellation token. A validator that performs repeated
+work should check the token. A validator that calls a blocking external API
+may not be able to interrupt immediately, but generation checks still prevent
+stale publication. Cancellation improves resource usage; generation checking
+protects correctness. A robust async form wants both.
+
+Validation timing and async validation meet at commit. Pressing OK should not
+blindly trust that every async result is current unless the form's policy says
+so. Some screens require all pending async checks to finish. Some screens allow
+commit with warnings and perform server-side validation during save. Some
+screens run a final synchronous validation on the save endpoint and translate
+server responses into problems. The form chapter does not prescribe one
+policy, but it insists that the policy be explicit. "Whatever callback happened
+last" is not a policy.
+
+\section{Dialogs, generated forms, and Swing bindings}
+
+The form model is Swing-free, but a Swing form still has component mechanics.
+Text fields have documents. Formatted fields may have edit/commit behavior.
+Tables have active cell editors. Combo boxes have editor components. Focus can
+remain in a field whose document has not yet been observed by the model. A
+dialog OK handler that ignores active editors can validate stale model state
+while the user sees a different value on screen. The bug is ordinary and
+infuriating: "I typed a value and OK ignored it."
+
+The correct boundary sequence is component commit, model validation, result
+creation, dialog close. Component commit means asking Swing editors to push
+their current editing state into the model-facing component or model adapter.
+For a table, this may mean stopping cell editing. For a formatted text field,
+it may mean committing or reverting the edit according to policy. For ordinary
+text fields bound through documents, the model may already be current, but the
+dialog should still have a standard pre-OK phase rather than a pile of special
+cases.
+
+\begin{lstlisting}[caption={A dialog OK sequence as a reusable protocol.}]
+void ok() {
+    activeEditorCommit.commitOrReport();
+    ProblemSet problems = form.problems();
+    if (problems.hasErrors()) {
+        problemPresenter.showAndFocus(problems);
+        return;
+    }
+    CustomerEdit result = form.toResult();
+    closeWithResult(result);
+}
+\end{lstlisting}
+
+The snippet names collaborators rather than hiding them. \api{activeEditorCommit}
+knows Swing editor mechanics. The form knows problems and result creation. The
+problem presenter knows visual and focus policy. The dialog shell knows how to
+close. If a future bug appears, the code already tells the maintainer where to
+look.
+
+Generated Corusco forms should reinforce this division. A generated
+\api{@SwingForm} model can register text fields and semantic fields, expose
+descriptors, wire validation rules, and create the immutable record result. It
+should not force a visual layout. The application panel can still be a
+handwritten MigLayout panel. Generated bindings can attach model fields to the
+components exposed by a view contract. This lets generation remove repetitive
+wiring without turning the generator into a GUI builder.
+
+The generated view contract is a practical compromise. Generated binding code
+needs to know that there is a name text field, an active check box, a customer
+type combo box, and perhaps a validation summary. The application view decides
+where those components live. The same form model might appear in a compact
+dialog, a wide detail pane, and a wizard page. If the generator owned layout,
+those three presentations would either become uniform and awkward or require a
+second set of layout escape hatches. Keeping layout handwritten preserves the
+MigLayout discipline established earlier.
+
+\begin{migrationbox}{generated form adoption}
+Do not introduce generation by asking it to redesign a screen. First extract
+stable field keys, result type, converters, validation rules, and resource
+keys. Then let generation compile those stable facts into model and binding
+companions while the existing MigLayout view remains visible and reviewable.
+\end{migrationbox}
+
+Bindings should be scoped. A binding from \api{JTextField} to
+\api{TextFieldModel} installs document listeners and value subscriptions. A
+validation decoration binding observes problem state and changes border,
+tooltip, accessible description, or icon state. A command binding observes
+committability. These relationships are not free-floating. They live as long
+as the screen or dialog lives. A \api{BindingScope} or lifecycle scope should
+own them and close them when the view closes.
+
+Bindings should also avoid feedback loops. A user edit changes the document.
+The binding writes raw text to the field model with a user origin. The model
+notifies observers. The binding may need to update the document when model
+origin is reset or load, but it should not rewrite the document unnecessarily
+for the same user edit. Equality checks, update guards, and change origins are
+boring but essential. Without them, a form can flicker, move the caret, or
+loop until the EDT is saturated.
+
+Problem presentation bindings need restoration. If a binding changes a field's
+border to show an error, it should remember the previous border and restore it
+when the problem disappears or the binding closes. If a binding appends
+validation text to a tooltip, it should not destroy the field's help tooltip
+forever. If a binding sets accessible description, it should compose with help
+and disabled reasons according to policy. Validation decoration is component
+state; component state needs lifecycle.
+
+Dirty cancel confirmation is another dialog workflow over the form model. When
+the user presses Cancel or closes the window, the dialog asks whether the form
+has dirty semantic values or other unsaved work. If not, it closes. If yes, it
+may ask for confirmation. A touched but not dirty field should not usually
+trigger "discard changes." An invalid raw text state may deserve confirmation
+because the user typed something, even if no semantic value changed. This is a
+policy choice, but the model gives the facts needed to make it.
+
+Apply buttons require even more precision. OK is terminal. Cancel is terminal.
+Apply is not terminal. After Apply succeeds, should the baseline be accepted?
+Usually yes, because the current values have been applied. If Apply fails,
+dirty state should remain. If Apply partly succeeds, the dialog needs a policy:
+accept the successful fields, keep all dirty, or reload from the authoritative
+state. The model cannot invent this policy. It can make the consequences
+visible through baselines and problems.
+
+Search forms are worth mentioning because they often do not look like dialogs.
+A search field, date range, status combo, and Search button form an editable
+contract. The result may be a search criteria object or an immediate update to
+an observable list. Parse problems still matter. Dirty state may mean "criteria
+changed since last search." Apply may mean "run search." Reset may mean
+"restore default criteria." Treating search controls as a form avoids a tangle
+of document listeners and stale result flags.
+
+Table-cell editors are forms in miniature. A cell editor may display raw text
+while the table model stores semantic values. A parse failure should not
+silently corrupt the row object. A validation problem should target the cell by
+row identity and column identity, not by current view row and view column.
+Corusco table bindings and form models can cooperate here: the table chapter
+handles row and column identity; the form chapter supplies conversion and
+problem semantics.
+
+\section{Migration and review scenarios}
+
+Many existing Swing forms cannot be rewritten in one pass. The goal is not to
+replace every listener with a framework-shaped object overnight. The goal is to
+move facts to their correct owners. A good migration begins by identifying the
+form result, the fields that contribute to it, the validation facts currently
+hidden in UI code, and the lifecycle of installed listeners. Then extract the
+most painful concept first.
+
+If users report "Save is enabled at the wrong time," extract committability.
+Create a form model or presentation value that answers whether Save can
+proceed and why. Bind the button to that fact. Do not fix the bug by adding one
+more listener that toggles the button after a special case. If users report
+"error messages disagree," extract problems. If users report "Cancel warns
+when I changed nothing," extract dirty and touched state. If users report "OK
+ignored my table edit," extract active-editor commit into the dialog workflow.
+
+\begin{lstlisting}[caption={A migration seam around legacy component state.}]
+final class LegacyCustomerFormAdapter
+        implements FormModel<CustomerEdit> {
+
+    private final LegacyCustomerPanel panel;
+    private final CustomerEditFormModel model;
+
+    void pullFromComponents() {
+        model.name.setRawText(panel.nameField().getText(), ChangeOrigin.USER);
+        model.creditLimit.setRawText(
+                panel.creditLimitField().getText(), ChangeOrigin.USER);
+        model.active.setValue(
+                panel.activeBox().isSelected(), ChangeOrigin.USER);
+    }
+
+    @Override
+    public CustomerEdit toResult() {
+        pullFromComponents();
+        return model.toResult();
+    }
+}
+\end{lstlisting}
+
+This adapter is not the final architecture. It is a migration seam. It lets
+tests begin asserting model behavior while the old panel still exists. Over
+time, bindings can replace \api{pullFromComponents}, and component scraping can
+disappear. A migration seam is acceptable when it moves authority toward the
+model. It is not acceptable when it becomes a permanent way to hide the model
+behind the panel.
+
+The first review scenario is the integer field. The old form rejects non-digit
+keystrokes. Users cannot easily type a negative number, replace all text, or
+paste a value with surrounding spaces. The reviewer should ask whether the
+field really needs strict character filtering or whether it should preserve raw
+text and report parse state. If the domain accepts negative values, a filter
+that rejects \api{-} is wrong. If the domain rejects negative values, the parse
+may still accept \api{-1} and validation should report the semantic rule. This
+is how a small field teaches the parsing-validation split.
+
+The second scenario is the date range. Start date and end date each parse
+independently. The range rule depends on both semantic dates. If either date
+fails to parse, the range rule should not produce a misleading "start must be
+before end" problem. If both dates parse and the order is wrong, the rule may
+target the form or the end date according to recovery policy. The problem
+summary should not depend on which document listener happened to run last.
+
+The third scenario is an async uniqueness check. The old form starts a server
+request from a document listener and writes the result into a label. Users see
+the label flicker, and sometimes the label reports that a previous name is
+available after they have typed a new one. The migration extracts a semantic
+name value, an \api{AsyncFieldValidation}, a busy indicator, and a generation
+check. The server result becomes a problem set for the current generation only.
+The label becomes one presentation, not the authority.
+
+The fourth scenario is Apply. A preferences dialog has OK, Cancel, and Apply.
+The old Apply writes current component values to settings and leaves dirty
+state unchanged. The user presses Apply successfully, then Cancel, and the
+dialog asks whether to discard changes that were already applied. The fix is
+not another boolean in the button listener. The fix is a baseline policy:
+after successful Apply, accept current values as the new baseline. After failed
+Apply, keep dirty state. If some settings are applied by a background task,
+the baseline should change only when the task succeeds.
+
+The fifth scenario is import review. A CSV import screen shows parsed rows in a
+table and a detail form for the selected row. Parse errors in the file target
+rows or cells. Edits in the detail form target fields. A duplicate check may
+be async. The final Import command should ask whether blocking problems remain
+in the row set and detail form. This is a larger workflow, but it is made of
+the same pieces: raw text, semantic values, problem targets, severities,
+baselines, selection, and task lifecycle.
+
+The sixth scenario is generated forms. A team annotates a record and receives a
+generated model, descriptors, and binding companion. The generated code looks
+strange at first because it names facts that the old form kept implicit:
+field keys, converter policy, validators, result creation, and view contract.
+The reviewer should ask whether those generated names are stable and useful.
+If they are, the generator is compiling real design. If they are awkward, the
+annotations may be exposing unclear domain language that was already present
+in the old form.
+
+Review should also include screenshots, but screenshots are evidence of
+presentation, not proof of model correctness. A screenshot can show that a
+problem summary is readable, a tooltip is not clipped, a dialog does not jump
+when validation appears, and a disabled button uses the right styling. It
+cannot prove that stale async validation is impossible or that \api{toResult}
+throws when errors exist. Pair screenshot examples with model tests.
+
+The model tests should be written as editing stories. A good story names the
+baseline, user edit, parse result, validation result, dirty state, touched
+state, and commit result. For async validation, the story should include stale
+completion. For dialogs, the story should include active-editor commit and OK
+failure focus. For generated forms, the story should include annotation
+processor output compiling and the generated model producing the expected
+record. These tests make the book examples trustworthy.
+
+\begin{detailbox}{a useful form review sentence}
+For each field, say: this is the raw editor state, this is the semantic value,
+this is the converter, this is the validation policy, this is the problem
+target, this is the baseline, and this is how the result uses the value. If the
+sentence cannot be spoken, the form is not yet designed.
+\end{detailbox}
+
+The migration endpoint is not a form with no Swing code. Swing still owns
+documents, focus, editors, keyboard traversal, accessible contexts, and
+painting. MigLayout still owns geometry. FlatLaf still paints components.
+Corusco owns model facts and binding lifecycles. The mature form is not less
+Swing; it is more honest Swing. It lets Swing do widget work and lets the form
+model do form work.
+
+This distinction keeps the chapter connected to the rest of the book. The
+component chapter explains why text fields, documents, focus, and editors have
+their own contracts. The MigLayout chapter explains why the panel should remain
+handwritten geometry. The command chapter explains why OK and Save are command
+facts. The lifecycle chapter explains why bindings and async validation must
+close. The dialog chapter explains the commit protocol. This chapter supplies
+the form facts those chapters need.
+
+A book example for this chapter should therefore be more than a pretty dialog.
+It should present at least three named states. The first state is clean and
+committable, so the reader sees the ordinary form. The second state contains
+invalid intermediate raw text, so the reader sees that the text field can
+display what the user typed while the semantic value remains protected. The
+third state contains a semantic validation problem, so the reader sees that a
+parsed value can still be unacceptable. If async validation is demonstrated, a
+fourth state should show pending validation and then a stale-result scenario in
+a model test. A screenshot without those model stories would be decorative.
+
+The companion code should keep the same split. A core test constructs the form
+model directly, edits raw text, invokes validators, and asserts problems. A
+Swing smoke test constructs the MigLayout panel, installs bindings in a scope,
+types or sets component values on the EDT, and asserts that model state changes.
+The screenshot harness fixes size, Look-and-Feel, sample data, and initial
+state. These layers do not duplicate work. They prove different claims: the
+model owns the facts, the binding connects the facts, and the visual example
+communicates the facts.
+
+Documentation should also avoid showing a false shortcut. It is tempting to
+quote only the final dialog code because that is what the reader sees. But the
+dialog is the least important part if the model is wrong. The chapter's
+examples should quote the field model, a converter choice, a validation rule,
+and the OK protocol before dwelling on borders or icons. The visual treatment
+then feels earned. The reader can trace a red border back to a problem target,
+a disabled OK button back to severity, and a dirty marker back to baseline
+state.
+
+Operational review is the last pass. Ask what happens if the repository is
+slow, if the user closes the dialog during validation, if a translated message
+is longer than expected, if a screen reader asks for the field description, if
+the user presses Escape with dirty but unparsable text, if Apply succeeds but
+OK later fails, and if a save failure returns server-side field problems. None
+of these questions belongs solely to Swing or solely to Corusco. They are form
+workflow questions. A mature form model gives each answer a place to live.
+
+Server-side validation is the common final check. A local form may be perfectly
+committable and still receive a save response saying that a name was taken, a
+credit limit exceeded a permission boundary, or an address failed a current
+service rule. Treat those responses as problems when the user can repair them.
+Map server field identifiers to \api{FieldKey} values, map row failures to row
+or cell targets, preserve severity, and keep diagnostic details for logs. Do
+not collapse every save failure into a modal "save failed" box. Some failures
+belong in a message box; repairable form failures belong back in the form's
+problem language so the user can continue editing. That mapping should itself
+be covered by tests, because service contracts drift just as surely as Swing
+screens do.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Take a numeric text field and write down its raw text, semantic value,
+parse state, parse problem, dirty state, and touched state after three edits.
+\item Replace one error label with a \api{ProblemSet}. Bind the label only as a
+presentation of the most severe problem.
+\item Write a validation rule that depends on two fields. Record the dependency
+explicitly.
+\item Add a model-level test for invalid intermediate input.
+\item Design an OK flow for a dialog that includes active-editor commit,
+validation focus, and dirty cancel confirmation.
+\item Add stale-result suppression to an asynchronous uniqueness validator.
+\end{enumerate}
+\end{exercisebox}
+
+\textbf{Checklist.}
+
+\begin{itemize}
+\item Keep raw text, parsed value, validation result, touched state, and dirty
+state distinct.
+\item Use \api{TextFieldModel} when text edits a semantic value.
+\item Use \api{FieldModel} when the component already edits the semantic type.
+\item Use stable problem codes and typed targets.
+\item Do not throw exceptions for normal user input mistakes.
+\item Base committability on problem severity, not label contents.
+\item Cancel or ignore stale async validations.
+\item Commit active editors before dialog OK validation.
+\item Test form models without Swing before testing bindings.
+\end{itemize}

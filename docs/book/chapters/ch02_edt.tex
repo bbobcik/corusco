@@ -1,0 +1,590 @@
+\chapter{The EDT, EventQueue, Nested Loops, and Virtual-Thread Handoffs}
+\chapterquote{The EDT is not merely a thread. It is the serialization boundary for almost every Swing invariant you care about.}{A desktop concurrency rule of thumb}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & What exactly must be serialized through the EDT, and how do modern background tasks hand results back safely?\\
+Primary APIs & \api{EventQueue}, \api{SwingUtilities}, \api{SwingWorker}, \api{SecondaryLoop}, \api{Toolkit}, \api{Thread}.\\
+Hidden difficulty & Modal dialogs and drag operations can run nested event loops; "later" does not always mean "after the whole user interaction is finished."\\
+Payoff & Responsive applications, deterministic model ownership, fewer deadlocks, better failure isolation.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{The real threading policy}
+
+The shortest rule is familiar: access Swing on the EDT. The more exact rule is that Swing components and related classes, including models attached to components, are generally not thread-safe unless the documentation says otherwise. A \api{TableModel} observed by a \api{JTable}, a \api{Document} observed by a text component, and a \api{ListModel} observed by a \api{JList} are part of the UI state graph. Mutating them from a worker thread is not safe merely because the object is not itself a \api{Component}.
+
+This is the rule advanced developers violate when they believe they are being careful. They keep all calls to \api{JLabel.setText} on the EDT, but let a background loader append to a \api{DefaultTableModel}. The table sees events on the wrong thread, the row sorter updates on the wrong thread, selection models are consulted concurrently, and the failure appears later as an intermittent painting exception.
+
+The rule is easier to remember if one stops treating the EDT as an implementation detail and starts treating it as an owner. The component tree is a mutable object graph. It contains components, UI delegates, listeners, models, selections, documents, row sorters, repaint state, focus state, and transient editing state. That graph is not protected by locks. Its protection is social and architectural: code that mutates it runs through one serialized event thread. Once a worker thread is allowed to write into the graph directly, the program has created a second owner without creating a protocol.
+
+This ownership model is stricter than the folk rule "do not touch components off the EDT" and more useful in review. A table model attached to a table is UI state even if it lives in a separate class. A document attached to a text component is UI state even if a parser wants to read it. A selection model is UI state even if the domain operation is "delete selected customer." The model may not extend \api{Component}, but it is part of the live view graph and must obey the same confinement rule unless deliberately adapted.
+
+There is also a distinction between data prepared for the UI and data installed into the UI. A repository can load rows on a worker. A parser can parse a file on a worker. A service can build immutable DTOs on a worker. But appending those rows to the live table model, replacing the combo-box model, changing the selected row, or setting the document text belongs to the EDT. The worker prepares facts; the EDT installs them.
+
+The sharpest bugs appear when code crosses this boundary halfway. A worker creates a list of rows, mutates the table model storage directly, and then posts only the event to the EDT. The event is on the correct thread, but the mutation was not. A different worker reads the current selection directly, performs a delete, and posts a status update. The status update is safe, but the selection read was not. Thread safety is not a property of the last method call in the chain; it is a property of the whole ownership path.
+
+Modern Java makes this more important, not less. Virtual threads make it cheap to start many blocking tasks. That is good for service calls and file operations. It also means mistakes can multiply quickly: a screen can launch dozens of cheap workers that all try to "just update one value." The correct response is not to avoid virtual threads. The correct response is to keep the EDT boundary explicit and boring.
+
+\begin{principlebox}{EDT confinement}
+Treat every object in the live Swing view graph as EDT-confined unless you have designed, documented, and tested a different ownership protocol. This includes component models, selection models, document models, renderer caches, and view-state adapters.
+\end{principlebox}
+
+Four terms deserve precise meanings before they are used routinely. An \termdef{AWT event}{a small object representing input, repaint, invocation, window, timer, focus, or other desktop work to be dispatched} is not necessarily a user gesture. A \termdef{dispatch}{the act of taking one event and delivering it to the code that handles it} is one unit of EDT work. A \termdef{handoff}{a deliberate crossing from a worker or service thread back to the EDT} is a boundary operation, not a vague promise that something will happen soon. A \termdef{live Swing graph}{the component tree together with attached models, selections, documents, UI delegates, listeners, and repaint state} is the object graph whose mutation must be serialized.
+
+\api{EventQueue} is the central dispatcher for those events. It is FIFO-like, but not a toy queue: it cooperates with native event integration, event coalescing, modality filters, invocation events, and nested dispatch. Application code normally interacts with it through \api{EventQueue.invokeLater}, \api{EventQueue.invokeAndWait}, or \api{SwingUtilities.invokeLater}. These methods are simple to call and subtle to reason about because they name only one edge of the system. They place work into a dispatch regime; they do not freeze the rest of the desktop.
+
+A runnable posted with \api{invokeLater} runs after pending events that are ahead of it in the queue, but the queue is not an isolated application list. Native events, repaint events, invocation events, modality filters, and nested dispatch can all affect what "after" means operationally. The safe assumption is that \api{invokeLater} schedules a task on the EDT, not that it establishes a global transaction boundary.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\edtQueueBoundaryFigure}
+\caption{The queue delivers work to the EDT, and the EDT owns the live Swing graph. Worker threads cross the boundary with immutable facts, not with direct component or model mutation.}
+\label{fig:edt-eventqueue-boundary}
+\end{figure}
+
+Figure~\ref{fig:edt-eventqueue-boundary} is the picture to keep beside every threaded Swing review. Input events, timer ticks, repaint requests, invocation events, and worker completions all compete for the same visible heartbeat. The queue is the gate through which work reaches the EDT. The live Swing graph is the object being protected. A worker that carries an immutable snapshot toward the queue respects the boundary. A worker that keeps a reference to the table model and mutates it directly has bypassed the gate.
+
+\begin{examplebox}{edt-eventqueue-boundary}
+\api{BookFigureGenerator} renders Figure~\ref{fig:edt-eventqueue-boundary} from a deterministic Swing panel in \api{BookVisualFigures}. The example exists to keep the diagram under the same FlatLaf and screenshot harness as the rest of the book.
+\end{examplebox}
+
+The figure also shows why "I used \api{invokeLater}" is not a complete design argument. A background task may post a callback correctly and still post far too many callbacks. A modal dialog may enter a nested dispatch loop and let other work run before the surrounding method resumes. A timer may interleave with a command in a way that is perfectly legal and still surprising. The phrase \api{invokeLater} answers "which thread will run this runnable?" It does not answer "is the state still current?", "was the work batched?", "who owns cancellation?", or "what happens if the screen closes first?"
+
+When the queue is understood this way, the EDT rule stops being superstition. We are not worshipping a special thread. We are preserving a single-writer discipline for mutable presentation state. That discipline is what lets a table ask its model for a value while painting, a selection listener ask which row is selected, and a renderer cache its temporary state without locking every field. Swing's design assumes the discipline. If application code wants a different discipline, it must supply the missing protocol itself.
+
+\begin{lstlisting}[caption={A safe startup skeleton.}]
+public final class Main {
+    public static void main(String[] args) {
+        EventQueue.invokeLater(() -> {
+            configureLookAndFeel();
+            JFrame frame = new MainWindow();
+            frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+            frame.pack();
+            frame.setLocationByPlatform(true);
+            frame.setVisible(true);
+        });
+    }
+}
+\end{lstlisting}
+
+Startup is often the first concurrency bug in a Swing application. Construct the UI on the EDT. It is not enough to show it on the EDT after building it elsewhere, because construction may install models, listeners, UI delegates, peer-sensitive properties, and document state.
+
+After startup, most application code reaches the EDT through callbacks rather than through explicit queue calls. An \api{ActionListener} on a button, a \api{ListSelectionListener} on a table selection model, a \api{DocumentListener} on a text document, a \api{Timer} callback from \api{javax.swing.Timer}, a focus listener, a mouse listener, and a key binding action are normally invoked on the EDT. They feel like ordinary methods because Swing hides the dispatch machinery, but each one is one event being processed. The same rule applies: do the small UI decision now, and move unpredictable work elsewhere.
+
+This is why action listeners should be treated as command entry points, not as convenient places to do everything. A good listener may read committed form state, validate cheap local facts, create a request, submit a task, and update command state. A bad listener opens a database connection, parses a large file, sleeps while waiting for a device, or sorts a huge model because the code was only five lines long in the first prototype. The EDT does not care how short the source code is. It cares how long the operation takes and whether other events can be dispatched while it runs.
+
+Selection listeners deserve special caution because they often fire during larger component operations. A table selection may change because the user clicked, because rows were removed, because sorting changed the view order, because a model reset occurred, or because code restored selection by identity after a refresh. A listener that starts a detail load for every intermediate selection can create a storm of obsolete tasks. A disciplined listener coalesces selection changes, captures a stable selected identity, and lets stale-result guards reject completions that no longer match the selection.
+
+Document listeners have a different trap. A document event is fired after the mutation has happened. It is a good place to mark a form dirty, schedule validation, or update derived presentation state. It is not a good place to perform another immediate edit of the same document unless the code is deliberately prepared for nested document behavior. Filtering characters belongs in a \api{DocumentFilter}; observing committed mutations belongs in a listener. Mixing these roles creates reentrancy and undo problems that look unrelated to threading until one notices that they all happen during one dispatch.
+
+Painting callbacks are also EDT work. A custom component's \api{paintComponent} method should be fast, deterministic, and free of model mutation. It may read immutable or EDT-owned presentation state. It should not start a load, change selection, install listeners, or call \api{revalidate} as a routine side effect. Painting is part of the queue's visible heartbeat. If painting has side effects, diagnosing freezes becomes nearly impossible because observing the screen changes the state being observed.
+
+Some callbacks are not Swing callbacks merely because a Swing screen registered them. A repository completion, message-bus notification, file watcher, HTTP client callback, virtual-thread continuation, or ordinary \api{CompletableFuture} stage may run on a worker, pool thread, virtual thread, native watcher thread, or the completing thread. Treat these callbacks as outside the Swing graph until a named adapter crosses the boundary. The fact that the callback will eventually update a label does not make it an EDT callback.
+
+For this reason, methods that participate in UI state should have an implicit or explicit thread contract. A private method named \api{installRows} may assert that it is running on the EDT. A method named \api{loadRowsInBackground} should not touch Swing. A method named \api{publishRowsToEdt} should do exactly the crossing and no hidden work. Naming is not a substitute for assertions and tests, but good names make review easier. Bad names such as \api{refresh} often hide capture, work, installation, repaint, and status updates in one place.
+
+The same advice applies to helper classes. A table model attached to a visible \api{JTable} can assert EDT mutation in its public mutators. A presentation model used only by Swing bindings can do the same. A core model intended for server or batch use should not import Swing merely to call \api{isEventDispatchThread}. The owner decides the assertion. Corusco's core types are useful here because many facts can be tested without Swing, while Swing adapters can enforce the EDT contract at the boundary.
+
+\api{invokeAndWait} is sharp but useful. It blocks the calling thread until the runnable has executed on the EDT. It is useful in tests, startup handshakes, and integration points where a non-EDT thread needs a synchronous result from the UI. It is also an easy deadlock primitive.
+
+\begin{pitfallbox}{Calling \api{invokeAndWait} from the EDT}
+Calling \api{invokeAndWait} from the EDT cannot make progress because the EDT is waiting for itself. Always test \api{EventQueue.isDispatchThread} before providing synchronous bridging utilities.
+\end{pitfallbox}
+
+A robust bridge returns values and preserves exceptions clearly:
+
+\begin{lstlisting}[caption={A small synchronous EDT bridge for tests and integration code.}]
+public static <T> T onEdt(Callable<T> task) {
+    if (EventQueue.isDispatchThread()) {
+        try {
+            return task.call();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    AtomicReference<T> result = new AtomicReference<>();
+    AtomicReference<Throwable> failure = new AtomicReference<>();
+    try {
+        EventQueue.invokeAndWait(() -> {
+            try {
+                result.set(task.call());
+            } catch (Throwable t) {
+                failure.set(t);
+            }
+        });
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException(e);
+    } catch (InvocationTargetException e) {
+        throw new RuntimeException(e.getCause());
+    }
+    if (failure.get() != null) {
+        throw new RuntimeException(failure.get());
+    }
+    return result.get();
+}
+\end{lstlisting}
+
+This kind of bridge should be rare in product code. If a worker frequently needs synchronous UI state, the ownership boundary is probably wrong. Prefer immutable snapshots passed from EDT to worker, then immutable results passed back.
+
+Nested event loops and modality are the next surprise. Modal dialogs do not freeze the EDT in the naive sense. They enter a nested event dispatch regime that continues to process events while restricting which windows may receive them. Drag-and-drop, print dialogs, file choosers, popup interactions, and some platform integrations can also produce nested dispatch.
+
+Nested loops are why code like this is dangerous:
+
+\begin{lstlisting}[caption={A modal dialog can allow unrelated EDT work to run before this method returns.}]
+private void editCustomer(Customer customer) {
+    editor.setCustomer(customer);
+    int result = JOptionPane.showConfirmDialog(frame, editor,
+            "Edit customer", JOptionPane.OK_CANCEL_OPTION);
+    // Other invocation events may have run while the dialog was open.
+    if (result == JOptionPane.OK_OPTION) {
+        save(editor.getCustomer());
+    }
+}
+\end{lstlisting}
+
+The method is still executing on the EDT, yet other EDT events can run during the modal dialog. If those events mutate shared screen state, assumptions made before opening the dialog may be stale afterward. For small applications this is benign. In large applications it creates reentrancy bugs: a command starts, opens a modal dialog, another command runs in the nested loop, and the first command resumes against a changed model.
+
+\begin{detailbox}{Modal does not mean atomic}
+A modal dialog blocks user interaction with selected windows; it does not make the surrounding method an atomic transaction over UI state. Re-check state after modal calls, and avoid holding transient invariants across them.
+\end{detailbox}
+
+\section{Nested Loops and Background Handoffs}
+
+\api{SecondaryLoop} exposes nested dispatch explicitly. It is rarely needed, but understanding it clarifies modality. A secondary loop lets a thread enter a new event loop until another thread exits it. It can be used to adapt legacy synchronous APIs to asynchronous events, but it should not be a default design tool.
+
+The main risk is reentrancy. While the loop runs, other UI events run too. If your code is waiting for "one thing" but accidentally allows "everything" to happen, your invariants must tolerate that. A secondary loop can make an old API look convenient, but it broadens the time interval during which unrelated UI state can change. Treat it as an adapter of last resort, not as a replacement for an explicit asynchronous workflow.
+
+This matters because background handoffs also create time intervals. The user clicks Search at 10:00:00. The screen captures a request. A worker starts. The user edits the search text at 10:00:01. The first worker completes at 10:00:02. If the callback merely says "put these rows in the table," it has forgotten that the request is no longer current. No data race is required for the bug. Time alone is enough.
+
+The same pattern appears with dialogs. A Save command may open a confirmation dialog, then resume after the user answers. During the dialog, repaint events, timers, focus changes, and other invocation events may have run. The command must not assume that every fact observed before the dialog still holds afterward. This is not a reason to avoid modal dialogs; it is a reason to keep their surrounding state small and to re-check the facts that matter.
+
+\textbf{SwingWorker versus virtual threads.} \api{SwingWorker} remains valuable because it encodes a Swing-specific lifecycle: background computation, intermediate publication, progress, cancellation, and a completion callback on the EDT. Virtual threads, available in modern Java, solve a different problem: they make blocking tasks cheap in terms of platform-thread consumption. They do not make Swing thread-safe, and they do not provide Swing model events.
+
+Use \api{SwingWorker} when you want progress and lifecycle conventions integrated with Swing. Use virtual threads when you have many blocking operations and you can write a clean handoff back to the EDT. Avoid mixing both without a reason.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\busyTaskFigure}
+\caption{A task-driven Swing screen should show busy state as a model fact. The worker owns blocking work; the EDT owns the visible state, command enablement, and installed result.}
+\label{fig:edt-busy-task}
+\end{figure}
+
+Figure~\ref{fig:edt-busy-task} shows the important idea visually: the task is not the UI. Busy state, progress, cancellation, command enablement, and result installation are presentation facts around the task. A worker thread may own the blocking call. It should not own the button, progress bar, table model, or status line. Those components display the task state after that state has crossed the EDT boundary.
+
+The choice between \api{SwingWorker} and virtual threads is therefore not a style contest. \api{SwingWorker} is useful when its built-in lifecycle matches the work: one background computation, optional intermediate chunks, progress, cancellation, and done callback. Virtual threads are useful when the application already has a task service or wants the service layer to use straightforward blocking code without tying itself to Swing. In both cases, the Swing-facing contract is the same: capture immutable input on the EDT, compute away from the EDT, publish immutable result back to the EDT, and ignore or cancel stale results.
+
+Corusco's task services are meant to make this contract explicit. A core task service can run work without Swing. A Swing task service or Swing callback adapter can deliver completions on the EDT. Busy values can be observed by commands, overlays, status labels, and tests. This is better than scattering \api{invokeLater} calls through service code because the service layer does not need to know which UI toolkit will consume the result.
+
+The application should also decide what "busy" means. Some work blocks one command. Some work blocks a form. Some work blocks an entire screen because stale interaction would be dangerous. Some work should not block anything because it is merely refreshing secondary information. If busy state is only a disabled button, this policy is invisible. If busy state is a named value or task handle, the policy can be reviewed and tested.
+
+\begin{coruscobox}{task handoff}
+Plain Swing gives the primitives: a worker mechanism, an event queue, component methods, and model events. Corusco's contribution is to make the handoff a named design object. A task handle can expose running, failed, cancelled, and completed state. A scope can say whether the screen is still alive. A generation value can say whether the completion is still current. A Swing delivery adapter can make the callback's thread explicit. The result is not more magic; it is less hidden policy in listeners.
+\end{coruscobox}
+
+This distinction is especially important in teams. One developer writes a repository call, another writes the table model, a third adds a busy overlay, and a fourth adds cancellation months later. If the handoff is just a few local \api{invokeLater} calls, each developer must rediscover the policy from incidental code. If the handoff is a task object observed by a presentation model, the policy has a place to live. The code can then answer ordinary review questions: What cancels this task? What screen owns it? What state becomes busy? What completion is stale? What exception path updates the user-visible problem state?
+
+For readers returning to Swing after years away, it is worth spelling out \api{SwingWorker}'s contract. \api{doInBackground} runs away from the EDT. \api{publish} sends intermediate chunks toward \api{process}, and \api{process} runs on the EDT. \api{setProgress} fires progress property changes that Swing code can observe. \api{done} also runs on the EDT, but the result or exception is still obtained through \api{get}. That last detail is easy to forget: failure in \api{doInBackground} does not automatically appear as a thrown exception in the action listener that started the worker.
+
+The usual \api{SwingWorker} mistake is to treat \api{done} as if it were merely a continuation of \api{doInBackground}. It is not. It is an EDT callback. It should be short, should check whether the screen still wants the result, and should install prepared state rather than perform more slow work. A second mistake is to publish too many chunks. \api{publish} is convenient, but it is not a license to stream every byte, row, or percentage point as a separate visible update. The same batching and coalescing policy applies.
+
+\api{SwingWorker} also has an identity problem in large applications. The worker object itself is sometimes allowed to become the screen model: buttons ask it whether it is done, progress bars listen to it directly, cancel actions call it directly, and status labels infer meaning from its state. That may be enough for a small dialog. It becomes brittle when a screen has several tasks, when a task outlives one panel, or when a task is retried with a new request. A presentation model or task handle gives the workflow an identity independent of one JDK helper object.
+
+Virtual threads make a different tradeoff. They encourage ordinary blocking code inside the task body. That is pleasant: a repository call can look like a repository call, not like a callback pyramid. But virtual threads do not define Swing progress, busy state, cancellation display, stale-result rejection, or EDT delivery. Those policies must be supplied by the application or by a library layer. A virtual thread is a good worker; it is not a screen lifecycle model.
+
+One practical way to choose is to ask where the policy already lives. If the screen is a small self-contained tool and \api{SwingWorker}'s lifecycle exactly matches the work, use it directly and keep the callback disciplined. If the application has a common task service, common cancellation UI, diagnostic task names, and reusable busy overlays, use the service and let virtual threads or an executor be an implementation detail. If the operation is a stream of visible chunks, design the chunk policy explicitly whichever worker mechanism runs the producer.
+
+The code shape should make the choice visible. A \api{SwingWorker} subclass or local worker should be near the screen when it truly encodes screen-specific work. A task submitted to a Corusco service should carry a name, request, cancellation policy, and callback whose ownership is clear. What should not happen is the middle ground where every repository method creates a virtual thread and every service method secretly posts to Swing. That design is convenient for the first caller and hostile to every later caller.
+
+\begin{lstlisting}[caption={A virtual-thread handoff pattern that keeps Swing state EDT-confined.}]
+public void refreshInvoice(long invoiceId) {
+    setBusy(true);
+    JButton sourceButton = refreshButton;
+    sourceButton.setEnabled(false);
+
+    Thread.ofVirtual().name("invoice-load-", 0).start(() -> {
+        try {
+            InvoiceDto dto = service.loadInvoice(invoiceId); // Blocking I/O.
+            EventQueue.invokeLater(() -> {
+                invoiceModel.replaceWith(dto);
+                setBusy(false);
+                sourceButton.setEnabled(true);
+            });
+        } catch (Throwable t) {
+            EventQueue.invokeLater(() -> {
+                showLoadFailure(t);
+                setBusy(false);
+                sourceButton.setEnabled(true);
+            });
+        }
+    });
+}
+\end{lstlisting}
+
+The example captures a component reference before the virtual thread starts. That is acceptable only because the reference is used again on the EDT. The background code does not inspect or mutate Swing state. In a more robust application, a screen lifecycle token would prevent updating a disposed view.
+
+\textbf{Snapshots and immutable handoff.} When a worker needs input from the UI, capture an immutable snapshot on the EDT, then pass that snapshot to the worker. When the worker finishes, pass an immutable result back. This pattern is simple, testable, and resistant to data races.
+
+\begin{lstlisting}[caption={Snapshot on EDT, compute elsewhere, install on EDT.}]
+public void runSearch() {
+    SearchRequest request = new SearchRequest(
+            queryField.getText(),
+            includeArchivedCheckBox.isSelected(),
+            selectedAccountIds());
+
+    Thread.ofVirtual().start(() -> {
+        SearchResult result = searchService.search(request);
+        EventQueue.invokeLater(() -> {
+            if (request.equals(currentSearchRequest())) {
+                resultsTableModel.replaceRows(result.rows());
+            }
+        });
+    });
+}
+\end{lstlisting}
+
+The equality check is a simple stale-result guard. Many UI race bugs are not memory-safety problems but ordering problems: an older slow request returns after a newer fast request. Sequence numbers, request IDs, or cancellation tokens solve this cleanly.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\linewidth]{\backgroundStatusFigure}
+\caption{Status and progress are EDT-owned presentation facts. High-frequency worker events should be coalesced before they reach labels, progress bars, tables, or overlays.}
+\label{fig:edt-status-progress}
+\end{figure}
+
+Figure~\ref{fig:edt-status-progress} is deliberately modest: a progress value, a status line, and a command row. These are the places where concurrency bugs often become visible. If the status line is updated directly by workers, text flickers and ordering becomes meaningless. If the progress bar receives every worker tick, the event queue fills with stale decoration. If the command row has independent listeners for busy state, one command may re-enable before another. A presentation model for task state gives these visual elements one truth to observe.
+
+Snapshotting is also a design discipline. The snapshot should be small and immutable: search text, selected ids, form values that have been committed to a field model, and current generation number. It should not contain a \api{JTextField}, a \api{JTable}, a mutable table model, or a live selection model. If the worker needs more information later, that information should have been part of the request or should be fetched from a service, not from Swing.
+
+The result should be equally clear. A search worker returns rows, total count, maybe diagnostics, and maybe a server-side cursor token. It does not append to the table. A validation worker returns a problem set or validation response. It does not paint a red border. A save worker returns success, failure, or updated entity state. It does not close the dialog. These distinctions sound fussy until one tries to test stale completions; then they become the only reasonable way to prove correctness.
+
+Stale-result guards should be part of the screen model, not ad hoc local variables hidden in each callback. A \api{GenerationCounter}, request id, or cancellation token tells the screen which completion is still current. The completion handler checks that token on the EDT before installing results. This check should happen after crossing to the EDT because the current screen state is EDT-owned. A worker that reads the current token directly from another thread has merely moved the race.
+
+The word \termdef{immutable}{not changed after publication to another thread} should be interpreted practically here. A Java record whose fields refer to mutable lists is not immutable unless those lists are defensively copied or otherwise frozen by convention. A search request containing a \api{List<Long>} of selected ids should usually store \api{List.copyOf(ids)}. A result object containing rows should not expose a mutable list that the repository later reuses. The EDT boundary is easier to audit when request and result objects can be read without asking who else might still write to them.
+
+The word \termdef{publication}{making data produced by one thread visible to another under a defined ordering relationship} is also worth naming. Posting a runnable to the \api{EventQueue} gives the callback a clear execution context, but it does not rescue arbitrary shared mutable objects that both threads continue to edit. Publish finished values. Do not publish containers that are still being filled. Do not publish a row object whose properties are still being lazily computed on the worker while a renderer is already asking for them.
+
+EDT starvation is the performance version of the same boundary mistake.
+
+The EDT can be blocked by one long task or starved by a thousand small tasks. A common modern failure mode is to split background completion into too many \api{invokeLater} calls, each updating one row or one progress label. The UI remains technically responsive between tasks, but repaint and input latency become poor.
+
+Batch updates. If a loader produces many rows, accumulate them and publish chunks at a controlled cadence. If a progress source emits thousands of updates, coalesce to the most recent value and update at 30--60 Hz at most. Humans cannot perceive progress labels at kilohertz rates, but the EDT can be drowned by them.
+
+\begin{lstlisting}[caption={Coalescing progress updates before posting to the EDT.}]
+public final class EdtProgressCoalescer {
+    private final AtomicInteger latest = new AtomicInteger();
+    private final AtomicBoolean scheduled = new AtomicBoolean();
+    private final IntConsumer edtConsumer;
+
+    public EdtProgressCoalescer(IntConsumer edtConsumer) {
+        this.edtConsumer = edtConsumer;
+    }
+
+    public void publish(int value) {
+        latest.set(value);
+        if (scheduled.compareAndSet(false, true)) {
+            EventQueue.invokeLater(() -> {
+                scheduled.set(false);
+                edtConsumer.accept(latest.get());
+            });
+        }
+    }
+}
+\end{lstlisting}
+
+This small utility gives up intermediate values in exchange for preserving responsiveness. That is usually the correct exchange for progress, mouse hover state, live counters, and instrumentation panels.
+
+Starvation is harder to diagnose than a single freeze because no event looks guilty. A custom event queue may report many events under the slow threshold while the user still experiences latency. The queue is simply never empty long enough for input and repaint to feel fresh. In that situation, count events as well as timing them. A thousand small row insertions can hurt more than one well-batched insertion.
+
+Batch size is a user-interface policy. A table import may install 500 rows at a time so the user sees progress and can cancel. A chart refresh may install one final result because intermediate results are misleading. A log viewer may stream lines but coalesce repaint. A progress label may keep only the latest value. The right answer depends on what the user can usefully perceive and interrupt.
+
+\textbf{Model events must fire on the owning thread.}
+
+Suppose a background thread mutates a list and then posts \api{fireTableRowsInserted} to the EDT. Is that safe? Not if the \api{JTable} or sorter can read the list between mutation and event, or if memory visibility is not clearly established. The clean rule is: mutate the live table model on the EDT. If the data set is huge, build immutable chunks off the EDT, then install chunks on the EDT.
+
+\begin{lstlisting}[caption={Build rows off the EDT, install rows on the EDT.}]
+Thread.ofVirtual().start(() -> {
+    List<OrderRow> loaded = repository.loadRows();
+    List<OrderRow> immutableRows = List.copyOf(loaded);
+    EventQueue.invokeLater(() -> tableModel.appendRows(immutableRows));
+});
+\end{lstlisting}
+
+The model method \api{appendRows} should update the model storage and fire the corresponding event in one EDT-confined operation. This prevents a view from observing a half-mutated model.
+
+\section{Custom EventQueue for diagnostics}
+
+Pushing a custom \api{EventQueue} lets you observe dispatch latency and exceptions at the event boundary. Use this carefully: you are placing code in a central path of the desktop toolkit. The diagnostic queue should be small, robust, and removable.
+
+Diagnostics should distinguish several failure modes. A slow event is one event whose dispatch takes too long. Queue pressure is many ordinary events that together delay input. Repaint pressure is large or frequent dirty regions that keep painting busy. Lock contention is an event waiting for some other thread. Blocking I/O is an event waiting for the file system, network, or database. The user may call all of these "the application froze", but the remedies differ.
+
+The event queue is a good place to measure dispatch duration because every event passes through it. It is not the only place to measure responsiveness. A repaint manager can expose repaint storms. A task service can expose work duration and completion order. A table model can count event volume. A command wrapper can measure action latency. A serious desktop application usually needs several small instruments rather than one giant diagnostic hook.
+
+Be careful not to make diagnostics harmful. Logging every event to disk can itself freeze the EDT. Formatting giant stack traces on every mouse move is worse than the bug being measured. A diagnostic queue should record compact facts, sample when necessary, and hand expensive reporting to another thread. The EDT should leave the diagnostic code quickly.
+
+A useful diagnostic record is intentionally dull: event class, dispatch start, elapsed time, current screen or command id if known, approximate queue pressure if available, and perhaps a trimmed stack only when a threshold is crossed. Most events need no stack. Most events should not allocate a paragraph of log text. A ring buffer in memory, periodically drained by a background reporter, is often more useful than a verbose append-only file. When a user reports a freeze, the support bundle can include the last few hundred dispatch records and the stack captured by a watchdog.
+
+Do not confuse measurement location with blame. If the monitoring queue reports that a mouse event took 800 ms, the mouse event may merely have invoked a command that did blocking I/O. If it reports that paint took 120 ms, the painting code may be expensive, or the model may have invalidated a huge region unnecessarily. If it reports a timer event every 10 ms, the timer may be doing too much work or merely waking a screen that should be dormant. A diagnostic should point to the next inspection, not pretend to be the whole explanation.
+
+There is also a privacy and operations dimension. A desktop diagnostic record should avoid capturing arbitrary user text, paths, or customer data unless the support process explicitly allows it. A command id, component key, table descriptor name, or task name is usually enough to locate code. Corusco's typed keys and command descriptors are useful because they give diagnostics stable identities without scraping labels from the UI. Labels are translated, edited, and sometimes user-provided. Keys are meant to remain stable.
+
+\begin{lstlisting}[caption={An EventQueue that reports slow event dispatch.}]
+public final class MonitoringEventQueue extends EventQueue {
+    private final long slowNanos;
+
+    public MonitoringEventQueue(Duration threshold) {
+        this.slowNanos = threshold.toNanos();
+    }
+
+    @Override
+    protected void dispatchEvent(AWTEvent event) {
+        long start = System.nanoTime();
+        try {
+            super.dispatchEvent(event);
+        } finally {
+            long elapsed = System.nanoTime() - start;
+            if (elapsed >= slowNanos) {
+                System.err.printf("slow EDT event: %s took %.1f ms%n",
+                        event.getClass().getName(), elapsed / 1_000_000.0);
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+Install it before showing the UI:
+
+\begin{lstlisting}
+Toolkit.getDefaultToolkit()
+       .getSystemEventQueue()
+       .push(new MonitoringEventQueue(Duration.ofMillis(200)));
+\end{lstlisting}
+
+\textbf{Exception handling on the EDT.} Uncaught exceptions on the EDT are not always application-ending, which can be worse than a crash. A command can fail halfway through, leave state inconsistent, and allow the application to continue. Centralize command execution so exceptions are reported and state cleanup is reliable.
+
+One pattern is to wrap \api{Action} execution:
+
+\begin{lstlisting}[caption={A defensive action wrapper.}]
+public abstract class SafeAction extends AbstractAction {
+    protected SafeAction(String name) {
+        super(name);
+    }
+
+    @Override
+    public final void actionPerformed(ActionEvent e) {
+        try {
+            performSafely(e);
+        } catch (Throwable t) {
+            ErrorDialog.showFor(t);
+        }
+    }
+
+    protected abstract void performSafely(ActionEvent e) throws Exception;
+}
+\end{lstlisting}
+
+This does not replace a global monitoring queue, but it improves command-level reliability. It also gives you one place to add busy-state management and analytics.
+
+Command wrappers should be narrow. They should report failure, restore busy state, and keep the screen coherent. They should not swallow every error silently or turn programming errors into vague status messages. During development, failing loudly is often better. In production, a user-facing error report may be necessary, but the code should still record enough diagnostic context to fix the defect.
+
+Exceptions from background tasks need their own path. A worker exception is not thrown on the EDT unless the task framework delivers it there. A \api{Future} may hold it until somebody asks. A virtual thread may report it to an uncaught-exception handler. A \api{SwingWorker} exposes it through \api{get} from \api{done}. A Corusco task callback should make failure explicit so the presenter can update problems, status, command state, and diagnostics in one place.
+
+\textbf{Cancellation and screen lifecycle.}
+
+Every background task has a lifecycle relative to the screen that launched it. The screen can be closed, the selection can change, the user can start a newer request, or the application can shut down. Without lifecycle checks, old completions resurrect disposed views or overwrite newer results.
+
+Use sequence tokens for idempotent screens:
+
+\begin{lstlisting}[caption={Rejecting stale completions with a sequence token.}]
+private final AtomicLong searchSequence = new AtomicLong();
+
+public void search(String query) {
+    long sequence = searchSequence.incrementAndGet();
+    setBusy(true);
+
+    Thread.ofVirtual().start(() -> {
+        SearchResult result = service.search(query);
+        EventQueue.invokeLater(() -> {
+            if (sequence != searchSequence.get() || !isDisplayable()) {
+                return;
+            }
+            model.replaceRows(result.rows());
+            setBusy(false);
+        });
+    });
+}
+\end{lstlisting}
+
+For cancellable I/O, use cancellation mechanisms supported by the service layer. Merely ignoring stale results prevents UI corruption but does not stop wasted work.
+
+Cancellation is not one behavior. A task may be interruptible, cancellable through an API, cancel-by-closing a resource, or not cancellable at all. The UI policy should acknowledge which kind it has. If cancellation is advisory, the command can change to "Cancel requested" while stale-result guards protect the screen. If cancellation is reliable, the task handle can drive busy state immediately. If cancellation is impossible, the screen may need to disable only the dangerous operations and let the work finish in the background.
+
+A screen close should be treated as cancellation pressure. Closing the screen should close bindings, detach listeners, request task cancellation where possible, and invalidate generation tokens. It should not rely on the worker eventually noticing that a component is no longer displayable. Displayability is a useful last guard, not the primary lifecycle protocol.
+
+Corusco scopes and task handles are useful here because they make the operation visible. A task submitted from a screen can be registered with the screen scope. A busy value can be derived from active handles. A completion can check a generation token. The code is longer than a bare \api{Thread.start}, but the behavior can be reviewed: who owns the task, who cancels it, who observes busy state, and who is allowed to install the result.
+
+
+\textbf{Case studies and design drills.}
+
+\textbf{The slow save button.}
+
+A Save action starts innocently: gather field values, call the repository, update the dirty flag, and close the dialog. In development, the repository is local and fast. In production, it waits for a network share, database lock, certificate check, or antivirus scan. The EDT is blocked, the window cannot repaint, the user clicks again, and support receives a freeze report.
+
+The correct design separates capture, work, and installation. Capture the form snapshot on the EDT. Perform blocking work on a worker or virtual thread. Install success or failure on the EDT only if the dialog is still relevant. Disable or coalesce duplicate Save commands. Report progress in a way that does not create more EDT work than the operation itself.
+
+\textbf{The modal reentrancy trap.} Consider a command that opens a modal confirmation dialog after setting a field \api{operationInProgress} to true. While the dialog is open, a timer event or another invocation event runs through a nested loop and observes the flag. It disables unrelated actions or starts recovery logic. When the dialog closes, the original command resumes, believing no other UI logic has run. The state is now inconsistent.
+
+The fix is not to avoid all modal dialogs. The fix is to avoid holding fragile temporary invariants across modal calls. Make command state explicit and re-check it after the dialog returns. Prefer local immutable variables over global flags. If a command must be atomic, do not use a nested UI loop as the boundary; model the transaction outside the UI interaction.
+
+\textbf{The over-posted completion queue.} A background import reads 100,000 records and posts one \api{invokeLater} task per record. Each task appends a row and fires a table event. The EDT technically remains unblocked because each task is small, but user input waits behind a mountain of queued work. The UI appears frozen even though no single event is slow.
+
+A better design installs chunks: maybe 200 rows per event, maybe one chunk per 16 milliseconds, maybe a final sort after all chunks are installed. The model can expose an "importing" state so renderers and actions behave correctly during partial data. This is a throughput and latency tradeoff; measure both.
+
+\textbf{Ownership drills.} Draw a boundary diagram for every background operation. On the left, list EDT-owned objects: components, models, selection, document state, current request sequence. On the right, list worker-owned objects: immutable request, service client, decoded records, immutable result. Arrows across the boundary must carry immutable values or explicit messages. If an arrow carries a live model or component, redesign.
+
+\textbf{Watchdog interpretation.} An EDT watchdog stack is a symptom, not the whole diagnosis. If the stack shows \api{FileInputStream.read}, you have blocking I/O. If it shows \api{Thread.sleep}, you have a direct bug. If it shows painting, determine whether painting is intrinsically slow or merely called too often. If it shows lock acquisition, inspect the owning thread. Treat the stack as the starting point for a causal chain.
+
+The case studies lead to four review contracts that are worth making explicit in serious Swing code. The first is a reentrancy contract. The most dangerous EDT failures are not simple off-thread mutations; they are often reentrancy failures. A method starts with an apparently true precondition, calls code that can pump events, and resumes after other UI code has already changed the world. Modal dialogs, drag-and-drop, popup menus, focus transfer, and some native peer interactions can create this shape. Treat every call that may show UI, request focus, or enter native interaction as a possible scheduling boundary.
+
+A useful command contract therefore has three phases. First, read and validate the current UI state. Second, ask the user or perform background work. Third, re-read enough state before committing. The third step is often missing. It prevents a stale dialog result, slow validation callback, or late background completion from applying to a screen whose selection, document, or lifecycle has changed. In small programs the missing step may never be noticed. In a workspace with timers, global commands, background refresh, and several open editors, it becomes a real source of state corruption.
+
+\begin{detailbox}{The EDT is not a transaction monitor}
+Code running on the EDT is mutually exclusive with other EDT code only until it returns to the event loop. It is not exclusive across modal dialogs, calls that deliberately pump a secondary loop, or asynchronous completions. Design invariants around explicit ownership and versioning, not around the hope that "the UI is busy."
+\end{detailbox}
+
+The second contract is versioned handoff. For data loaders, a small monotonically increasing sequence number is often simpler than cancellation. The screen owns the current sequence on the EDT. Each request captures its sequence and its immutable input. Completion checks both displayability and sequence before installation. This does not replace cancellation for expensive work, but it prevents stale installation even when cancellation is advisory. The important placement detail is that the version protects presentation state, so it belongs with the presenter, screen model, or field controller whose freshness is being protected. It should not be hidden in a repository.
+
+Versioned handoff must be paired with a clear installation rule. The callback should check lifecycle, check generation, install the result, update busy state, and leave. It should not do blocking work, parse large payloads, or sort huge data if that sorting could have been prepared off-thread. But it may perform small model updates and fire precise events. Installing a prepared list into a table model is EDT work. Building the list is not. This division keeps the callback short enough for the queue while still respecting Swing's model-event contract.
+
+The third contract is a latency budget. An advanced Swing application should have explicit numbers, even if the first numbers are only engineering targets: command dispatch under 50 ms, ordinary repaint under 16 ms for interactive manipulation, visible feedback under 100 ms after a command begins, and screen construction under a product-specific threshold. The exact values vary by application, monitor refresh rate, hardware, and user expectation. The absence of values guarantees vague debate. Measure dispatch duration, queue pressure proxies, repaint area, model event volume, and task completion order. Then the team can discuss evidence instead of adjectives.
+
+Progress UIs deserve their own budget because they are a common source of accidental queue pressure. A progress bar updated 10,000 times per second is not responsive; it is abusive. Coalesce by time and by semantic change. The UI rarely needs more than a few visible updates per second for long operations, and interactive queues should have priority over progress decoration. A screen that feels responsive is not the screen that paints every intermediate fact. It is the screen that chooses which facts matter to the user now.
+
+The fourth contract is testability of the boundary. EDT ownership can be tested. Add assertions to development builds: table model mutation must occur on the EDT; document filters must not call services; background tasks must not retain components; generated binding callbacks that touch Swing must run on the EDT. In tests, use a helper that drains the EDT with \api{invokeAndWait} from a non-EDT test thread. Do not sleep and hope that events have run. Sleeping creates timing tests; synchronization creates correctness tests.
+
+\begin{pitfallbox}{Blocking on your own completion}
+A common deadlock appears when the EDT starts a background task and then waits for its \api{Future}; the background task computes and posts a completion to the EDT, then waits for the completion to run. Both sides are now waiting. The rule is simple: the EDT may schedule work, observe completion asynchronously, or cancel work; it must not join long work.
+\end{pitfallbox}
+
+A useful mental model is to treat the EDT as the owner of a mutable document:
+the component tree. Other threads may prepare facts, but they do not write into
+that document directly. They submit a small edit request to the owner. This
+model is stricter than "avoid crashes" and more helpful than "Swing is not
+thread-safe" because it explains why even apparently harmless updates should
+cross a known boundary.
+
+The boundary should be close to Swing, not scattered through domain code. A
+repository should not know that its caller is a \api{JTable}. A validation
+service should not call \api{SwingUtilities.invokeLater}. A task service or
+presenter callback can adapt the result to the EDT because that is where the
+presentation lifetime is known. This keeps core code testable and prevents
+threading policy from leaking into every helper method.
+
+Modern Java makes it easier to start background work, especially with virtual
+threads. It does not remove the need to decide who receives the result. A
+virtual thread can block without consuming an expensive platform thread, but it
+can still finish late, after the user has closed the dialog or typed a newer
+query. The EDT rule and the generation-counter rule therefore work together:
+publish on the EDT, then accept only results that still belong to the current
+screen state.
+
+When reviewing EDT code, look for operations whose cost depends on user data or
+external systems. Formatting a label is bounded. Sorting a five-item combo box
+is bounded. Loading ten thousand rows, resolving icons from disk, contacting a
+license server, or parsing a large file is not bounded by the current component
+tree. Those operations must not sit in action listeners merely because the code
+is short.
+
+\textbf{A practical review method.} Review every user action as a four-step story: trigger, capture, work, install. The trigger is an action, key binding, selection event, timer, or document change. Capture happens on the EDT and produces immutable input. Work happens away from the EDT if it can block or grow with data. Install happens on the EDT after checking lifecycle and generation. If a piece of code does not fit one of those steps, it is probably hiding a boundary mistake.
+
+For a Save command, the trigger is the command invocation. Capture reads the committed form model or asks active editors to commit on the EDT. Work writes to a repository or service outside the EDT. Install clears dirty state, updates status, and possibly closes the dialog on the EDT. Validation errors produced by the service become structured problems. Failures become status or diagnostics. A stale completion is ignored because the dialog may have closed or a newer save may have started.
+
+For a Search command, capture produces a search request with text, filters, selected account, and generation number. Work runs the search elsewhere. Install checks the generation and displayability, replaces rows in a controlled batch, and restores selection by identity if appropriate. Status and progress are values, not direct label writes. The table model changes on the EDT. The repository never sees a \api{JTable}.
+
+For a selection-driven detail load, the trigger is selection value change, not a mouse click. Capture is the selected id. Work loads detail for that id. Install checks that the selected id is still current before updating the detail form. This prevents a slow detail response for customer A from overwriting customer B after the user moves quickly through the table. The bug is common because every individual method looks reasonable; the missing fact is generation ownership.
+
+For live validation, capture is the field's raw or parsed state with its generation. Work may call a service, but it must not hold the document or text field. Install adds, replaces, or clears a problem only if the field still has the same generation. Busy state may be per-field rather than whole-screen. The OK command can observe both problems and validation-busy state. This is how a dialog remains editable while asynchronous validation is still honest.
+
+For an import screen, capture is a file path and options. Work parses the file and produces immutable chunks. Install appends chunks on the EDT at a measured cadence. Progress is coalesced. Cancel requests reach the worker through a token or service API. Closing the screen cancels or invalidates the import. A status figure can show "importing" without letting the worker manipulate labels directly.
+
+These stories are repetitive, which is precisely why library support is useful. Corusco's task service, busy values, generation counters, cancellation tokens, and Swing callback adapters let the same story be written with less local ceremony. They do not remove the four steps. They make the steps visible and harder to accidentally reorder.
+
+The review method also separates beginner mistakes from advanced mistakes. A beginner may block the EDT with a database call. An advanced programmer may avoid blocking but post 50,000 tiny updates. A beginner may update a label from a worker. An advanced programmer may mutate storage off-thread and fire events on the EDT. A beginner may forget cancellation. An advanced programmer may implement cancellation but still install a stale result. The cure in each case is the same boundary discipline applied more precisely.
+
+The most useful tests follow the same stories. A command test can prove capture policy and enablement without Swing. A task-service test can prove busy and cancellation. A Swing test can prove that completion updates components on the EDT. A stale-result test can force old work to finish last. A diagnostic test can install a monitoring queue around a deliberately slow action. Tests should not merely wait and hope; they should control ordering enough to prove the boundary.
+
+When this chapter is read together with the presentation-boundary chapter, a pattern emerges. Models own facts. Components display facts. The EDT owns the live component graph. Workers prepare facts. Bindings move facts between owners. Scopes close relationships. Generation counters protect time. This vocabulary is longer than "use invokeLater", but it is the vocabulary needed to build Swing applications that stay responsive all day.
+
+The later background-work chapter will add Corusco-specific task APIs and busy overlays in detail. This chapter's job is to make the underlying Swing contract impossible to miss. A busy overlay is a visual feature; the real correctness lies in who owns busy state, who can cancel, which completion is current, and which thread installs results. Once those facts are clear, the visual feature becomes straightforward.
+
+\textbf{How Corusco shapes the handoff.} Corusco should be read here as a boundary library, not as a thread fairy. A \api{TaskService} can run work away from Swing. A Swing adapter can deliver callbacks on the EDT. A \api{WritableValue<Boolean>} can expose busy state. A generation counter can reject stale completions. A scope can close subscriptions when the screen closes. None of those objects makes it safe to mutate a \api{JTable} from a worker. They make the safe path shorter and more visible.
+
+The task body should look like ordinary service code. It receives immutable input, calls repositories, parses files, or performs calculations, and returns an immutable or effectively immutable result. It should not know that a label exists. It should not use \api{SwingUtilities.invokeLater}. It should not capture a panel. If task bodies know Swing, the threading policy has leaked down into the service layer and every unit test must now care about desktop threading.
+
+The callback is where Swing re-enters. A successful callback may replace rows, update a field model, set status text, or close a dialog. A failed callback may add a problem, show an error summary, or re-enable commands. A cancellation callback may keep partial results or discard them. These callbacks should run on the EDT when they touch the live presentation model. If the model is intentionally core-only and not attached to Swing, it may have a different owner, but the owner should still be explicit.
+
+Busy state should usually be derived, not guessed. A task handle knows whether its task is running. A task service may know whether any task is running. A screen may combine several busy facts: loading rows, saving form, validating field, exporting report. A single boolean named \api{busy} may be enough for a small dialog, but a large screen often needs several busy values with different visual consequences. The Save command may be disabled while saving; the table may remain usable while a background summary refresh runs.
+
+Cancellation should be a protocol rather than a button that changes text. The UI can request cancellation. The service may honor it immediately, later, or not at all. The task handle should expose enough state for the screen to say "cancel requested" or "still finishing." If the operation is not cancellable, hiding the Cancel button is more honest than showing a fake one. If the operation is cancellable only at chunk boundaries, the progress UI should not promise instant stop.
+
+Generation counters and cancellation tokens solve different problems. Cancellation asks old work to stop. Generation counters prevent old work from installing results. Use both when the work is expensive and the screen changes quickly. A search-as-you-type screen should cancel old searches where possible and reject old completions regardless. A detail panel may skip cancellation if loads are cheap, but it still needs a generation check so the last completed request is not mistaken for the current request.
+
+A subtle design question is where generation lives. It should live with the state whose freshness is being protected. A search generation belongs to the search model or presenter, not to a repository. A selected-detail generation belongs to the detail presenter, not to the table. A validation generation belongs to the field or validation controller. This placement makes tests natural: set state, start task, advance generation, complete old task, verify no installation.
+
+The EDT callback should be small but not mindless. It should check lifecycle, check generation, install the result, update busy state, and leave. It should not do blocking work, parse large payloads, or sort huge data if that sorting could have been prepared off-thread. But it may perform small model updates and fire precise events. Installing a prepared list into a table model is EDT work. Building the list is not.
+
+Table installation is a good example. A worker can load and sort records into an immutable list. The EDT callback can replace the table model's rows and fire one appropriate event, or append a chunk and fire an insertion event. If row identity matters, the presenter can restore selection by id after installation. If the table has a sorter, the callback must understand whether replacing rows resets sorter state. These are UI decisions, so they belong at the Swing boundary.
+
+Form installation is different. A save result may update the baseline value and clear dirty state. A validation result may replace problems but keep raw text. A reload may ask whether dirty edits should be discarded. The worker result is not allowed to overwrite the form blindly. The EDT callback must compare the result to current form lifecycle and command state. This is why "just update fields after the service returns" is not a complete design.
+
+Status text is deceptively important. A status line can become an accidental event log, a progress display, an error reporter, and a disabled-reason display all at once. When multiple tasks can write it, the newest text may not be the most important text. A screen should decide status priority: fatal error, current validation, running task, last success, idle. That priority belongs in a model or presenter. The label should merely display the chosen text.
+
+Busy overlays have the same issue. An overlay that appears whenever any task runs may be too broad for a workspace where background refresh should not block editing. An overlay that appears only for destructive operations may be correct. A table-level overlay can block table input while a form remains editable. A dialog-level overlay can block everything while saving. The visual layer should follow the busy model; it should not define it.
+
+Testing the Corusco handoff should avoid real sleeps. Use controllable executors, latches, or fake task services. Start task A, start task B, complete B, then complete A. Verify that only B installs. Start a task, close the scope, complete the task, and verify that no component is updated. Start validation, edit the field again, complete old validation, and verify that old problems are ignored. These tests are much more valuable than a demo that merely waits for a spinner.
+
+Thread assertions are useful in the binding layer. A Swing binding can assert that installation happens on the EDT. A core model test may assert no Swing dependency. A task callback adapter can assert that callbacks intended for Swing arrive on the EDT. These assertions turn threading policy into executable documentation. They are especially helpful when code evolves from \api{SwingWorker} to virtual threads or from direct callbacks to task services.
+
+Do not put \api{invokeLater} everywhere as a defensive reflex. If every method silently posts to the EDT, ordering becomes hard to reason about and tests become asynchronous without saying so. Prefer clear boundaries: either a method requires the EDT and asserts it, or it is a worker method and does not touch Swing, or it is an adapter that explicitly crosses the boundary. Hidden posting is convenient for demos and painful in systems.
+
+The same caution applies to \api{CompletableFuture}. Chaining stages can obscure which executor runs each stage. A future pipeline that ends in \api{thenAccept} may run on a worker, on the completing thread, or on an executor depending on how it is written. If the final stage installs Swing state, specify the EDT executor or handoff explicitly. Do not assume that the last stage is safe because it appears at the end of a fluent chain.
+
+Virtual-thread code often looks synchronous, which is pleasant. A task can call \api{repository.load()}, then \api{validator.check()}, then return a result. Keep that pleasantness inside the task body. The boundary around the body should still be explicit: input snapshot in, result or failure out, EDT callback after completion. This gives modern Java code the readability of blocking logic without sacrificing Swing's ownership model.
+
+Finally, decide what must be visible to the user. Some work needs a progress bar. Some needs only a busy cursor. Some needs a disabled command and status text. Some should be invisible unless it fails. Over-explaining every background refresh makes the UI noisy; under-explaining a long save makes it frightening. The task model should carry enough state for the presentation to make that choice deliberately.
+
+If this chapter seems conservative, that is intentional. Concurrency bugs in desktop applications are expensive because they are intermittent, user-visible, and hard to reproduce. A slightly more explicit handoff protocol is cheaper than explaining why a customer edited one row and a stale background result overwrote another. The EDT is old machinery, but a clear boundary around it remains one of the best investments in Swing code quality.
+
+\section{Checklist for EDT-safe architecture}
+
+\begin{itemize}
+\item Construct, mutate, and dispose Swing components on the EDT.
+\item Treat attached models as EDT-confined.
+\item Capture immutable snapshots before background work.
+\item Install immutable results on the EDT in batches.
+\item Coalesce high-frequency progress updates.
+\item Never block the EDT on network, file, database, or long CPU work.
+\item Use \api{invokeAndWait} only from non-EDT threads and only at controlled boundaries.
+\item Re-check state after modal dialogs.
+\item Guard background completions with lifecycle tokens.
+\item Measure dispatch latency; do not rely on user reports of "sometimes freezes." 
+\end{itemize}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Push a custom \api{EventQueue} and log all events taking over 100 ms. Reproduce the report by adding a slow action.
+\item Create a dialog that opens another modal dialog. Observe which events continue to run during the first dialog.
+\item Convert a \api{SwingWorker} loader to a virtual-thread loader with explicit immutable request and result objects. Compare cancellation behavior.
+\item Build a table model that rejects off-EDT mutation with assertions. Then intentionally violate it from a worker and inspect the stack.
+\item Implement progress coalescing and test it with a producer that emits 100,000 values per second.
+\item Write a stale-result guard for search. Force older searches to complete after newer searches and prove that results are not overwritten.
+\item Use \api{invokeAndWait} in a test to inspect UI state after a command. Then add a guard that prevents deadlock when the test accidentally runs on the EDT.
+\item Add a screen lifecycle token that cancels or ignores completions after \api{Window.dispose}.
+\end{enumerate}
+\end{exercisebox}
+
+

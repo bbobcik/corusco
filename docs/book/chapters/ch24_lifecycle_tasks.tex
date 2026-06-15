@@ -1,0 +1,1274 @@
+\chapter{Lifecycle, Tasks, and Cancellation}
+\label{ch:lifecycle-tasks}
+\chapterquote{The object that installs a callback should also know how that callback dies.}{The cleanup law}
+
+\begin{chaptermap}
+Core question & How does a Swing application avoid stale callbacks, duplicate listeners, unreleased caches, and obsolete background results?\\
+Primary APIs & \api{Disposable}, \api{Subscription}, \api{SubscriptionScope}, \api{Detachable}, \api{DetachableScope}, \api{TaskService}, \api{TaskHandle}, \api{TaskCallbacks}, \api{CancellationToken}, \api{GenerationCounter}, \api{AsyncFieldValidation}, and \api{SwingTaskServices}.\\
+Plain Swing baseline & Swing exposes listeners, timers, workers, models, and callbacks; it does not automatically give them one lifetime owner.\\
+Swing connection & Binding scopes, behavior scopes, task callbacks, busy overlays, dialog disposal, view activation, and stale-result suppression on the EDT.\\
+Companion examples & \lifecycleExample, \detachableScopeExample, \asyncTaskExample, \generationCounterExample, \swingTaskExample, and \bookAppExample.\\
+\end{chaptermap}
+
+\section{Lifecycle is architecture}
+
+Every nontrivial Swing screen installs things. It installs action listeners,
+document listeners, property-change listeners, list-selection listeners,
+observable-value subscriptions, table controllers, timers, keyboard actions,
+validation decorators, task callbacks, overlays, and service observers. A
+screen may be opened and closed hundreds of times during a long application
+session. If the relationships installed by the screen survive the screen that
+needed them, the application leaks memory, behavior, or both.
+
+\termdef{Lifecycle}{in this chapter} means the interval during which an object
+is allowed to receive callbacks and own resources. A modal dialog's lifecycle
+may be one call to show the dialog. A workspace panel's lifecycle may be one
+activation inside a tab. A presenter may live longer than its current Swing
+view. A cached loadable model may survive deactivation but detach its cached
+data. Lifecycle is not a synonym for Java object reachability. It is the
+program's declared ownership boundary.
+
+\termdef{Callback}{in this discussion} is any function, listener, observer, or
+action that another object may call later. Swing is callback-rich: listeners
+are the ordinary way that components, documents, models, timers, and workers
+communicate. Callback-rich code is not automatically leak-prone. It becomes
+leak-prone when the callback source lives longer than the object captured by
+the callback. A document listener that captures a panel keeps the panel alive
+as long as the document keeps the listener. A task callback that captures a
+dialog may update the dialog after the user has closed it. A timer that
+captures a component can keep repainting a dead view.
+
+The rule is simple enough to memorize:
+
+\begin{principlebox}{the cleanup law}
+The object that installs a callback should either close it directly or register
+it in a scope that closes with the same lifecycle.
+\end{principlebox}
+
+The rule is deliberately stronger than ``remember to remove listeners.'' It
+asks for a visible owner. A line of code installs a relationship; a nearby line
+registers the cleanup handle; a lifecycle boundary closes the scope. This turns
+cleanup from a hope into a reviewable fact. A reviewer can ask ``what closes
+this?'' and expect the answer to be a concrete object, not a story about the
+garbage collector.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\busyTaskFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\backgroundStatusFigure}
+\end{minipage}
+\caption{Lifecycle and task ownership become visible through busy overlays, progress, cancellation controls, and status text. Each visual relationship needs a cleanup owner.}
+\label{fig:lifecycle-task-screens}
+\end{figure}
+
+Figure~\ref{fig:lifecycle-task-screens} shows visual states, but the states are
+not only visual. A busy overlay depends on a busy value. A progress bar depends
+on task progress or task state. A Cancel button depends on a task handle. A
+status label depends on callbacks. Each dependency is a relationship that must
+end. If the view closes while the task is still running, the task may continue
+or be cancelled according to policy, but it must not retain the closed view as
+a callback target.
+
+\begin{pitfallbox}{closed is not collected}
+Calling \api{dispose} on a window removes the native peer. It does not
+magically remove every listener, subscription, task callback, timer, or service
+reference that points at the window's object graph.
+\end{pitfallbox}
+
+Swing leaks often announce themselves first as behavior, not heap usage. A
+screen is opened, closed, and opened again; validation messages appear twice.
+A search field changes; two requests are sent for each edit. A closed dialog
+briefly updates a status label when an old task completes. A timer continues to
+repaint a panel that no longer has a native peer. Later the heap confirms the
+same story: old panels remain reachable through listener lists, task handles,
+or service callbacks. The bug was already visible in the ownership graph.
+
+It is useful to list the common lifecycle boundaries before code is written.
+Application lifetime covers things such as resource bundles, service
+registries, logging, and top-level command registries. Window lifetime covers
+native shell resources and window-specific global actions. Screen activation
+covers bindings between a presenter and a view. Dialog activation covers
+temporary form bindings, keyboard policies, task services, and validation
+decorations. Selection lifetime covers details loaded for one selected master
+row. Request lifetime covers one background lookup or validation request.
+Different boundaries may overlap; they should not be confused.
+
+The dangerous case is a long-lived object that stores a callback capturing a
+short-lived object. A repository event bus stores a listener that captures a
+customer panel. A global command registry stores an action that captures a
+dialog. A worker service stores a callback that captures a table model owned by
+a closed tab. A property-change listener on a shared model captures a
+presenter. In each case the source is legitimate and may live for the whole
+application. The captured object does not. The cleanup law asks us to register
+the removal when the relationship is installed.
+
+Weak listeners are not a general answer. They can help when an external API
+forces a long-lived listener source and the listener is purely observational.
+They are not a replacement for deterministic close handles. A weak listener
+that disappears too early loses behavior. A weak listener that remains because
+some other object still references it still leaks. A weak listener also does
+not solve stale task results. Prefer deterministic removal when the lifecycle
+boundary is known, which is most of the time in ordinary UI code.
+
+A useful review device is the ownership ledger. For each screen, make a small
+table with three columns: installed relationship, owner, and close boundary.
+The rows are ordinary: document listener, selection listener, table model
+adapter, command adapter, validation binding, task service, task handle, timer,
+overlay binding, generated behavior scope, and detachable cache. The owner
+column names the object or scope that closes it. The close boundary names the
+event that ends ownership: dialog close, tab deactivation, workspace close,
+application shutdown, or selection change. The ledger is not meant to become
+heavy documentation. It is a way to discover that three relationships have no
+owner before they become defects.
+
+Lifecycle smells are easy to recognize after using the ledger for a while. A
+screen has a field named \api{closed} that many callbacks check, but the
+callbacks are never removed. A task callback checks whether a component is
+displayable before updating it, but the task still retains the component until
+completion. A presenter has a \api{dispose} method that closes some listeners
+while others are removed in anonymous window listeners. A global event bus has
+registrations in constructors but no corresponding unregister calls. A dialog
+creates a new task service for each Apply click and never closes any of them.
+Each smell says the same thing: a relationship was installed without an owner
+whose lifetime matches the relationship.
+
+The ownership boundary should also match the user's mental model. When a user
+closes a dialog, work that exists only for that dialog should stop or become
+irrelevant. When a user switches master selection, the previous detail load
+should stop or become irrelevant. When a user hides a tab temporarily, cached
+data may be released but the tab's durable settings may remain. When the
+application shuts down, user prompts and cleanup may follow a different policy
+from ordinary close. The code should make these differences visible instead of
+using one \api{disposeEverything} method for every boundary.
+
+\begin{coruscobox}{What Corusco changes}
+Corusco gives callback ownership small, reusable names. A listener attachment
+can return a \api{Subscription}; a set of cleanup handles can live in a
+\api{SubscriptionScope}; reusable cached state can implement \api{Detachable};
+background work can return a \api{TaskHandle}. The names are plain because they
+must be used everywhere.
+\end{coruscobox}
+
+\section{Deterministic cleanup with scopes}
+
+\termdef{Disposable}{in Corusco} is the small close contract. It extends
+\api{AutoCloseable} with an unchecked close signature suitable for UI cleanup
+handles. A disposable may remove a listener, cancel a task, restore a border,
+clear a keyboard binding, release a cache, or close another scope. The caller
+does not need to know the original removal API; the disposable handle knows how
+to undo the relationship it represents.
+
+\termdef{Subscription}{in Corusco} is a disposable registration for a listener,
+observer, or similar attachment. Observable values and lists return
+subscriptions when code subscribes to change events. Swing bindings and
+behavior installations often return disposable handles with the same ownership
+shape. The exact name matters less than the rule: if a call installs a callback,
+the call should return or register something that can remove it.
+
+\begin{lstlisting}[caption={A subscription is a cleanup handle.}]
+Subscription subscription = value.subscribe(event -> updateStatus(event));
+
+// Later, when this owner is no longer active:
+subscription.close();
+\end{lstlisting}
+
+\api{SubscriptionScope} owns a group of disposables and closes them
+deterministically. It is intended for a single ownership context such as a
+presenter activation, dialog activation, behavior, or test fixture. Children
+close in reverse registration order. Closing the scope is idempotent. If one
+child fails, the scope still attempts to close the remaining children and then
+throws a \api{SubscriptionScopeException} with the individual failures
+suppressed. If a child is added after the scope has closed, the child is closed
+immediately and is not retained.
+
+\begin{lstlisting}[caption={A screen activation owns one cleanup scope.}]
+final class CustomerPanelController implements AutoCloseable {
+    private final SubscriptionScope scope = new SubscriptionScope();
+
+    CustomerPanelController(CustomerPresenter presenter, CustomerView view) {
+        scope.add(presenter.statusText().subscribe(event ->
+                view.statusLabel().setText(event.newValue())));
+
+        scope.add(view.refreshButtonBinding());
+        scope.onClose(() -> System.out.println("customer panel closed"));
+    }
+
+    @Override
+    public void close() {
+        scope.close();
+    }
+}
+\end{lstlisting}
+
+The example is small, but it changes review. A reviewer can ask where the
+scope closes. If the answer is visible, listener cleanup is not folklore. The
+constructor installs relationships and immediately registers their cleanup
+handles. The controller's close method closes the scope. The object that owns
+the controller must then close the controller at the screen boundary. Each
+layer has one job.
+
+Reverse close order is not cosmetic. Relationships are often built in layers.
+A source value is observed by a derived value. The derived value is observed by
+a validation binding. The binding decorates a component. The component is
+inside a dialog whose keyboard binding is registered last. Closing in reverse
+order tears down the outermost relationship first, then the relationships it
+depended on. This mirrors stack discipline. It should not be abused for
+ordinary business logic, but it reduces surprises when resources are nested.
+
+Fail-closed late registration is just as important. During teardown, callbacks
+may still arrive. A callback may create a helper, subscribe to a value, and try
+to register it with a scope that has already closed. If the scope silently
+accepts the child, the application has created a new leak while closing the old
+one. \api{SubscriptionScope.add} closes late children immediately. This makes
+the safe outcome the default. The late child does not run because the owner is
+already dead.
+
+\begin{lstlisting}[caption={Late registration fails closed.}]
+scope.close();
+
+Subscription late = scope.add(value.subscribe(event -> updateClosedView()));
+assertThat(scope.isClosed()).isTrue();
+\end{lstlisting}
+
+The late subscription is returned for fluency, but it is not retained by the
+scope. Its cleanup has already run. A test can assert the source listener count
+if the source exposes one, or it can mutate the source and assert that the
+closed view does not update. This small behavior is a powerful guard against
+race conditions around deactivation.
+
+Failure during cleanup should be visible but not prevent other cleanup. If one
+child close throws and the scope stopped immediately, later listeners would
+remain installed because an earlier cleanup was buggy. Corusco scopes instead
+continue closing the rest and collect failures. This follows the same principle
+as structured cleanup in systems code: attempt to release everything, then
+report what failed. UI code should not throw during close casually, but if it
+does, other relationships still deserve cleanup.
+
+Scopes are not synchronized. A \api{SubscriptionScope} is usually owned and
+closed on one UI or presenter thread. If a project shares a scope across
+threads, it must provide coordination. In Swing code, the simpler rule is to
+create, add, and close UI scopes on the EDT. Background workers may hold task
+handles, but they should not mutate Swing-owned scopes directly. Use a callback
+executor or \api{SwingEdt.executor} to return ownership-sensitive work to the
+EDT.
+
+Scopes compose with Java's \api{try}-with-resources when the lexical lifetime
+matches the logical lifetime. Tests and small command blocks often benefit:
+create a scope, install relationships, assert behavior, and let the scope close
+at the end of the block. Long-lived screens usually close scopes from explicit
+deactivation or disposal methods instead. The important point is not the Java
+syntax; it is that the lifetime is visible.
+
+\begin{lstlisting}[caption={A small test can use lexical scope ownership.}]
+try (SubscriptionScope scope = new SubscriptionScope()) {
+    scope.add(model.value().subscribe(event -> seen.add(event.newValue())));
+    model.setValue("updated");
+}
+
+model.setValue("late");
+assertThat(seen).containsExactly("updated");
+\end{lstlisting}
+
+Corusco Swing bindings and behavior installations build on the same ownership
+idea. A direct value binding, validation tooltip, red-border behavior, composed
+tooltip, command adapter, or busy overlay binding should return a handle or be
+registered in a scope. A generated behavior plan should install into a
+behavior scope that closes with the view or dialog activation. The Swing
+object may look visual, but its listener relationships are lifecycle facts.
+
+\begin{coruscobox}{Scopes as binding owners}
+Corusco Swing bindings and behavior installations return disposable handles or
+are themselves disposable. A \api{BindingScope}, \api{BehaviorScope}, or plain
+\api{SubscriptionScope} lets a screen assemble relationships under one owner
+and close that owner with the view.
+\end{coruscobox}
+
+The strongest habit is local registration. Do not install a listener in one
+method and register its cleanup in another method that a reviewer must search
+for. If a helper method installs several relationships, return a scope or
+disposable that closes all of them. If a presenter activation creates a scope,
+pass it to helpers that need to register handles. The code should make
+ownership boring enough that there is no temptation to improvise.
+
+Plain Swing listener APIs often make local registration verbose because add and
+remove are two separate calls. Wrap the pair immediately. If a document
+listener is added to a document, create a subscription whose close method
+removes that listener from that document. If a property-change listener is
+added to a bean, create a subscription that removes it from the same bean with
+the same property name. If a timer is started, register a disposable that stops
+it. This tiny adapter is usually better than storing lists of listeners in the
+presenter. The presenter should read as ``install this relationship and add its
+cleanup'', not as ``remember these five objects so a later method can reverse
+engineer what happened.''
+
+\begin{lstlisting}[caption={Wrapping a plain Swing listener as a subscription.}]
+DocumentListener listener = new DocumentListenerAdapter() {
+    @Override
+    public void changedUpdate(DocumentEvent event) {
+        presenter.revalidateName();
+    }
+};
+nameField.getDocument().addDocumentListener(listener);
+
+scope.onClose(() -> nameField.getDocument().removeDocumentListener(listener));
+\end{lstlisting}
+
+The code is not fancy, but it is honest. The listener and its removal are
+adjacent. If a project repeats this pattern often, write a small helper that
+returns a \api{Subscription}. The helper should still preserve the ownership
+shape: the caller receives a handle and registers it with the scope that owns
+the relationship. A helper that hides the handle merely moves the leak to a
+different file.
+
+Generated code should follow the same discipline. A generated binding companion
+may install several field bindings and validation decorations. It should return
+a disposable plan, add everything to a supplied scope, or expose a generated
+scope object. It should not install listeners into a view and rely on the view
+being garbage-collected. Generation makes repeated wiring cheaper; it does not
+change the ownership law. In fact, generated code needs the law more because a
+bug in generated cleanup is multiplied across screens.
+
+Scopes also help when cleanup spans different API styles. One child may be a
+Corusco subscription. Another may be a \api{Timer} stop callback. Another may
+be a table sorter listener removal. Another may be a task handle. The scope
+does not care whether each child came from Swing, Corusco core, or application
+code. It only knows that they share one lifecycle. This is the practical value
+of keeping \api{Disposable} small.
+
+\section{Detachment and reusable state}
+
+Not every lifecycle event is permanent. A tab may deactivate and later
+reactivate. A master-detail screen may release cached details when the master
+selection changes but keep the model object. A loadable value may drop its
+cached result under memory pressure and load again later. A dialog normally
+closes permanently, but a workspace panel may detach and return.
+
+\termdef{Detachable}{in Corusco} is a resource that can release cached state
+without permanently closing its owner. \api{Detachable.detach} says ``drop the
+temporary material you hold now, but remain usable for future activation.''
+\api{Disposable.close} says ``this owner is finished; release resources
+permanently.'' The distinction prevents two opposite mistakes: keeping heavy
+data forever because the model object is reusable, and permanently closing a
+model merely because the view is temporarily inactive.
+
+\api{DetachableScope} owns detachable children. Calling \api{detach} releases
+cached state in registered children while keeping registrations. Calling
+\api{close} detaches once more, clears registrations, and marks the scope
+closed. Children detach in reverse registration order. If one child fails, the
+scope still attempts to detach the rest and then throws a \api{DetachmentException}
+with suppressed failures. If a detachable child is added after close, the child
+is detached immediately and not retained.
+
+\begin{lstlisting}[caption={Reusable cache lifecycle.}]
+DetachableScope cacheScope = new DetachableScope();
+
+LoadableValue<CustomerDetails> details =
+        cacheScope.add(LoadableValue.of(repository::loadDetails));
+LoadableList<OrderRow> orders =
+        cacheScope.add(LoadableList.of(repository::loadOrders));
+
+cacheScope.detach(); // Release cached details and rows.
+cacheScope.close();  // Permanent owner shutdown.
+\end{lstlisting}
+
+Detachment is useful when the owner remains meaningful after the current data
+is no longer useful. A customer workspace may keep the selected customer id and
+command state while detaching the loaded order rows for a hidden detail panel.
+A search presenter may keep the query text while detaching cached results when
+the screen is deactivated. A map editor may keep layer definitions while
+detaching expensive tile caches. In each case the object is not dead; it is
+merely no longer actively presenting the cached material.
+
+Detachment is not listener cleanup. If an object subscribed to a long-lived
+source, detaching cached data does not remove the subscription unless the
+object's own detach contract says so. A detachable loadable value may keep its
+ability to load later. A disposable subscription should be closed when the
+owner ends. Do not use \api{detach} as a softer word for \api{close}. The two
+verbs should have distinct meanings in the project vocabulary.
+
+Activation boundaries become clearer with both verbs available. Opening a
+workspace creates a presenter and its permanent scopes. Activating a tab loads
+or reattaches detail data. Deactivating the tab detaches heavy cached results
+and cancels irrelevant loads. Closing the workspace closes subscriptions,
+commands, task services, and detachable scopes. The vocabulary lets the code
+say whether a boundary is temporary or final.
+
+A reusable presenter often has two owned scopes: a \api{SubscriptionScope} for
+permanent listener relationships and a \api{DetachableScope} for cached data.
+The permanent scope closes when the presenter dies. The detachable scope
+detaches when the presenter deactivates and closes when the presenter dies.
+This pair is more explicit than a single boolean named \api{active}. The
+boolean may still exist, but the resource policy has real objects behind it.
+
+\begin{lstlisting}[caption={A reusable presenter has close and detach paths.}]
+final class CustomerDetailPresenter implements Disposable, Detachable {
+    private final SubscriptionScope subscriptions = new SubscriptionScope();
+    private final DetachableScope caches = new DetachableScope();
+
+    @Override
+    public void detach() {
+        caches.detach();
+    }
+
+    @Override
+    public void close() {
+        try {
+            caches.close();
+        } finally {
+            subscriptions.close();
+        }
+    }
+}
+\end{lstlisting}
+
+The order in the example is policy. It detaches caches before closing
+subscriptions so cache observers can see a final detached state if needed.
+Another application might close subscriptions first. The important fact is that
+the order is visible and testable. Hidden cleanup in finalizers or weak
+references cannot express such policy.
+
+Detachable state also interacts with background work. A loadable value that is
+detached while a load is running should either cancel the load or ignore its
+result through generation checks. Otherwise detachment briefly releases memory
+and then a late callback repopulates the cache. This is the same stale-result
+problem seen in dialogs and search fields; detachment is one more boundary that
+invalidates old work.
+
+A master-detail screen gives a good concrete example. The master table
+selection is durable screen state. The details for the selected customer are
+cached presentation state. When the selection changes, the old details are no
+longer useful. The presenter can detach the old detail cache, invalidate the
+old detail generation, and start a new load. When the tab deactivates, it may
+detach the current detail cache but keep the selected customer id so the tab
+can restore context later. When the workspace closes, it closes the detail
+presenter permanently. The three events are different, and using both detach
+and close lets the code express the difference.
+
+A paint or GIS editor has another pattern. A layer model may remain open for
+the lifetime of a document, but rendered tile images, spatial indexes,
+selection outlines, and measurement caches may be detachable. When the map
+view is hidden, those caches can be dropped. When it is shown again, they can
+be rebuilt lazily. The document model should not be closed merely because the
+view is hidden. Conversely, the caches should not remain forever merely because
+the document remains open. Detachment gives the middle state a name.
+
+Detachment should be observable only when the user or program needs it. A cache
+dropping its contents may publish a loadable empty state, a not-loaded state,
+or no visible state at all. Choose deliberately. If detaching a hidden tab
+causes visible flicker when the tab is shown again, the presenter may need to
+distinguish memory-pressure detachment from navigation detachment. The core
+concept remains the same, but the presentation policy belongs to the screen.
+
+Tests for detachment should be as concrete as tests for close. Add two tracked
+detachable children, call \api{detach}, assert reverse detach order and that
+the scope remains open. Call \api{detach} again and decide whether child
+detachment should be idempotent. Call \api{close}, assert that children detach
+and registrations clear. Add a child after close and assert that it detaches
+immediately. These tests prevent the word detach from becoming a vague
+ceremony.
+
+\begin{migrationbox}{From caches to detachable state}
+When reviewing a presenter with caches, ask which cached values are useful
+after deactivation. Keep those as model state. For the rest, introduce
+\api{Detachable} objects and collect them in \api{DetachableScope}. Then make
+deactivation call \api{detach} and final disposal call \api{close}.
+\end{migrationbox}
+
+\section{Task services and callback ownership}
+
+\termdef{UI task}{in Corusco} is work requested by a user-interface owner that
+should run away from the caller thread and report a terminal outcome later. The
+task may load data, validate a field, save a draft, render a preview, import a
+file, or compute a filter. It is called a UI task not because it runs on the
+UI thread, but because the result belongs to a UI lifecycle.
+
+\termdef{Task service}{in Corusco} is the lifecycle-owned object that accepts
+\api{UiTask} bodies, gives each body a cooperative \api{CancellationToken},
+exposes aggregate busy state, and returns a \api{TaskHandle}. The service
+separates worker execution from callback delivery. The core service is
+toolkit-neutral: its callback executor is supplied by the caller. Swing code
+uses a callback executor that returns terminal callbacks and final busy-state
+updates to the EDT.
+
+\begin{lstlisting}[caption={Submitting a task through a service.}]
+TaskService tasks = TaskService.virtualThreads(EventQueue::invokeLater);
+
+TaskHandle<List<CustomerRow>> handle = tasks.submit(
+        cancellation -> {
+            cancellation.throwIfCancellationRequested();
+            return repository.loadCustomers(cancellation);
+        },
+        TaskCallbacks.onSuccess(rows::replaceAll));
+\end{lstlisting}
+
+The task body runs on a worker. The success callback in this example is posted
+through \api{EventQueue.invokeLater}. The task body still must check
+cancellation. The callback still must respect the owner lifecycle. A task
+service solves the repeated wiring; it does not make asynchronous work
+magical.
+
+\api{TaskService.virtualThreads} creates a service backed by Java virtual
+threads. A virtual-thread-per-task executor is a good fit for many UI-initiated
+blocking operations because each request can have a simple sequential body
+without consuming a scarce platform thread while blocked. This does not change
+Swing's threading rule. Swing components and Swing-owned models must still be
+updated on the EDT. Virtual threads make the worker side easier; they do not
+move the UI boundary.
+
+The implementation separates worker ownership from callback ownership. A
+service created by the virtual-thread factory owns its worker executor and
+shuts it down on close. A service created with explicit executors can cancel
+outstanding handles on close while leaving the caller-owned executor service
+open. This distinction matters in applications that share a worker pool across
+several presenters. Closing one presenter should not shut down the application's
+global worker pool unless that presenter owns it.
+
+\termdef{Task handle}{in Corusco} is the object that observes and controls one
+submitted task. It exposes task-level busy state, the task's cancellation token,
+a completion future, cancellation, and done state. Closing the handle requests
+cancellation. It does not close the owning task service. This split lets a
+screen cancel one request without shutting down the service that may run later
+requests.
+
+\begin{lstlisting}[caption={A screen owns the handles it starts.}]
+SubscriptionScope scope = new SubscriptionScope();
+
+TaskHandle<CustomerDetails> handle = taskService.submit(loadDetailsTask,
+        TaskCallbacks.onSuccess(details::setValue));
+
+scope.add(handle);
+\end{lstlisting}
+
+Registering the handle in a scope states that this particular work belongs to
+the screen activation. Closing the scope cancels the handle. If the service
+itself also belongs to the activation, register the service too or close it in
+the activation cleanup. If the service belongs to a larger presenter, keep the
+service open and close only the handles owned by the activation. The distinction
+prevents both leaks and overzealous shutdown.
+
+\api{TaskCallbacks} groups terminal callbacks: success, failure, and
+cancellation. Only one terminal path should run for a task. A successful body
+calls \api{succeeded}; an unexpected failure calls \api{failed}; cooperative
+cancellation calls \api{cancelled} and suppresses success and failure. Callback
+methods should return quickly because in Swing they normally run on the EDT.
+Do not perform long calculations inside terminal callbacks; use them to publish
+the already-computed result into models or UI state.
+
+Busy state exists at two levels. Service-level busy means at least one task
+owned by the service is running. Handle-level busy means one particular task is
+running. A screen-level overlay may observe the service's busy value. A row
+progress marker may observe a handle. A Save command may be disabled while the
+save handle is busy but leave a Refresh command available if the refresh
+service is idle. Use the level that matches the visual policy. Too broad a busy
+value freezes unrelated UI; too narrow a value permits conflicting commands.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{\modernTaskBoundaryFigure}
+\caption{A modern task boundary still returns to Swing ownership: a worker may be virtual, but generation, cancellation, and callback delivery decide whether a result belongs to the current screen.}
+\label{fig:lifecycle-modern-task-boundary}
+\end{figure}
+
+Figure~\ref{fig:lifecycle-modern-task-boundary} is the whole story in one
+picture. Work leaves the EDT because the UI must stay responsive. It carries a
+cancellation token because the owner may go away or a newer request may replace
+it. It carries a generation token when stale results are possible. Completion
+returns through a callback executor because Swing state must be updated on the
+EDT. The result is then accepted or ignored according to the lifecycle.
+
+The completion future on a handle represents the final task outcome after the
+implementation has performed its documented callback and busy-state delivery.
+This is useful in tests and in non-UI coordination. In UI presenters, prefer
+callbacks for ordinary model publication because they already arrive on the
+configured callback executor. Blocking the EDT waiting for a completion future
+is the old SwingWorker mistake in a new costume.
+
+Closing a task service should reject new submissions. That failure is helpful.
+Submitting to a closed service means some owner is trying to start work after
+its lifetime has ended. Silent acceptance would create a callback with no valid
+home. Treat the exception as a wiring bug unless the code is deliberately
+racing with shutdown and has an explicit fallback.
+
+A submitted task has a small lifecycle of its own. It is created, marked busy,
+scheduled on the worker executor, run with a cancellation token, finished with
+success, failure, or cancellation, delivered through the callback executor,
+removed from the service's active handle list, and marked not busy. The user
+may see only a spinner and later a table update, but the code should preserve
+this sequence. Publishing a result before busy state is cleared may be correct
+if the UI wants to update data while still showing finalization; publishing it
+after busy state is cleared may be correct if the UI wants the result and idle
+state together. The service documents its delivery order so presenters and
+tests can rely on it.
+
+Task services should not become hidden application globals. A global service
+is sometimes useful as a worker substrate, but task handles and callbacks still
+belong to UI lifecycles. If a global service stores callbacks directly and the
+callbacks capture screens, the global service becomes a leak source. A better
+shape is a shared worker executor with presenter-owned task services or
+presenter-owned handles. The owner that requested work remains responsible for
+its callbacks and cancellation policy.
+
+Failure callbacks deserve the same modeling as success callbacks. A task that
+fails during a table refresh may leave existing rows in place and publish a
+status error. A task that fails during a first load may publish an empty state
+with a retry command. A task that fails during dialog Apply may keep the dialog
+open and publish a form-wide problem or workflow error. These policies are not
+task-service policies. The service reports the terminal outcome; the owner
+decides what failure means in that UI context.
+
+Do not use background tasks to avoid thinking about responsiveness inside the
+EDT. If a task callback receives ten thousand rows and then sorts, filters, and
+rebuilds a table model on the EDT, the UI may still freeze. Do heavy work in
+the task body where possible. Publish compact, ready-to-apply results. Then
+perform precise model updates on the EDT. Large data chapters discuss update
+precision; the lifecycle point is that a task boundary should reduce EDT work,
+not merely postpone it.
+
+\section{Cancellation and stale results}
+
+\termdef{Cancellation}{in Corusco tasks} is a cooperative request for work to
+stop. The worker receives a \api{CancellationToken}. It can ask whether
+cancellation has been requested and can call \api{throwIfCancellationRequested}
+at useful boundaries. The task service also attempts executor-level
+cancellation where supported. Neither mechanism proves that every blocking
+driver, remote service, or computation stopped instantly.
+
+\begin{pitfallbox}{cancellation is cooperative}
+Calling \api{cancel} requests cancellation. It does not prove that a blocking
+driver, remote service, or task body has stopped instantly. Task code should
+check its token at useful boundaries.
+\end{pitfallbox}
+
+\begin{lstlisting}[caption={Cooperative cancellation points.}]
+UiTask<List<CustomerRow>> task = cancellation -> {
+    cancellation.throwIfCancellationRequested();
+    List<CustomerRow> rows = repository.loadCustomers();
+    cancellation.throwIfCancellationRequested();
+    List<CustomerRow> enriched = enrich(rows, cancellation);
+    cancellation.throwIfCancellationRequested();
+    return enriched;
+};
+\end{lstlisting}
+
+Useful boundaries are before expensive work, after blocking calls, inside long
+loops, before allocating large result objects, and before publishing a result.
+A repository method that accepts the token can check it during paging or
+streaming. A method that cannot be cancelled should still be followed by a
+token check before its result is used. The user does not care whether the old
+request technically finished; the user cares that it no longer changes the
+screen after cancellation.
+
+\termdef{Stale result}{in asynchronous UI code} is a result that may be
+correct for an older request but no longer belongs to the current presentation
+state. A stale result is not necessarily cancelled. A search for \api{Ada} may
+finish successfully after the user has already searched for \api{Grace}. A
+field validation for an old value may return after a validation for the new
+value. A detail load for a previously selected row may finish after the
+selection changed. The old result is not wrong in isolation; it is obsolete.
+
+\begin{principlebox}{two gates}
+Use cancellation to stop doing useless work. Use generation checks to prevent
+obsolete work from becoming visible state.
+\end{principlebox}
+
+\api{GenerationCounter} supplies small immutable tokens for stale-result
+suppression. Call \api{advance} when scheduling work for the latest input.
+Capture the returned generation with the task or callback. Before applying the
+result, ask whether the generation is still current or call \api{tryAccept}.
+Calling \api{invalidate} advances the counter without scheduling new work,
+making outstanding generations stale during close, clear, or reset paths.
+
+\begin{lstlisting}[caption={Suppressing stale search results.}]
+GenerationCounter generations = new GenerationCounter();
+
+void search(String text) {
+    GenerationCounter.Generation generation = generations.advance();
+    taskService.submit(
+            cancellation -> repository.search(text, cancellation),
+            TaskCallbacks.onSuccess(rows ->
+                    generations.tryAccept(generation, rows, tableRows::replaceAll)));
+}
+
+void close() {
+    generations.invalidate();
+}
+\end{lstlisting}
+
+The counter is thread-safe because the generation value is atomic. It does not
+make the result consumer or the target model thread-safe. If \api{tableRows}
+belongs to Swing presentation state, the callback that calls \api{tryAccept}
+must already be running on the EDT or must hand accepted work to the EDT. A
+generation token decides whether the result is current; it does not decide
+which thread may mutate the model.
+
+Cancellation and generations are complementary. Cancelling an old search is
+good because it saves work. Keeping a generation check is still necessary
+because the old search may finish despite cancellation. Invalidating
+generations on close is good because late callbacks cannot publish. Cancelling
+handles on close is still necessary because obsolete work should stop when
+possible. Treating one mechanism as a replacement for the other is a common
+source of stale UI bugs.
+
+\api{AsyncFieldValidation} is a concrete example of both ideas. It subscribes
+to a field value, submits validation work to a task service, exposes observable
+problem and busy values, and captures a generation for each validation request.
+Completions for older values are ignored. Closing the controller invalidates
+generations, closes the value subscription, cancels outstanding tasks, clears
+tracked handles, and publishes not-busy state. The class is core-level and
+Swing-free; Swing callers choose a task service whose callbacks return to the
+EDT.
+
+The async validator's failure policy is also important. Unexpected validator
+failures are converted into a field-targeted error problem with a stable
+problem code. This keeps the form in a coherent state: the user sees that the
+asynchronous validation failed, OK can become non-committable if errors block
+commit, and tests can assert the problem code. A thrown exception does not
+escape into a worker log while the dialog pretends the field is valid.
+
+When a field value changes rapidly, busy state should represent the current
+generation. Older generations should not clear busy for newer work. Otherwise
+the user sees a flicker: first request starts, second request starts, first
+request finishes and clears busy, second request still runs silently. The
+current-generation check in async validation prevents this. The same principle
+applies to table loads, preview renders, and search requests.
+
+Generation counters should not be persisted or compared by raw number. The
+numeric value is meaningful only to the counter that produced it. Treat the
+token as an opaque ownership proof: it says ``this result belongs to the
+request that was current when the token was captured, unless the counter has
+advanced.'' This keeps code from growing accidental ordering logic around
+generation values.
+
+There are several common stale-result shapes. Search-as-you-type creates many
+requests for a changing text value. Master-detail loading creates requests for
+changing selection. Asynchronous validation creates requests for changing field
+values. Preview rendering creates requests for changing options. Import
+analysis creates requests for changing files. In every case the current input
+can change while old work is still running. A generation counter is not a
+special validation tool; it is a general ownership token for request streams.
+
+Sometimes the stale-result boundary is not user input but lifecycle. Closing a
+dialog invalidates all outstanding dialog requests. Deactivating a tab may
+invalidate detail loads. Clearing a form may invalidate validation work.
+Switching projects may invalidate all workspace loads. The method name
+\api{invalidate} is useful because it says that no old result should be
+accepted even if no newer request is started immediately. This is different
+from \api{advance} as a scheduling phrase, although the implementation advances
+the counter in both cases.
+
+Stale suppression should be as close as possible to publication. A worker can
+check cancellation before returning, but it usually cannot know whether its
+result is still current by the time the callback runs. The callback is the last
+gate before state changes. Put the generation check there. If the callback
+delegates to another method, make the generation part of that method's
+contract or keep the check before the call. A generation captured at scheduling
+time and forgotten by callback time has no value.
+
+When stale results are ignored, consider whether diagnostics should record the
+fact. In ordinary typing, ignored stale validations are normal and should not
+be logged as warnings. During shutdown, ignored callbacks are also normal. But
+if a long-running refresh is routinely made stale by another refresh, the UI
+may be scheduling too aggressively. Counters can support quiet correctness
+while metrics or debug logs support performance tuning.
+
+\section{The Swing boundary and busy UI}
+
+Swing's Event Dispatch Thread is the boundary that every UI task must respect.
+Task bodies run away from the EDT. Terminal callbacks that update Swing
+components, Swing models, or Swing-owned Corusco values must run on the EDT.
+\api{SwingTaskServices.virtualThreads} supplies the common Swing choice: a
+virtual-thread worker service whose terminal callbacks and final busy-state
+updates are delivered through \api{SwingEdt.executor}. Presenters can submit
+work without writing \api{SwingUtilities.invokeLater} at every call site.
+
+\begin{lstlisting}[caption={Swing task service for a presenter or dialog.}]
+TaskService tasks = SwingTaskServices.virtualThreads();
+FormDialogLifecycle lifecycle = FormDialogLifecycle.of(dialog);
+lifecycle.addTaskService(tasks);
+\end{lstlisting}
+
+The returned service is a lifecycle object. It should be closed by the owning
+application, presenter, screen activation, or dialog lifecycle. A service
+owned by a dialog should end with the dialog. A service owned by a workspace
+presenter may survive view deactivation if that is the presenter's policy. A
+global service should be rare and should not retain screen callbacks without
+handles or generation checks.
+
+Busy overlays are a presentation of busy state, not a substitute for task
+ownership. A \api{BusyOverlayBinding} can observe a readable busy value and
+update a \api{JLayer} with \api{BusyOverlayLayerUI}. The overlay may paint a
+translucent cover and consume input while busy. The binding itself touches
+Swing components and must be closed with the view. If the overlay remains
+installed after the view closes, the visual state was not the only leak; the
+binding still owns listeners and component references.
+
+Command enablement should follow the same modeled state. A Refresh command may
+be disabled while a refresh handle is busy. A Save command may be disabled
+while validation is pending or while a save is running. A Cancel current task
+command may be enabled only while a handle is busy and not done. These are
+ordinary derived values. They should be bound to commands and components, not
+hand-updated in every task callback.
+
+Dialogs make the Swing boundary especially visible. A dialog may start a
+remote validation task. The user may press Cancel. The lifecycle closes the
+validation binding, cancels the handle, invalidates the generation, and closes
+the controller. A late callback returns on the EDT; it sees that its generation
+is stale or its owner is closed and does not publish. Without this chain, the
+closed dialog may still mutate a form model, update a summary label, or
+re-enable OK after it no longer exists.
+
+Full screens have a wider boundary. A customer workspace may keep a task
+service for the whole workspace, but each selected customer detail load has a
+request generation. Changing selection cancels the previous detail handle when
+possible, advances the generation, shows detail busy state, and accepts only
+the current result. Closing the workspace closes the service or all owned
+handles according to ownership. The same pattern scales from dialogs to
+workspaces because the concepts are not visual.
+
+Status text should be modeled, not scattered. A task may publish ``Loading
+customers'', ``Loaded 200 rows'', ``Cancelled'', or ``Failed: network timeout''
+through callbacks. The status label observes the modeled status. A failure
+callback may also publish a problem, enable retry, and record diagnostics. If
+status text is assigned directly from worker code, threading and stale-result
+policy become invisible.
+
+Progress deserves the same care. An indeterminate progress bar can observe a
+busy value. Determinate progress needs a modeled progress value. If progress
+belongs to one handle, close the handle and its progress subscription together.
+If progress belongs to a service with several concurrent tasks, define how
+aggregate progress is computed or avoid pretending it is determinate. False
+precision is worse than an honest busy indicator.
+
+Do not block the EDT waiting for background work. A modal dialog is already a
+structured waiting experience for the user; blocking the EDT inside that modal
+experience freezes painting, input, cancellation, and progress. If OK needs a
+server save before closing, start a task, put the dialog in busy state, keep
+Cancel or Stop policy explicit, and close only after the EDT callback reports
+success. If OK can return a result and the surrounding screen can save, close
+the dialog and let the surrounding workflow own the save task. Both designs are
+valid; blocking the EDT is not.
+
+The Swing boundary also affects model classes that are not Swing components
+but are owned by Swing presentation. An observable list feeding a table model,
+a form model bound to fields, or a command model adapted to buttons may be
+toolkit-neutral in package name but still confined to the EDT by ownership. If
+the model is read and written only by the UI, treat it as EDT-owned. A worker
+should return immutable data or a batch description; the EDT callback applies
+it. If a model is truly thread-safe, document that fact separately. Do not infer
+thread safety from the absence of Swing imports.
+
+Busy overlays should have input policy. An overlay that paints busy state but
+lets all input through may be suitable for a nonblocking refresh. An overlay
+that consumes input may be suitable when edits would conflict with a running
+operation. A Cancel button may need to remain above or outside the overlay.
+These are design choices connected to task ownership. If the task can be
+cancelled, the UI should expose a cancellation route. If it cannot be
+cancelled, the UI should avoid pretending that pressing Cancel will stop the
+work instantly.
+
+Command state can make busy policy precise. Instead of disabling an entire
+panel, disable Save while saving, disable Refresh while refreshing, keep Help
+enabled, and keep Cancel current task enabled while the relevant handle is
+busy. A composed command enablement value can depend on validation problems,
+dirty state, busy state, and lifecycle state. Corusco's value and command
+models make these dependencies explicit; Swing buttons merely render the
+command state.
+
+For screenshot generation, busy state should be deterministic. The book's
+figures use seeded data and fixed dimensions, but the same principle applies
+to application screenshot tests. Drive the model into a busy state, render the
+view, then drive it into a loaded or failed state. Do not sleep and hope a real
+background task happens to be at the right point. Deterministic screenshots are
+also better documentation because they show named states rather than timing
+accidents.
+
+\section{Testing lifecycle and tasks}
+
+Lifecycle behavior deserves tests. Not every screen needs a heap test, but
+every screen pattern should have cleanup tests. Close a scope and assert that
+later value changes do not update the view. Close a task handle and assert that
+the token is cancelled. Invalidate a generation and assert that the old result
+is ignored. Close a lifecycle and assert reverse cleanup order. These tests are
+small because the contracts are small.
+
+\begin{lstlisting}[caption={Testing a closed subscription scope.}]
+SimpleValue<String> value = SimpleValue.of("first");
+SubscriptionScope scope = new SubscriptionScope();
+List<String> seen = new ArrayList<>();
+
+scope.add(value.subscribe(event -> seen.add(event.newValue())));
+scope.close();
+value.setValue("second");
+
+assertThat(seen).isEmpty();
+\end{lstlisting}
+
+The test above is more valuable than its size suggests. It proves that a
+closed owner does not receive later model updates. A similar test can assert
+that late registration closes immediately: close a scope, add a tracked
+disposable, and verify that its close method ran. Another test can register
+three disposables and assert reverse close order. If the project has a custom
+binding scope, give it the same tests.
+
+Task tests should control time. Use a direct callback executor for core tests
+when no Swing boundary is involved. Use a latch or manually controlled task
+body to hold a task in the busy state. Assert service busy, handle busy,
+callback delivery, completion future behavior, cancellation, and close
+semantics. For Swing tests, use \api{SwingEdt.runAndWait} or a Swing-aware test
+helper so callback assertions happen on the EDT.
+
+\begin{lstlisting}[caption={A deterministic core task scenario.}]
+CountDownLatch release = new CountDownLatch(1);
+try (TaskService service = TaskService.virtualThreads(Runnable::run)) {
+    TaskHandle<String> handle = service.submit(
+            cancellation -> {
+                cancellation.throwIfCancellationRequested();
+                release.await();
+                return "loaded";
+            },
+            TaskCallbacks.onSuccess(values::add));
+
+    assertThat(handle.busy().value()).isTrue();
+    release.countDown();
+    assertThat(handle.completion().join()).isEqualTo("loaded");
+}
+\end{lstlisting}
+
+Stale-result tests do not need real threads. Capture two generations. Try to
+accept the older result after advancing the counter. Assert that only the newer
+result is accepted. Then invalidate the counter and assert that a previously
+current token becomes stale. This proves the callback gate independently from
+worker scheduling. A separate integration test can prove that the task service
+delivers callbacks through the expected executor.
+
+Cancellation tests should distinguish request from completion. After calling
+\api{cancel}, the token should report cancellation. The completion may be
+cancelled after callback delivery according to the service contract. If the
+task body checks the token, assert that it stops at the expected boundary. If
+the body blocks in a non-cancellable call, assert that a late result is ignored
+by generation or lifecycle checks. Do not write tests that assume every
+blocking operation stops instantly.
+
+Cleanup failure tests are worth having for scopes used across the project.
+Register one disposable that throws and another that records closure. Close the
+scope and assert that the recording disposable still closed and the thrown
+exception appears as suppressed inside the aggregate exception. This prevents a
+future refactoring from accidentally changing cleanup from best-effort to
+stop-on-first-failure.
+
+Screenshot tests can reveal lifecycle policy when they are model-driven. A
+busy overlay screenshot should come from a busy value. A disabled command
+should come from command state. A failure banner should come from task failure
+state. If the screenshot can be produced only by manually painting a component
+without the underlying model state, the example is less useful. Visual evidence
+and behavioral tests should describe the same relationships.
+
+Fake services are useful when they preserve the public contract. A fake task
+service for presenter tests can record submitted tasks, expose a busy value,
+and let the test complete, fail, or cancel a handle manually. It should still
+return a \api{TaskHandle}; it should still support cancellation; it should
+still deliver callbacks through the chosen test executor. A fake that simply
+calls the success callback immediately is convenient, but it cannot test busy
+state, cancellation, or stale results. Use the simplest fake that still covers
+the lifecycle rule under test.
+
+EDT tests should avoid nested modal waits. Test controllers, presenters, and
+bindings directly on the EDT. For a dialog, drive the \api{FormDialog}
+controller and lifecycle without showing a native modal peer. For a busy
+overlay, render the layer with a controlled busy value. For task callbacks,
+use \api{SwingEdt.runAndWait} around state assertions or a test utility that
+flushes posted EDT work. Native modal integration can have a small smoke test,
+but most lifecycle behavior should be tested without clicking windows.
+
+Heap tests are a last line of defense, not the primary design tool. They can
+prove that a screen becomes collectible after close under controlled
+conditions, but they are often slow and sensitive to test infrastructure.
+Prefer direct ownership tests first: listener count goes to zero, scope closes
+children, callbacks do not run after close, task handles cancel, generations
+reject stale results. When these tests pass, heap tests become confirmation
+rather than discovery.
+
+Logging should identify ownership. If a task fails after its owner has closed,
+that may be a debug-level stale result, not an application error. If a task is
+submitted to a closed service, that is probably a wiring error. If cleanup
+throws, the aggregate exception should retain suppressed failures so the
+developer sees all broken cleanup handles. Good diagnostics use lifecycle
+vocabulary; poor diagnostics merely say that a null component was updated.
+
+\begin{examplebox}{lifecycle}
+\lifecycleExample{} demonstrates deterministic cleanup of listener-style
+registrations. \asyncTaskExample{} demonstrates core task execution and busy
+state. \generationCounterExample{} demonstrates stale-result suppression
+without real threads, so the ownership rule is easy to see.
+\end{examplebox}
+
+\section{Worked review of a customer workspace}
+
+Consider a customer workspace with a search field, a table of results, a detail
+panel for the selected customer, an Edit dialog, and a status bar. The screen
+is ordinary enough to be useful and rich enough to expose lifecycle questions.
+The search field starts background requests. The table observes an observable
+list. The detail panel loads data for the selected row. The Edit dialog has its
+own modal lifecycle. The status bar observes task and command state. The
+workspace may be closed and reopened during one application session.
+
+The first review pass marks relationships installed during workspace
+activation. The search document listener, table selection listener, list
+model adapter, command adapters, status binding, busy overlay binding, and
+task service all need owners. Some belong to the whole workspace activation.
+Some belong to the current detail selection. Some belong only to the Edit
+dialog. Marking them by owner is more useful than listing them by class.
+
+The workspace presenter creates a \api{SubscriptionScope} for activation. It
+registers the search listener, table binding, status binding, command
+adapters, and busy overlay binding. It also creates a \api{TaskService} for
+workspace tasks and registers it if the service is not shared elsewhere. The
+activation close method closes the scope. The view disposal method calls the
+presenter close method. This is not complicated code, but it must be present.
+
+Search requests use a \api{GenerationCounter}. Each change that starts a
+search advances the generation and captures the token. The old search handle
+may be cancelled if still running. The task callback returns on the EDT. It
+tries to accept the result with the captured generation before replacing table
+rows. Clearing the search field invalidates generations even if no new search
+is scheduled. Closing the workspace invalidates generations and closes handles
+or the service. Thus old results cannot repopulate the table after close or
+after a newer search.
+
+The detail panel has a different boundary: selection lifetime. Selecting a row
+starts a detail load for that row. Changing selection cancels or invalidates
+the old detail load and detaches cached detail state if the application wants
+to release memory. The workspace may keep the last selected id as durable
+state, while detaching the heavy order list and preview image. A
+\api{DetachableScope} fits this boundary better than closing the whole
+workspace presenter.
+
+The Edit dialog creates a new modal lifecycle. It may use the same repository
+service, but its form bindings, validation binding, keyboard binding, dialog
+task service or handles, dirty confirmation, and controller belong to the
+dialog activation. Closing the workspace while the dialog is open should close
+the dialog lifecycle. Cancelling the dialog should not close the whole
+workspace task service unless the dialog owns that service. These ownership
+lines prevent modal cleanup from damaging the surrounding screen.
+
+Now follow one user gesture. The user types \api{Ada} in the search field. The
+document listener, owned by the workspace activation scope, asks the presenter
+to search. The presenter advances the search generation, cancels the previous
+search handle if one exists, submits a new task through the workspace task
+service, and stores the handle in the activation scope or in a small
+replaceable handle owner. The service busy value turns true, the overlay
+binding shows the busy layer, and the Refresh command disables. The user types
+\api{Ada L}. The presenter repeats the sequence. When the first task returns,
+its callback runs on the EDT but fails the generation check and publishes
+nothing. When the second task returns, its generation is current, so the table
+rows update and busy state clears.
+
+Follow another gesture. The user selects a customer row. The selection listener
+belongs to the workspace activation, but the detail load belongs to the
+selection. The presenter invalidates the previous detail generation, detaches
+old heavy detail caches, and submits a new detail load. The detail panel shows
+busy state without blocking the search table. If the user selects a different
+row before the load finishes, the old result is ignored. If the user closes the
+workspace, the activation scope closes the selection listener, cancels the
+detail handle, closes or detaches detail caches according to policy, and
+invalidates outstanding generations. The late detail result has no valid path
+back to the closed view.
+
+Follow the Edit dialog. The user opens it from the selected row. The dialog
+creates a fresh form model, root panel, controller, lifecycle, validation
+binding, keyboard binding, and perhaps a dialog-owned task service for
+asynchronous validation. The dialog lifecycle owns these objects. The
+workspace may remain open behind it, but the dialog does not borrow the
+workspace activation scope for modal resources. If the user presses Cancel,
+the dialog cancels or invalidates dialog work and closes dialog resources. The
+workspace still owns its search and detail tasks. If the workspace closes, it
+also closes any open dialog lifecycle because the modal child can no longer
+outlive its owner.
+
+This walkthrough is verbose on purpose. Real bugs often occur at the boundary
+between two lifecycles: search vs detail, detail vs dialog, dialog vs
+workspace, workspace vs application shutdown. A diagram or ledger that makes
+the boundaries visible prevents accidental ownership transfer. Without that,
+developers tend to choose whatever scope is in reach, and a dialog task ends up
+owned by a workspace or a workspace listener ends up owned by a dialog.
+
+Failure paths need explicit owners. If a search fails, the workspace status
+model receives the failure and the table remains in its previous or empty
+state according to policy. If a detail load fails, the detail panel displays a
+detail-level failure and the search table remains usable. If an Edit dialog
+save fails while the dialog stays open, the dialog status or form problem state
+receives the failure. The same exception class may be involved in all three
+paths; the owner decides the presentation.
+
+Shutdown has different rules from ordinary navigation. During normal workspace
+close, user policy may ask about dirty edits and may cancel background work.
+During application shutdown, windows may already be disappearing and user
+prompts may be limited. The application should define which task services close
+first, whether outstanding saves are awaited or cancelled, and which callbacks
+are ignored after shutdown begins. Corusco's scopes and task services give
+places to implement that policy; they do not invent the policy for the
+application.
+
+The review table for this workspace is concrete:
+
+\begin{center}
+\textbf{Lifecycle review table.}
+\end{center}
+
+\noindent\begin{tabularx}{\linewidth}{@{}p{0.34\linewidth}X@{}}
+\toprule
+Observation & Review question\\
+\midrule
+Validation runs twice after reopening & Was the old value or document subscription closed?\\
+Closed dialog updates status & Does the task callback check lifecycle or generation before publishing?\\
+Search results revert to older text & Does each request capture and verify a generation token?\\
+Cancel does not stop loading & Are task handles registered and cancelled at the right boundary?\\
+Busy overlay remains after close & Is the busy binding closed with the view?\\
+Detail rows reload after tab deactivation & Should the detail cache detach or should the load be cancelled?\\
+Closing one panel stops all background work & Does the panel own the task service, or only its handles?\\
+Cleanup exception leaves listeners alive & Does the scope continue closing remaining children?\\
+\bottomrule
+\end{tabularx}
+
+The questions are not theoretical. They are the bugs that appear in long-lived
+desktop tools. A one-shot demo can ignore them and exit. A production Swing
+application stays open all day. Time magnifies every unclear ownership rule.
+
+\section{Operational notes}
+
+Lifecycle policy should be visible in diagnostics. When a task is submitted,
+debug logging can include the owner, operation name, and generation token
+identity without exposing domain data. When a task result is ignored because it
+is stale, that is usually a trace-level fact, not an error. When code submits a
+task to a closed service, that is usually a warning or exception because a dead
+owner is trying to start new work. When cleanup fails, the aggregate exception
+should retain suppressed failures so the developer sees every broken cleanup
+handle. Diagnostics that use lifecycle vocabulary are easier to act on than a
+late \api{NullPointerException} in a callback.
+
+Memory investigation also becomes simpler when ownership is explicit. If a
+heap dump shows old customer panels retained, inspect long-lived listener
+sources, task services, command registries, and static caches. The ownership
+ledger tells which relationships should have been closed. If the retained path
+goes through a subscription, find the scope that should have owned it. If the
+retained path goes through a task callback, find the handle or service that
+should have been cancelled. If the retained path goes through a cache, ask
+whether the cache should detach at deactivation. The heap tool tells what is
+still reachable; the lifecycle design tells why that reachability is wrong.
+
+Performance investigation follows the same pattern. Duplicate callbacks often
+look like slow validation or slow table updates. The real cause may be three
+live subscriptions all responding to the same field change. A busy overlay that
+stays visible may look like a painting defect; the real cause may be a task
+handle whose busy value never cleared because completion was delivered to a
+closed executor. A UI freeze may look like a background-task problem; the real
+cause may be a success callback doing heavy work on the EDT. Naming the owner,
+callback executor, and generation makes these problems easier to separate.
+
+Application shutdown deserves a written sequence. Top-level windows stop
+accepting new user work. Dialog lifecycles close or cancel according to policy.
+Screen activation scopes close. Presenter-owned task services cancel
+outstanding handles. Shared services stop accepting new submissions and then
+shut down if the application owns them. Final callbacks after shutdown begin
+are either ignored by invalidated generations or routed to shutdown diagnostics
+instead of UI state. A shutdown sequence does not need to be elaborate, but it
+must be deliberate; otherwise every window invents a different interpretation
+of closing.
+
+The distinction between close and dispose should remain clear in operations
+documentation. Closing a Corusco scope releases Java relationships. Disposing a
+Swing window releases the native peer. Cancelling a task requests worker
+cooperation. Invalidating a generation prevents old results from publishing.
+Detaching a cache releases reusable cached state. These operations often occur
+together, but they are not synonyms. A support note that says ``the dialog is
+disposed'' does not prove its validation task was cancelled. A code review that
+says ``the task is cancelled'' does not prove old callbacks are unable to
+publish. Use the exact verb.
+
+Instrumentation should not become another leak. A diagnostic listener attached
+to a task service needs an owner. A metrics observer attached to an observable
+list needs a subscription. A debug overlay installed on a \api{JLayer} needs a
+binding handle. Development-only tools are especially prone to unclear
+ownership because they are added after the main design is finished. Treat them
+like production relationships. If they observe a screen, close them with the
+screen. If they observe the application, make sure they do not capture screens.
+
+Code generation should emit lifecycle hints where possible. A generated form
+companion can name the binding scope it expects. A generated table companion
+can expose a single install method that returns a disposable plan. A generated
+action companion can document whether command adapters are owned by the view or
+by a longer-lived command registry. A generated validation companion can use
+generation counters for asynchronous validators and expose the controller as a
+disposable. Generated code is best when it reduces repeated ownership wiring
+without hiding ownership.
+
+Finally, keep the human debugging story in mind. A developer called to fix a
+stale result bug should be able to answer four questions quickly: who started
+the work, who can cancel it, how does the callback know it is still current,
+and who closes the callback relationship? If the answer requires reading
+twenty anonymous listeners across a dialog and presenter, the architecture is
+too implicit. If the answer is ``the customer workspace activation scope owns
+the handle, the search generation gates publication, and callbacks return on
+the EDT,'' the system is easier to maintain.
+
+\section{Exercises and checklist}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Pick one existing screen and mark every listener, subscription, timer,
+task, model adapter, keyboard binding, and overlay it installs. For each mark,
+write the owner that closes it.
+\item Replace two manually stored listener-removal lambdas with a
+\api{SubscriptionScope}. Add a test for reverse close order.
+\item Add a late-registration test to a custom scope or presenter helper. Close
+the owner first, then register a tracked disposable and assert that it closes
+immediately.
+\item Identify one cache that should survive object lifetime but not activation
+lifetime. Implement \api{Detachable} and collect it in a \api{DetachableScope}.
+\item Convert one \api{SwingWorker} use to a \api{TaskService} and
+\api{TaskHandle}. Preserve callback delivery on the EDT.
+\item Add cooperative cancellation checks before expensive work, after a
+blocking call, and before publishing a result.
+\item Add a \api{GenerationCounter} to a search, validation, or detail-load
+path. Prove that an older result cannot replace a newer one.
+\item Bind a service-level busy value to a screen overlay and a handle-level
+busy value to a command. Explain why the levels differ.
+\item Test that closing a dialog lifecycle cancels outstanding task handles and
+prevents late callbacks from updating form state.
+\item Review a shutdown path and decide which services close, which handles
+cancel, and which callbacks are ignored after shutdown begins.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{center}
+\textbf{Lifecycle checklist.}
+\end{center}
+
+\begin{itemize}
+\item Every installed callback has a visible owner.
+\item Listener and binding cleanup handles are registered near installation.
+\item \api{SubscriptionScope} closes screen or dialog relationships.
+\item Late registrations fail closed instead of creating fresh leaks.
+\item Cleanup failures do not prevent remaining children from closing.
+\item \api{detach} is used for reusable cached state, not as a synonym for close.
+\item Task services have an owner and reject submissions after close.
+\item Task handles are registered with the lifecycle that requested the work.
+\item Cancellation tokens are checked at useful worker boundaries.
+\item Generation tokens suppress obsolete callback results.
+\item Swing callbacks that mutate UI state return to the EDT.
+\item Busy state is modeled at the correct service or handle level.
+\item Dialogs, tabs, selections, and application shutdown have distinct boundaries.
+\item Tests cover close, detach, cancellation, stale results, and late callbacks.
+\item Example screenshots are backed by modeled busy and task state.
+\end{itemize}
+
+Lifecycle code should be boring and visible. Clever cleanup hidden in
+finalizers, weak listeners used without policy, callbacks that check random
+booleans, and tasks that publish into whatever object they captured are harder
+to review than scopes and handles. Use the small vocabulary consistently:
+open, activate, detach, cancel, invalidate, close, and dispose. When those
+words have stable meanings, a large Swing application becomes much easier to
+keep alive for a long time.

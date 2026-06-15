@@ -1,0 +1,1153 @@
+\chapter{Good and Bad Swing Practice}
+\label{ch:practices}
+\chapterquote{Swing lets you write anything in a listener; maintainable Swing depends on deciding what must not live there.}{A maintenance warning}
+
+\begin{chaptermap}
+Core question & Which common Swing habits fail as screens grow, and what should replace them?\\
+Bad smells & Listener sprawl, hidden state, blocking the EDT, view-index persistence, renderer allocation, duplicated resources, focus hacks, and forgotten cleanup.\\
+Corusco connection & Corusco names repeated relationships: values, commands, descriptors, problems, bindings, behaviors, scopes, and generated companions.\\
+Companion example & \practiceExample.\\
+\end{chaptermap}
+
+\section{Practice is architecture in small pieces}
+
+Bad Swing code rarely announces itself as bad architecture. It arrives as one convenient listener, one hard-coded column index, one quick \api{setPreferredSize}, one background thread that updates a label, one tooltip overwrite, one renderer allocation, and one forgotten timer. Each local decision seems cheap. The accumulated screen becomes expensive.
+
+Good practice is not a collection of taboos. It is a collection of ownership rules. Who owns this state? Who owns this listener? Who owns this command? Who owns this validation problem? Who owns the cleanup? If the answer is clear, Swing code tends to remain understandable. If the answer is hidden in component callbacks, the screen decays.
+
+\begin{principlebox}{Review the ownership, not only the syntax}
+Modern Java syntax can make poor Swing code shorter. It cannot make ownership clear by itself. A lambda that hides state in a listener is still hidden state.
+\end{principlebox}
+
+The best way to read this chapter is as a review method. Each bad practice is a
+local symptom of a missing owner. Listener sprawl means no one owns the
+relationship graph. Blocking the EDT means no one owns latency. Index-based
+table code means no one owns identity. Renderer allocation means no one owns
+paint cost. Focus hacks mean no one owns keyboard workflow. Duplicated strings
+mean no one owns resources. Leaks mean no one owns lifetime. Once the owner is
+named, the remedy usually becomes much less mysterious.
+
+This is also why the chapter belongs early in the book. A reader who learns
+only APIs may write code that compiles and still becomes unmaintainable. A
+reader who learns ownership can use plain Swing and Corusco selectively. The
+goal is not to make every small utility look like an enterprise framework. The
+goal is to recognize the point where a local shortcut stops being local.
+
+Every production Swing screen eventually acquires history. A button added for a
+demo becomes part of a workflow. A listener written for one field becomes copied
+to five fields. A table that had five rows receives ten thousand. A tooltip that
+held help text begins to hold validation. A dialog that was modal and simple
+gains Apply, dirty confirmation, and background validation. Good practice is the
+habit of noticing when the original shape is no longer true.
+
+Corusco should be introduced at those pressure points. If the screen has one
+button and one local action, plain Swing may be ideal. If the same operation
+appears in a toolbar, menu, shortcut, context menu, and generated test, it wants
+a command. If one label displays one local message, plain Swing may be enough.
+If validation, status, disabled reasons, and help all compete for the same
+tooltip, the screen wants a tooltip policy and problem model. Use the library
+where it names real pressure, not where it merely adds vocabulary.
+
+A useful practice review has five passes. The first pass asks what the screen
+promises to the user: which operations exist, which data is visible, which
+state can change, which errors can block progress, and what happens if the
+screen is closed. The second pass asks where those promises live in code. The
+third pass asks which Swing mechanics present them: listeners, models,
+renderers, actions, input maps, layout constraints, and repaint requests. The
+fourth pass asks what the slow path is: data loading, validation, image
+decoding, report generation, database access, remote calls, and repaint hot
+spots. The fifth pass asks how the relationships end. This order keeps review
+from degenerating into a search for personal style preferences.
+
+The passes are deliberately ordinary. They can be applied to a ten-line demo or
+to a large generated screen. A small demo may answer each question with a local
+object and remain plain Swing. A production screen will often answer with
+values, commands, problem sets, descriptors, task handles, and scopes. The
+important point is that the same question is asked in both cases. Corusco should
+not change the nature of the question; it should make the answer shorter, more
+typed, and easier to test when the answer has grown beyond a local component.
+
+This chapter therefore treats every bad habit as a failed boundary. Listener
+sprawl is a failed state boundary. Blocking the EDT is a failed latency
+boundary. View-index persistence is a failed identity boundary. Renderer
+allocation is a failed hot-path boundary. Focus hacks are failed workflow
+boundaries. Duplicated resources are failed vocabulary boundaries. Leaks are
+failed lifetime boundaries. The naming may sound severe, but it is useful
+because it makes remedies comparable. A boundary can be moved, named, tested,
+and shared.
+
+\textbf{Listener sprawl.}
+Anonymous listeners are not bad. Unowned listeners are bad. A listener that updates one nearby label may be clear. Ten listeners that all partly maintain command state, validation text, table selection, dirty flags, and status messages become a hidden program.
+
+The first warning sign is duplication. Several listeners call the same helper, but each with slightly different assumptions. The second warning sign is ordering. One listener updates a model, another listener observes it, a third listener changes a button, and a fourth listener rewrites a tooltip. The third warning sign is cleanup. No one can say which object removes the listeners.
+
+Listener sprawl is especially deceptive because the first listener is usually
+reasonable. A document listener updates a preview. A selection listener enables
+Edit. A button listener calls Save. The problem begins when each listener also
+knows one extra fact. The document listener updates validation and Save. The
+selection listener updates a status label and a detail panel. The button
+listener starts a background task and changes a tooltip. Soon there is no single
+place to answer "what is the state of this screen?"
+
+A useful review exercise is to draw arrows. Put components on the left, models
+and commands on the right, and listeners in the middle. If arrows cross
+everywhere, the screen is probably using listeners as its architecture. If most
+listeners translate component events into model changes and most component
+updates come from model bindings, the screen has a shape a reviewer can follow.
+The picture need not be formal; even a rough sketch often reveals the hidden
+program.
+
+Do not confuse listener count with listener sprawl. A complex screen may have
+many listeners and still be disciplined if they are generated, scoped, and
+single-purpose. A tiny screen may have only three listeners and still be
+unmaintainable if each one updates several unrelated facts. The question is
+whether the listener owns meaning that should live elsewhere.
+
+\begin{migrationbox}{sprawl to scope}
+Group installed listeners and subscriptions under a lifecycle object. In Corusco Swing, a \api{BindingScope} or \api{BehaviorScope} says, "these relationships belong to this screen activation, and they close together."
+\end{migrationbox}
+
+\textbf{Listeners that own facts.}
+A listener should translate an event into a model change or command invocation. It should rarely be the sole owner of the fact. A document listener can say "the raw text changed". It should not be the only representation of validity, dirty state, command enablement, status text, and problem routing.
+
+\begin{lstlisting}[caption={A listener that has accumulated too many jobs.}]
+nameField.getDocument().addDocumentListener(new SimpleDocumentListener(() -> {
+    String text = nameField.getText();
+    boolean valid = !text.isBlank();
+    errorLabel.setText(valid ? "" : "Name is required");
+    saveButton.setEnabled(valid && !busy);
+    statusLabel.setText(valid ? "Ready" : "Fix validation errors");
+}));
+\end{lstlisting}
+
+The listener is readable in isolation, but it owns too many facts. If a menu item also invokes Save, the button's enabled state is the wrong owner. If a dialog summary needs validation, the error label is the wrong owner. If a test needs to assert dirty state, the text field is the wrong owner.
+
+The deeper problem is that the listener has no vocabulary for intermediate
+states. It treats text, validity, busy state, command enablement, and status as
+nearby widget properties. A real screen needs these facts independently. The
+field text may be invalid but touched. The form may be valid but pristine. Save
+may be disabled because the form is busy, not because the text is invalid. The
+status line may need to show a background failure even while the field is valid.
+Once these distinctions exist, a listener is too small a home.
+
+\textbf{The model-backed alternative.}
+The alternative is not to eliminate listeners. The alternative is to make them narrow and owned. A binding listens to the document and updates a field model. A validation model exposes problems. A command observes committability. A status value describes the current user-facing message.
+
+The model-backed alternative has a rhythm. First, input changes one model fact:
+raw text, selected row, checked state, chosen option. Second, derived state is
+computed from named facts: committable, dirty, busy, primary problem, selected
+customer name. Third, components display those facts through bindings,
+renderers, actions, or behaviors. Fourth, a lifecycle scope closes the
+relationships. The rhythm is not elaborate; it is simply explicit.
+
+Tests become shorter because the model facts can be exercised directly. A test
+does not need to type into a field to prove that a blank name blocks Save; it
+can set the field model and assert the command state. An EDT binding test still
+proves that the field edits the model, but it is no longer the only test of the
+business rule. This separation is one of the strongest practical reasons to
+move facts out of listeners.
+
+The same separation improves debugging. When a user reports that Save is
+disabled, the developer should be able to inspect a small chain of facts:
+permission, dirty state, parse state, validation problems, busy state, and any
+active editor commit failure. If those facts are scattered across buttons,
+labels, and listeners, debugging becomes archaeology. If the facts are model
+values and command state, a log line or debugger watch can show why the command
+is disabled without repainting the whole screen in one's head.
+
+There is also a timing benefit. Component callbacks occur at moments chosen by
+Swing: document mutation, focus transfer, selection change, key binding,
+timer tick, repaint, property change. Business facts often have their own
+meaningful moments: the form became dirty, the form became committable, the
+selected customer changed, a background result became stale, a validation
+problem was cleared. Conflating the callback moment with the business moment is
+one reason listener code grows strange. A model-backed design lets Swing events
+enter the model at narrow points, after which the screen can reason in its own
+domain terms.
+
+Corusco's observable values and command descriptors are useful precisely
+because they make such chains explicit. A \api{WritableValue} can receive
+edited text. A derived value can express committability. A command can depend
+on that derived value and on busy state. A binding can project command state to
+a button, menu item, and shortcut. The old listener has not vanished; it has
+been reduced to an adapter from a Swing event to a named fact. The resulting
+code is not merely easier to read. It is easier to review because each
+relationship has a type and an owner.
+
+When the screen is still small, the same idea can be applied without Corusco.
+Create a tiny presenter object with fields for state and methods for events.
+Let listeners call those methods. Let the presenter update the few components it
+owns. This is already better than hiding the whole screen in anonymous
+callbacks. Later, if the screen grows, the presenter methods reveal exactly
+which facts want values, commands, validation models, or generated companions.
+Good plain Swing can therefore be a migration path rather than a dead end.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.86\linewidth]{\practiceFigure}
+\caption{The practice comparison companion example. It is visually small because the point is not widget variety; it is the distinction between component text, model-backed value, and derived status.}
+\label{fig:practice-comparison}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\practicePitfallFigure}
+\caption{The review move behind many practice improvements: replace local listener piles with named state, derived command facts, and lifecycle-owned relationships.}
+\label{fig:practice-listener-sprawl}
+\end{figure}
+
+\begin{examplebox}{practices}
+\practiceExample{} contrasts a local-listener form with a model-backed form and records the review questions each style creates.
+\end{examplebox}
+
+\textbf{Blocking the EDT.}
+The EDT can perform small calculations. It cannot perform unpredictable I/O, long database queries, slow network calls, or bulk parsing while the user waits for the window to repaint. Modern Java makes background work cheaper; it does not make Swing thread-safe.
+
+The bad version often looks harmless:
+
+\begin{lstlisting}[caption={The freeze is hidden inside the listener.}]
+refreshButton.addActionListener(event -> {
+    statusLabel.setText("Loading...");
+    List<CustomerRow> rows = customerService.loadCustomers(); // Blocks.
+    tableModel.setRows(rows);
+    statusLabel.setText("Loaded " + rows.size() + " rows");
+});
+\end{lstlisting}
+
+The label may not even repaint to "Loading..." before the service call blocks the EDT. The user sees a frozen window and perhaps assumes the application has crashed. The correct shape moves unpredictable work out of the EDT and publishes a small result back.
+
+The failure is not merely that the code is slow. It is that the user receives a
+lie. The screen says "Loading..." in source code, but the message may never
+paint before the window freezes. The button appears clickable but cannot
+respond. The window may not repaint when moved. A progress bar cannot progress
+because the event queue is occupied by the operation that was supposed to start
+progress. Blocking the EDT breaks the conversation between the application and
+the user.
+
+Good EDT practice begins by classifying work by latency. Bounded presentation
+work belongs on the EDT: setting labels, updating component properties,
+installing bindings, replacing a small local model, formatting a short message.
+Unbounded or external work does not: file I/O, database queries, remote calls,
+large parsing, image decoding, report generation, and loops over user-sized
+data. When in doubt, ask whether the operation can become slow because of data,
+network, disk, service load, or environment. If yes, keep it out of the EDT.
+
+Modern Java virtual threads reduce the cost of moving blocking work away from
+the EDT, but they do not change Swing ownership. The worker may be virtual; the
+component mutation still belongs on the EDT. The worker may be cheap to start;
+the result may still arrive after the screen closes. The command may submit work
+easily; the UI must still model busy state, cancellation, failure, and stale
+results.
+
+Latency should be reviewed as part of the screen contract, not as an afterthought
+after the first freeze. A button that can start a network operation needs a
+busy state before it needs a progress bar. A table that can load a large result
+set needs a partial or empty state before it needs a custom renderer. A dialog
+that validates against a server needs an answer to the question "what happens
+if the user edits again before the old answer returns?" These are practice
+questions because they decide where state belongs. The EDT chapter explains the
+mechanics; this chapter asks whether the screen has made a promise it can keep.
+
+A small latency budget is useful even when no stopwatch is used. Work that is
+effectively immediate may remain in the event handler. Work that may take a
+perceptible moment should update visible state first and then leave the EDT.
+Work that may outlive the user's patience needs cancellation, progress, or a
+clear stale-result rule. Work that may outlive the screen needs lifecycle
+ownership. These categories prevent the common mistake of treating all
+background work as one topic. A cached calculation, a database query, a remote
+upload, and a month-end report do not need the same UI policy.
+
+The visible state matters as much as the worker. Disable or retitle commands
+that cannot safely be invoked twice. Keep cancelable tasks cancelable from the
+keyboard as well as the mouse. Publish progress at a rate the EDT can consume;
+do not replace one freeze with a storm of progress events. Decide whether old
+data remains visible while new data loads, whether it is marked stale, or
+whether the table moves to an empty loading state. Users can tolerate waiting
+when the screen remains truthful. They cannot reason about a window that lies
+about being ready.
+
+\begin{pitfallbox}{the fast database fallacy}
+The developer says the query is fast. The network says otherwise. The production database says otherwise. The user's VPN says otherwise. EDT policy should be based on worst plausible latency, not the developer's local happy path.
+\end{pitfallbox}
+
+\textbf{Unsafe background updates.}
+The opposite mistake is also common. A developer moves work to a background thread and then updates Swing components directly from that thread. The freeze disappears, but a data race appears.
+
+Background work should produce data, not mutate Swing. Use \api{SwingUtilities.invokeLater}, a task service, or a Corusco Swing task boundary to return to the EDT. If the screen may close before the result arrives, the task must also handle cancellation or stale-result suppression.
+
+Unsafe background updates are harder to diagnose than visible freezes because
+they can appear intermittent. A label update from a worker thread may seem to
+work for months. A table model mutation from a pool thread may fail only while
+the user is sorting. A validation result may overwrite newer input only under
+specific timing. The absence of an exception is not evidence of safety. The
+threading contract is violated even when the current run looks fine.
+
+Corusco task and binding helpers are useful because they make the handoff a
+named boundary. A task body produces a value. A callback executor returns to the
+EDT. A generation counter rejects stale results. A scope cancels or closes
+relationships when the screen goes away. These are ordinary engineering
+objects, not ceremony. They record the policies that ad hoc threads usually
+forget.
+
+The background boundary should also separate computation from presentation.
+Returning a list of rows is different from returning a ready-made
+\api{JTable}. Returning validation facts is different from setting a red border
+on a text field. Returning an image is different from installing it in a label
+whose owner may already be disposed. This distinction is not academic. It keeps
+worker code testable without Swing and keeps EDT code small enough to audit for
+threading safety.
+
+Generation counters are a simple but important habit. The screen increments a
+counter when a new request starts. The result carries the counter it was born
+with. On completion, the EDT callback compares that generation with the current
+generation before publishing state. If they differ, the result is stale. This
+pattern applies to search-as-you-type, uniqueness validation, background table
+filters, preview rendering, and thumbnail loading. Cancellation is even better
+when the work can actually be stopped, but stale-result suppression is still
+needed because not every operation can be interrupted immediately.
+
+Structured concurrency, virtual threads, and modern executors make it easier to
+write the worker side clearly. They do not remove the need for Swing-specific
+handoff. A structured task can still complete after a tab closes. A virtual
+thread can still mutate a component illegally. A task scope can still outlive
+the screen if it is owned by the wrong object. Good practice is to make the
+worker ownership and the Swing ownership meet at one narrow boundary: submit,
+observe, cancel or detach, publish on the EDT, close with the screen.
+
+\section{Index-based tables}
+
+A table column view index is a current visual coordinate. It is not a stable application id. Persisting column 3 because it currently displays "Status" breaks when columns move, localization changes, or a hidden column returns.
+
+\begin{coruscobox}{typed table descriptors}
+Corusco table descriptors give columns stable keys, resource keys, value types, defaults, and persistence ids. Swing still reorders and sorts, but application meaning no longer depends on current view indexes.
+\end{coruscobox}
+
+Bad table code often combines several mistakes: reading selected view row as model row, using localized header text to identify columns, rebuilding the entire model for small changes, and storing column widths by visual order. These mistakes do not always fail in demos. They fail when users sort, filter, localize, hide columns, or keep preferences across versions.
+
+The table mistakes share one cause: using current presentation coordinates as
+stable meaning. View row 7 is not a customer. Column 3 is not Status. Header
+text is not a persistence id. A selected index is not a selected object. These
+shortcuts survive until the table becomes a real table: sortable, filterable,
+customizable, localized, persisted, and large enough that users care about
+keeping their place.
+
+Good table practice is identity first, coordinates second. A row should have a
+business identity when selection or refresh continuity matters. A column should
+have a descriptor identity when resources, persistence, validation, or tests
+refer to it. View indexes should be converted at the table boundary. Model
+indexes should be used only where the model is actually addressed. The code may
+be a few lines longer, but the line that converts coordinates is a visible
+warning against a whole class of bugs.
+
+Table refresh is another ownership test. If the model calls
+\api{fireTableDataChanged} for every small change, the table is told that most
+state may be obsolete. Selection, sorter assumptions, editors, and repaint
+regions all suffer. If the model fires precise row and cell changes, Swing can
+keep more of the user's visual context. Corusco observable lists and table
+models encourage that precision because row changes are named before they
+become \api{TableModelEvent}s.
+
+A table that stores column widths by current visual order is also borrowing
+trouble. Users can move columns. Future versions can add columns. Localized
+headers can change. Hidden columns can return. Store widths, visibility, order,
+and sorting by stable column ids. Then the table can evolve without treating
+user preferences as meaningless integers from an old screen.
+
+The index distinction deserves repetition because it is the source of many
+polite bugs. Swing has a model coordinate system and a view coordinate system.
+Sorting, filtering, column movement, and hidden columns change the view without
+changing the model's application meaning. A selection listener receives a view
+row because the user selected something visible. A table model stores data by
+model row because the data source has its own order. A table column model
+describes visible columns in view order. A descriptor describes application
+columns by stable identity. Good table code crosses these coordinate systems
+only at named boundaries.
+
+The simplest rule is to convert as late as possible when reading from the UI
+and as early as possible when driving the UI from the model. If a user clicks a
+view row, convert it to a model row before presenter code asks for the selected
+object. If presenter code wants to select an object by id, resolve the id in
+the model and then convert the model row to the current view row before touching
+the selection model. Code that mixes conversions in the middle of a business
+method tends to accumulate off-by-one defects that appear only after a sorter
+or filter is installed.
+
+Editing adds another layer. A cell editor edits visible state, but commit must
+land in the model fact that owns the value. If the table is sorted while an
+editor is active, or if a background refresh replaces the row, the edit policy
+must be explicit. Should the editor commit before refresh? Should it cancel?
+Should selection follow the row identity? Should validation attach to the
+column descriptor and row id rather than to the current view coordinates? These
+questions are easier to answer before the table has a production user's saved
+layout and ten thousand rows.
+
+Corusco table descriptors are not merely a convenience for generated columns.
+They are a way to avoid smuggling application meaning through visual
+coordinates. A descriptor can carry the column key, value type, header resource,
+tooltip resource, width defaults, persistence id, renderer policy, editor
+policy, and validation target. The table remains a Swing \api{JTable}; the
+application no longer has to pretend that the current third visible column is a
+durable concept.
+
+\textbf{Renderer allocation.}
+A renderer is a stamp. It is reused for many cells. It must be fast, complete, and stateless with respect to previous calls. Allocating expensive objects or remembering per-row state inside a renderer creates performance and correctness failures.
+
+The renderer should set all visual properties needed for the current cell: text, icon, foreground, background, font, border, tooltip if appropriate, and opacity. It should not assume a property left over from the previous cell is still correct.
+
+Renderer code should be reviewed as hot-path code. It may run while scrolling,
+resizing, selecting, sorting, or repainting after a model update. It should not
+open files, query services, create expensive formatters, allocate icons, or
+perform permission checks that belong to the model. Precompute or cache stable
+presentation facts outside the renderer. Let the renderer stamp the current
+cell cheaply and completely.
+
+Completeness is as important as speed. If a renderer sets the foreground red for
+error cells, it must set the foreground back for normal cells. If it sets an
+icon for warnings, it must clear the icon for non-warnings. If it changes
+opacity, font, border, alignment, or tooltip, it must make the ordinary case
+explicit too. Reused renderers do not remember "default" for you; they remember
+whatever the last cell did.
+
+Use the model to carry row facts that should be tested. A severity value,
+validation problem, stale marker, or dirty flag belongs in row state or an
+associated presentation model. The renderer can translate that fact into color,
+icon, or tooltip. If the renderer computes the fact itself, tests must paint a
+table to verify business meaning, and performance becomes unpredictable.
+
+A renderer should also be boring. Boring renderers are good renderers because
+they do the same small set of operations for each cell: read already prepared
+facts, set component state completely, return the stamp. The interesting
+decisions happen before painting. Is the row stale? Is the amount negative? Is
+the record locked? Which severity applies? Which icon should represent that
+severity? Those decisions can be tested as model or presenter logic. The
+renderer then becomes a measured projection of facts to pixels.
+
+Allocation discipline does not mean avoiding every object at all costs. It
+means avoiding accidental work in a path called repeatedly during interaction.
+A renderer that creates a new date formatter, image icon, border, color palette,
+or regular expression matcher for every cell will perform acceptably in a tiny
+example and poorly in the screen that matters. Stable resources should be
+created once, shared through descriptors or renderer factories, and invalidated
+only when their true inputs change: Look-and-Feel, font, scale, theme,
+localization, or resource set.
+
+Completeness can be reviewed mechanically. For every property changed in the
+exceptional case, find the ordinary case that resets it. For every row-specific
+decision, find the model fact that carries it. For every expensive object, find
+the cache or descriptor that owns it. For every tooltip, find the policy that
+composes it with validation and help. A renderer that passes this review is not
+only faster. It is less likely to carry visual residue from the last cell into
+the next one.
+
+\begin{pitfallbox}{renderer memory}
+A table renderer that stores "current row" in a field is almost always wrong. The same renderer instance is reused. Put row-specific state in the model or compute it during the rendering call.
+\end{pitfallbox}
+
+\textbf{Focus hacks.}
+Focus bugs invite hacks. A developer adds a mouse listener that calls \api{requestFocus} everywhere. Another adds an \api{InputVerifier} that refuses to let focus leave an invalid field. Another consumes Enter in a key listener. The screen begins to feel hostile.
+
+Good focus practice begins with workflow. Which components are focusable? What is the traversal order? Which commands should be available from the keyboard? When validation fails, where should focus go? Which shortcuts belong to text editing and which belong to the window?
+
+Use focus traversal policy when traversal order matters. Use key bindings for commands. Use validation focus only when it helps the user recover. Never trap users in a field merely to prove that validation exists.
+
+Focus hacks often begin after a real user complaint. The tab order is wrong, a
+button does not respond to Enter, a custom component does not show focus, or an
+invalid field is hard to find. The quick repair is to request focus manually in
+several listeners. The durable repair is to decide the focus policy: initial
+focus, traversal order, default command, cancel command, field-level validation
+display, and recovery after OK fails. Once that policy exists, the code becomes
+less frantic.
+
+Keyboard completeness belongs with focus. A screen is not complete merely
+because every operation has a button. Can the user reach every field without a
+mouse? Can the user invoke primary commands from keyboard shortcuts or default
+buttons? Do text components keep their editing shortcuts? Does Escape cancel or
+close according to dialog policy? Does F1 open relevant help? These questions
+are usability questions and architecture questions at the same time because
+they determine where commands and input maps live.
+
+Input verifiers are not a general validation architecture. They can be useful
+for local focus-transfer checks, but they are easy to abuse. If an invalid field
+prevents focus from leaving, the user may be unable to inspect another field,
+copy information, press Help, or cancel gracefully. Prefer validation models,
+problem summaries, and command-state rules. Move focus to a problem when it
+helps recovery; do not use focus as a cage.
+
+Focus should also be considered with custom components. A custom canvas that
+handles keyboard shortcuts must be focusable, paint a visible focus indicator,
+advertise accessible information, and avoid stealing traversal keys that belong
+to the container. A table cell editor must cooperate with the table's editing
+policy. A dialog default button must not consume Enter intended for a
+multi-line text component. These details look small, but they decide whether a
+screen can be used efficiently without a mouse.
+
+Corusco command metadata helps here because it separates "what operation is
+available" from "which widget currently presents it." Swing key bindings still
+do the real keyboard work. The command identity, enablement, help topic,
+shortcut resource, and disabled reason can come from a shared command model.
+Then a toolbar button, menu item, popup item, and root-pane binding agree
+without asking each other for state.
+
+\textbf{Tooltips as a shared resource.}
+Tooltips are easy to overwrite. Help text wants the tooltip. Validation wants the tooltip. Disabled command reasons want the tooltip. Generated field metadata may want the tooltip. The last writer wins, and all previous meaning disappears.
+
+The better model is composition. Tooltip content can have contributors: static help, validation problems, disabled reasons, and perhaps formatting hints. Corusco's tooltip and behavior concepts exist because tooltip ownership is otherwise invisible.
+
+Tooltip composition should have priority rules. An error may deserve first
+position. Static help may follow. A disabled reason may replace command help
+when the command is unavailable. A formatting hint may be useful only while the
+field is focused. If these priorities are not modeled, whichever listener writes
+last becomes the tooltip policy. That is not a policy; it is scheduling.
+
+Tooltips are also not the only presentation of help or validation. A screen
+reader may need accessible descriptions. A dialog may need a validation summary.
+A status strip may show hover help. A command palette may show disabled
+reasons. Once these outputs exist, tooltip text should be generated from shared
+facts, not used as the source of truth. Corusco problem sets, resource keys, and
+tooltip policies make that sharing practical.
+
+Tooltip policy is also a good example of reader empathy. A beginner can
+understand "set the tooltip text" in one line. The intermediate programmer must
+then learn that several features want to write the same property. The advanced
+programmer should see the property as an output of a policy, not as a storage
+place. This is the book's general progression: first show the Swing mechanism,
+then show the failure mode under scale, then introduce the Corusco concept that
+names the missing owner.
+
+\textbf{Hard-coded resources.}
+Hard-coded strings begin as convenience and end as archaeology. A button text appears in a toolbar, menu, popup, and test. A table header string is used as a persistence key. A validation message is copied into a tooltip and a dialog. When localization arrives, the copies disagree.
+
+Good practice is to separate stable identity from visible text. A command has an action key and resource keys. A table column has a column key and header resource. A help topic has a help key. Visible strings are resolved through resources.
+
+Hard-coded resources hurt even before localization. They make tests brittle
+because tests search for current English text. They make screenshots harder to
+review because the same command may appear with slightly different wording in
+two places. They make help inconsistent because a button says "Remove" while a
+menu says "Delete". Resource keys are not only about translation; they are about
+one screen vocabulary.
+
+Typed resource keys add another guard. A label resource, tooltip resource,
+message resource, icon resource, and help topic are not interchangeable merely
+because they can all be represented by strings somewhere. The compiler can help
+when the application gives these roles distinct types. Generated companions can
+then make missing or duplicated resource identities visible during review.
+
+Resource identity should appear before resource lookup in the design. A command
+is not named by the English text currently displayed on its button. A help page
+is not named by its current title. A table column is not named by a localized
+header. Stable identities let user preferences, generated tests, help routing,
+accessibility descriptions, and screenshots survive wording changes. Visible
+text can improve over time without becoming a schema migration.
+
+The strongest resource practice is to make missing vocabulary visible early.
+Generated companions can list expected keys. Tests can assert that command
+resources exist. A screenshot can reveal awkward text, but it should not be the
+first place a missing resource is discovered. When resources are treated as a
+late decoration, the code tends to hard-code "temporary" strings that become
+part of tests and user expectations. When resources are part of command and
+descriptor identity, wording remains editable.
+
+\textbf{Preferred-size abuse.}
+Setting preferred sizes everywhere is a layout smell. Some components have legitimate fixed or preferred dimensions: icons, swatches, small numeric fields, fixed preview thumbnails. But using preferred sizes to force every field and panel into a screenshot shape fights layout managers, Look-and-Feel changes, fonts, localization, and high-DPI scaling.
+
+Prefer layout constraints. Let the label column take label width. Let the field column grow. Give the main table row vertical growth. Put large custom views in scroll panes with correct preferred sizes. Use component preferred size to describe the component's natural content, not to micromanage the parent.
+
+The component chapter made the positive rule explicit: a component's preferred
+size should describe its natural content; the parent layout describes the
+relationship among components. Preferred-size abuse flips those roles. It asks
+children to compensate for a parent layout that has not been designed. The
+result may look acceptable until a font, theme, locale, scale, or window size
+changes. Then every hard-coded preferred size becomes a small refusal to adapt.
+
+There are legitimate preferred sizes. A custom canvas may report a virtual
+world. A color swatch may be fixed. A scroll pane may have a preferred viewport
+size. The smell is not "preferred size exists"; the smell is "preferred size is
+being used to force layout because the parent constraints are unclear." During
+review, ask whether the size belongs to the component's nature or to one
+screen's geometry. If it is screen geometry, put it in layout policy.
+
+This distinction matters especially with MigLayout. MigLayout gives the parent
+enough vocabulary to express relationships directly: columns, rows, growth,
+alignment, wrapping, related gaps, unrelated gaps, and docking. A developer who
+sets preferred sizes on children to obtain those relationships is bypassing the
+layout tool. The result may pass one screenshot and fail the moment labels are
+longer, fonts are larger, or the user stretches the window. The better practice
+is to let components tell the truth about content and let MigLayout tell the
+truth about screen geometry.
+
+Scroll panes are the most common place where this rule becomes visible. The
+view's preferred size describes the virtual world or natural content. The
+viewport's extent describes what is currently visible. The parent layout
+decides how large the scroll pane should be in the surrounding screen. Calling
+\api{setPreferredSize} on the scroll pane to force a table height may be
+reasonable for a compact dialog, but it should be a deliberate viewport policy,
+not a hidden attempt to make rows fit a screenshot. The Components and MigLayout
+chapters provide the mechanics; good practice is choosing the owner.
+
+\section{Global state and client properties}
+
+Swing client properties are useful extension points. They are also an easy place to hide untyped state. A Look-and-Feel client property that controls a documented visual option is fine. A random object graph stored under a string key because it was convenient is not.
+
+Global singletons have a similar risk. A global help service, resource service, or diagnostic registry may be appropriate. A global "current customer panel" is not. Prefer passing services through presenters, behavior contexts, or application shells.
+
+The question for any global is whether it represents application infrastructure
+or current screen state. A resource bundle service is infrastructure. A help
+router may be infrastructure. A task executor owned by the application shell may
+be infrastructure. The currently selected customer, current dialog, current
+table row, and current validation problem are not infrastructure. They are
+screen state, and making them global creates invisible coupling between
+screens.
+
+Client properties deserve the same discipline on a smaller scale. Look-and-Feel
+libraries often document client properties that alter component appearance or
+behavior. Those are reasonable when used deliberately. Application code can also
+use client properties to attach component keys or small metadata. The bad habit
+is using string-keyed properties as a hidden object graph. If a property becomes
+essential to workflow, give it a typed owner or descriptor.
+
+Global state also makes tests lie. A test that passes because a previous test
+left a global current user, resource bundle, or selected customer is not a
+screen test; it is an order-dependent accident. Passing services explicitly or
+through a narrow application context keeps tests honest. Corusco typed keys and
+descriptors can reduce the temptation to use global registries for every fact.
+
+Client properties can still be a disciplined boundary when the key is stable
+and the value is small. Component keys, help topics, test identifiers, and
+Look-and-Feel hints are examples. The danger begins when a client property
+becomes a private service locator or a side channel between unrelated code.
+String keys make such channels hard to search and easy to collide. If a
+property must be used, give the key a constant, document the expected value
+type, and keep ownership close to the component or behavior that consumes it.
+
+Global registries need a similar test. A registry that maps command ids to
+command descriptors may be application infrastructure. A registry that records
+the current selected row because "many places need it" is usually a hidden
+model. The first kind of global reduces duplication. The second kind makes
+screens order-dependent. The difference is whether the global describes stable
+application vocabulary or mutable screen state.
+
+\textbf{Dialogs with copied button logic.}
+Many Swing applications have dozens of dialogs. Each dialog reimplements OK, Cancel, Escape, Enter, dirty confirmation, validation focus, and active editor commit. The copies drift. One dialog loses edits because the active table cell editor did not commit. Another closes on Escape without dirty confirmation. Another validates but does not focus the failing field.
+
+Good practice is to standardize dialog workflow. Corusco's dialog helpers exist for this reason. Layout remains local; lifecycle and commit/cancel policy should be consistent.
+
+Copied dialog logic is expensive because users experience dialogs as a family.
+If Enter commits one dialog and inserts a newline in another, the difference
+should be intentional. If Escape cancels one dirty dialog without confirmation
+but protects another, the difference should be explainable. If one dialog
+commits active table editors and another loses the final edit, users lose trust.
+The workflow is common enough to deserve common code.
+
+The dialog body may vary greatly. One dialog may contain a two-column MigLayout
+form. Another may contain a table and detail pane. Another may contain a
+scrollable validation review. But the shell policy remains familiar: active
+editor commit, validation, focus or summary of blocking problems, OK result,
+Apply baseline, dirty cancel confirmation, Escape, default button, owner
+window, disposal, and cleanup. Standardizing the shell lets the body remain
+specific without copying fragile ceremony.
+
+A dialog should also be testable without becoming modal theatre. Form model
+tests prove validation and result creation. Dialog controller tests prove OK,
+Cancel, Apply, dirty confirmation, and active-editor commit. A small EDT test
+proves the Swing bindings and keyboard actions. A screenshot proves the visual
+states. If every dialog rule is tested only by clicking a modal window, the
+suite becomes slow and imprecise.
+
+Dialog consistency is not sameness of layout. It is sameness of promises.
+Users should be able to predict which key commits, which key cancels, whether
+dirty changes are protected, whether validation blocks closing, where the first
+problem is shown, and whether a background operation can still complete into a
+closed dialog. The body can be a simple form, a table editor, a wizard page, or
+a rich custom component. The shell policy should remain recognizable.
+
+This is a strong use case for Corusco because dialog workflow touches many
+feature sets at once. Form models own parse and validation state. Commands own
+OK, Apply, Reset, and Cancel availability. Problems own severity and targets.
+Bindings own field synchronization. Task services own asynchronous validation
+or save. Scopes own cleanup. Generation can remove repeated wiring once the
+dialog facts have names. The point is not that every dialog must be generated.
+The point is that every nontrivial dialog should stop inventing the same
+workflow in private.
+
+\textbf{Leaking screen lifetimes.}
+A screen closes visually but remains alive because a timer, service listener, property-change listener, or task callback references it. This is one of the most common long-session Swing failures. It is also one of the hardest to diagnose after the fact.
+
+Make cleanup visible. A screen activation creates a scope. Bindings, subscriptions, table controllers, timers, and task handles are added to it. Closing the screen closes the scope. Tests should verify at least the common cleanup path.
+
+Leaks are often behavior bugs before they are memory bugs. A reopened screen
+receives duplicate events. A closed dialog updates a status line. A timer keeps
+repainting a component that is no longer visible. A background task writes rows
+into a new screen that happens to reuse the same model. These symptoms should
+trigger a lifecycle review immediately. Do not wait for a heap dump to prove
+that the old object graph is still reachable.
+
+The cleanup owner should be created at the same boundary as the relationships.
+If a panel installs bindings when it is constructed, the panel or its controller
+should close them. If a tab installs subscriptions when activated, deactivation
+or close should release them according to policy. If a dialog starts tasks, the
+dialog controller should cancel or detach them when the dialog closes. A single
+application shutdown hook is too late for screen-local relationships.
+
+Weak listeners are not a general cleanup strategy. They can be useful when a
+long-lived source must not retain an observer, but they do not express workflow
+ownership. A weak listener can vanish too early, remain because another
+reference exists, or hide the fact that a relationship should have been closed.
+Prefer deterministic scopes when the lifecycle boundary is known.
+
+Lifetime review should include the sources that live longer than the screen:
+application event buses, services, table models shared across views, timers,
+executor callbacks, static caches, global diagnostics, document models, and
+Look-and-Feel listeners. A listener from a short-lived screen to a long-lived
+source is a retention path unless it is removed. A task callback that captures
+\api{this} is a retention path until it completes or is canceled. A timer that
+fires into a disposed component is a behavior defect even if memory pressure is
+not yet visible.
+
+There is a useful symmetry between installation and cleanup. Code that installs
+a relationship should usually record its cleanup in the same small block. If
+the installation is generated, the generated companion should also own the
+disposal hook. If a behavior attaches listeners, it should return a binding or
+handle that can be closed. If a task is started by a screen, the screen's scope
+should decide whether close cancels it, detaches from it, or lets it complete
+into a shared model. The cleanup policy is part of behavior, not garbage
+collection trivia.
+
+Tests can catch lifetime mistakes cheaply. Create the screen or binding, attach
+it to a model, close its scope, mutate the model, and assert that the old view
+does not change. For tasks, start a controlled task, close the screen, complete
+the task, and assert that no disposed component is touched. These tests are
+small because the lifetime boundary is explicit. Without a scope or handle, the
+test has to reverse-engineer private listeners and becomes too awkward to write.
+
+\textbf{When plain Swing is good practice.}
+Good practice does not mean using Corusco everywhere. Plain Swing is good practice when the behavior is local, obvious, and has no durable identity. A one-off label update in a small diagnostic panel may not need a model. A tiny utility window may not need generated descriptors. A local renderer for a special table column may be clearer than a framework abstraction.
+
+The decision point is not "framework or no framework". It is "does this fact need a stable owner?" If the answer is yes, name it. If the answer is no, keep the plain code plain.
+
+Plain Swing is also good practice for learning. Before a binding abstraction is
+useful, the developer should understand the document listener it replaces.
+Before a table descriptor is useful, the developer should understand model and
+view indexes. Before a busy overlay binding is useful, the developer should
+understand the EDT and repaint. This book keeps plain Swing baselines because
+framework use without baseline knowledge becomes superstition.
+
+The boundary can move over time. A local diagnostic panel may start plain and
+remain plain. A utility dialog may begin with direct listeners and later gain a
+form model when validation grows. A table may begin with a small
+\api{AbstractTableModel} and later adopt descriptors when persistence,
+resources, editing, and validation appear. Migration is not failure; it is a
+sign that the screen's responsibilities became clearer.
+
+\textbf{Corusco as a discipline amplifier.}
+Corusco cannot rescue careless Swing code by being present on the classpath. It helps when the code accepts its discipline: typed keys for stable identity, models for screen state, commands for operations, descriptors for metadata, problems for validation, bindings for synchronization, behaviors for reusable component capabilities, and scopes for cleanup.
+
+This is why migration should start with review. Find the hidden facts first. Then choose the Corusco feature that gives each fact an owner.
+
+Corusco works best when the team agrees on the discipline it represents. Values
+represent changing facts. Commands represent operations. Problems represent
+validation and parse issues. Descriptors represent stable metadata. Bindings
+represent synchronization. Behaviors represent reusable component capabilities.
+Scopes represent lifetimes. Generation removes repetition once the source facts
+are stable. This vocabulary is small enough to use in code review and precise
+enough to prevent most ad hoc listener growth.
+
+A poor migration starts by replacing syntax. A good migration starts by naming
+facts. For a problematic form, name the fields, dirty state, touched state,
+problems, command state, and lifecycle scope. For a problematic table, name row
+identity, column identity, row source, selection, sorter policy, renderer facts,
+and table state. For a problematic background operation, name busy state, task
+handle, cancellation, generation, success, failure, and stale-result policy.
+Only then choose the Corusco APIs that fit.
+
+This approach also protects the codebase from over-abstraction. Some hidden
+facts become plain model fields. Some become Corusco values. Some become
+commands. Some become tests. The point is not to maximize library surface area.
+The point is to make screen meaning reviewable. Corusco amplifies discipline
+that already exists; it cannot replace the decision to be disciplined.
+
+The most effective migration sequence is therefore modest. First name the
+facts without changing the UI. Second move repeated facts out of widgets and
+into a presenter or model. Third introduce Corusco values, commands, problems,
+descriptors, and scopes where they match those named facts. Fourth replace
+repeated Swing wiring with bindings or behaviors. Fifth add generation only
+after the source facts are stable enough that generated code will remove
+duplication rather than hide uncertainty. This sequence respects existing code
+and still moves it toward a disciplined architecture.
+
+It is also acceptable to stop partway. A screen may gain command descriptors
+and resource keys while keeping a hand-written form. A table may gain column
+descriptors while leaving a specialized renderer manual. A dialog may gain a
+standard OK/Cancel controller while keeping local validation. The review
+question is whether the remaining manual code is still local and obvious. If it
+is, keeping it plain is a good practice. If it is copied, stateful, hard to
+test, or shared by several presentations, it probably wants a stronger owner.
+
+\section{Case studies and drills}
+
+\textbf{The save button that lies.}
+The Save button remains enabled while a background save is running. The user clicks twice. The second request races the first. The fix is not merely disabling the button in the listener; it is making saving state part of the command model.
+
+The good version has a command whose enabled state is derived from dirty,
+committable, permission, and busy facts. When saving begins, busy state changes
+and every presentation of Save changes together: toolbar button, menu item,
+shortcut, default button, and tooltip. If saving fails, the command state and
+problem or status model explain recovery. If saving succeeds, the dirty
+baseline is accepted. The button no longer has to lie because it no longer owns
+the truth.
+
+\textbf{The status label as event log.}
+A status label is used for validation, progress, hover help, and errors. Messages overwrite each other unpredictably. The fix is to decide which status source has priority, or to model separate status regions.
+
+A single status line can still be useful, but it needs a policy. Validation
+errors may deserve a problem summary. Hover help may be transient and low
+priority. Background failure may deserve a persistent message until dismissed.
+Progress may deserve its own indicator. Once priorities are named, the UI can
+compose a status presentation rather than letting listeners race to write text.
+The same facts can also feed tooltips, accessibility descriptions, and tests.
+
+\textbf{The table that forgets itself.}
+Every refresh calls \api{fireTableDataChanged}. Selection clears, column widths drift, sorter state resets, and repaint cost spikes. The fix is precise list/table events and stable row identity.
+
+The better version asks what kind of refresh occurred. Were rows inserted,
+removed, replaced, or reordered? Did a row keep the same identity but receive a
+new value? Should selection follow identity, current view position, or nothing?
+Should column state survive because column ids are stable? A table refresh is a
+small reconciliation problem, not a button that says "everything changed".
+Corusco observable lists and descriptors give the reconciliation named inputs.
+
+\textbf{The dialog that cannot be tested.}
+Validation is implemented entirely by labels in a modal dialog. The test must click through the UI. The fix is a form model with validation tests, plus a small dialog binding test.
+
+The model-backed dialog has a different proof structure. A form model test
+checks parse state, problems, dirty state, touched state, and result creation.
+A command or dialog-controller test checks OK and Cancel policy. An EDT test
+checks that fields and labels are bound to the right model facts. A screenshot
+checks layout and visible validation states. Each test fails near the defect.
+The modal window is no longer the only way to know whether the dialog works.
+
+\textbf{The renderer that worked with ten rows.}
+A renderer formats dates by creating a formatter and loading an icon on every cell paint. It passes with ten rows and stutters with ten thousand. The fix is cached immutable resources, cheap rendering, or a measured optimized renderer.
+
+The review should ask what work happens per visible cell and what work happens
+per row update. Date formatters, icons, severity decisions, and permission flags
+can often be prepared outside the renderer. The renderer then sets text, icon,
+colors, border, and tooltip from already available facts. Measure with
+realistic row counts, because renderer defects hide in small demos and appear
+as "Swing is slow" in production.
+
+\textbf{The component that fights layout.}
+A custom component calls \api{setPreferredSize} from outside whenever data
+changes. Sometimes the scroll bars update, sometimes they do not. The fix is to
+move geometry into the component's \api{getPreferredSize}, call
+\api{revalidate} when the preferred size changes, and let the parent layout use
+that truthful size. This case connects the component chapter to the practice
+chapter: bad layout practice is often a component contract violation disguised
+as a parent problem.
+
+\textbf{The background validation race.}
+A uniqueness check starts on every edit. The user types "Ada", then "Adal".
+The slower result for "Ada" returns last and marks the current value invalid.
+The fix is not merely "use a background thread"; the screen also needs
+generation or cancellation policy. A task result must prove it still belongs to
+the current field value before it publishes problems. Otherwise the code is
+fast and still wrong.
+
+\textbf{The help shortcut that opens the wrong page.}
+F1 always opens the application's front page because no component has a stable
+help topic. Users learn not to use help. The fix is to give fields, commands,
+tables, and screens typed help topics and route F1 from current focus or command
+context. Swing installs the key binding; Corusco metadata supplies the target.
+The result is not more decorative help. It is a screen whose meaning can be
+found from the keyboard.
+
+\textbf{The leak that looked like validation.}
+After a dialog is opened three times, each invalid edit shows three identical
+messages. The validation rule is not wrong. Three old listeners are still
+subscribed. The fix is lifecycle ownership: the dialog activation creates a
+scope, every binding and subscription enters it, and closing the dialog closes
+the scope. A cleanup test then mutates the model after close and proves that the
+old view no longer reacts.
+
+\textbf{Review checklist.}
+\begin{itemize}
+\item A listener translates events; it does not secretly own multiple screen facts.
+\item EDT work has bounded, predictable latency.
+\item Background work returns to Swing through an explicit EDT boundary.
+\item Table meaning uses descriptors or keys, not localized headers or view indexes.
+\item Renderers are fast, complete, and reusable.
+\item Focus policy is deliberate and keyboard-friendly.
+\item Tooltips compose help, validation, and disabled reasons instead of overwriting blindly.
+\item User-facing strings have resource identities when they outlive a demo.
+\item Preferred sizes describe component content; layout constraints describe parent geometry.
+\item Every installed listener, subscription, timer, task, binding, and controller has a cleanup owner.
+\end{itemize}
+
+The most productive way to use this chapter is not to memorize every smell. It
+is to practice translating symptoms into ownership questions. When a button is
+wrongly enabled, ask who owns command state. When validation messages disagree,
+ask who owns problems. When a table forgets selection, ask who owns row
+identity. When a screen leaks, ask who owns installed relationships. These
+questions turn vague unease into a review path.
+
+Good Swing code is often ordinary-looking code with good boundaries. It still
+creates panels, buttons, fields, tables, actions, and renderers. It still has
+listeners. It still uses layout managers. The difference is that component
+callbacks are narrow and state lives somewhere named. A reader can find the
+model, find the command, find the validation rule, and find cleanup without
+reverse-engineering a chain of side effects.
+
+Bad practice often survives because it is useful at first. An inline listener is
+the fastest way to prove a button works. A hard-coded string is the fastest way
+to see text on screen. A full table reset is the fastest way to refresh rows.
+The transition from prototype to application is the moment to retire those
+shortcuts. Keeping them after the screen has durable workflow is what turns
+convenience into maintenance debt.
+
+Do not replace one kind of obscurity with another. A framework abstraction that
+hides every listener but gives no clear model is not an improvement. Corusco's
+benefit is strongest when it names facts that already exist: field keys,
+commands, problem codes, descriptors, bindings, scopes, and task handles. If a
+screen has not identified those facts, adding library calls will only move the
+confusion.
+
+The review order is therefore deliberate. Start with user-visible workflow.
+Which operations can the user invoke? Which state enables them? Which errors
+block them? Which data can refresh? Which selection should survive? Then inspect
+the Swing mechanics. Which components present those facts? Which listeners
+translate events? Which bindings synchronize state? Which scopes close them?
+This order prevents code review from getting lost in widget details before the
+screen's promises are clear.
+
+Testing follows the same order. Model tests prove validation, dirty state,
+command enablement, and row identity. EDT tests prove that components are bound
+to the right facts and clean up correctly. Screenshot tests prove that visual
+states are present and stable enough for the book. Manual testing remains
+useful, but it should not be the only proof that the screen obeys its own
+contracts.
+
+Finally, remember that a good practice can become bad when applied without
+scale. A tiny diagnostic popup may not need a generated form model. A one-cell
+renderer may not need a descriptor system. A local listener may be clearer than
+a named command for a one-off component. The rule is not "use more framework".
+The rule is "use enough structure that ownership is visible at the scale of the
+screen."
+
+Corusco should make disciplined Swing cheaper, not make every program heavier.
+When it removes repeated wiring, stabilizes identity, or makes cleanup explicit,
+use it confidently. When plain Swing already expresses a local fact perfectly,
+leave the code plain. The mature style is selective: explicit where meaning
+outlives a component, simple where behavior is genuinely local.
+
+The examples in this book should be read with the same selectivity. A compact
+example may use a direct listener because the chapter is teaching painting or
+layout, not command architecture. A later example may replace that listener
+with a command because the operation now has several presentations. This is not
+inconsistency. It is the progression from local demonstration to application
+structure, and it is the reason the book keeps both plain Swing baselines and
+Corusco treatments.
+
+When a chapter feels like a list of prohibitions, return to the positive rule:
+make the screen's promises explicit. The user should know what can be done, why
+it cannot be done, what data is being shown, what is still loading, and what
+will happen when the screen closes. The programmer should be able to find the
+same answers in named models, commands, descriptors, tasks, and scopes.
+
+A good practice review can be written as a small story. The screen opens with
+known state. Components show that state. The user changes one fact. The model
+records the change. Derived values update command enablement, validation, and
+status. Slow work leaves the EDT and returns through a documented boundary.
+Tables preserve identity. Renderers stamp visible cells cheaply. Tooltips and
+help compose from shared metadata. Closing the screen closes installed
+relationships. If the story can be told without mentioning "and then this
+listener also...", the design is probably healthy.
+
+The same story should be visible in code. A presenter or model names the facts.
+A view constructs components and layout. Bindings or behaviors synchronize
+component state with model state. Commands own operations. Descriptors own
+stable metadata. Scopes own lifetimes. Tests exercise the layers in the same
+order. This structure is not ornamental; it is how a Swing screen remains
+readable after the third feature request.
+
+There is also an aesthetic reward. Disciplined Swing code feels calmer. The
+view is no longer a tangle of urgent callbacks. The model no longer depends on
+which button was clicked. The table no longer forgets itself. The dialog no
+longer invents OK and Cancel policy. The code still uses ordinary Swing, but it
+has fewer secrets. That is the practical meaning of "good practice" in this
+book.
+
+Use this chapter as a diagnostic companion to the rest of the book. When a later
+chapter introduces values, lists, forms, commands, tasks, bindings, tables, or
+generation, ask which bad habit the feature is meant to make unnecessary. The
+answer should be concrete. A Corusco feature earns its place when it removes a
+real source of drift, duplication, latency, hidden state, or lifecycle risk.
+
+\section{A practice review in the field}
+
+The most useful practice review is neither a style debate nor a rewrite plan.
+It is a short investigation of one screen that already matters. Choose a screen
+with enough behavior to be interesting: a search panel, an editor dialog, a
+table with actions, a background refresh view, or a form with validation. Start
+from the user's view of the screen. Write down the operations, the visible
+states, the data that may change, the commands that may be disabled, the
+validation problems that may block progress, and the lifetime of the screen.
+Only then read the code. This order prevents the review from becoming a tour of
+listeners before anyone has stated what the listeners are supposed to preserve.
+
+The first reading should look for owners rather than defects. Where is the
+selected object stored? Where is dirty state stored? Where is command
+enablement computed? Where are validation problems produced? Where is busy
+state represented? Where are resource keys defined? Where are table columns
+identified? Where are installed listeners closed? If a fact has a clear owner,
+the review can move on. If a fact appears only as a component property, a
+listener-local variable, or a repeated expression, mark it. Repeated ownership
+questions usually reveal the real design problem faster than a line-by-line
+search for mistakes.
+
+The second reading should follow one user story from input to visible result.
+For example: the user edits a field, the field becomes dirty, validation runs,
+Save becomes enabled or disabled, the tooltip changes, the status line changes,
+and OK either commits or focuses the first problem. In a healthy screen, this
+story can be told with named facts. In an unhealthy screen, the story becomes a
+tour of incidental callbacks: the document listener sets the label, the focus
+listener sets the tooltip, the button listener checks a flag, the status label
+is overwritten by a timer, and the dialog closes through a copied action. The
+code may still work today, but the story shows why it will be difficult to
+change.
+
+The third reading should follow the slow path. What happens if the data source
+is slow, the server rejects a save, the user edits again while validation is
+running, or the screen closes before a worker completes? Many Swing defects are
+not algorithmic. They are missing answers to timing questions. A screen without
+busy state invites duplicate commands. A screen without stale-result handling
+publishes old validation. A screen without cancellation keeps work alive after
+the user has moved on. A screen without failure state treats exceptions as log
+events rather than user-visible facts. The repair is not merely "use a thread";
+it is to make latency part of the model.
+
+The fourth reading should examine identity. Look for view row indexes that
+escape table code, column numbers stored in preferences, localized header text
+used as keys, selection represented only by current row, resource text copied
+into tests, and help topics derived from widget labels. These mistakes often
+look harmless because the screen has one locale, one table order, and one demo
+data set. They become expensive when the user sorts, filters, moves columns,
+customizes state, reopens the application, or changes language. Stable identity
+is not a large-framework concern. It is the only way to let visible
+presentation change without losing application meaning.
+
+The fifth reading should inspect hot paths and visual correctness. Renderers,
+painting methods, layout invalidation, tooltips, and table refresh events all
+run more often than developers tend to imagine. A renderer that allocates
+formatters may be invisible in a test and obvious during scrolling. A custom
+component that calls \api{repaint} too broadly may work until it is placed in a
+split pane. A table model that fires full resets may pass functional tests and
+still destroy user context. A tooltip writer that ignores validation may make a
+screen look polished while hiding the reason a command is disabled. Good
+practice includes performance because performance is part of the user's
+experience of correctness.
+
+After the readings, do not propose a heroic rewrite. Classify findings by the
+owner they need. Some findings need plain refactoring: a presenter method, a
+small model class, a cached renderer resource, or a cleanup handle. Some need
+Corusco concepts: a value, command, problem set, descriptor, behavior, task
+service, or scope. Some need generated companions because the repeated metadata
+has become stable. Some need tests before code moves. The important discipline
+is to match the remedy to the missing owner. Replacing every listener with a
+framework call is as unfocused as leaving every fact hidden in widgets.
+
+A good first repair is small and observable. Move one duplicated command
+enablement rule into a command state. Give one table column a stable identity
+and persist state by that identity. Replace one tooltip overwrite with a
+composition policy. Add one scope that owns listener cleanup. Convert one
+blocking refresh to a task that publishes on the EDT and ignores stale results.
+Each repair should leave a test or screenshot trail. The chapter's advice
+becomes credible in a codebase when every step makes the next defect easier to
+find, not merely when the code looks more modern.
+
+Good repairs also have a teaching value. A codebase full of Swing screens is
+usually maintained by people with different levels of Swing memory. One
+developer remembers renderer reuse but not table coordinate conversion. Another
+remembers the EDT but not dialog editor commit. Another knows MigLayout but not
+client-property discipline. A repair that names the owner and leaves a small
+test becomes onboarding material. The next maintainer learns the rule from the
+code rather than from a private conversation.
+
+This is one reason the companion examples should remain compact. A book example
+does not need every feature of the production screen. It needs the smallest
+screen that makes the ownership visible: one bad listener pile beside one
+model-backed flow, one table that preserves selection by identity, one renderer
+that caches resources, one dialog that commits before validation, one task that
+ignores stale completion. Screenshots then become evidence for the prose. They
+show that the rule is not only conceptual; it produces visible, repeatable
+Swing behavior under FlatLaf and MigLayout.
+
+Reviews should also preserve local clarity. If a small panel has one button
+that closes an in-memory preview, an inline listener may be the clearest code.
+If a custom renderer for a single visual column is short, complete, and tested,
+it need not become a generated artifact. If a dialog has no dirty state, no
+background work, and no shared command identity, a simple hand-written OK
+action may be good practice. A practice review should not punish simplicity.
+It should punish hidden durable meaning. That distinction keeps Corusco from
+becoming ritual and keeps plain Swing from becoming an excuse for drift.
+
+The review output should be written in vocabulary the team can reuse. Instead
+of "the listeners are messy", write "dirty state is owned by three listeners and
+the Save button." Instead of "the table code is fragile", write "row identity is
+lost at refresh because selection is stored by view index." Instead of "the
+dialog is inconsistent", write "active editor commit and dirty cancel policy are
+copied and differ from the standard shell." Such notes are easier to turn into
+work items, tests, and chapter examples. They also teach the team how to see
+the next screen.
+
+The final review question is whether the screen has a story that survives the
+next feature. If validation gains an asynchronous rule, where will stale
+results be suppressed? If a menu item is added for Save, where will enablement
+come from? If the table gains hidden columns, where will persistence store
+state? If help gains per-field topics, where will focus routing find them? If
+the screen is reopened many times in one session, what closes the old
+relationships? A design that can answer these questions does not need to be
+large. It needs to have the right owners.
+
+This field method also explains why the rest of the book alternates between
+plain Swing and Corusco. Plain Swing shows the mechanism and keeps the reader
+honest about what the platform actually does. Corusco names the owner when the
+mechanism becomes repeated, shared, or lifecycle-sensitive. The distinction is
+essential. A reader who sees only plain Swing may underestimate the cost of
+scale. A reader who sees only Corusco may treat library vocabulary as magic.
+Good practice is the bridge: understand the mechanism, identify the boundary,
+then choose the smallest owner that keeps the screen truthful.
+
+The same bridge should guide code comments and documentation. Do not comment
+that a listener "updates the button"; the code already says that. Comment when
+the listener is the boundary between a Swing event and a named model fact, when
+a task result is deliberately ignored because its generation is stale, when a
+renderer cache is invalidated by Look-and-Feel change, or when a dialog keeps
+focus movable despite validation so the user can still reach Help and Cancel.
+Such comments record policy rather than restating mechanics. They are rare, but
+they are valuable because they tell the next maintainer which practice rule is
+being protected.
+
+The opposite is also true: if a practice rule cannot be explained near the
+code, it may not be the right rule for that screen. A tiny panel should not
+carry a large lifecycle framework only because another chapter praised scopes.
+A local calculation should not become an asynchronous task only because the EDT
+chapter warned about blocking. The review must keep scale in view. Good
+practice is precise, not maximal. It adds ownership where ownership is missing
+and leaves local code local where the screen has no durable promise to protect.
+That restraint is part of the discipline, and it is what keeps good practice
+from turning into superstition.
+The reader should leave with judgement, not recipes.
+That distinction matters.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Find three listeners in an existing screen and write down who owns their removal.
+\item Replace one column-index constant with a typed column identity.
+\item Profile a renderer by counting allocations per visible repaint.
+\item Convert a blocking refresh listener into a background task with EDT completion.
+\item Replace duplicated Save enablement logic with one command state.
+\item Audit one screen for tooltip overwrites. Decide which feature should compose tooltip content.
+\item Pick a dialog and write its OK/Cancel/dirty/validation workflow as a state table.
+\end{enumerate}
+\end{exercisebox}

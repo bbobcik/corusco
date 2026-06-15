@@ -1,0 +1,758 @@
+\chapter{A Swing Refresh for Returning Programmers}
+\chapterquote{Swing is old enough to be familiar and large enough to punish approximate memory. Begin again with the contracts.}{A useful rule for returning developers}
+
+\begin{chaptermap}
+Core question & What must a modern Java programmer remember before writing serious Swing again?\\
+Primary APIs & \api{JFrame}, \api{JPanel}, \api{JComponent}, \api{Action}, \api{ListModel}, \api{TableModel}, \api{SwingUtilities}.\\
+Corusco connection & Corusco keeps screen facts in explicit models, descriptors, commands, keys, and bindings instead of hiding them in component listeners.\\
+Companion example & \refreshExample.\\
+\end{chaptermap}
+
+\section{The smallest truthful model}
+
+\termdef{Swing}{the Java desktop widget toolkit in \api{java.desktop}} is not a scene graph, a browser, or a retained-mode vector engine. It is a hierarchy of components, models, delegates, and events. A component occupies a rectangle, receives input, asks a layout manager for geometry, and paints itself when the repaint system decides that pixels are stale.
+
+\termdef{Containment}{the parent-child relation among components} is the first law. A button inside a panel is painted and laid out because the panel contains it. A panel inside a scroll pane is clipped and moved because the viewport contains it. The root pane, layered pane, content pane, and glass pane are not decoration; they are the structure through which top-level windows behave.
+
+\begin{principlebox}{Do not skip the ordinary contracts}
+Most advanced Swing failures are ordinary-contract failures at scale: components created off the EDT, models firing vague events, layout managers receiving inconsistent preferred sizes, renderers retaining state, and listeners outliving the screen that installed them.
+\end{principlebox}
+
+\textbf{What a Swing application contains.} A desktop application built with Swing has several layers, whether the code names them or not. At the outside is the process: the Java runtime, command-line options, classpath or module path, native desktop integration, logging, preferences, and packaging. Inside the process is the application shell: top-level windows, menus, toolbar areas, status areas, and global services. Inside the shell are screens: panels, dialogs, tables, forms, editors, and detail panes. Inside screens are components. Behind the components are models, commands, resources, validators, tasks, and domain services.
+
+Small programs often blur those layers. A single \api{main} method creates a frame, installs a listener, reads a file, updates a label, and exits. That is fine for a laboratory. It is not fine as the pattern for a tool that stays open all day. The important refresh is not "Swing uses buttons and panels"; it is "Swing lets you mix everything together, so you must decide what stays separate."
+
+For a returning programmer, this is the first pleasant and dangerous fact about Swing. The toolkit does not insist on an architectural ceremony before a button can appear. A \api{JFrame}, a \api{JPanel}, a \api{JButton}, and an action listener are enough to make something useful. That directness is why Swing remained productive for internal tools and business applications. The danger is that the same directness scales without warning. The fifth listener still looks harmless. The tenth copied table column still compiles. The first background call on the EDT may only freeze for a moment. By the time the screen is important, the easy path has become the architecture.
+
+This book therefore begins with names. A component is not a model. A model event is not a repaint request. A command is not a button. A tooltip is not the only place for help. A validation problem is not merely a red border. A table column is not its current view index. A screen lifecycle is not the same thing as garbage collection. These distinctions may sound heavy for a refresh chapter, but they are what make later advanced material readable. They also make Corusco useful rather than magical: the library gives explicit homes to concepts that Swing already forced serious programs to discover.
+
+The modern Java context changes the surrounding code, but not the Swing contracts. Records make small data carriers clearer. Pattern matching can simplify presenter logic. Virtual threads make blocking service code cheaper when it is kept away from the EDT. Modules, \api{jlink}, and \api{jpackage} improve delivery. None of them changes the fact that a \api{JTable} observes a \api{TableModel}, that a component must be mutated on the EDT, or that a layout manager assigns bounds from size hints and constraints. Modern Java is a better workshop; the furniture is still Swing.
+
+If you last used Swing years ago, the most dangerous memory is partial memory.
+You may remember that a button has an action listener, but not that the same
+operation should become an \api{Action} when it appears in several places. You
+may remember that a table has rows and columns, but not that the visible row
+index is different from the model row index once sorting is enabled. You may
+remember that the EDT exists, but not that many model notifications are
+synchronous and therefore inherit the thread that fired them. You may remember
+that \api{repaint} exists, but not that layout changes need \api{revalidate}.
+Swing punishes these half memories because its contracts are small and
+composable. Missing one of them can make a large screen feel haunted.
+
+The refresh should therefore be read as a set of nouns and verbs. The nouns are
+component, container, model, event, listener, action, document, selection,
+renderer, editor, viewport, root pane, layout manager, command, resource, task,
+and scope. The verbs are construct on the EDT, add to a container, report
+preferred size, validate layout, repaint dirty pixels, fire a model event,
+translate a selection, invoke an action, publish a task result, and dispose a
+relationship. A returning programmer who can say those nouns and verbs
+accurately is already most of the way back to effective Swing.
+
+The object graph of a Swing screen is not the same as the visual picture. A
+screen picture may show a button, a field, a table, and a status label. The
+object graph also contains a root pane, content pane, layout managers, table
+model, column model, selection model, row sorter, document models, actions,
+listeners, renderers, editors, UI delegates, borders, resources, and perhaps
+task handles. The picture is what the user sees. The graph is what the program
+must keep consistent. Good Swing code respects both.
+
+This difference explains why beginners sometimes over-correct. They see a large
+object graph and conclude that every object needs a grand architecture. It does
+not. A small local listener is fine when it translates one local gesture into
+one local effect. A small panel is fine when it exists only to group a few
+controls. A direct table model is fine for a small, stable data set. The mistake
+is not simplicity. The mistake is allowing a fact with durable meaning to remain
+hidden in the simplest object that happened to exist first.
+
+Corusco is useful at that exact boundary. It does not make a \api{JButton} less
+of a button or a \api{JTable} less of a table. It gives names to the durable
+facts that ordinary Swing leaves to application discipline: field identity,
+parsed value, dirty state, validation problems, command identity, disabled
+reason, table column identity, help topic, resource key, task state, and
+lifecycle ownership. In a small example these names may look like extra words.
+In a screen that users keep open all day, they are the difference between a
+reviewable program and a collection of callbacks.
+
+Another useful memory is that Swing is immediate in source and delayed in
+effect. When a listener calls \api{setText}, the label property changes
+immediately, but pixels may not change until painting occurs. When a model fires
+an event, listeners may run synchronously, but layout may not be validated until
+later. When a component calls \api{repaint}, it requests painting; it does not
+paint at that moment. When a scroll pane changes viewport position, a visible
+rectangle changes, but the view's preferred size remains a separate fact. Many
+debugging mistakes come from assuming that a request and its visual consequence
+are the same operation.
+
+This is why the book repeatedly distinguishes state, geometry, and pixels.
+State is what the application knows: selected row, edited text, dirty flag,
+validation problem, busy state. Geometry is where components are allowed to
+live: preferred size, bounds, viewport extent, row height, column width. Pixels
+are what the user sees after painting. Swing connects these three layers, but
+they are not interchangeable. A validation problem is state; a red border is
+pixels; the extra inset needed for that border is geometry. Mixing the layers
+is a common source of code that looks short and behaves unpredictably.
+
+\begin{center}\small
+\begin{tabularx}{0.94\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.28\linewidth}X}
+\toprule
+Layer & Typical responsibility\\
+\midrule
+Application shell & Top-level windows, menus, global command routing, preferences, diagnostics, shutdown.\\
+Screen & One user workflow: search, edit, inspect, configure, import, review, or reconcile.\\
+Component tree & Concrete Swing widgets, layout containers, scroll panes, renderers, editors, focus traversal.\\
+Presentation model & Editable values, selected row, dirty state, enabled state, validation problems, busy state.\\
+Domain/service layer & Business objects, persistence, remote calls, calculations, permissions, transactions.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Corusco mostly lives in the presentation-model and Swing-boundary layers. It does not decide whether an application should use one main window or many documents. It does not replace domain services. It gives repeated screen concepts---fields, commands, table columns, validation problems, help topics, resources, lifecycle handles---explicit Java names.
+
+The table is a map, not a package diagram. A small application may keep the
+screen and presentation model in one class while it is still being explored. A
+larger application may split them into view, presenter, generated binding
+companion, form model, command set, and service adapter. The important part is
+not how many classes exist. The important part is whether a reader can tell
+which layer owns a fact. If a domain service owns a validation message in
+English, the presentation layer cannot localize it. If a component owns a
+permission decision, the menu and toolbar may disagree. If a table owns a row id
+only as a view index, refresh and sorting will eventually break the promise.
+
+The layer map also helps when reviewing examples. A book example may keep a
+domain object as a record beside the panel because the domain is not the point.
+It may use a tiny table model because the chapter is about layout. It may use a
+direct listener because the chapter is about painting. These choices are not
+recommendations to collapse the same layers in an application. They are didactic
+compression. The text should always make clear which contract is being
+exercised and which surrounding architecture has been shortened.
+
+For a real codebase, the map gives a migration strategy. Start at the layer
+where the pain is visible. If commands disagree, name command state. If table
+preferences break, name column identity. If validation appears in three places,
+name problems. If screens leak, name lifecycle scopes. If layout becomes
+fragile, name parent geometry and component size contracts. Avoid the temptation
+to introduce every abstraction at once. Swing screens are easier to improve
+when each new owner answers one concrete review question.
+
+\textbf{Top-level windows and root panes.} A returning programmer usually remembers \api{JFrame}. It is worth remembering what a frame actually contains. The frame delegates most Swing structure to a \api{JRootPane}. The root pane owns the content pane, where ordinary application components go; a layered pane, where menus and layered children can be managed; and a glass pane, which can intercept painting and input over the whole root.
+
+That structure explains many strange bugs. A popup appears above some components because it is not just another child in the content panel. A glass pane blocks mouse events because it is above the content pane. A dialog's default button works through the root pane. A menu bar belongs to the frame/root-pane structure rather than to an arbitrary form panel.
+
+Top-level windows also establish user expectations that are not visible in the constructor call. A frame usually has independent lifetime, window decorations, task-bar presence, and persistent placement. A dialog usually has an owner, modality policy, default button, cancel behavior, and result semantics. A popup is transient and should not become the place where long-lived state hides. A tab, card, or internal frame may look like a window but share a process shell and services. These differences matter because cleanup, command routing, help context, and busy indication often follow the window boundary.
+
+When examples in this book use internal frames or off-screen components, read that as a testing convenience. The contract being exercised is still Swing containment. The example wants a root pane, content pane, layout, focus cycle, and component hierarchy without requiring a human to manage native windows during a build. Production code should choose top-level windows from product needs, not from screenshot convenience.
+
+\begin{detailbox}{Internal frames in examples}
+The companion examples often construct \api{JInternalFrame} rather than \api{JFrame}. That is not a recommendation for application architecture. It is a testing device: an internal frame exercises Swing containment, layout, and component construction without opening a native top-level window during automated builds.
+\end{detailbox}
+
+\textbf{Panels are composition units.} \api{JPanel} is the ordinary composition unit of Swing. It has a layout manager, contains children, may have a border, may be opaque, and may be reused as a screen fragment. A panel should have a coherent reason to exist. "This is the search header", "this is the editor form", and "this is the status strip" are good reasons. "I needed somewhere to put three random listeners" is not.
+
+The most maintainable Swing screens read like nested geometry. A top-level panel defines the broad regions. Child panels define local forms, command rows, filter bars, summaries, or visualizations. Layout managers describe the relationship among children. Components own only their own local behavior.
+
+Panels are also natural ownership boundaries. A panel that creates a table, sorter, selection binding, validation decorator, and status subscription should usually own their cleanup. A panel that only groups two labels may not need a class at all. The distinction is practical: a named panel class is justified when it owns a small workflow or a reusable fragment, not because every visual row deserves a Java type. Corusco scopes fit well at these boundaries because they close relationships installed by a screen fragment.
+
+A useful review question is: if this panel disappeared, what else should disappear with it? The answer may include listeners, commands, task handles, table state controllers, temporary models, or validation bindings. If the answer is "nothing", the panel may be only geometry. If the answer is long, the panel is a lifecycle owner and should be written as such.
+
+\begin{pitfallbox}{panel soup}
+Too many panels can be as confusing as too few. A panel that exists only to compensate for an unclear layout constraint is a sign that the geometry should be redesigned. Use nested panels for different geometry, not as a substitute for understanding the parent layout.
+\end{pitfallbox}
+
+\textbf{The event dispatch thread.} The \edt{} is the serialization boundary for Swing component state. Construct components, install listeners, mutate component properties, and close Swing bindings on that thread. Background work belongs elsewhere, but the handoff back to Swing must be explicit.
+
+\begin{lstlisting}[caption={A refresh example that constructs the component tree on the EDT.}]
+public static JInternalFrame createWindow() {
+    if (!SwingUtilities.isEventDispatchThread()) {
+        throw new IllegalStateException("create Swing views on the EDT");
+    }
+    JInternalFrame frame = new JInternalFrame("Swing refresh");
+    frame.setContentPane(createContent());
+    frame.pack();
+    return frame;
+}
+\end{lstlisting}
+
+\textbf{What the EDT rule really says.} "Do Swing on the EDT" is a slogan. The real rule is about ownership. Swing components are mutable objects whose invariants are protected by serial access from the event dispatch thread. If one background thread changes a label while the EDT is painting it, the program has a data race even if the bug is invisible. If a background thread mutates a table model that is currently bound to a \api{JTable}, the table can observe partial state, fire events in the wrong thread, or repaint from stale assumptions.
+
+The EDT is also not a place for arbitrary work merely because the work changes UI eventually. A database query that will update a table is still a database query. A file import that will populate a model is still file I/O. A remote validation request that will enable the OK button is still remote work. Do those operations outside the EDT, then publish a small result back to the EDT.
+
+The event dispatch thread is named after events, but it is also where layout validation, painting callbacks, action invocations, document notifications, selection notifications, and many timer callbacks occur. This is why one slow listener can make the entire application appear frozen. The user does not experience "the Save button listener is slow"; the user experiences a window that cannot repaint, cannot move focus, cannot show a busy indicator, and cannot receive Cancel. When the EDT is blocked, even the code that would explain the delay may be unable to run.
+
+Virtual threads are useful in modern Java, but they do not make Swing thread-safe. They make it cheaper to run blocking work away from the EDT. A clean design may start a virtual-thread task for a remote lookup, then publish a result to an observable value on the EDT. A poor design starts a virtual thread and lets it mutate a \api{JLabel} directly. The difference is not whether the worker is cheap. The difference is whether Swing-confined state has one owner.
+
+There is also a reverse error: making every small operation asynchronous. If a checkbox toggles a local value and updates one enabled state, the asynchronous version is harder to test and may introduce ordering bugs. The practical rule is latency, not fashion. Deterministic, small, local UI work belongs on the EDT. Work whose cost depends on files, networks, databases, large documents, or unbounded user data belongs outside it.
+
+\begin{principlebox}{Short synchronous UI work is fine}
+The EDT does not require every calculation to become a task. Updating a few values, sorting a small local combo-box model, or formatting a label is normal EDT work. The danger is unpredictable latency: I/O, unbounded loops, remote calls, large parsing jobs, and operations whose cost grows with user data.
+\end{principlebox}
+
+\textbf{Events and listeners.} Swing is event-driven, but that phrase hides several different mechanisms. A mouse listener observes pointer gestures. A document listener observes text-model mutation. A property-change listener observes JavaBean-like property changes. A list-selection listener observes selection-model changes. An action listener observes a semantic command invocation from a button or menu item.
+
+The listener type should match the fact being observed. If you want to know when a table row is selected, listen to the selection model, not to mouse clicks on the table. Keyboard selection, programmatic selection, and accessibility tools can all change selection without a mouse click. If you want to know when a command is invoked, use an action. The button is only one possible presentation of that command.
+
+Listeners are small because they are adapters, not because the behavior is necessarily small. A listener often translates one vocabulary into another: a mouse click becomes a selection, a document change becomes an invalid field value, a command invocation becomes a task request, a table selection becomes a detail-load key. The adapter should be easy to read. If it begins to contain business rules, long error handling, resource lookup, task cancellation, and table state repair, those facts need named homes.
+
+The easiest listener bug is duplication. A Save button listener checks whether the form is dirty. A menu item listener checks the same fact differently. A keyboard shortcut forgets the check. A toolbar action has its own tooltip. Now the command has four partial definitions. Swing's \api{Action} already gives a better shape: one command object, many presentations. Corusco carries the same idea further by separating stable command identity, resources, enablement, help, and handler.
+
+The second listener bug is lifetime. A screen registers a listener on a service, then closes. The service remains alive and keeps the listener, which keeps the panel, which keeps the table, which keeps the model. The leak may be visible only after a day of opening and closing screens. A lifecycle scope is not decorative in this situation. It is the difference between "this relationship exists while the screen exists" and "this relationship exists until the process ends."
+
+\begin{migrationbox}{listener ownership}
+Plain Swing gives you listener registration methods but does not force you to keep the removal handle. Corusco bindings and scopes make ownership visible: the code that installs a relationship receives an object that closes it.
+\end{migrationbox}
+
+\section{Models and components}
+
+A \termdef{model}{an object that stores state and emits change events} is not a philosophical luxury. A \api{JList} uses a \api{ListModel}; a \api{JTable} uses a \api{TableModel}; a text component uses a \api{Document}; a button may use an \api{Action}. Returning programmers often remember the widgets and forget how much of Swing's power is in these separations.
+
+\begin{coruscobox}{screen state}
+Corusco extends the model habit beyond Swing's built-in models. A field model owns raw text, parsed value, dirty state, and problems. A command owns identity, text, enabled state, and handler. A table descriptor owns column identity before a \api{JTable} exists.
+\end{coruscobox}
+
+\textbf{The standard model families.} The built-in model families are worth naming because Corusco complements them rather than erasing them.
+
+\api{ButtonModel} stores pressed, armed, selected, rollover, and enabled state for buttons. Most applications do not implement it directly, but knowing it exists explains how \api{JButton}, \api{JToggleButton}, check boxes, and radio buttons separate button presentation from state.
+
+\api{Document} stores text for text components. A \api{JTextField} is not a string. It is a component viewing and editing a document. Document filters, document listeners, undoable edits, caret positions, and input methods all belong to this small document system.
+
+\api{ListModel} and \api{ComboBoxModel} store linear options. \api{ListSelectionModel} stores selection separately from data. This separation matters because selection can change while data stays the same, and data can refresh while selection should be preserved by identity.
+
+\api{TableModel}, \api{TableColumnModel}, \api{ListSelectionModel}, and \api{RowSorter} cooperate inside a \api{JTable}. The table has model coordinates and view coordinates. Sorting and filtering alter the view. Persisted meaning should not depend on whichever view index a column happens to occupy.
+
+These model families are also a reminder that Swing's architecture was never simply "put state in widgets". Even early Swing taught separation by necessity. Text has a document because text editing has undo, filtering, caret movement, composed input, and change notification. A table has a table model because rows and columns are data, not pixels. Selection has its own model because selecting an item is a presentation fact that may survive data replacement or disappear when a row is removed. Returning programmers who remember only listeners miss one of Swing's best design lessons.
+
+The practical consequence is that state should be reviewed by lifetime and meaning. A pressed button state belongs inside a button model. The current string being edited may belong in a document and a field model. A selected customer id may belong in a presentation model because commands, details, and status text depend on it. A customer entity belongs in the domain layer. A service connection status may belong in an application model. The component is allowed to display these facts; it should not accidentally become the only place where they exist.
+
+Corusco begins from the same observation. A \api{ReadableValue} is not a prettier label. It is a named observable fact. A form model is not a panel. It is the editable state that a panel presents. A command descriptor is not a button. It is the stable identity and presentation contract that buttons, menu items, and key bindings can share. The library becomes easier to understand when read as "extend Swing's model habit to the screen concepts Swing leaves informal."
+
+\begin{detailbox}{Model events are part of the model}
+A model is not finished when it stores data. It must also tell observers what changed. Firing "everything changed" is easy but expensive and imprecise. Precise model events are the difference between a table that feels stable and one that loses selection, scroll position, or repaint discipline.
+\end{detailbox}
+
+Model precision matters even in moderate-size screens. A list model that fires a
+single inserted-row event lets a list keep selection, scroll position, and
+repaint bounds. A model that announces "everything changed" asks the view to
+forget much more. Sometimes that broad event is correct; for example, a filter
+may replace the entire visible result. But broad events should be a conscious
+statement, not the default because the model author did not want to identify the
+change. The user experiences imprecise events as flicker, lost place, lost
+selection, and sluggish tables.
+
+Selection models deserve special attention because they are presentation state,
+not domain state. A selected view row is the user's current visual position. A
+selected customer id is application meaning. A \api{JTable} selection model can
+tell which view row is selected; presenter code should usually convert that to
+model identity before making decisions. If the code stores only the view row,
+sorting, filtering, and refresh make the selection ambiguous. This distinction
+will return in the table chapters, but the refresh chapter introduces it because
+it is one of the earliest signs that widgets are not enough.
+
+Documents are another place where beginners underestimate the model. A text
+field contains a \api{Document}, not simply a \api{String}. The document may
+receive edits from typing, paste, input methods, undo, programmatic changes, or
+a document filter. A listener that treats each change as a final valid value may
+be too eager. A form model can distinguish raw text from parsed value, touched
+state, dirty state, and validation problems. That distinction is valuable even
+before the form is generated. It lets the UI show "the text cannot be parsed" as
+a different fact from "the parsed value violates a business rule."
+
+Renderers and editors are model boundaries too. A table renderer displays a
+value; it should not become the place where the value is loaded from a service.
+A table editor edits a value; it should not become the only owner of whether
+the row is valid. Returning programmers often remember that renderers are
+reused, but not why that matters architecturally. A renderer is a stamp used by
+the table while painting. It should receive facts that are already available and
+turn them into component state for one cell. If the renderer starts discovering
+business facts, the model boundary has moved into a hot painting path.
+
+Model code should also avoid accidental dependence on the current
+Look-and-Feel. A model event should not mean "the red border changed"; it should
+mean "the field now has a validation problem." A renderer should not store a
+specific selection color as data; it should ask the table or UI defaults while
+painting. A command should not be enabled because a button looks enabled; the
+button should look enabled because the command is enabled. These separations
+keep model tests independent of theme and keep theme changes from becoming
+business-rule changes.
+
+Corusco's core vocabulary follows these Swing lessons. A \api{ReadableValue}
+emits a value change because some fact changed. An observable list can report
+insertions, removals, replacements, or refreshes with more precision than a
+whole-table reset. A \api{ProblemSet} records validation facts before any label
+or tooltip displays them. A descriptor gives a table column identity before a
+renderer paints it. The library is easier to learn when the reader sees it as a
+continuation of Swing's own model discipline rather than as a separate
+architecture imposed from outside.
+
+\textbf{Actions and commands.} \api{Action} is one of Swing's best ideas. It packages a command handler with presentation properties such as name, icon, mnemonic, accelerator, selected state, short description, and enabled state. A button can use the action. A menu item can use the same action. A toolbar can use the same action. When the action is disabled, all presentations update.
+
+Returning programmers often remember action listeners but forget actions. The difference is architectural. A listener says "this particular button was pressed". An action says "the Save command was invoked". Mature applications are built from commands because users encounter the same operation through buttons, menus, context menus, keyboard shortcuts, toolbars, and sometimes accessibility actions.
+
+\begin{coruscobox}{commands beyond Swing Action}
+Corusco commands make action identity and resources toolkit-neutral. A Corusco command can be adapted to a Swing \api{Action}, but the command itself can be tested without a button and generated from annotated presenter methods.
+\end{coruscobox}
+
+The command distinction is useful even before menus and toolbars appear. A button labeled "Refresh" can remain a local listener if the screen is a disposable experiment. The same operation should become a command when it has enablement, status text, a shortcut, a menu item, cancellation, help, permission checks, or tests. The trigger is not visual complexity. It is semantic reuse and policy. Once the operation has a name in the user's workflow, it deserves a name in the code.
+
+Command enablement should also be treated as state, not as a last-minute button tweak. "Save is enabled when the form is dirty, valid enough to submit, not already saving, and the user has permission" is a rule. If one listener computes it after document changes and another computes it after validation, the rule will drift. A command object gives the rule one observable result. Corusco command state follows the same discipline and makes the result testable without constructing every possible visual presentation.
+
+\textbf{Layout and component sizes.} The next chapter goes deep on components, and the following chapter treats \miglayout{} as the default serious layout tool. For the refresh chapter, the important reminder is simple: layout is a negotiation between parent and child. The child reports preferred, minimum, and maximum sizes. The parent layout manager assigns actual bounds. Painting happens inside those bounds.
+
+A returning developer who tries to fix layout with \api{setBounds} is usually fighting the parent. A developer who fixes every field width with hard-coded preferred sizes is usually fighting the Look-and-Feel, font metrics, localization, and high-DPI scaling. A good layout describes relationships: this column grows, this label aligns by baseline, this button row stays right-aligned, this form scrolls vertically but not horizontally.
+
+The phrase "preferred size" deserves early respect. It does not mean "the size the component will have". It means "the size the component reports as natural". A parent may grant it, shrink it, grow it, or put it behind scroll bars. This distinction is what allows a table to be wider than the viewport, a form field to grow with the window, and a button to remain at its natural width. The later MigLayout chapter will use this language constantly, so the refresh chapter must already make clear that sizes are a conversation, not a command.
+
+The same conversation applies to custom components. If a small graph component draws data but reports a fixed tiny preferred size, a good layout manager cannot infer the missing world size. If a form panel is put in a scroll pane but does not track viewport width, horizontal scrolling may appear where wrapping was expected. If a component changes its preferred size but fails to call \api{revalidate}, the parent may keep old geometry. These are not advanced mistakes; they are ordinary component-contract mistakes.
+
+\textbf{Look-and-Feel is not only colors.} The Look-and-Feel controls UI delegates, defaults, borders, fonts, colors, icons, insets, renderer defaults, focus painting, and many component-specific behaviors. Changing Look-and-Feel can change preferred sizes, baselines, border insets, table row heights, and default key bindings. A screen that only works under one LAF because it assumes exact pixel sizes is not robust.
+
+\flatlaf{} is used in the companion examples because it gives a contemporary default appearance and is practical for screenshots. But the book's engineering rule is broader: do not hard-code what the Look-and-Feel should own. Use UI defaults, resources, and component APIs. Override locally only when the screen has a real reason.
+
+Look-and-Feel also controls the user's sense of platform competence. Focus rings, disabled text, table selection colors, default button emphasis, and popup shadows are not merely decoration. They are signals. A custom renderer that ignores selection colors may become unreadable in dark mode. A fixed-height button may clip text when the LAF changes fonts. A hand-painted focus indicator may have poor contrast. The safe path is to use the LAF until there is a specific reason not to, and to keep the reason local.
+
+FlatLaf deserves a special mention because it makes Swing look less historical without changing Swing into a different toolkit. That is helpful for the book: screenshots can look current while still teaching ordinary Swing contracts. But the presence of a modern LAF should not hide the older rules. The UI delegate still computes sizes. Components still paint through Swing. The EDT still owns component mutation. A polished surface makes bad contracts more visible, not less.
+
+\textbf{Resources and user-facing text.} Swing lets you put text literals everywhere. That is convenient and corrosive. A label text, button text, tooltip, menu item name, validation message, accessible name, and help title may begin as English strings, but they are screen contracts. They may need localization, tests, generated keys, or consistency across several presentations.
+
+Corusco's resource keys address the first failure mode: duplicated, untyped text identifiers. A command descriptor can refer to a resource key for its text. A form field descriptor can refer to resource keys for label and tooltip. A table column descriptor can refer to header resources. The component then displays text resolved through the application's resource layer.
+
+Text also affects layout. A German label, a longer validation message, a different font, or a generated column header can change preferred sizes. This is another reason resources belong in the model of the screen rather than as accidental strings. When text is named, it can be tested, reviewed, translated, and reused. When text is scattered through listeners and renderers, it becomes impossible to know which words the user may see.
+
+Resource discipline pays off in accessibility as well. An accessible name should not be an afterthought invented separately from a field label. A tooltip should not silently contradict a help topic. A disabled reason should not disappear because the button is not clickable. Corusco's typed keys are not only for localization; they make these relationships visible enough to test.
+
+\textbf{Scrollable screens.} Scroll panes are ordinary in Swing applications. Tables, trees, text areas, long forms, diagrams, logs, and custom canvases often live inside \api{JScrollPane}. A scroll pane creates a viewport over a view. The view may be a standard component such as \api{JTable}, or a custom component that reports its own preferred size and scrolling increments.
+
+The beginner mistake is to think of scrolling as decoration. It is geometry. The viewport has a visible extent. The view has a preferred size or a scrollable policy. The scroll bars expose the difference. If the view lies about its size, scrolling lies too. If a form should track viewport width but does not, a horizontal scroll bar appears. If a canvas should be larger than the viewport but reports only the viewport size, no useful scrolling occurs.
+
+The intermediate mistake is to let several regions scroll without deciding who owns the wheel. A form in a scroll pane contains a table in another scroll pane, which contains a text area editor in a third. Sometimes this is unavoidable. More often it is a sign that the workflow needs a split pane, a fixed summary with a scrolling detail region, or a table with a separate detail editor. Scrolling is part of information architecture. It decides what remains visible while the user moves through data.
+
+Tables are the common test. A table belongs in a scroll pane because the header, viewport, and scroll bars cooperate. Placing a table directly in a panel may look acceptable with five rows and fail immediately with real data. The scroll pane is not a decorative border around the table; it is part of the table's ordinary presentation. The large-data chapters later in the book rely on this distinction.
+
+\textbf{Painting is a consequence of state and geometry.} A returning
+programmer should remember the basic painting chain before writing custom
+components. Swing asks components to paint when dirty regions need pixels.
+Application components usually override \api{paintComponent}, not \api{paint}.
+Painting should use the component's current state and bounds; it should not
+decide layout, load data, or mutate the model. A paint method is called because
+pixels are needed, not because the application wants to perform work.
+
+This rule is easy to violate in small visual components. A graph component
+discovers data while painting. A validation decorator changes a tooltip while
+painting. A custom component notices that its preferred size is wrong and calls
+\api{setPreferredSize} from inside painting. These shortcuts may appear to work
+because painting is frequent and visible. They are still wrong boundaries.
+State changes should happen before repaint is requested. Geometry changes
+should call \api{revalidate}. Painting should draw the current truth.
+
+The repaint system is also deliberately imprecise from the author's point of
+view. Multiple repaint requests may be coalesced. A component may be asked to
+paint a clipped region. A parent may repaint because a child changed. The code
+should therefore be idempotent: painting the same state twice should produce
+the same pixels, and painting a clipped region should not depend on having
+painted an earlier region first. Advanced Java2D chapters later discuss
+composites, transforms, shapes, and text; the refresh chapter only needs the
+discipline that painting is a pure presentation step over current state.
+
+Focus and keyboard input deserve the same early discipline. A screen is not
+finished because every operation has a mouse target. Text fields need editing
+keys. Tables need selection keys. Dialogs need default and cancel behavior.
+Commands often need accelerators. Help may need F1. Focus traversal should make
+sense in reading order, and custom components that accept keyboard input should
+paint a visible focus indicator. These are not accessibility extras added after
+the screen works. They are part of ordinary desktop interaction.
+
+Swing gives several input mechanisms, and they should not be confused. Mouse
+listeners observe pointer gestures. Key listeners observe low-level key events,
+but most commands should use key bindings instead. An \api{Action} can connect a
+key binding, menu item, toolbar button, and popup item to one command. A focus
+listener can observe focus transitions, but it should not become a validation
+architecture that traps the user in a field. The right mechanism is the one that
+matches the semantic fact being handled.
+
+Accessibility begins with the same separation. A label that visually names a
+field should also help name it for assistive technologies. A command disabled
+for a reason should expose that reason somewhere consistent. A validation
+problem should be available as more than a red border. A table cell renderer
+should remain readable under selected and focused states. If visible text,
+tooltip text, accessible description, and help topic are all invented
+separately, they will drift. Resource keys and descriptors are not merely
+localization tools; they are a way to keep the screen's vocabulary coherent.
+
+The Look-and-Feel participates in these contracts. It supplies focus colors,
+selection colors, disabled text colors, borders, insets, and default key
+behavior. A custom renderer or painter that ignores those defaults may look
+acceptable in one screenshot and unreadable in another theme. The safe habit is
+to let the LAF speak unless the application has a specific visual policy, and to
+keep exceptions local enough that they can be reviewed. FlatLaf makes the book
+screenshots contemporary, but it is not a license to hard-code around the UI
+delegate.
+
+All of these topics lead back to the same refresh rule: choose the owner before
+choosing the callback. If the fact is "the user invoked Save", use a command. If
+the fact is "the text changed", use the document or field model. If the fact is
+"the component needs new pixels", request repaint. If the fact is "the natural
+size changed", revalidate. If the fact is "the current row changed", use the
+selection model and row identity. The callback is an implementation detail of a
+contract that should already have a name.
+
+\section{Lifecycle: the part Swing does not finish for you}
+
+Swing components can be removed from a container and garbage-collected when no one references them. That is not a complete application lifecycle. Listeners registered on long-lived services, timers, background task handles, table state controllers, property-change listeners, and global diagnostic hooks can keep a screen alive long after it disappears.
+
+This is one of the sharpest differences between a demo and a professional desktop application. Demos end before leaks matter. Real applications stay open, switch screens, reopen dialogs, refresh tables, and run all day. Every installed relationship needs an owner and a removal path.
+
+\begin{principlebox}{Installation implies cleanup}
+When code calls \api{addXListener}, starts a timer, subscribes to a model, binds a component, or launches a task, it should be clear which object closes that relationship. If the answer is "the garbage collector will figure it out", the design is probably incomplete.
+\end{principlebox}
+
+\textbf{Plain Swing baseline.} Plain Swing is often enough for a temporary utility window. A panel can create fields, attach listeners, and update labels directly. The discipline is to notice when local code stops being local: the same action appears in a menu and toolbar, the same validation problem appears in a tooltip and summary, or the same table column id is needed for resources and persistence.
+
+A good plain Swing baseline is not primitive code. It has named models where Swing expects models, actions where commands are shared, layout managers instead of absolute bounds, precise table events, and explicit EDT handoffs. It may not yet have Corusco descriptors, generated companions, or observable values, but it should already respect the contracts. This matters because Corusco is most effective when it removes repeated wiring from disciplined Swing code. It is much less effective when asked to bless a screen whose facts are still hidden in arbitrary listeners.
+
+The baseline is also a teaching tool. A developer should be able to write a small form, a table in a scroll pane, and a command button in plain Swing. Without that knowledge, a binding framework becomes superstition: code changes state because "the binding does something". The book therefore shows plain Swing first where the contract is important, then shows how Corusco names the same relationship and makes it easier to test or generate.
+
+\begin{migrationbox}{the first extraction}
+Move facts before mechanics. First extract stable ids, commands, field values, table columns, and validation results. Only then replace local listeners with Corusco bindings or generated companions.
+\end{migrationbox}
+
+\begin{examplebox}{refresh}
+\refreshExample{} constructs a small FlatLaf-styled internal frame with a toolbar, form area, status label, and table. It is intentionally ordinary: its purpose is to show the component tree and EDT rule before Corusco abstractions appear.
+\end{examplebox}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.96\linewidth]{\refreshFigure}
+\caption{The refresh companion example rendered as a book figure. It is deliberately plain: toolbar, small form, table, scroll pane, and status label. The point is to see the component tree and ordinary Swing responsibilities before adding Corusco structure.}
+\label{fig:refresh-shell}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.96\linewidth]{\refreshResponsibilitiesFigure}
+\caption{The same introductory screen decomposed into responsibilities. Components, models, actions, and lifecycle ownership are separate concerns even before Corusco enters the code.}
+\label{fig:refresh-responsibilities}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.96\linewidth]{\refreshContractFigure}
+\caption{A small Swing screen as a contract loop. Events enter on the EDT, listeners translate them into model facts or commands, components display the resulting state, slow work leaves the EDT, and lifecycle scopes own cleanup.}
+\label{fig:refresh-contract-loop}
+\end{figure}
+
+\textbf{Reading the refresh example.} The figure contains no exotic widget. That is useful. The toolbar contains buttons that should eventually become actions. The form fields are plain text fields that should eventually be backed by field models if their state matters. The table sits inside a scroll pane because tables normally need headers and viewport behavior. The status label is a presentation value waiting to become observable state.
+
+In a throwaway program, the refresh button might have an inline listener that reloads the table and updates the status label. In an application, that listener would be too small a hiding place for too many facts. Reloading has busy state, cancellation, errors, stale result suppression, status text, command enablement, and possibly table selection preservation. Corusco does not make those facts disappear; it gives them places to live.
+
+Read the screenshot from outside inward. The shell provides a title and root-pane structure. The toolbar exposes commands. The form area presents editable fields and a local action row. The table presents many rows through a model and a viewport. The status label summarizes a state that may be produced by loading, validation, or user action. Even this small screen already contains at least five kinds of state: component state, editing state, row data, command state, and status state. A larger application does not introduce those categories; it only makes them harder to ignore.
+
+The second figure decomposes the same screen into responsibilities. It is not an argument for a class per box. It is an argument against pretending that everything is a component. A component tree is necessary because pixels and input need a hierarchy. A model graph is necessary because state needs identity, events, and tests. A command set is necessary because operations outlive the button that first invoked them. A lifecycle boundary is necessary because installed relationships need cleanup.
+
+Figure~\ref{fig:refresh-contract-loop} adds the dynamic view. A screen is not a
+static arrangement of components. It is a loop of events, facts, commands,
+painting, tasks, and cleanup. A user edits a field; the document fires a
+change; a listener or binding updates a model fact; derived command state
+changes; components display that state; painting eventually makes the change
+visible. If the command starts slow work, the slow work leaves the EDT and
+returns with a small result. If the screen closes, the installed relationships
+must close with it.
+
+This loop is the shortest useful mental model for Swing maintenance. It tells a
+reviewer where to look when behavior is wrong. If a field edits correctly but
+Save remains disabled, inspect the model fact and command derivation. If Save
+enables but the button presentation does not update, inspect the binding or
+\api{Action}. If a background refresh completes into a closed screen, inspect
+the task handle and scope. If a status label never shows "Loading", inspect
+whether the EDT was blocked before painting could occur. The loop turns vague
+UI symptoms into concrete ownership questions.
+
+The loop is also the place where Corusco should be understood. Corusco values
+own facts in the model part of the loop. Commands own operation policy. Bindings
+move facts between models and components. Task services describe the slow-work
+edge. Scopes own the lifetime edge. Swing still owns components, input,
+painting, layout, documents, tables, and Look-and-Feel. The library does not
+erase the loop; it labels the places where large Swing programs otherwise
+invent private conventions.
+
+\textbf{A first migration map.} The first Corusco migration should not be "replace every Swing class". Swing remains the widget toolkit. The first migration is to name facts.
+
+\begin{center}\small
+\begin{tabularx}{0.94\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.27\linewidth}X}
+\toprule
+Plain Swing fact & Corusco-shaped destination\\
+\midrule
+Text currently in a field & \api{TextFieldModel} inside a form model\\
+Button listener for Save & Command with stable action key and handler\\
+Localized table header string & Resource key attached to a column descriptor\\
+Column index used in persistence & Typed column key and persistence id\\
+Validation tooltip text & Structured \api{Problem} rendered by a binding or behavior\\
+Background reload flag & Observable busy value and task handle\\
+Listener group owned by a panel & \api{BindingScope} or \api{BehaviorScope}\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+This map is intentionally modest. It does not require annotation processing on day one. It does not require generated forms before a team understands forms. It says: find the facts that are currently hiding in components, strings, listeners, and indexes; move those facts into named objects; then bind those objects back to Swing.
+
+The order matters. If a team starts with generation before naming facts, generated code can become a faster way to produce the same ambiguity. If it starts with facts, generation becomes mechanical: field ids, component keys, table columns, command descriptors, resource keys, and problem targets already exist. The annotation processor is then not inventing architecture. It is enforcing a shape the team understands.
+
+Migration can also be incremental by screen region. A table may move to descriptor-backed columns before the surrounding form uses generated bindings. A command set may move to Corusco commands before validation moves to form models. A status value may become observable before the whole task service is introduced. This is often the safest path in existing applications because it keeps behavior visible and testable at each step.
+
+\textbf{How to read old Swing code.} Returning developers often inherit Swing code rather than start fresh. Read it by tracing ownership.
+
+First, find top-level windows and screen panels. Then find where each panel is constructed and disposed. Next, find models: table models, list models, documents, selection models, sorters, actions, and any domain models held by the screen. Then find listeners. Ask which listeners observe short-lived components and which observe long-lived services. Finally, find background work and look for handoff back to the EDT.
+
+This reading order is more productive than searching for visual bugs first. The visual bug is often only the symptom. A table losing selection may be caused by imprecise model events. A frozen dialog may be caused by validation on the EDT. A tooltip flicker may be caused by two features overwriting the same component property. A memory leak may be caused by a listener installed three panels away from the code that closes the screen.
+
+Old code should also be read historically. Many Swing applications began before modern layout libraries, before annotation processors were common in the project, before FlatLaf, before records, and before a team had automated UI tests. The code may contain workarounds that were reasonable at the time. Do not remove them because they look old. First identify the contract they were trying to protect: a fixed row height, a focus bug, a slow renderer, a missing resource system, an unreliable service callback. Then decide whether the current platform and Corusco give a clearer expression of the same contract.
+
+A useful field notebook for an inherited screen has four columns: fact, current hiding place, desired owner, and proof. "Selected customer id" may currently hide in a table view index; its desired owner is a selection value; proof is that keyboard selection, sorting, and reload preserve the same domain id. "Save enabled" may hide in three listeners; its desired owner is a command state; proof is that all presentations enable and disable together. "Name required" may hide in a tooltip; its desired owner is a problem set; proof is that the tooltip, summary, and OK button agree.
+
+The notebook should include negative facts as well. "No cleanup owner" is a
+fact. "No stable column id" is a fact. "No rule for stale task results" is a
+fact. "No distinction between parse error and validation error" is a fact.
+Writing these absences down prevents a common maintenance mistake: repairing the
+first symptom while leaving the missing owner unnamed. If a search screen loses
+selection after refresh, preserving the current row index may hide the symptom
+for one sorter state. Naming the absent selected-domain-id owner fixes the
+class of defects.
+
+When reading old code, expect to find several architectural eras in one screen.
+The oldest part may use anonymous inner classes. A later part may use lambdas.
+Another part may have been retrofitted with a background executor. A recent part
+may use records or generated descriptors. Mixed style is not automatically bad;
+long-lived applications naturally accumulate history. The review question is
+whether the styles still obey one set of contracts. If a lambda hides the same
+state that an anonymous class hid before, the syntax changed but the boundary
+did not. If a generated descriptor gives a table column identity while old code
+still persists a view index, the screen has two stories and will eventually
+choose the wrong one.
+
+Be especially careful with helper classes named after mechanics rather than
+meaning. A class named \api{ButtonUtils} may install actions, set text, attach
+icons, add tooltips, and manage enablement, all without saying which command it
+represents. A class named \api{TableHelper} may configure columns, convert row
+indexes, install renderers, persist state, and attach selection listeners. Some
+helpers are useful, but a helper that owns several unrelated facts can be a
+large listener in disguise. Corusco's descriptors and behaviors should be used
+to split such helpers by meaning: command metadata, table state, renderer
+policy, selection binding, tooltip composition, cleanup.
+
+Old Swing code also tends to hide policies in constants. A constant named
+\api{DEFAULT\_WIDTH} may be a real product decision, a workaround for a
+historic font, or a screenshot adjustment from ten years ago. A constant named
+\api{STATUS\_COLUMN} may be a model index, a view index, or a localized header
+position. Before deleting or modernizing such constants, find what promise they
+were protecting. Then rename or replace them with the owner that states the
+promise: a column descriptor, a resource key, a viewport policy, a minimum
+component size, or a layout constraint.
+
+There is a humane reason to proceed this way. Swing code is often business
+software written under pressure by people who had to make real users productive.
+The code may look informal because the problem was informal at first. A reviewer
+who treats every old listener as incompetence will miss the knowledge embedded
+in the workaround. A reviewer who treats every workaround as sacred will never
+improve the screen. The better attitude is archaeological and practical: what
+contract was this code trying to preserve, and can we express it more clearly
+now?
+
+After the first reading, choose one thread through the screen and make it
+excellent. A good first thread is often command state. Convert one repeated
+operation into an action or Corusco command, give it resource keys, connect the
+toolbar and menu to the same state, and test enablement. Another good first
+thread is validation. Move one field's parse and validation facts out of
+tooltip text and into a problem model, then render that problem in the field and
+summary. A third is table identity. Replace one persisted column index with a
+stable column key and prove that moved columns preserve preferences.
+
+These threads are intentionally narrow. They let an application improve while
+remaining useful. A team can migrate command identity without rewriting layout.
+It can introduce problem sets without replacing every document listener. It can
+add scopes around installed relationships without generating forms. The result
+is slower than a rewrite in imagination and faster than a rewrite in reality,
+because each step leaves the production screen working and leaves tests behind.
+
+The proof column matters. A refactoring that merely "looks cleaner" is fragile
+in a book about contracts. A command refactoring is proven when every
+presentation enables and disables together. A validation refactoring is proven
+when the summary, tooltip, focus behavior, and OK command agree. A table
+identity refactoring is proven when sorting, filtering, refresh, and persisted
+state keep the user's meaning. A lifecycle refactoring is proven when a closed
+screen no longer reacts to model changes or task completion. The proof turns a
+style preference into an engineering result.
+
+One final inherited-code habit is worth learning early: shrink the reproduction
+without shrinking the contract. If a layout bug appears in a complex screen,
+copy the relevant panel into a small example but keep the same component size
+contracts, scroll pane, font, and Look-and-Feel. If a task race appears in a
+real service, replace the service with a controllable delayed result but keep
+the same EDT handoff and cancellation policy. If a renderer bug appears with
+large data, keep enough rows to exercise reuse and scrolling. Small
+reproductions are useful only when they preserve the contract that failed.
+
+\textbf{What this book assumes after the refresh.} After this chapter, the book assumes these terms are available: component, container, model, event, listener, action, EDT, Look-and-Feel, layout manager, scroll pane, viewport, renderer, editor, resource, validation problem, command, binding, and lifecycle owner. Later chapters will refine them, not reintroduce them from nothing.
+
+The next chapter focuses on components themselves: preferred sizes, minimum and maximum sizes, painting, input, focus, and scrollable behavior. Then the MigLayout chapter can speak precisely about what a parent layout manager does with the contracts reported by its children.
+
+The refresh is deliberately ordinary. It asks the reader to recover the small invariants that make larger Swing systems tolerable: one UI thread, truthful components, explicit models, named commands, precise events, layout by relationship, resources instead of scattered text, scroll panes as geometry, and cleanup as part of installation. None of these ideas requires Corusco, and that is the point. A library should amplify good Swing practice, not replace the need to know what Swing is doing.
+
+There is a useful humility in this order. Before a screen can have generated descriptors, it must have stable facts worth describing. Before a form can have validation bindings, it must know which state is raw input, which state is parsed value, and which state is a problem. Before a table can persist column state, its columns must have identities independent of their current positions. Before a background task can show progress, the UI must know where busy state belongs. The advanced chapters are not separate from the refresh; they are the refresh contracts followed to their consequences.
+
+When a Swing bug appears, return to this chapter's questions before blaming the framework. Which object owns the fact? Which thread owns the mutation? Which model event describes the change? Which component reports the size? Which parent assigns the bounds? Which command represents the operation? Which resource supplies the words? Which scope cleans up the listener? Most bugs become smaller after the right question is asked.
+
+This is also how to keep Swing pleasant. The toolkit is not pleasant when every screen is a tangle of anonymous listeners and magic indexes. It is pleasant when small components do local work, models report precise facts, commands have names, layouts describe relationships, and repetitive bindings disappear into well-tested helpers. The reader should leave the refresh not merely remembering Swing, but remembering why disciplined Swing can still be a sharp tool.
+
+\textbf{A returner's working rhythm.} When opening an unfamiliar Swing screen, start by running it if possible, but do not begin by rearranging widgets. First identify the user workflow in one sentence. "Search for customers and edit the selected one" is a workflow. "Panel with buttons" is not. The workflow sentence tells you which facts must survive a refactoring: search criteria, result rows, selected customer, dirty edits, save command, validation problems, loading state, and status messages.
+
+Next draw the containment tree at a coarse level. Do not draw every label. Draw the shell, toolbar, main split, scroll panes, form panel, table, and status strip. Mark which regions can grow, which region scrolls, and which region owns focus traversal. This drawing often explains bad layout before code is touched. If the table and the whole form both want to scroll, the drawing will show two competing owners.
+
+Then draw the state tree. Which objects store domain data? Which objects store editable presentation state? Which objects store selection? Which command state depends on those values? Which task changes busy state? The state tree does not have to match the component tree. In fact, the useful discovery is often that the component tree and state tree are different. A selected row displayed by a table may drive a detail panel, a command row, and a status label.
+
+After that, list installed relationships. A relationship is a listener, binding, timer, task callback, table state controller, document filter, sorter, renderer, editor, or service subscription. For each one, write down who installed it and who closes it. This is the fastest way to find screens that leak. It also finds screens where behavior is hard to test because the important rule is split across several anonymous callbacks.
+
+Now inspect thread boundaries. Mark code that enters the EDT, code that leaves it, and code that returns. A refresh command should normally disable itself or expose busy state on the EDT, start work elsewhere, and publish a small result back to the EDT. If the worker also updates components, the boundary is broken. If the EDT does the load before showing busy state, the user sees a frozen window instead of a working screen.
+
+Only then inspect visual polish. At this point, layout bugs have owners, command bugs have names, and stale-state bugs have paths. A crowded form may need MigLayout constraints, but it may also need resource keys because labels will grow. A table may need column widths, but it may also need stable column identifiers. A validation badge may need a better icon, but it first needs a problem model so the summary, tooltip, and OK button agree.
+
+This rhythm is deliberately slower than guessing. It saves time because old Swing code often contains several bugs with the same visual symptom. A table that jumps during refresh might have broad model events, lost selection identity, a sorter reset, and a scroll-pane revalidation issue. Fixing only the visible jump may leave the screen unstable. Naming the contracts first reveals which repairs are local and which require a small model change.
+
+The same rhythm is useful for new code. Before writing the first listener, name the command. Before creating the first table column, name its identity. Before showing the first validation message, decide where problems live. Before starting the first background call, decide where busy state and cancellation live. These decisions are cheap when made early and expensive when extracted from a dozen callbacks later.
+
+Corusco should enter at the points where this rhythm exposes repetition. If every screen writes the same dirty-state listener, use a form model. If every table repeats column identity and resource lookup, use descriptors or generated tables. If every dialog rewrites OK/Cancel semantics, use dialog workflow support. If every screen invents cleanup, use scopes. The library is not a substitute for the rhythm; it is what keeps the rhythm from becoming boilerplate.
+
+The beginner need not memorize every API in this chapter. The beginner should remember the questions. Where is the state? Which thread owns it? Which event announces change? Which command represents the operation? Which component displays it? Which parent lays it out? Which object cleans it up? The intermediate reader should begin to answer those questions in code. The advanced reader should make those answers hard to get wrong.
+
+This is why the refresh chapter comes before the component and MigLayout chapters. Without the refresh, a layout chapter can become a list of constraints. With the refresh, layout becomes one part of a larger contract: components report natural sizes, parents assign geometry, scroll panes expose viewports, commands describe operations, and models report facts. The reader can then learn MigLayout as a precise language for parent-side decisions rather than as a rescue kit for confused screens.
+
+The same dependency holds for the EDT chapter. Without the refresh, the EDT can
+sound like a rule memorized from old tutorials: "do UI work on one thread." With
+the refresh, the rule has content. Component mutation, synchronous model
+events, action invocation, selection notification, layout validation, and
+painting callbacks all meet on the same serialized boundary. Background work is
+not forbidden; it is kept from pretending to own Swing state. A task result is
+not simply "done"; it is a fact that must still belong to the current screen
+generation and current lifecycle scope.
+
+The table chapters also depend on this foundation. A table is visually a grid,
+but architecturally it is a collaboration among data model, column model,
+selection model, sorter, renderer, editor, and scroll pane. If the reader has
+already accepted that components are not the only owners of state, the table's
+coordinate systems become less mysterious. Model row, view row, column
+descriptor, selected identity, renderer stamp, and persisted state are all
+different answers to different questions. A serious table is hard only when
+those questions are collapsed into integers.
+
+The painting chapters depend on the same separation in another direction.
+Painting is not where state is invented; it is where current state becomes
+pixels. Invalidation is not business logic; it is the way geometry changes tell
+parents that layout must be recomputed. Repaint is not immediate drawing; it is
+a request for dirty pixels to be redrawn. Java2D, Composite, shapes, transforms,
+and glyphs become enjoyable when this boundary is clear. Without it, advanced
+painting code turns into a place where data loading, layout correction, and
+visual effects collide.
+
+The Corusco chapters, finally, should feel like a continuation rather than a
+departure. A readable value is a named fact. A writable value is a controlled
+editing point. An observable list is a model with precise change vocabulary. A
+problem set is validation state before it becomes a tooltip or border. A command
+descriptor is an operation before it becomes a button. A binding is a
+relationship that should have a lifecycle. A generated companion is a way to
+avoid repeating stable metadata after the team has named it. Each concept is a
+direct answer to a problem this refresh has already introduced.
+
+This is why the chapter spends so much time on ordinary language. A beginner
+does not need to learn every class before writing a small tool, but the beginner
+does need the right questions. An intermediate developer returning to Swing
+needs to recover the distinctions that keep small tools from becoming tangles.
+An advanced developer needs the same distinctions because advanced bugs are
+usually ordinary boundaries under stress: a renderer that retained state, a
+model that fired the wrong event, a task that returned too late, a component
+that lied about size, a scope that did not close.
+
+The desired working style is calm and concrete. Build the component tree on the
+EDT. Give important facts names. Use Swing's models where Swing already provides
+them. Use actions when operations have identity. Let layout managers own
+geometry. Let painting draw state, not invent it. Treat resources as vocabulary.
+Treat scroll panes as viewport geometry. Treat cleanup as part of installation.
+Introduce Corusco when these rules produce repeated wiring or when stable
+metadata deserves generation. This is not an advanced style reserved for large
+systems; it is the ordinary style before shortcuts accumulate.
+
+The reader who can apply this style should be able to open the companion
+example and predict its future. The Refresh button may become a command. The
+table columns may become descriptors. The form fields may become field models.
+The status label may become a readable value. The background reload may become a
+task with busy state and stale-result suppression. The installed relationships
+may enter a scope. None of these changes requires a different visual screen.
+They are ways of giving durable meaning to facts that the introductory screen
+already contains.
+
+Screenshots in this chapter should be read with the same discipline. A
+screenshot is not proof that a screen is architecturally healthy. It is proof
+that one state rendered under one Look-and-Feel at one size. The surrounding
+text supplies the contract: which component owns geometry, which model owns
+state, which command owns the operation, which scope owns cleanup, and which
+thread owns mutation. When a screenshot and a contract agree, the picture is
+useful evidence. When the picture looks acceptable but the contract is missing,
+the screenshot is only a pleasant accident.
+
+The companion example is deliberately small so these relationships can be seen
+without scrolling through a full application. That smallness should not be
+mistaken for a limit on the ideas. The same loop appears in a customer editor, a
+GIS layer panel, a paint program's tool palette, a database browser, and a
+configuration dialog. Components receive input and paint. Models own state.
+Commands represent operations. Tasks leave and return. Layout assigns geometry.
+Scopes close relationships. Once that grammar is familiar, larger screens feel
+busy rather than mysterious.
+
+That grammar is also the reason this book can move from refresh to advanced
+topics without changing tone. The details become richer, but the questions stay
+recognizable. A Composite chapter asks how pixels combine after state and
+geometry are known. A geometry chapter asks how shapes and transforms describe
+visual facts efficiently. A generated-code chapter asks which stable metadata is
+worth deriving at compile time. A testing chapter asks how to prove the same
+contracts without relying on manual clicking. The refresh is the small version
+of all of these questions.
+It is the reader's calibration chapter.
+When later chapters feel detailed, return to this loop: fact, event, command,
+geometry, paint, task, cleanup. The names are small, but they scale.
+They are enough to orient the whole book.
+The rest is disciplined elaboration.
+That is a good place to begin again.
+And to continue with confidence.
+
+\begin{pitfallbox}{using old memory as an API}
+Remembering that "Swing is single-threaded" is not enough. You must know which objects are Swing-confined, which models fire synchronously, which callbacks are invoked during mutation, and which helper code crosses threads.
+\end{pitfallbox}
+
+\begin{pitfallbox}{modernizing the wrong layer}
+Using records, virtual threads, or annotation processing does not repair an unclear component boundary. Modern Java helps when it makes ownership more explicit. It hurts when it hides the same old listener sprawl behind newer syntax.
+\end{pitfallbox}
+
+\begin{pitfallbox}{confusing visual simplicity with architectural simplicity}
+A screen with three fields and two buttons may still contain command identity, validation timing, dirty state, resources, help, cancellation, and persistence. The visual surface is small; the behavior contract may not be.
+\end{pitfallbox}
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Draw the containment tree of the refresh example from root pane to leaf components.
+\item Replace one button listener with an \api{Action}; observe which properties the button mirrors.
+\item Add a list model and fire one precise update event instead of rebuilding the list.
+\item Identify every user-facing string in Figure~\ref{fig:refresh-shell}. Decide which ones should become resources in a real application.
+\item Add a fake background refresh operation. Keep the sleep or delay off the EDT and update the status label on the EDT.
+\item Write down which object should own cleanup for each listener you add.
+\end{enumerate}
+\end{exercisebox}
+
+\textbf{Checklist for returning to Swing.}
+\begin{itemize}
+\item Component construction, mutation, and disposal happen on the EDT.
+\item Layout is delegated to layout managers; painting does not assign geometry.
+\item Models emit precise events; renderers remain fast and reusable.
+\item Commands are represented by \api{Action} or Corusco commands, not repeated anonymous listeners.
+\item Long work leaves the EDT and returns through an explicit boundary.
+\item User-facing text is treated as a resource contract when it will outlive a demo.
+\item Scroll panes are understood as viewport geometry, not decoration.
+\item Every installed relationship has a lifecycle owner.
+\item Corusco adoption starts by naming screen facts, not by hiding Swing.
+\end{itemize}

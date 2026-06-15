@@ -1,0 +1,1294 @@
+\chapter{Geometry, Shapes, and Transform Algebra}
+\label{ch:geom-shapes}
+\chapterquote{A rich visual application is not painted from pixels; it is painted from geometry that survives zoom, selection, printing, and doubt.}{A Java 2D rule}
+
+\begin{chaptermap}
+Core question & How should advanced Swing applications use \api{java.awt.geom} shapes, paths, areas, strokes, and affine transforms for rich visual work?\\
+Primary APIs & \api{Shape}, \api{Path2D}, \api{PathIterator}, \api{FlatteningPathIterator}, \api{Area}, \api{AffineTransform}, \api{BasicStroke.createStrokedShape}, \api{TextLayout}, \api{GlyphVector}, \api{FontRenderContext}, \api{Rectangle2D}, \api{Point2D}, and \api{Graphics2D}.\\
+Use cases & GIS viewers, paint editors, diagram editors, charting surfaces, CAD-like tools, visual query builders, route editors, topology inspectors, and screenshot/export pipelines.\\
+Hidden difficulty & The same geometry must serve painting, hit testing, selection, snapping, repaint bounds, scrolling, zooming, printing, accessibility, and performance diagnostics.\\
+Corusco connection & Corusco can model viewport state, selection, commands, tasks, diagnostics, and generated component keys, while \api{java.awt.geom} remains the geometry engine at the Swing boundary.\\
+\end{chaptermap}
+
+\section{Geometry as the Real Model of a Visual Surface}
+
+\termdef{\api{java.awt.geom}}{the Java 2D package that provides double-precision and float-precision geometry types, affine transforms, paths, and shape operations} is one of Swing's quiet strengths. Many applications use it only for simple rectangles and lines, then treat custom painting as a collection of drawing calls. That is enough for small adornments. It is not enough for a map viewer, paint editor, diagram editor, timeline, chart surface, network editor, or visual rule builder where the user expects zoom, pan, selection, snapping, precise hit testing, and export.
+
+A serious visual application has more than pixels. It has model geometry. A road has a polyline. A parcel has a polygon. A shape layer has paths. A diagram node has a logical bounding box and connection points. A text annotation has a baseline and outline. A lasso selection has a winding rule. A stroke has width, caps, joins, and dashes. If the program throws these facts away and keeps only painted pixels, every later feature becomes guesswork.
+
+The word \termdef{geometry model}{the application-level representation of positions, curves, areas, and spatial relationships before rasterization} is deliberately stronger than "drawing code." Drawing code may be a procedure. A geometry model is data with meaning. It can be transformed, queried, simplified, indexed, serialized, compared, selected, exported, and diagnosed. A rich visual Swing component should preserve geometry as long as possible and rasterize only at the final rendering boundary.
+
+This chapter sits immediately after the Java 2D and HiDPI chapter because the
+two subjects are one visual argument. The earlier chapter taught logical
+geometry, scale, rendering hints, fonts, and device transforms. This one treats
+the geometry APIs as a full application tool: shapes that can be painted,
+queried, selected, transformed, indexed, exported, and diagnosed. Later text,
+transfer, accessibility, table, and diagnostics chapters return to the same
+facts from their own angles. A glyph outline is a shape. A caret location is
+geometry. A drag payload in a diagram editor may carry selected paths. An
+accessible description of a chart point may depend on hit testing. Moving the
+geometry chapter earlier therefore gives those later chapters a stronger shared
+language.
+
+\begin{principlebox}{Do not paint what you cannot name}
+If a visual fact must be selected, dragged, snapped, exported, tested, repainted precisely, or explained in diagnostics, it should exist as geometry before it exists as pixels.
+\end{principlebox}
+
+Swing itself encourages this way of thinking. \api{Graphics2D.draw} accepts a \api{Shape}. \api{Graphics2D.fill} accepts a \api{Shape}. A \api{Shape} can answer \api{contains}, \api{intersects}, and \api{getBounds2D}. \api{AffineTransform} can transform points and shapes. \api{BasicStroke} can turn an outline into a filled shape. \api{Area} can perform boolean operations. The toolkit does not force custom components to draw only with immediate pixel commands. It gives us a geometric vocabulary.
+
+Figure~\ref{fig:geom-shape-vocabulary} shows the chapter's first vocabulary: rectangles, ellipses, paths, transformed paths, and boolean area overlap. These are simple forms, but the same abstractions scale to parcel polygons, diagram connectors, selection outlines, route strokes, chart regions, and paint-editor paths.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomVocabularyFigure}
+\caption{A small shape vocabulary rendered by the companion figure generator. The important point is not artistic complexity; it is that rectangles, ellipses, paths, transformed paths, and areas are first-class values before pixels are drawn.}
+\label{fig:geom-shape-vocabulary}
+\end{figure}
+
+\begin{examplebox}{geometry figures}
+The geometry figures are generated by \api{BookVisualFigures} through \api{BookFigureGenerator}: \geomVocabularyFigure{}, \geomTransformFigure{}, \geomAffineVariantsFigure{}, \geomTransformOrderFigure{}, \geomStrokeFigure{}, \geomAreaOperationsFigure{}, \geomIndexFigure{}, \geomFontMetricsFigure{}, \geomGlyphOutlineFigure{}, and \geomTextTransformFigure. They are intentionally small vector panels so the PDF shows geometry produced by code rather than static illustrations.
+\end{examplebox}
+
+The first habit is to separate coordinate systems. A GIS layer may store projected map coordinates. A paint editor may store document coordinates. A diagram may store model coordinates independent of zoom. A Swing component paints in view coordinates after the component origin and clip have been established. A monitor finally receives device pixels. Conflating these spaces is the root of most geometry bugs.
+
+\termdef{Model space}{the coordinate system in which application geometry is stored} should be chosen for application meaning. In a map it might be meters in a projected coordinate reference system. In a paint editor it might be document points or image pixels. In a diagram editor it might be logical units chosen by the file format. \termdef{View space}{the coordinate system of the Swing component after pan and zoom have been applied} is what the mouse event reports and what \api{Graphics2D} usually receives. \termdef{Device space}{the physical or raster destination coordinate system} is where antialiasing and pixels finally happen.
+
+The model should not be rewritten every time the user zooms. Zoom is a view transform. If the user zooms a map from 100 percent to 400 percent, the roads did not become four times longer in the model. If the user pans a diagram, node positions did not change. When geometry is stored in model space and transformed for painting, the same model can serve export, printing, hit testing, minimaps, and undo.
+
+This rule also improves precision. Repeatedly modifying stored coordinates for zoom and pan introduces rounding and drift. Recomputing view coordinates from stable model coordinates avoids accumulated error. For very large GIS coordinates, the details become more subtle because double precision near large world coordinates may lose small local precision. Even there, the answer is not to let painting mutate the model; it is to choose a stable local origin and transform carefully.
+
+In a paint editor, the same separation distinguishes document edits from viewing. A brush stroke modifies document geometry. Zooming and scrolling modify view state. A selection handle moves model geometry. The handle's screen-size affordance may be painted in view or device-aware coordinates, but the selected shape remains in model space. A user who zooms in should not accidentally thicken the stored stroke unless the tool explicitly edits stroke width.
+
+In a diagram editor, the transform boundary makes connectors tractable. Node centers, anchor points, ports, and connector paths live in model space. The view transform maps them to the screen. Hit testing a connector uses the inverse transform and the connector's hit shape. Snapping a dragged node can happen in model coordinates. Printing can use another transform from model space to page space without changing the diagram.
+
+The second habit is to keep geometry and presentation related but distinct. A road line may have model geometry, visual stroke width, selection halo, label placement, and hit tolerance. These are not one shape. The road's centerline is model geometry. The rendered road is a stroked shape. The hit target may be a wider stroked shape. The selection halo may be another shape. The label bounds may use text layout. Mixing them into one path produces confusing bugs.
+
+The third habit is to treat bounds as summaries, not truth. \api{Shape.getBounds2D} is excellent for fast rejection. If the bounds of a path do not intersect the clip, the path cannot be visible. If the bounds of a candidate feature do not intersect a query rectangle, the feature is unlikely to be selected. But bounds do not describe holes, concave regions, stroke width, or exact curve shape. Bounds are the first question, not the last.
+
+\termdef{Hit testing}{deciding which model object, if any, is under a user input point or region} is geometry in reverse. Painting asks: given model geometry and view state, which pixels should change? Hit testing asks: given input in view space, which model geometry should be considered selected, hovered, dragged, edited, or described? If painting and hit testing use different transforms or different shapes, the user will feel that the program lies.
+
+The fourth habit is to remember that Swing repainting is rectangular. A shape may be curved, but \api{repaint} accepts rectangles or regions represented internally by dirty rectangles. A precise model change should be expanded to a repaint rectangle that covers the old and new visual bounds, including stroke width, selection halo, handles, and antialiasing margin. A rich editor that repaints the whole canvas after every mouse move will feel heavy long before its geometry model is complicated.
+
+The fifth habit is to make geometry observable where it affects behavior. The current zoom, pan, selected objects, active tool, snap mode, hit tolerance, and visible layer set are presentation state. They can be modeled as ordinary values. Corusco can help here: the zoom value can be observable, commands can be enabled from selection state, a task can load geometry in the background, and diagnostics can report the current transform and visible layer count. The shapes themselves remain \api{java.awt.geom} data.
+
+\begin{coruscobox}{geometry state belongs at the presentation boundary}
+Corusco should not replace \api{Path2D}, \api{Area}, or \api{AffineTransform}. It can model the view state around them: zoom, pan, selection, layer visibility, active command, task progress, problem targets, and lifecycle cleanup. The geometry engine and the presentation model should cooperate, not compete.
+\end{coruscobox}
+
+The rest of the chapter is long because geometry failures are often cross-cutting. A transform mistake affects painting, hit testing, scrolling, export, and accessibility. A shape-allocation mistake affects mouse-drag performance. A stroke misunderstanding affects both visual width and selection tolerance. A spatial-index omission affects repaint speed. A winding-rule mistake affects fill, selection, and boolean operations. These topics deserve more than a quick API tour.
+
+\section{Shapes, Paths, Areas, and the Contracts They Imply}
+
+\api{Shape} is an interface, not a class hierarchy that promises one storage strategy. Its core methods answer geometric questions: bounds, containment, intersection, and path iteration. A shape may be a rectangle, ellipse, line, cubic path, text outline, transformed shape, stroked outline, or boolean area. A shape may be cheap or expensive. A component that accepts a \api{Shape} should not assume it can cast the shape to a rectangle or traverse it for free.
+
+The primitive geometric classes come in float and double variants. \api{Point2D.Float} and \api{Point2D.Double} store coordinates at different precision. \api{Rectangle2D.Float} and \api{Rectangle2D.Double} do the same for rectangles. \api{Path2D.Float} and \api{Path2D.Double} store paths with float or double coordinates. The choice is not only about memory. It is about model precision, file format expectations, and how many objects the application stores.
+
+Float paths may be adequate for small local editor coordinates, glyph-like icons, and cached display geometry. Double paths are usually safer for documents, maps, transformed geometry, and anything that will be repeatedly transformed or exported. GIS applications often need even more discipline: projected coordinates can be large enough that local detail needs a translated local origin before rendering. The API gives double precision; the application still chooses coordinate policy.
+
+\api{Line2D} is useful for geometric tests, but drawing a line with a stroke is not the same as containing an area. A mathematical line has no area. A mouse point almost never lies exactly on it. If the user should be able to select the line, the program needs a tolerance. The robust way is often to create a stroked shape from the line or path and test containment against that shape. This is the first place \api{BasicStroke.createStrokedShape} becomes more than an obscure method.
+
+\api{Rectangle2D} is both a shape and a workhorse summary. Its bounds are itself. It supports containment and intersection cheaply. It is the natural type for viewports, repaint regions, spatial-index entries, selection rectangles, node bounds, and label boxes. A rectangle also has traps. \api{contains} and \api{intersects} use geometric rules about open and closed edges that may surprise code expecting integer pixel semantics. Read the contract when exact edge behavior matters.
+
+\api{RoundRectangle2D}, \api{Ellipse2D}, and \api{Arc2D} are useful not only for decorative shapes but for handles, nodes, selection markers, control points, and visual affordances. A resize handle is often an ellipse in view space. A node may be a rounded rectangle in model space. A rotation handle may be an arc. Treating these as shapes allows the same rendering and hit-testing vocabulary to apply.
+
+\api{QuadCurve2D} and \api{CubicCurve2D} represent Bezier curves. They are essential for paint editors, diagram connectors, route smoothing, and typography-like paths. A curve's bounds are not merely the bounds of its endpoints and control points. Java's geometry classes compute useful bounds, but performance-sensitive code may still keep cached bounds at the model level. A path with thousands of curves should not recompute expensive summaries during every mouse move.
+
+\api{Path2D} is the general path class. It can contain move, line, quadratic curve, cubic curve, and close segments. It also has a winding rule. A path can represent an open polyline, a closed polygon, a compound shape, a glyph-like outline, a lasso, or a diagram connector. The class is mutable, which makes it convenient for construction and dangerous as shared model state unless ownership is clear.
+
+The two winding rules, \api{WIND\_EVEN\_ODD} and \api{WIND\_NON\_ZERO}, decide how interiors are computed for paths that overlap themselves or contain nested contours. Paint editors and GIS applications need to care. The same drawn outline can fill differently under the two rules. If the file format has a winding rule, preserve it. If a tool creates paths, decide which rule it creates and test self-intersecting cases.
+
+\begin{lstlisting}[caption={Building a compound path with an explicit winding rule.}]
+Path2D.Double island = new Path2D.Double(Path2D.WIND_EVEN_ODD);
+island.append(new Ellipse2D.Double(20, 20, 160, 120), false);
+island.append(new Ellipse2D.Double(70, 50, 60, 50), false);
+
+if (island.contains(modelPoint)) {
+    selectRegion();
+}
+\end{lstlisting}
+
+The example is small, but the rule is large. A shape with a hole is not a list of independent outlines. It is a shape with an interior rule. Hit testing, filling, export, and boolean operations should agree about that rule. Otherwise the user sees a lake hole in a map but cannot click through it, or a paint editor fills a donut as a disk.
+
+\api{PathIterator} is the way a \api{Shape} reveals its path segments. It can expose the segments of a path, transformed by an optional \api{AffineTransform}. \api{FlatteningPathIterator} approximates curves with line segments using a flatness parameter. This is useful for hit testing, length approximation, dash-like algorithms, simplification, export to line-only formats, and spatial indexing. It is not free. Flattening a complex path during every paint call can dominate rendering time.
+
+\begin{lstlisting}[caption={Computing a rough path length with a flattening iterator.}]
+static double approximateLength(Shape shape, double flatness) {
+    PathIterator it = new FlatteningPathIterator(
+            shape.getPathIterator(null), flatness);
+    double[] coords = new double[6];
+    double moveX = 0.0;
+    double moveY = 0.0;
+    double lastX = 0.0;
+    double lastY = 0.0;
+    double length = 0.0;
+    while (!it.isDone()) {
+        switch (it.currentSegment(coords)) {
+            case PathIterator.SEG_MOVETO -> {
+                moveX = lastX = coords[0];
+                moveY = lastY = coords[1];
+            }
+            case PathIterator.SEG_LINETO -> {
+                length += Point2D.distance(lastX, lastY, coords[0], coords[1]);
+                lastX = coords[0];
+                lastY = coords[1];
+            }
+            case PathIterator.SEG_CLOSE -> {
+                length += Point2D.distance(lastX, lastY, moveX, moveY);
+                lastX = moveX;
+                lastY = moveY;
+            }
+            default -> throw new AssertionError("flattened iterator");
+        }
+        it.next();
+    }
+    return length;
+}
+\end{lstlisting}
+
+This listing illustrates three performance lessons. Allocate the coordinate array once per traversal. Choose flatness deliberately. Cache results if the shape is stable and length is needed often. A paint editor that shows path length in a status bar may compute it after edits, not during every repaint. A GIS viewer may compute simplified line geometry per zoom level rather than flattening every feature at every frame.
+
+\api{Area} represents a shape as a region capable of boolean operations: add, subtract, intersect, and exclusive-or. It is powerful and can be expensive. It is appropriate for combining selections, clipping complex regions, calculating overlapping filled shapes, converting compound paths to regions, and implementing constructive geometry features. It is not a cheap replacement for ordinary bounds tests.
+
+\begin{lstlisting}[caption={Boolean geometry for a selection region.}]
+Area selection = new Area(lassoShape);
+Area locked = new Area(lockedLayerShape);
+selection.subtract(locked);
+
+if (!selection.isEmpty() && selection.intersects(candidateBounds)) {
+    testCandidate(selection);
+}
+\end{lstlisting}
+
+The performance pattern in the listing is intentional. Use cheap bounds first. Use \api{Area} when the exact region matters. Many applications can do broad-phase rejection with rectangles, then exact testing with shapes or areas only for the smaller candidate set. This broad-phase/narrow-phase split appears repeatedly in rich visual software.
+
+\api{Shape.contains} and \api{Shape.intersects} are not the same question. \api{contains} asks whether a point or rectangle lies inside the shape. \api{intersects} asks whether the shape intersects a rectangle. A road centerline represented by an open path may not contain any point in the useful sense. A stroked road shape can. A rectangle that intersects a concave polygon's bounds may not intersect the polygon. Do not infer exact geometry from a bounds hit.
+
+\begin{detailbox}{Bounds are a filter, not a verdict}
+Use \api{getBounds2D} to reject impossible candidates quickly. Use \api{contains}, \api{intersects}, stroked shapes, path tests, or \api{Area} for the exact question. A fast false-positive filter is excellent; treating it as truth is a selection bug.
+\end{detailbox}
+
+Shape mutability should be designed, not inherited accidentally. \api{Path2D} is mutable. \api{Rectangle2D.Double} is mutable. \api{Point2D.Double} is mutable. If these objects are stored in a model and shared with renderers, tools, and undo stacks, mutation can leak through the system. Immutable records that contain primitive coordinates or defensive copies can be safer at the model boundary. Mutable geometry objects can still be used as local builders or caches.
+
+A diagram node may be represented by an immutable record with x, y, width, and height. The view can create a \api{Rectangle2D.Double} during painting or cache one while the node version remains unchanged. A paint editor path may be stored as immutable segment data and converted to \api{Path2D} for rendering. These designs cost a little code and save many aliasing bugs.
+
+There is no universal rule that every shape must be immutable. Interactive editing often benefits from a mutable working path while the user drags. The key is scope. A tool-owned temporary path can be mutable and short-lived. A model-owned path in the undo history should have stronger ownership. A cached path should know when it is invalid. Unnamed shared mutable geometry is the danger.
+
+Text outlines are also shapes. \api{TextLayout.getOutline} returns a shape for the laid-out text. This is useful for decorative text, selection silhouettes, collision detection, and export. It is not the right way to display ordinary labels in a Swing form. Ordinary text should usually be rendered by Swing components or text APIs that understand baseline, accessibility, and Look-and-Feel. Rich visual apps use text outlines when text becomes part of the scene geometry.
+
+Shape serialization should be considered early. Java's geometry classes are not always the file format you want. A GIS application may write GeoJSON, WKB, or a domain-specific format. A paint editor may write SVG-like path commands. A diagram editor may store nodes and connectors separately. \api{PathIterator} is helpful for export, but the model should preserve semantic information when the file format needs it.
+
+The shape vocabulary is therefore both API and architecture. A \api{Path2D} is a convenient Java object. A route, parcel, brush stroke, lasso, connector, and glyph are application concepts. The code should not lose the application concept merely because \api{Graphics2D} ultimately draws a \api{Shape}. The better the concept is named, the easier it is to optimize and test.
+
+\section{Affine Transform Algebra Without Superstition}
+
+\api{AffineTransform} represents a mapping that preserves lines and parallelism. It can translate, scale, rotate, shear, and combine those operations. In two dimensions it is usually described by a matrix. The API stores six numbers because the final row of the homogeneous coordinate matrix is fixed. Those six numbers are enough to map a point \((x,y)\) to another point \((x',y')\).
+
+Most transform bugs are not caused by difficult mathematics. They are caused by unnamed coordinate systems and composition order. A developer writes \api{scale} then \api{translate}; another writes \api{translate} then \api{scale}; both appear plausible; one makes panning scale unexpectedly. The fix is not memorizing tricks. The fix is to name the spaces being mapped and test the transform with a few known points.
+
+Figure~\ref{fig:geom-transform-algebra} shows the usual rich-client chain. Model coordinates become view coordinates through pan, zoom, and perhaps rotation. View coordinates become device coordinates through the graphics configuration and rendering pipeline. Some applications add world coordinates, page coordinates, layer coordinates, symbol coordinates, or tile coordinates. The chain is manageable when each link has a name.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomTransformFigure}
+\caption{An affine transform chain should be shared by painting, hit testing, selection, tooltips, printing, and screenshots. The figure is simple because the discipline is the point.}
+\label{fig:geom-transform-algebra}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomAffineVariantsFigure}
+\caption{Translation, scale, rotation, and shear are different promises. They all preserve straight lines, but they do not preserve the same visual facts, so code must name the coordinate space it is changing.}
+\label{fig:geom-affine-variants}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomTransformOrderFigure}
+\caption{Transform composition order is not a notation detail. Translating and then rotating is a different map from rotating and then translating; tests should verify named points rather than rely on memory.}
+\label{fig:geom-transform-order}
+\end{figure}
+
+\termdef{Forward transform}{the mapping from model space toward view or device space} is used for painting. \termdef{Inverse transform}{the mapping from view or device space back toward model space} is used for hit testing, selection, drag interpretation, and tooltips. If the forward transform exists but the inverse is computed differently, the component has two truths. Users discover the disagreement by clicking the thing they can see and selecting something else.
+
+\begin{lstlisting}[caption={A viewport transform that exposes both directions.}]
+public final class ViewportTransform {
+    private final AffineTransform modelToView;
+    private final AffineTransform viewToModel;
+
+    public ViewportTransform(double scale, double tx, double ty) {
+        modelToView = new AffineTransform();
+        modelToView.translate(tx, ty);
+        modelToView.scale(scale, scale);
+        try {
+            viewToModel = modelToView.createInverse();
+        } catch (NoninvertibleTransformException e) {
+            throw new IllegalArgumentException("Non-invertible viewport", e);
+        }
+    }
+
+    public Shape toView(Shape modelShape) {
+        return modelToView.createTransformedShape(modelShape);
+    }
+
+    public Point2D toModel(Point viewPoint) {
+        return viewToModel.transform(viewPoint, null);
+    }
+}
+\end{lstlisting}
+
+This class is intentionally small, but it contains a major design rule: compute and store the inverse with the forward transform. A transform with scale zero is not invertible. A transform with extreme values may be numerically dangerous. If hit testing depends on inversion, failure should appear when the viewport is constructed, not during a mysterious click.
+
+Composition order matters. In Java's \api{AffineTransform}, methods such as \api{translate}, \api{scale}, and \api{rotate} concatenate transforms to the existing transform. The practical result should be tested with points rather than argued from memory. If the code says "pan by 20 view units after scaling," write a test point. If it says "scale around the mouse location," write a test that the model point under the mouse remains under the mouse after zoom.
+
+\begin{lstlisting}[caption={Zooming around a fixed view point.}]
+ViewportTransform zoomAround(Point2D viewAnchor, double factor) {
+    Point2D modelAnchor = toModel(new Point(
+            (int) viewAnchor.getX(), (int) viewAnchor.getY()));
+
+    AffineTransform next = new AffineTransform(modelToView);
+    next.translate(viewAnchor.getX(), viewAnchor.getY());
+    next.scale(factor, factor);
+    next.translate(-viewAnchor.getX(), -viewAnchor.getY());
+
+    Point2D after = next.transform(modelAnchor, null);
+    double dx = viewAnchor.getX() - after.getX();
+    double dy = viewAnchor.getY() - after.getY();
+    next.translate(dx, dy);
+    return new ViewportTransform(next);
+}
+\end{lstlisting}
+
+The listing sketches the idea rather than prescribing one class design. Zoom around the cursor is a user promise: the model point under the cursor stays there. The implementation can use matrix algebra, transform concatenation, or a viewport record that stores scale and translation separately. The promise should be tested. Otherwise zoom bugs become folklore.
+
+Points and vectors transform differently. A point has position and is affected by translation. A vector has direction and magnitude and should usually ignore translation. \api{AffineTransform.transform} maps points. \api{AffineTransform.deltaTransform} maps vectors. This distinction matters for drag deltas, velocity, normal vectors, handle offsets, and symbol sizes. If the user drags ten view units, the model delta is not the same question as "where is this view point in model space?"
+
+\begin{lstlisting}[caption={Converting a drag delta without applying translation.}]
+Point2D viewDelta = new Point2D.Double(eventDx, eventDy);
+Point2D modelDelta = inverseViewTransform.deltaTransform(viewDelta, null);
+moveSelectedObjects(modelDelta.getX(), modelDelta.getY());
+\end{lstlisting}
+
+Rotation adds another common trap. A rectangle in model space transformed by a rotation is no longer axis-aligned in view space. Its \api{getBounds2D} after transformation is the axis-aligned bounds of the rotated shape, not the original rectangle. That may be exactly what repaint needs and exactly wrong for editing handles. A rotated node may need both its transformed outline and its local handle geometry.
+
+Shear is less common in ordinary UI but appears in italic-like effects, map projections, document transforms, and certain design tools. Treat it as part of the same algebra. Any code that assumes scale and translation only should say so. A method named \api{modelToViewScaleOnly} is honest. A method named \api{modelToView} that silently breaks under rotation or shear is not.
+
+Transforms can be applied to the graphics context or to shapes. Calling \api{g2.transform(modelToView)} changes how subsequent drawing is interpreted. Calling \api{modelToView.createTransformedShape(shape)} creates a transformed shape. The first approach is often efficient for painting many objects in the same coordinate system. The second is useful for hit shapes, caching, bounds, and situations where one transformed shape is needed as data. Do not mix the two unknowingly or a shape may be transformed twice.
+
+\begin{lstlisting}[caption={Painting many model shapes through one graphics transform.}]
+Graphics2D copy = (Graphics2D) g.create();
+try {
+    copy.transform(viewport.modelToView());
+    for (Feature feature : visibleFeatures) {
+        copy.draw(feature.geometry());
+    }
+} finally {
+    copy.dispose();
+}
+\end{lstlisting}
+
+When the graphics context is transformed, stroke width is transformed too. This may be correct or wrong depending on the use case. In a GIS viewer, a river symbol may grow visually with zoom if the stroke is model-space width. A road casing may have a screen-space minimum width independent of zoom. A selection halo may remain a constant number of view pixels. These are style decisions, not API accidents.
+
+Screen-space strokes under model transforms need care. One strategy is to draw model geometry with a model-space stroke, then draw overlay handles and selection affordances after restoring the view transform. Another strategy is to compute an approximate model-space stroke width from the current scale. Under rotation and non-uniform scale, the approximation becomes more complicated. The correct strategy depends on whether the visual mark represents real-world size or UI affordance size.
+
+Printing and export expose transform assumptions. A screen transform may include pan and zoom chosen by the user. A print transform may map model bounds to page bounds. An SVG export may want model coordinates without screen pan. A screenshot wants the current view. If all geometry code assumes there is one global transform, export features become painful. Keep transform chains explicit enough that each destination can choose one.
+
+Accessibility can also use geometry. A diagram editor may expose accessible bounds for selected nodes. A map may describe the feature under the pointer. A chart may provide value annotations. These facts require model-to-view mapping. If accessibility code duplicates transform arithmetic, it will drift. The same viewport transform used for painting and hit testing should serve semantic bounds where possible.
+
+Transforms should be part of diagnostics. A support bundle for a rich visual screen can report model bounds, view bounds, scale, translation, rotation, selected object count, visible layer count, and device scale. When a user reports "clicks are offset after zoom," these numbers matter. Without them, the bug report is merely a screenshot and a guess.
+
+\begin{coruscobox}{viewport state as observable state}
+A Corusco value can hold zoom, pan, active layer set, snap mode, or selected ids. Commands can derive enabled state from those values. The \api{AffineTransform} itself can remain a local rendering object; the semantic viewport state around it deserves observable identity.
+\end{coruscobox}
+
+Tests for transform algebra are cheap and valuable. Choose a small transform, map known model points to view points, invert them, and assert round trips within tolerance. Test zoom-around-anchor. Test drag delta conversion. Test rotated bounds when the application supports rotation. These tests run without Swing and catch bugs that otherwise appear as visual weirdness.
+
+\section{Strokes, Outlines, Areas, and Selection Geometry}
+
+\api{BasicStroke} is often introduced as "how to set line width." That description is too small. A stroke defines how an abstract path becomes an outline: width, end caps, joins, miter limit, dash array, and dash phase. When \api{Graphics2D.draw(shape)} is called with a stroke, Java 2D conceptually creates the stroked outline and fills it. The method \api{BasicStroke.createStrokedShape} exposes that outline as a \api{Shape}.
+
+This is essential for hit testing. A mathematical path has no thickness. A user sees a thick road, connector, brush stroke, or route and expects to select the visible object. The selection shape should usually be a stroked shape, often wider than the visible stroke. Figure~\ref{fig:geom-stroked-shape} shows a centerline and a wide hit shape derived from it.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomStrokeFigure}
+\caption{\api{createStrokedShape} converts a centerline path into a filled shape suitable for hit testing, selection halos, route tolerance, and visual outlines.}
+\label{fig:geom-stroked-shape}
+\end{figure}
+
+\begin{lstlisting}[caption={Testing a visible route with a wider hit stroke.}]
+final class RouteGeometry {
+    private final Path2D centerline;
+    private final Shape hitShape;
+
+    RouteGeometry(Path2D centerline, double tolerance) {
+        this.centerline = (Path2D) centerline.clone();
+        BasicStroke hitStroke = new BasicStroke((float) tolerance * 2.0f,
+                BasicStroke.CAP_ROUND,
+                BasicStroke.JOIN_ROUND);
+        this.hitShape = hitStroke.createStrokedShape(centerline);
+    }
+
+    boolean hit(Point2D modelPoint) {
+        return hitShape.contains(modelPoint);
+    }
+}
+\end{lstlisting}
+
+The hit tolerance belongs to a coordinate system. A ten-meter road-selection tolerance in a GIS model is different from a six-pixel finger tolerance in a touch interface. If hit testing happens in model space, convert view-space tolerance to model-space tolerance or create the hit shape in view space. Do not mix the numbers casually.
+
+Caps decide what happens at the end of an open path. \api{CAP\_BUTT} ends exactly at the endpoint. \api{CAP\_SQUARE} extends by half the stroke width. \api{CAP\_ROUND} adds a semicircle. A route editor may prefer round caps because they match the visible route. A CAD-like editor may prefer butt caps because exact endpoints matter. Hit testing should match the user's visual expectation.
+
+Joins decide how corners behave. \api{JOIN\_MITER} extends outer edges until they meet, subject to the miter limit. \api{JOIN\_BEVEL} cuts the corner. \api{JOIN\_ROUND} rounds it. Sharp miter joins can create long spikes for acute angles. That may be correct for certain drawing styles and surprising for hit shapes. A hit stroke often uses round joins to avoid tiny corner artifacts.
+
+Dashes also have geometry. A dashed line is not merely a visual texture. The dash array and phase determine which parts of the path are painted. If hit testing uses the undashed centerline, the user can select the invisible gaps. That may be acceptable if the object is conceptually continuous. It is wrong if the user is editing individual dash marks. Decide deliberately.
+
+Selection halos are often stroked shapes. A selected route may draw its normal stroke, then a wider translucent stroke beneath or above it. A selected polygon may draw an outline and handles. A selected text object may draw text bounds, baseline, and anchor. Each selection mark has geometry and repaint bounds. A halo that extends outside the object's model bounds must be included when repainting.
+
+\begin{lstlisting}[caption={Computing repaint bounds for old and new selection halos.}]
+static Rectangle repaintBounds(Shape oldShape, Shape newShape, Stroke haloStroke) {
+    Area dirty = new Area(haloStroke.createStrokedShape(oldShape));
+    dirty.add(new Area(haloStroke.createStrokedShape(newShape)));
+    Rectangle bounds = dirty.getBounds();
+    bounds.grow(2, 2);
+    return bounds;
+}
+\end{lstlisting}
+
+The example uses \api{Area} because it is easy to read. A performance-critical editor might avoid constructing an \api{Area} and union expanded bounds instead. The design question is the same: repaint the old visual mark and the new visual mark, including stroke width and antialiasing margin.
+
+Boolean operations with \api{Area} are powerful for selections. A lasso can add to a selection. Holding a modifier can subtract. Intersect mode can keep only objects inside both an existing selection and a new shape. A paint editor can subtract one vector shape from another. A GIS tool can show overlap between administrative areas. The API makes these operations accessible, but the model must still know what the resulting geometry means.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomAreaOperationsFigure}
+\caption{\api{Area} turns shape arithmetic into visible selection and editing operations: union, subtraction, intersection, and exclusive-or. The operations are exact enough to be useful and expensive enough to deserve broad-phase filtering.}
+\label{fig:geom-area-operations}
+\end{figure}
+
+\api{Area} can be expensive because boolean geometry may split paths, add curves, and produce complex outlines. Do not use it as the first test for every object in a huge scene. Use bounding boxes, spatial indexes, layer filters, and simple containment tests first. Use \api{Area} when exact region algebra is necessary and the candidate set is small enough.
+
+Hit testing often uses a broad-phase/narrow-phase pipeline. The broad phase asks cheap questions: is the layer visible, is the object selectable, do its bounds intersect the query rectangle, is it near the current viewport? The narrow phase asks exact questions: does the stroked shape contain the point, does the polygon contain the lasso center, does the area intersect the selection region? This pipeline is the difference between a map that feels instant and one that stalls on every mouse move.
+
+\begin{lstlisting}[caption={Broad-phase bounds before exact hit testing.}]
+Optional<Feature> hit(Point2D modelPoint, double viewTolerance) {
+    double modelTolerance = toleranceToModel(viewTolerance);
+    Rectangle2D query = new Rectangle2D.Double(
+            modelPoint.getX() - modelTolerance,
+            modelPoint.getY() - modelTolerance,
+            modelTolerance * 2.0,
+            modelTolerance * 2.0);
+
+    return index.query(query).stream()
+            .filter(Feature::selectable)
+            .filter(f -> f.hitShape(modelTolerance).contains(modelPoint))
+            .findFirst();
+}
+\end{lstlisting}
+
+The listing hides an important cache question. \api{hitShape(modelTolerance)} may allocate. If the tolerance is stable over many mouse moves, cache by tolerance and feature version. If it changes with zoom, cache at the viewport level. If it changes continuously, compute cheaply or switch to distance-to-segment math for polylines. Geometry APIs give options; performance depends on when they are used.
+
+Distance-based tests can be better than stroked-shape tests for some polylines. A route editor may compute the nearest segment and distance, then choose the closest feature under tolerance. That gives better behavior when several roads overlap visually. \api{createStrokedShape} answers containment; it does not rank candidates. A full hit-test policy may need both containment and ordering.
+
+Shape ordering matters. If two objects overlap, which one is selected? Many editors use z-order: the topmost visible object wins. Maps may use layer priority. Diagram editors may prefer handles over shapes, selected objects over unselected objects, and small objects over large backgrounds. Hit testing should follow the same ordering the user sees. Otherwise a large background polygon steals clicks from a small visible handle.
+
+Handles are geometry too, but often in view space. A resize handle may be eight logical pixels wide regardless of zoom. If the user zooms out, the model object becomes small but the handle remains usable. That means the handle shape may be computed after model-to-view transformation. When the handle is dragged, the movement must be converted back to model space. This is a common source of inverse-transform bugs.
+
+Snapping is geometry with policy. A paint editor may snap to endpoints, midpoints, tangents, grid lines, guide lines, or intersections. A diagram editor may snap to ports and alignment lines. A GIS editor may snap to vertices within a tolerance. The snap candidates should be indexed, filtered by view tolerance, and expressed in model coordinates. The visual snap indicator may be view-space geometry.
+
+\api{createStrokedShape} is also useful for converting outlines to fills. A paint editor may let the user "expand stroke" so the visible outline becomes an editable filled path. A GIS tool may buffer a line into a corridor. A diagram editor may generate a thick connector shape for export. The resulting shape should be treated as new geometry, with its own winding rule and path complexity.
+
+Do not confuse visual stroke width with semantic buffer distance. A map line drawn with a two-pixel stroke is a symbol. A buffer of ten meters around a road is geometry. Both can be represented with stroked shapes, but one is screen style and the other is model analysis. The coordinate system and units decide which is which.
+
+\begin{coruscobox}{selection as state, hit geometry as implementation}
+Corusco can model selected ids, active tool, snap mode, and command enablement. The hit shapes used to compute those states can remain local \api{java.awt.geom} implementation details. Keep user-visible state observable; keep short-lived geometry helpers cheap and scoped.
+\end{coruscobox}
+
+Testing selection geometry should include tolerance boundaries. A point just inside a stroked hit shape should select. A point just outside should not. A point in the hole of a compound shape should behave according to the winding rule. A handle should be clickable at several zoom levels. These tests are small and catch bugs that would otherwise be described as "selection feels off."
+
+\section{Advanced Font Geometry, Measurement, and OpenType Boundaries}
+
+Text is geometry. This is easy to forget because Swing makes text look like a property: \api{setText}, \api{setFont}, \api{drawString}. A label says "Name", a button says "Save", a table cell says "Overdue", and the developer is tempted to treat the string as a rectangle with a convenient width. That habit survives only while text is small, Latin, horizontal, unscaled, unrotated, unselected, and never exported. Rich visual applications do not live in that world. A map has labels that collide with roads and parcels. A diagram editor has node labels that rotate with the node or remain upright while the canvas rotates. A paint editor has editable text objects, text outlines, baseline handles, and font resources. A chart has tick labels, legends, annotations, and collision rules. In all these cases, text must be measured, shaped, positioned, clipped, hit-tested, cached, and sometimes converted to outlines.
+
+\termdef{Font geometry}{the positions, baselines, advances, outlines, visual bounds, logical bounds, and layout decisions produced when character data becomes glyphs} is not the same as character data. A Java \api{String} is a sequence of UTF-16 code units. A user-perceived character may require more than one code point. A glyph may represent several characters through a ligature. A single character may be drawn by several glyphs when a script requires marks or decomposition. A glyph may overhang its advance. A line of text may have bidirectional runs. A font fallback may change metrics in the middle of a label. A program that measures text by multiplying character count by an average width has already lost.
+
+The first distinction is between a character and a glyph. A \termdef{character}{a unit of encoded text with semantic meaning} belongs to text. A \termdef{glyph}{a visual form chosen by a font and layout engine to represent text} belongs to rendering. The mapping is not one-to-one. The word "office" may use a ligature for two or three letters. A letter with an accent may be stored as one composed code point or as a base letter plus combining mark. Arabic letters change shape according to context. Devanagari and Thai layout cannot be understood by indexing Java chars. Emoji sequences and variation selectors make the same lesson visible to modern users. Swing's text components and Java 2D text APIs know more about these rules than most hand-written measurement code.
+
+The second distinction is between metrics and outlines. \termdef{Metrics}{numbers that describe how text advances, aligns, and reserves space} are not the same as \termdef{outline geometry}{the actual filled shape of glyph ink}. A line can have ascent, descent, leading, advance, logical bounds, visual bounds, pixel bounds, caret positions, and hit-test positions. These numbers answer different questions. "How far should the next label start?" is an advance question. "What rectangle should be repainted?" is a visual-bounds or pixel-bounds question. "Where should the caret go?" is a text-layout question. "Does this map label collide with a road symbol?" may be an outline or conservative bounds question. Treating all of them as "string width" is the source of many small errors that accumulate into an unprofessional visual surface.
+
+Figure~\ref{fig:geom-font-metrics} names the basic geometry. The baseline is the anchor used by most text drawing calls. Ascent extends above it, descent extends below it, and the visual bounds describe the ink more precisely than the line box. The label may have left and right overhangs that are outside a naive starting x-coordinate and advance width.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomFontMetricsFigure}
+\caption{Font measurement is geometric. Baseline, ascent, descent, advance, and visual bounds answer different questions, and rich visual applications must choose the right one for painting, hit testing, label collision, and repainting.}
+\label{fig:geom-font-metrics}
+\end{figure}
+
+The third distinction is between Swing component text and canvas text. A \api{JLabel}, \api{JButton}, \api{JTextField}, or \api{JTable} cell renderer lets the component UI delegate perform text layout according to the current Look-and-Feel, font, enabled state, component orientation, mnemonic rules, and HTML support. A custom map canvas or paint editor that calls \api{Graphics2D.drawString} assumes responsibility for text placement. It may still rely on Java's text layout engine, but the component hierarchy will not manage the label collision, repaint bounds, baseline handles, or exported outlines. The custom component has crossed into geometry.
+
+The usual beginner API is \api{FontMetrics}. It is useful, old, and often enough for simple component-adjacent painting. \api{FontMetrics.stringWidth} can answer a conservative advance-width question for a particular \api{Graphics} context. \api{getAscent}, \api{getDescent}, and \api{getHeight} are convenient when aligning one line of text in a small decoration. But \api{FontMetrics} is not a full text-layout system. It does not expose every shaped glyph decision, caret hit, bidirectional boundary, or outline. A mature visual application should know when \api{FontMetrics} is a convenience and when \api{TextLayout} or \api{GlyphVector} is the correct vocabulary.
+
+\api{FontRenderContext} is the missing object in many text bugs. It records rendering-context facts that affect measurement, especially transform and antialiasing/fractional-metrics choices. A font measured with one render context may not have identical bounds under another. The difference is usually small, but small differences matter in dense diagrams, labels on maps, chart axes, and screenshot comparisons. If the application caches text measurements, the cache key must include the facts that can change those measurements: font, text, relevant attributes, locale or script assumptions when applicable, render context, and sometimes transform scale.
+
+\begin{lstlisting}[caption={Choosing measurement vocabulary deliberately.}]
+void paintLabel(Graphics2D g, String text, Point2D anchor, Font font) {
+    FontRenderContext frc = g.getFontRenderContext();
+    TextLayout layout = new TextLayout(text, font, frc);
+
+    float x = (float) anchor.getX();
+    float baseline = (float) anchor.getY();
+    Rectangle2D visual = layout.getBounds();
+    Shape repaintShape = new Rectangle2D.Double(
+            x + visual.getX() - 2.0,
+            baseline + visual.getY() - 2.0,
+            visual.getWidth() + 4.0,
+            visual.getHeight() + 4.0);
+
+    layout.draw(g, x, baseline);
+    rememberVisualBounds(repaintShape.getBounds2D());
+}
+\end{lstlisting}
+
+This listing does not claim that every label must allocate a \api{TextLayout} during painting. It shows which facts must exist somewhere. The anchor is a baseline point, not the top-left corner of a box. The visual bounds are relative to the baseline origin. The repaint shape expands the visual bounds for antialiasing. In production code, repeated labels may use cached layouts or cached bounds. The cache is still derived from this vocabulary.
+
+\api{TextLayout} is the safest general-purpose API for laid-out text fragments in a custom graphics surface. It handles styled text through \api{AttributedCharacterIterator}, supports advances and bounds, draws itself, exposes carets, can answer character hit tests, and respects the \api{FontRenderContext}. It is especially important for text that may contain complex scripts, bidirectional runs, or style attributes. A program that implements text editing on a canvas should be very reluctant to replace \api{TextLayout} with hand arithmetic.
+
+\api{GlyphVector} is lower-level. It represents glyphs chosen from a font with positions. It can expose glyph outlines and visual bounds. It is appropriate when the application needs glyph-level geometry: converting a text object into vector outlines, collision testing logo-like text, drawing text along a path, building custom selection shapes, or exporting outlines to a vector format that should not depend on font availability. It is less appropriate as a substitute for text editing semantics. Once text becomes glyph outlines, the program has lost much of the user's text: reading order, caret movement, language, accessibility, searchability, and editability require separate preservation.
+
+Figure~\ref{fig:geom-glyph-outline} shows a small glyph vector as ordinary shape geometry. The outline can be filled, stroked, transformed, and hit-tested. That power is real, but it is also dangerous if used too early. Text should remain text while the user edits it and while accessibility or search needs it. Outlines are a rendering or export representation unless the user explicitly converts text to curves.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomGlyphOutlineFigure}
+\caption{\api{GlyphVector} exposes glyph outlines as shapes. This is valuable for collision geometry, custom selection, logos, and export, but it should not replace editable text state unless conversion to curves is the intended operation.}
+\label{fig:geom-glyph-outline}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomTextTransformFigure}
+\caption{Text measurement happens in local text geometry before the canvas transform is applied. The final repaint rectangle is the axis-aligned bounds of the transformed visual bounds, not merely the untransformed string width.}
+\label{fig:geom-text-transform-bounds}
+\end{figure}
+
+Consider a GIS label. The model feature has a name and perhaps a priority. The map view has scale, rotation, projection, visible layers, and collision policy. The style has font family, size, color, halo, placement rule, and fallback policy. The layout engine chooses a candidate position and measures the label. The collision pass compares it with other labels and features. The renderer draws the label, perhaps with a halo created by stroking the glyph outline or by drawing text several times around the baseline. The hit tester may need to answer which label is under the pointer. A support overlay may show label candidates, accepted labels, rejected labels, and their bounds. This workflow is impossible to implement well if the program sees text as only a string and x-y point.
+
+Consider a paint editor. A text object has an editing state and a committed object state. While editing, Swing text components or a specialized text editor may own selection, caret, input method composition, undo, and accessibility. When committed, the document may store text, font attributes, transform, and layout bounds. If the user chooses "convert to outlines," the editor may create \api{GlyphVector} outlines and replace the text object with paths. That operation should be explicit and undoable, because it changes semantics. An outlined word can be scaled and edited as curves, but it is no longer searchable text and no longer follows font substitution.
+
+Consider a diagram editor. Node labels should usually remain upright and readable even when the canvas is zoomed. If the whole canvas can rotate, the diagram must decide whether labels rotate with nodes, remain screen-upright, or use a hybrid policy. The label's anchor point may be in model coordinates while the glyphs are drawn in view coordinates. Selection handles may be view-space shapes. Repainting must include the label's visual bounds under the current transform. A stale label measurement cache can make selection rectangles lag behind zoom or theme changes.
+
+Consider chart axes. Tick labels are often small and numerous. Rotated labels need bounds after transform, not before. Numeric shaping and locale can change glyphs. Font fallback can change widths. Dense axes need collision and elision rules. Rendering every candidate label with a fresh \api{TextLayout} during every repaint may allocate heavily. Caching by tick text, font, render context, and rotation bucket may be enough. The chart does not need a full typesetting engine, but it does need a measurement discipline.
+
+\begin{detailbox}{advance, visual bounds, logical bounds, and pixel bounds}
+The advance says where the next text starts. Visual bounds describe the ink in user-space coordinates and may have negative x or y offsets relative to the baseline origin. Logical bounds describe layout reservation and line progression. Pixel bounds describe rasterized coverage for a particular render context and location. Choose the one that matches the question. A repaint rectangle should usually be based on visual or pixel bounds with margin. Inline layout should usually advance by advance. Caret movement should come from text layout, not from visual bounds.
+\end{detailbox}
+
+The most common measurement error is to center text using only \api{FontMetrics.stringWidth} and ascent. It may look acceptable for simple labels, but it ignores overhangs, fractional metrics, complex shaping, and visual bounds. If a label must be visually centered inside a shape, measure the layout bounds and remember that those bounds are relative to the baseline. The y-coordinate is especially easy to get wrong: drawing at y draws the baseline, not the top.
+
+\begin{lstlisting}[caption={Centering text by visual bounds instead of pretending y is top.}]
+static void drawCentered(Graphics2D g, Shape container, String text, Font font) {
+    FontRenderContext frc = g.getFontRenderContext();
+    TextLayout layout = new TextLayout(text, font, frc);
+    Rectangle2D bounds = layout.getBounds();
+    Rectangle2D box = container.getBounds2D();
+
+    float x = (float) (box.getCenterX() - bounds.getCenterX());
+    float baseline = (float) (box.getCenterY() - bounds.getCenterY());
+    layout.draw(g, x, baseline);
+}
+\end{lstlisting}
+
+This centering rule is not always the desired typographic rule. Some interfaces prefer optical centering. Some badges align by cap height. Some numeric displays align by tabular figures and baseline. The point is that the program should be explicit. A production label placement engine may define anchor policies: baseline-left, baseline-center, visual-center, box-center, cap-center, outside-north, outside-east, path-relative, or map-upright. Each policy should name which metric it uses.
+
+The \api{LineMetrics} API is useful when the application needs line-level facts such as ascent, descent, leading, underline position, strikethrough position, and baseline offsets. \api{TextLayout} exposes similar line facts for a laid-out fragment. A custom rich text renderer should not invent underline position from a magic constant. Underline, strike-through, and highlight geometry should come from font metrics or layout. This is especially important under zoom and high-DPI rendering because a one-pixel guess may become visibly wrong.
+
+Text highlights are geometry too. A text editor highlight can be a set of rectangles. A rotated canvas text highlight may be a transformed shape. A text selection in a paint object may use \api{TextLayout.getCaretShapes} or \api{TextLayout.getLogicalHighlightShape}. If the program draws selection by filling a naive rectangle from x to x plus string width, it will fail on bidirectional text and combining marks. Even for English, it may not match the actual glyph run.
+
+\begin{lstlisting}[caption={Using TextLayout for hit testing and caret geometry.}]
+TextLayout layout = new TextLayout(text, font, frc);
+TextHitInfo hit = layout.hitTestChar(
+        (float) (mouseX - originX),
+        (float) (mouseY - baselineY));
+Shape[] caret = layout.getCaretShapes(hit.getInsertionIndex());
+
+for (Shape shape : caret) {
+    g.fill(AffineTransform.getTranslateInstance(originX, baselineY)
+            .createTransformedShape(shape));
+}
+\end{lstlisting}
+
+The listing is deliberately small. A real editor must manage lines, paragraphs, input methods, selection ranges, bidi levels, and undo. But the direction is correct: caret geometry comes from layout. It is not a guessed vertical line at character index times average width. The same rule applies when labels become editable in a diagram or paint editor. Editing text is one of the places where using ordinary Swing text components as an overlay can be more robust than hand-implementing a text editor inside a canvas.
+
+TrueType and OpenType font files enter the story when the application cannot rely on platform fonts. A diagram editor may need a bundled icon or drafting font. A paint editor may load user-selected fonts. A business app may need brand typography in screenshots and generated reports. Java can create fonts with \api{Font.createFont} from a file or input stream, and the resulting font can be derived at a particular size and style. The font may also be registered with the local graphics environment so logical family lookup can find it during the process.
+
+\begin{lstlisting}[caption={Loading a bundled TrueType font resource deliberately.}]
+static Font loadBundledFont(String resourceName, float size) throws IOException {
+    try (InputStream in = MyScreen.class.getResourceAsStream(resourceName)) {
+        if (in == null) {
+            throw new FileNotFoundException(resourceName);
+        }
+        Font base = Font.createFont(Font.TRUETYPE_FONT, in);
+        GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(base);
+        return base.deriveFont(size);
+    } catch (FontFormatException ex) {
+        throw new IOException("Invalid font resource " + resourceName, ex);
+    }
+}
+\end{lstlisting}
+
+Loading a font is not merely a technical step. It has product and operations consequences. The application must have a license to distribute the font. The resource path must work from the module path, class path, development tree, jlink image, and packaged installer. The build should include the font in the right artifact. Tests and screenshot generation should use the same resource. If a support report says a label changed width, the font family, version, and resource source may matter. A book example can use platform serif and sans fonts, but a production application that depends on typography should control its fonts.
+
+\api{Font.canDisplay} and \api{Font.canDisplayUpTo} are useful diagnostic methods, but they are not a full fallback engine. A logical font such as \api{Dialog} can map to platform font families and may use fallback. A physical font loaded from a specific resource may not contain every glyph. If a GIS layer can contain names in many scripts, a single bundled Latin font is insufficient. The application needs either a fallback policy, a logical-font policy, or a text layout path that tolerates missing glyphs and reports them. A missing-glyph square in a map label is not a rendering bug after the fact; it is a data and font-coverage problem that should be visible in diagnostics.
+
+OpenType is both powerful and easy to overstate in Java desktop code. OpenType fonts contain outlines and layout tables such as glyph substitution and positioning data. Java's text stack uses platform and JDK layout capabilities to shape text, but the ordinary Java 2D API does not expose arbitrary OpenType feature toggles as if it were a full professional typesetting engine. Some features are available through \api{TextAttribute} values. Kerning can be requested with \api{TextAttribute.KERNING}. Ligatures can be requested with \api{TextAttribute.LIGATURES}. Tracking, numeric shaping, run direction, justification, weight, width, posture, family, and font selection can be expressed through attributes. But a paint editor that wants every discretionary feature, stylistic set, contextual alternate, or script-specific typographic option may need a specialized shaping or text engine beyond plain Swing.
+
+\begin{lstlisting}[caption={Text attributes for kerning, ligatures, and tracking.}]
+Map<TextAttribute, Object> attributes = new HashMap<>();
+attributes.put(TextAttribute.FONT, baseFont);
+attributes.put(TextAttribute.KERNING, TextAttribute.KERNING_ON);
+attributes.put(TextAttribute.LIGATURES, TextAttribute.LIGATURES_ON);
+attributes.put(TextAttribute.TRACKING, 0.02f);
+
+AttributedString styled = new AttributedString("office affine");
+for (var entry : attributes.entrySet()) {
+    styled.addAttribute(entry.getKey(), entry.getValue());
+}
+
+TextLayout layout = new TextLayout(styled.getIterator(), frc);
+layout.draw(g, x, baseline);
+\end{lstlisting}
+
+This listing is a boundary marker, not a typography manifesto. Kerning and ligatures can improve appearance. They can also change measurement and glyph counts. Tracking changes advance. Numeric shaping can change glyphs according to locale or context. Run direction changes order. Once attributes enter the model, a label cache keyed only by text and font size is wrong. The cache key must include the attributes that affect layout, and tests should include at least one label whose measurement changes when the attribute changes.
+
+The class \api{TextAttribute} is also a reminder that visual font style is not only \api{Font.BOLD} and \api{Font.ITALIC}. Weight, posture, width, family, superscript, underline, strikethrough, foreground, background, input method highlights, and transform attributes can all influence rendering. Swing components may interpret some attributes through attributed text or HTML; custom canvases decide their own support level. A responsible rich visual application documents which attributes its model supports and what happens on export.
+
+Font transforms deserve special care. A font can be derived with an \api{AffineTransform}, and a \api{Graphics2D} context can also be transformed. Transforming the graphics context affects all drawing and strokes. Transforming the font affects glyph design coordinates before drawing. In many applications the simpler approach is to keep model text in an untransformed font and apply the canvas transform at paint time. But text often has exceptions: map labels may remain screen-upright while the map rotates; handles and annotations may remain constant size; a paint editor's text object may have its own local transform. There is no universal rule except to name the coordinate system and keep the transform chain explicit.
+
+\begin{lstlisting}[caption={Drawing text through a local object transform.}]
+AffineTransform old = g.getTransform();
+try {
+    g.transform(viewTransform);
+    g.transform(textObject.localTransform());
+
+    TextLayout layout = textObject.layout(g.getFontRenderContext());
+    layout.draw(g, 0.0f, 0.0f);
+} finally {
+    g.setTransform(old);
+}
+\end{lstlisting}
+
+The local transform may include rotation, scale, shear, or translation. A paint editor can store it with the text object. A diagram editor might store only position and rotation. A GIS label placement engine might compute it transiently for one frame. The key is that measurement and drawing must agree. If the layout is measured without the relevant render context or transform but drawn under another, bounds and hit tests can drift.
+
+Text along a path is a classic example of where Java 2D gives pieces rather than a complete editing feature. A path has approximate length. Glyphs have advances. A glyph can be positioned and rotated at a point along the path tangent. The application can build a transformed outline per glyph. But caret movement, selection, bidi, and complex shaping become difficult. For route labels on a map or decorative text in a paint editor, this may be acceptable. For editable paragraphs, it is usually not. The user-facing feature should decide how much text semantics must survive.
+
+\begin{lstlisting}[caption={The shape of a glyph-outline cache key.}]
+record TextShapeKey(
+        String text,
+        Font font,
+        Object layoutAttributes,
+        Object fontRenderContextKey,
+        double transformBucket,
+        long styleVersion) {
+}
+\end{lstlisting}
+
+The record is conceptual. A real cache key should use stable, comparable values rather than opaque mutable maps. The important part is that font geometry has more inputs than text. If the application caches glyph outlines, changed kerning, font fallback, antialiasing, fractional metrics, zoom bucket, theme font, or style version can invalidate the cache. A cache that ignores these facts will pass many tests and then fail when the user changes Look-and-Feel scale or opens a document using another font.
+
+One useful compromise is to cache model text layout separately from device rasterization. Store the text object, font attributes, and local transform in the document model. Cache \api{TextLayout} or glyph outlines per font-render context and zoom bucket. Cache raster images only for large static labels or expensive effects, and invalidate them on theme, scale, font, text, transform, or rendering-hint changes. A GIS viewer may cache label placement and text bounds per tile; a paint editor may cache outlines for selected text objects; a chart may cache tick-label layouts for a scale interval. Each cache should have a reason and an invalidation story.
+
+Glyph outlines as shapes have several legitimate uses. A logo editor may need boolean operations on text after conversion. A map renderer may need a halo around text; one approach is to stroke the glyph outline and fill the stroke behind the text. A collision engine may use visual bounds or outline bounds for tight placement. A vector export may include text as outlines when the target environment cannot be trusted to have the font. A print pipeline may use outlines to preserve exact appearance. In all these cases, store enough semantic text metadata for diagnostics and accessibility if the user still perceives the object as text.
+
+\begin{lstlisting}[caption={Creating a text halo from glyph outline geometry.}]
+GlyphVector glyphs = font.createGlyphVector(frc, label);
+Shape outline = glyphs.getOutline((float) x, (float) baseline);
+Shape halo = new BasicStroke(3.0f,
+        BasicStroke.CAP_ROUND,
+        BasicStroke.JOIN_ROUND).createStrokedShape(outline);
+
+g.setColor(new Color(255, 255, 255, 180));
+g.fill(halo);
+g.setColor(labelColor);
+g.fill(outline);
+\end{lstlisting}
+
+The halo technique is visually effective, but it changes the repaint and hit geometry. The repaint bounds must include the halo, not only the glyph outline. If the label is clickable, the application must decide whether the halo is part of the hit target. If a halo is drawn in screen-space pixels while the text is in model space, the transform policy must say so. On maps, label halos often behave like screen symbols. In a paint editor, a halo may be a document effect and scale with the text.
+
+There is another trap: \api{Font.createGlyphVector} and \api{GlyphVector} are not substitutes for full shaping in every script. Depending on the input and layout needs, \api{TextLayout} or \api{Font.layoutGlyphVector} may be more appropriate because it considers layout flags and text direction. For simple Latin outline conversion, \api{createGlyphVector} is often enough. For mixed-direction or complex-script text, the application should test with representative data and prefer the layout API that preserves shaping. Do not prove text correctness with only "ABC".
+
+\begin{lstlisting}[caption={Using layoutGlyphVector when direction and shaping matter.}]
+char[] chars = text.toCharArray();
+int flags = Font.LAYOUT_LEFT_TO_RIGHT;
+GlyphVector glyphs = font.layoutGlyphVector(
+        frc, chars, 0, chars.length, flags);
+Shape outline = glyphs.getOutline((float) x, (float) baseline);
+\end{lstlisting}
+
+The flags are not magic. They express a layout assumption. If the text may be right-to-left or mixed, the model or layout pass must supply the correct direction. If the application handles paragraphs, line wrapping and bidi resolution become a paragraph-level problem rather than a glyph-vector problem. Again, the correct answer may be to use Swing text components or higher-level text layout for editing and reserve glyph vectors for rendering, collision, or export.
+
+Input methods are part of advanced font work even when no font file is loaded explicitly. A user entering Japanese, Chinese, Korean, Indic text, accented characters, or emoji may use composition. A custom canvas text editor that ignores input-method events will fail for real users. Swing text components already handle much of this. If a paint editor overlays a \api{JTextPane} for editing and commits the result into a canvas object, it is often choosing reliability over misplaced cleverness. The overlay must still align with the canvas transform and font metrics, but editing semantics remain with a component designed for text.
+
+Accessibility and search follow the same boundary. A label drawn as glyph outlines is invisible to screen readers unless the application exposes semantic text elsewhere. A vector export that converts text to paths may preserve appearance but lose searchable text. A paint editor should keep the original text string and font attributes at least until the user intentionally converts the object. A map label may be a rendering of a feature name; the accessible feature description should come from the model, not from the pixels.
+
+TrueType/OpenType handling also appears in packaging. Fonts loaded from a file path in development may disappear from a jlink image. A font resource inside a module must be opened through the module's resource path. The package must preserve the file. A signed or notarized installer may need license documentation. Screenshot tests must run with deterministic fonts or accept font variation. If the book examples use platform logical fonts, their screenshots should be simple enough to tolerate minor metrics differences; if a figure demonstrates exact typography, it should use a bundled font and record it.
+
+The JVM and operating system font stack can evolve. A support issue that appears only on one platform may be a font fallback, text antialiasing, or fractional metrics difference. Diagnostics should capture \api{GraphicsEnvironment.getAvailableFontFamilyNames} when relevant, the selected font family and face, whether the font can display the failing text, the render context transform, antialiasing and fractional-metrics hints, Look-and-Feel font defaults, and UI scale. These facts are more useful than a screenshot alone.
+
+\begin{coruscobox}{font state is presentation state with semantic consequences}
+Corusco can model selected font family, size, style, text object transform, label visibility, collision policy, and export policy as observable state. It can bind commands such as Convert to Outlines, Fit Label, Increase Tracking, Toggle Kerning, and Use Screen-Upright Labels. The actual measurement still belongs to Java 2D text APIs, but command enablement, diagnostics, resource keys, and lifecycle-owned caches are good Corusco boundaries.
+\end{coruscobox}
+
+A font picker is a good example of this boundary. Plain Swing can fill a combo box with font family names and update a preview. That works until the preview needs validation, fallback warnings, recent choices, command enablement, resource-backed labels, tests, and cleanup. Corusco can model the selected font descriptor, derived preview layout, problem set for missing glyphs, and command state. The preview component still paints using \api{TextLayout} or \api{GlyphVector}. The division keeps typography code honest and UI state testable.
+
+\begin{lstlisting}[caption={A model-facing font descriptor instead of raw component state.}]
+record TextStyle(
+        String family,
+        float size,
+        boolean bold,
+        boolean italic,
+        boolean kerning,
+        boolean ligatures,
+        float tracking) {
+
+    Font toFont() {
+        int style = (bold ? Font.BOLD : Font.PLAIN)
+                | (italic ? Font.ITALIC : Font.PLAIN);
+        return new Font(family, style, Math.round(size));
+    }
+}
+\end{lstlisting}
+
+The descriptor is intentionally smaller than a full typography model. It is enough for a diagram label or chart label. A paint editor may need more: OpenType feature policy, fallback stack, paragraph alignment, leading, wrapping width, vertical text, script-specific options, and embedded font resource identity. The model should grow from use cases, not from every font table in the specification. The important move is to avoid hiding font state inside a combo box.
+
+Performance guidance for font geometry is similar to shape geometry but less forgiving because text layout can allocate and depend on hidden platform facts. Do not create thousands of \api{TextLayout} objects per paint call for static labels. Do not call \api{getAvailableFontFamilyNames} during painting. Do not load fonts during painting. Do not convert every label to outlines when conservative bounds would do. Do not measure text in table renderers if the result can be prepared once by the model or renderer cache. Do not let a screenshot harness produce nondeterministic figures because fonts differ across machines without policy.
+
+At the same time, do not cache prematurely at the wrong level. A cache of rendered label images may become blurry under zoom or wrong under theme changes. A cache of outlines may be expensive and unnecessary for small labels. A cache of \api{Rectangle2D} bounds may be enough for collision broad phase. A cache of \api{TextLayout} may be right for editable canvas text. A cache of accepted map label placements may be right per tile and scale bucket. The review question is always: what input invalidates this value, and who owns that invalidation?
+
+Rich font use interacts with rendering hints. \api{RenderingHints.KEY\_TEXT\_ANTIALIASING} and \api{RenderingHints.KEY\_FRACTIONALMETRICS} affect appearance and measurement. The defaults may come from desktop settings or Look-and-Feel policy. Turning fractional metrics off can make text snap more predictably to integer positions, but it can also degrade spacing. Turning antialiasing off may help neither appearance nor performance on modern systems. The chapter's rule is not to set every hint globally; it is to make text rendering policy explicit for the surface and consistent with measurement.
+
+Rotated and scaled text needs a repaint margin. Antialiasing can extend coverage slightly beyond mathematical bounds. A transformed visual bound may not be axis-aligned. The safe repaint rectangle is the bounds of the transformed visual shape, expanded by a small device-aware margin. If a label has a halo, underline, focus ring, selection background, or caret, include those too. Many "ghost pixel" bugs after dragging text objects are merely missing old bounds or missing antialiasing margin.
+
+\begin{lstlisting}[caption={Repaint bounds for transformed text with a halo.}]
+Shape textShape = glyphs.getOutline(0.0f, 0.0f);
+Shape haloShape = haloStroke.createStrokedShape(textShape);
+Shape viewShape = textTransform.createTransformedShape(haloShape);
+
+Rectangle dirty = viewShape.getBounds();
+dirty.grow(3, 3);
+repaint(dirty);
+\end{lstlisting}
+
+This example assumes the glyph outline path is available. If the application uses \api{TextLayout} drawing without outline conversion, it can transform the visual bounds rectangle as a conservative repaint region. Conservative is acceptable; incomplete is not. Repainting too much is a performance concern. Repainting too little is a correctness bug. The art is to find the cheapest rectangle that is truthful enough.
+
+When text is part of a larger geometry model, serialization must record intent. Storing only a transformed outline preserves appearance but loses text. Storing only text and family name may fail if the font is unavailable. Storing text, style descriptor, resource font identity, fallback policy, layout width, local transform, and conversion state is more durable. A document format can distinguish editable text objects from outline paths created from text. Undo can preserve both. Export can choose whether to embed fonts, reference fonts, or outline text according to the target and license.
+
+Testing font geometry requires representative strings. Include short English labels, long labels, labels with descenders, labels with overhangs, numeric labels, accented names, combining marks, right-to-left text, and at least one script requiring shaping if the application claims international support. Include a missing-glyph case if custom fonts are involved. Test that measurement changes when font size changes. Test that cached bounds invalidate on render-context or style changes. Test that hit testing works after zoom and rotation. Test that screenshots do not depend on random system font selection unless that variation is accepted.
+
+\begin{lstlisting}[caption={A small measurement regression test shape.}]
+@Test
+void labelBoundsChangeWhenKerningChanges() {
+    Font font = new Font(Font.SERIF, Font.PLAIN, 28);
+    FontRenderContext frc = new FontRenderContext(null, true, true);
+
+    Rectangle2D plain = measure("AVATAR", font, frc, false);
+    Rectangle2D kerned = measure("AVATAR", font, frc, true);
+
+    assertNotEquals(plain.getWidth(), kerned.getWidth(), 0.001);
+}
+\end{lstlisting}
+
+This test is intentionally schematic; exact results may vary by font. In a real project, use a controlled bundled font for exact metric assertions, or assert broader invariants. The value of the test is conceptual: font attributes affect geometry, so the application should not hide them from measurement and caching. For book figures, deterministic font choice matters for the same reason.
+
+There is one final typography humility worth stating. Java 2D's text APIs are strong enough for many rich Swing applications, but they are not a replacement for a professional layout engine in every domain. A desktop publishing application, serious multilingual text editor, or typography-focused design tool may need deeper shaping, OpenType feature control, line breaking, hyphenation, font fallback, paragraph layout, variable fonts, and script expertise beyond ordinary Swing. The Swing application can still host such a system, and Java 2D shapes still matter, but the architecture should not pretend that \api{drawString} plus \api{stringWidth} is a typesetting engine.
+
+The practical rule is simple: keep text as semantic text until the user or export format requires outlines; measure with the API whose contract matches the question; cache only with explicit invalidation; and treat font resources as part of the application, not as incidental files. This makes labels, editable text objects, chart axes, map annotations, and diagram captions behave like the rest of the geometry model: named, measurable, testable, and honest under transform.
+
+\section{Performance Architecture for Rich Visual Applications}
+
+Geometry performance begins with the clip. Swing tells a component which rectangle needs painting. A rich component should use that clip to avoid painting invisible work. The clip is in the current graphics coordinate system. If the component transforms the graphics to model space, it may need to transform the clip into model space before querying the geometry index. This is not an optimization for later; it is the basic survival rule for large scenes.
+
+Figure~\ref{fig:geom-spatial-index} shows the idea. The viewport clip covers a small part of a larger world. A spatial index or layer structure should return candidates near that clip. Painting every feature in a GIS dataset because the user moved the mouse over one parcel is not a rendering strategy. It is a denial that geometry has size.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\geomIndexFigure}
+\caption{A rich visual component should transform the clip into model space, query candidate geometry, and paint only what can matter. This is the broad-phase idea used for both rendering and hit testing.}
+\label{fig:geom-spatial-index}
+\end{figure}
+
+\begin{lstlisting}[caption={Transforming the view clip to a model query region.}]
+Rectangle clip = g2.getClipBounds();
+Shape modelClipShape = viewToModel.createTransformedShape(clip);
+Rectangle2D modelQuery = modelClipShape.getBounds2D();
+
+for (Feature feature : spatialIndex.query(modelQuery)) {
+    if (feature.geometry().intersects(modelQuery)) {
+        paintFeature(g2, feature);
+    }
+}
+\end{lstlisting}
+
+The listing uses the transformed clip's bounds as a query rectangle. That is a broad-phase filter. Under rotation, the transformed clip may be a quadrilateral and its bounds may include extra area. That is usually acceptable for the index query because false positives are cheaper than missing visible features. Exact clipping remains the graphics pipeline's job.
+
+A spatial index can be simple. For a diagram editor with hundreds of objects, a list plus cached bounds may be enough. For a paint document with thousands of paths, a grid or R-tree-like index may help. For GIS layers with millions of features, tiling and level-of-detail become mandatory. The right index depends on data size, update frequency, query patterns, and memory budget.
+
+Do not build a spatial index before measuring, but do not design a model that makes indexing impossible. Every selectable object should be able to provide model bounds cheaply. Every layer should know whether it is visible. Every feature should have a stable id. If geometry is stored only as paint callbacks, the application has no indexable facts.
+
+Allocation is the second performance boundary. A \api{paintComponent} method may run many times per second during drag, scroll, or animation. Allocating thousands of paths, rectangles, strokes, colors, and temporary arrays per paint can create garbage-collection pressure. Some allocations are harmless. Some are not. Use JFR, allocation profiling, and simple counters before guessing.
+
+Caching geometry is helpful when the cache has a clear invalidation rule. A feature's bounds can be cached until its path changes. A stroked hit shape can be cached until stroke width, tolerance, or geometry changes. A transformed shape can be cached until the viewport changes. A simplified path can be cached per zoom bucket. A cache without invalidation is a stale rendering bug waiting for a demo.
+
+\begin{lstlisting}[caption={Versioned cached bounds for immutable geometry.}]
+public final class FeatureGeometry {
+    private final Path2D path;
+    private final long version;
+    private Rectangle2D boundsCache;
+    private long boundsVersion = Long.MIN_VALUE;
+
+    public Rectangle2D bounds() {
+        if (boundsVersion != version) {
+            boundsCache = path.getBounds2D();
+            boundsVersion = version;
+        }
+        return (Rectangle2D) boundsCache.clone();
+    }
+}
+\end{lstlisting}
+
+The example is intentionally incomplete because real cache design depends on ownership. If the path is immutable, the version may be unnecessary. If the path is mutable, the version must change whenever geometry changes. Returning a clone prevents callers from mutating the cached rectangle. A performance optimization that exposes mutable cache internals is a correctness bug.
+
+Object reuse is not the same as global object sharing. Reusing a \api{double[]} inside a path traversal is sensible. Reusing one mutable \api{Rectangle2D.Double} as a field and returning it to callers is dangerous. Reusing one \api{Path2D} as a builder inside a method is fine. Reusing it across unrelated features can leak segments. Performance work must preserve ownership.
+
+\api{Path2D.Float} can reduce memory for many display paths, but conversion cost and precision matter. A GIS layer with high-precision coordinates should not casually downcast to float at the model level. A tile renderer may convert visible geometry to local float paths after subtracting a tile origin. A paint editor might store document paths as double but cache flattened display paths as float. The right layer matters.
+
+Level-of-detail is essential for GIS and dense diagrams. At low zoom, thousands of tiny vertices may map to the same few pixels. Drawing all of them wastes time and may produce darker, uglier lines. Simplified geometry for low zoom can be cached. The simplification must preserve topology where topology matters. A visual overview can tolerate more simplification than an editing view where vertices are selectable.
+
+Path flattening is a level-of-detail decision. A flatness suitable for screen painting may be too coarse for print export. A flatness suitable for high-quality export may be too expensive for mouse drag feedback. Use different profiles. Interactive preview, high-quality screen render, print, and hit testing may choose different tolerances while sharing the same model geometry.
+
+Stroke creation is another hidden cost. \api{BasicStroke.createStrokedShape} can allocate complex shapes, especially for long paths with joins and dashes. It is appropriate for hit testing, selection halos, and outline conversion, but it should not be called for every feature on every mouse move without measurement. Cache by feature version and tolerance when the result is reused.
+
+\api{Area} operations can become very expensive with complex paths. Boolean operations may split and normalize geometry. Use them for exact selection and editing operations, not as a casual filter. If an \api{Area} is needed during drag, consider updating a preview at reduced precision or doing exact computation after the drag completes. Interactive tools often have preview and commit phases for this reason.
+
+Painting order affects perceived performance. Draw cheap background layers first, then important interactive layers, then overlays and handles. If a long operation is needed to load or simplify geometry, show a busy overlay or progressive layer state. The user can tolerate a map that progressively refines; the user cannot tolerate a frozen EDT. Geometry loading is task work, not paint work.
+
+Large visual apps should avoid doing I/O in painting. Loading map tiles, fonts, images, or geometry from disk during \api{paintComponent} can freeze the EDT. Paint should draw what is ready and request work elsewhere. A tile cache may return a placeholder and schedule a background load. When the tile arrives, the component repaints the tile bounds. This is the same Swing task boundary taught elsewhere in the book.
+
+\begin{lstlisting}[caption={Paint only ready tiles and schedule missing work elsewhere.}]
+for (Tile tile : visibleTiles) {
+    Optional<Image> image = tileCache.readyImage(tile);
+    if (image.isPresent()) {
+        g2.drawImage(image.get(), tile.viewX(), tile.viewY(), null);
+    } else {
+        tileLoader.request(tile);
+        paintPlaceholder(g2, tile.bounds());
+    }
+}
+\end{lstlisting}
+
+The tile loader should coalesce requests, cancel obsolete work, and deliver results to the EDT. Virtual threads can help if loading blocks. Corusco task services can model busy state, progress, and stale-result suppression. The geometry chapter therefore meets the background-work chapter: rich visuals are often I/O-bound before they are paint-bound.
+
+Dirty-region precision matters during interaction. Dragging one node should repaint the old and new node bounds, connector bounds affected by the node, handles, and any alignment guides. It should not repaint the entire canvas unless the canvas is small. In a GIS view, changing hover over one feature should repaint the old and new hover shapes. Good repaint bounds require geometry summaries.
+
+Double buffering is not a substitute for geometry discipline. Swing already uses double buffering for many components. Buffering the whole canvas into an image can help if the scene is expensive and mostly static, but it introduces cache invalidation, memory use, scale issues, and stale pixels. A full-scene buffer at 4K and 2x scale can be large. Cache layers deliberately, not reflexively.
+
+Image caches need scale in their key. A cached layer rendered at scale 1 may be soft at scale 2. A cached symbol rendered for a light theme may be wrong in a dark theme. A cached label rendered with one font may be wrong after a Look-and-Feel change. If the pixels depend on transform, theme, font, or rendering hints, the cache key must know.
+
+Use JFR and allocation profiling with UI-specific counters. General CPU profiles show where time is spent, but not always why the work was scheduled. Add counters for visible feature count, path count, flattened segment count, spatial-index candidates, exact hit tests, stroked-shape creations, area operations, and repaint bounds. A map that paints 500 visible features and a map that paints 50,000 have different problems.
+
+Benchmarks should include realistic transforms. A shape operation at the origin and scale 1 may not represent a GIS layer translated to a local origin and zoomed. A paint editor path with ten segments may not represent a complex imported SVG. A diagram with fifty nodes may not represent an enterprise workflow with thousands. Microbenchmarks are useful when they isolate a question; screen benchmarks are useful when they include the real pipeline.
+
+Memory layout matters for very large geometry. Millions of \api{Point2D.Double} objects can be far more expensive than arrays of doubles. Java's geometry classes are convenient for component-level and feature-level work, but data-heavy layers may store coordinates in compact arrays and create \api{Path2D} only for visible features. A GIS engine often has a lower-level geometry store beneath the Swing renderer.
+
+Threading geometry requires care. Immutable geometry can be shared safely between background indexing and EDT painting. Mutable geometry should be confined or copied. A background simplifier must not mutate a path while the EDT paints it. A background tile loader can produce immutable tile data and publish it to the EDT. The rule mirrors Swing component ownership: shared mutable state needs a real protocol.
+
+\begin{pitfallbox}{Optimizing the wrong space}
+A slow rich canvas may be slow because of I/O, allocation, broad repaint, missing spatial index, expensive text layout, excessive area operations, or EDT blocking. Replacing \api{Path2D.Double} with \api{Path2D.Float} is not a plan until measurements show precision storage is the bottleneck.
+\end{pitfallbox}
+
+Performance should not erase correctness. A simplified path used for overview painting should not become the edit geometry by accident. A bounds-only hit test should not select objects outside a concave polygon. A cached transformed shape should not be used after zoom changes. A fast visual preview is fine if the commit step uses exact geometry and the UI communicates the distinction.
+
+Precision is a performance topic because bad precision policies create extra work. A renderer that stores global projected coordinates near a very large origin may spend time chasing tiny visual errors, expanding repaint bounds, and compensating for hit-test drift. The local-origin technique is often the simplest answer: choose an origin near the current viewport or tile, subtract it from model coordinates for rendering, and keep the origin in the transform chain. The model still owns durable coordinates. The renderer gets smaller numbers. Diagnostics can report both.
+
+\begin{lstlisting}[caption={Rendering large world coordinates through a local origin.}]
+record LocalFrame(Point2D origin, AffineTransform localToView) {
+    Point2D toLocal(Point2D world) {
+        return new Point2D.Double(
+                world.getX() - origin.getX(),
+                world.getY() - origin.getY());
+    }
+}
+
+void paintFeature(Graphics2D g, Feature feature, LocalFrame frame) {
+    Path2D localPath = new Path2D.Double();
+    appendLocalGeometry(localPath, feature.worldPath(), frame.origin());
+
+    AffineTransform old = g.getTransform();
+    try {
+        g.transform(frame.localToView());
+        g.draw(localPath);
+    } finally {
+        g.setTransform(old);
+    }
+}
+\end{lstlisting}
+
+The listing constructs a local path for clarity. A production renderer may stream coordinates directly to a reusable path builder or store tile-local geometry ahead of time. The key is that the local origin is an explicit frame, not an accidental subtraction hidden in one paint method. Hit testing, labels, and repaint bounds must use the same frame or a clearly related inverse frame.
+
+Tile systems are another way to make large geometry tractable. A tile is a spatial and lifecycle boundary: it can be loaded, simplified, rendered, cached, cancelled, invalidated, and diagnosed as a unit. Raster map tiles make this obvious, but vector editors and diagram viewers can use the same idea. A large paint document can divide its content into dirty chunks. A route map can cache simplified vector tiles per zoom. A diagram editor can partition objects by page or region. The tile does not have to be visible to the domain model; it can be an implementation boundary for the viewport.
+
+A good tile cache has two keys: what the tile represents and how it was prepared. The first key contains layer, tile coordinate, document version, or query id. The second contains scale bucket, theme, style version, font policy, rendering profile, and perhaps selection overlay state. Mixing these keys creates either stale pixels or missed reuse. A selected feature overlay often should not invalidate the base geometry tile; it can be painted as an overlay. A theme change might invalidate symbols and labels but not raw vector coordinates. A document edit invalidates only tiles intersecting the changed geometry if bounds are available.
+
+\begin{lstlisting}[caption={Separating base tile data from volatile overlays.}]
+record TileKey(int layerId, int x, int y, int zoomBucket, long dataVersion) {
+}
+
+record RenderProfile(long styleVersion, long fontVersion, boolean darkTheme) {
+}
+
+record PreparedTile(TileKey key, RenderProfile profile, List<PreparedFeature> features) {
+}
+\end{lstlisting}
+
+This shape is deliberately plain. The important point is that selection, hover, rubber-band rectangles, snap indicators, caret marks, and busy overlays rarely belong in the same cache as base geometry. Volatile interaction marks should paint quickly on top of prepared geometry. Otherwise every mouse move invalidates expensive base tiles. Rich visual screens often become fast only after the developer stops treating the scene as one image.
+
+Spatial indexes also have lifecycle. A static background layer can build an index once and share it across views. An editable document may update the index incrementally as objects change. A rapidly changing temporary layer may use a simple list until commit. An imported dataset may build its index in a background task and publish it atomically. The index should not be half-mutated while the EDT queries it. Immutable snapshots, copy-on-write structures, or EDT-confined updates are easier to reason about than a shared mutable index with optimistic comments.
+
+\begin{lstlisting}[caption={Publishing immutable geometry snapshots to the EDT.}]
+record SceneSnapshot(
+        long generation,
+        List<LayerSnapshot> layers,
+        SpatialIndex<FeatureId> hitIndex) {
+}
+
+void publish(SceneSnapshot snapshot) {
+    SwingUtilities.invokeLater(() -> {
+        if (snapshot.generation() == requestedGeneration.get()) {
+            currentScene.set(snapshot);
+            canvas.repaint();
+        }
+    });
+}
+\end{lstlisting}
+
+The snapshot pattern is useful beyond GIS. A diagram auto-layout task can produce a new immutable graph layout. A paint editor import task can produce immutable path objects. A chart data task can produce prepared series geometry. The EDT swaps the snapshot and repaints. Old snapshots become collectible when no view uses them. The alternative, background mutation of a live Swing-visible graph, is a race disguised as efficiency.
+
+Geometry simplification needs policy names. A \termdef{display simplification}{a cheaper geometry derived for rendering at a particular scale} may remove vertices that are visually redundant. A \termdef{topology-preserving simplification}{a simplification that avoids changing containment and adjacency relationships important to analysis} is more expensive and more constrained. A \termdef{hit simplification}{a cheaper shape used for broad hit-test ranking} may be conservative. A \termdef{commit geometry}{the authoritative geometry stored by the model} should not be silently replaced by any of these. The policy should be visible in class names, cache keys, and tests.
+
+The Douglas-Peucker family of simplification algorithms is common, but the chapter does not depend on one algorithm. The architectural point is that tolerance is in a coordinate system. A two-pixel screen tolerance becomes a model tolerance through the inverse transform. A one-meter GIS tolerance is already model-space. A chart tolerance may be a fraction of plot width. A paint editor may use a velocity-sensitive tolerance while capturing a freehand path and a different tolerance when committing. If the tolerance is not named, low-zoom beauty can corrupt high-zoom editing.
+
+\begin{lstlisting}[caption={Scale-aware simplification as an explicit rendering choice.}]
+double screenTolerance = 0.75;
+double modelTolerance = viewport.screenDistanceToModel(screenTolerance);
+Path2D displayPath = simplifier.simplify(
+        feature.authoritativePath(),
+        modelTolerance,
+        SimplificationProfile.DISPLAY_ONLY);
+\end{lstlisting}
+
+This listing should make a reviewer ask two questions. First, where is the authoritative path kept? Second, how is the display path invalidated? If those answers are clear, simplification is a controlled performance technique. If the answer is "the feature path is overwritten because it looked the same," simplification has become data loss.
+
+Rendering pipelines for rich surfaces usually need phases. A useful pipeline is: update ready model snapshot, compute viewport frame, compute visible candidates, paint static background, paint prepared geometry, paint labels, paint selection and edit handles, paint transient tool feedback, paint diagnostics. The exact order varies, but the separation matters. Labels may need collision information after geometry candidates are known. Handles may draw in view space after model geometry. Diagnostics may intentionally ignore clipping. A single long paint method with interleaved responsibilities makes later performance work harder.
+
+\begin{lstlisting}[caption={A staged paint method for a rich visual component.}]
+@Override
+protected void paintComponent(Graphics g) {
+    super.paintComponent(g);
+    Graphics2D g2 = (Graphics2D) g.create();
+    try {
+        PaintFrame frame = createPaintFrame(g2);
+        SceneSnapshot scene = currentScene.get();
+
+        List<FeatureId> visible = scene.hitIndex().query(frame.modelClip());
+        paintBackground(g2, frame);
+        paintFeatures(g2, frame, scene, visible);
+        paintLabels(g2, frame, scene, visible);
+        paintSelection(g2, frame);
+        paintToolFeedback(g2, frame);
+        paintDiagnostics(g2, frame, visible.size());
+    } finally {
+        g2.dispose();
+    }
+}
+\end{lstlisting}
+
+The staged method is not slower merely because it has more method calls. It is often faster because each stage can own a cache and a measurement counter. The label stage can report accepted and rejected labels. The feature stage can report path count and segment count. The selection stage can report dirty bounds. The diagnostics stage can be disabled without touching feature painting. Code that can be measured can be improved.
+
+Label placement deserves its own performance paragraph because it combines text measurement and geometry search. A map with twenty thousand candidate labels cannot shape every label at every mouse move. A chart with hundreds of ticks should not relayout every tick when only the hover marker changes. A diagram with many node labels can cache layout per node style and text. Collision detection can begin with conservative bounds and only use outline geometry for important labels. The acceptance policy should be stable: priority, layer order, feature importance, and viewport constraints should decide which label wins, not iteration accident.
+
+Prepared label data often includes text, font descriptor, layout bounds, anchor point, priority, collision shape, and draw transform. The draw stage should not discover missing glyphs or load fonts. The placement stage may record a problem for missing glyphs, elided text, or suppressed labels. Corusco problem sets can surface those facts in an inspector or diagnostics panel. A "labels missing" report is much easier to solve when the support bundle contains font coverage, collision count, and placement rejection reasons.
+
+Paint editors need another kind of performance split: preview and commit. During a drag, the preview path may update at pointer frequency. It should be cheap, mutable, and confined to the active tool. At commit, the path may be smoothed, simplified, converted to curves, assigned a style, added to the document, indexed, and recorded in undo history. The preview can be approximate because it is temporary. The commit must be durable. Reusing the preview object as committed document state is tempting and often wrong because later pointer events, tool cancellation, or undo can mutate it.
+
+\begin{lstlisting}[caption={Separate preview geometry from committed document geometry.}]
+void drag(Point2D modelPoint) {
+    previewPath.lineTo(modelPoint.getX(), modelPoint.getY());
+    repaint(previewDirtyBounds());
+}
+
+void commitStroke() {
+    Path2D durable = pathProcessor.smoothAndCopy(previewPath);
+    document.apply(new AddPathEdit(durable, currentStyle));
+    previewPath.reset();
+    repaint(document.boundsOf(durable));
+}
+\end{lstlisting}
+
+This distinction also helps cancellation. Pressing Escape can clear the preview without editing the document. A background smoother can run after commit if it publishes a new edit or replacement path through normal undoable mechanisms. The EDT remains responsive because pointer feedback is cheap and expensive path processing has a named boundary.
+
+Diagram editors have a corresponding split between local interaction and global layout. Dragging one node should update that node, affected connectors, alignment guides, and perhaps local label placement. It should not rerun the whole graph layout on every mouse move unless the graph is tiny. A global layout command can run as a task and publish a new layout snapshot. During the task, the screen can show busy state, allow cancellation, or keep editing disabled according to command policy. Geometry performance here is also workflow design.
+
+Precision and performance meet again in hit ranking. A broad-phase query may return many candidates under the pointer. Exact containment answers yes or no, but users often expect the closest or most specific feature. A route editor may rank by distance to centerline, selected state, layer priority, and z-order. A diagram editor may rank handles above nodes and small ports above large node bodies. A map may rank editable layers above background reference layers. Ranking should be deterministic and testable, not an incidental side effect of list order.
+
+\begin{lstlisting}[caption={A hit result carries ranking facts, not only an object reference.}]
+record HitCandidate(
+        FeatureId id,
+        int layerPriority,
+        int zOrder,
+        double distance,
+        HitPart part) {
+}
+
+Comparator<HitCandidate> hitOrder = Comparator
+        .comparing(HitCandidate::layerPriority).reversed()
+        .thenComparing(HitCandidate::zOrder).reversed()
+        .thenComparing(HitCandidate::distance)
+        .thenComparing(c -> c.part().priority()).reversed();
+\end{lstlisting}
+
+The comparator shown is only a sketch; the real order depends on the application. The important part is that hit testing returns structured evidence. A status bar can display "road centerline, layer Transport, distance 3.2 px." A test can assert that a handle wins over the shape beneath it. A diagnostic overlay can show the top five candidates. This is how geometry becomes reviewable.
+
+Path storage strategy should follow the data's scale. For a small custom component, \api{Path2D.Double} fields are fine. For a diagram editor, immutable shape objects with cached bounds may be enough. For a paint editor with many paths, path objects plus per-layer indexes may be enough. For a GIS dataset with millions of coordinates, arrays, memory-mapped data, vector-tile encodings, or external geometry libraries may sit beneath Swing. Java 2D can still paint the final visible shapes. It does not have to be the storage format for the whole world.
+
+This distinction prevents two opposite mistakes. The first mistake is building a full GIS engine for a small editor. The second is forcing a million-feature map into a list of mutable Swing-era objects because the renderer knows \api{Shape}. A good architecture has adapters: storage geometry, prepared display geometry, hit geometry, and export geometry. They may share data, but they do not have to be identical classes.
+
+Rendering hints should be chosen per phase. Antialiasing is usually correct for final vector painting, but a dense overview may choose speed over quality. Text antialiasing and fractional metrics should match measurement. Stroke normalization can change the apparent crispness of one-pixel lines. Interpolation matters for image layers. Alpha compositing can be expensive when overused across large translucent areas. A graphics utility method that blindly sets every hint to "quality" may be appropriate for export and wrong for interactive drag.
+
+\begin{lstlisting}[caption={Rendering profiles make hint policy explicit.}]
+enum RenderProfile {
+    INTERACTIVE_PREVIEW,
+    SCREEN_QUALITY,
+    PRINT_EXPORT
+}
+
+void configure(Graphics2D g, RenderProfile profile) {
+    switch (profile) {
+        case INTERACTIVE_PREVIEW -> {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING,
+                    RenderingHints.VALUE_RENDER_SPEED);
+        }
+        case SCREEN_QUALITY, PRINT_EXPORT -> {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
+                    RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+        }
+    }
+}
+\end{lstlisting}
+
+Profiles also make tests clearer. A screenshot intended for the book can use screen quality with deterministic font and theme. A drag benchmark can use interactive preview. A print export test can use export quality and larger page transforms. If a rendering hint changes measurement, the profile should appear in cache keys or in the render context used to compute those keys.
+
+Clipping can be hierarchical. A component clip rejects work outside the repaint region. A layer clip rejects invisible layers or tiles. A symbol clip can avoid drawing labels outside a viewport. A text layout clip can suppress labels outside the plot area. Clipping too early can hide effects such as shadows and halos. Clipping too late wastes work. The review question is: what is the maximum visual extent of this thing after style is applied? A geometry bounds cache that ignores shadow blur or text halo is not sufficient for clipping.
+
+Styles have performance identity too. Changing a stroke width can invalidate hit shapes, repaint bounds, and label collisions. Changing color may invalidate only pixels. Changing a font size invalidates text layouts, label placement, and collision. Changing layer visibility invalidates visible candidate sets and commands. A style model should distinguish these changes. Corusco values can express derived invalidation facts such as "geometry unchanged, style pixels changed" or "label layout invalid." Without such distinctions, every style edit becomes a full-scene reset.
+
+\begin{lstlisting}[caption={Style changes classified for cache invalidation.}]
+enum VisualInvalidation {
+    PIXELS_ONLY,
+    STROKE_GEOMETRY,
+    TEXT_LAYOUT,
+    LABEL_PLACEMENT,
+    SPATIAL_INDEX
+}
+\end{lstlisting}
+
+This tiny enum is more useful than it first appears. A color change may repaint visible features without rebuilding the spatial index. A stroke-width change may rebuild hit shapes and repaint expanded bounds. A font change may rebuild label layouts and collision placement. An edit to coordinates may rebuild feature bounds and the spatial index. Classifying invalidation makes the application faster and makes reviews sharper.
+
+Diagnostic overlays are often the cheapest performance tool. A developer key can show the model clip, candidate bounds, exact hit shape, label collision boxes, dirty rectangles, tile ids, and paint duration. The overlay should be cheap and switchable. It should not require a debugger. A support screenshot with these overlays can reveal at once that the model clip is too large, a layer is painting outside its tile, a label cache is stale, or every repaint covers the full canvas.
+
+\begin{lstlisting}[caption={A small diagnostic record for one paint pass.}]
+record PaintStats(
+        int visibleCandidates,
+        int paintedFeatures,
+        int labelsMeasured,
+        int labelsAccepted,
+        int strokedShapesCreated,
+        int areaOperations,
+        Rectangle dirtyBounds,
+        Duration elapsed) {
+}
+\end{lstlisting}
+
+The record should be collected with bounded overhead. It can be sampled, shown in a status panel, or written to a support bundle after an explicit diagnostic action. The point is not to turn production into a profiler. It is to make the behavior of a rich visual surface explainable. When a user says "zoom is slow near this city," the application can report how many features, labels, tiles, and exact operations were involved.
+
+Do not forget table and form integration around a canvas. A GIS layer table, object inspector, style form, or problem list may select geometry in the canvas. The canvas may update a status value, a selected-id value, or a hover value. If the table selection causes the canvas to scroll to a feature, transform and repaint work follows. If the canvas hover updates a table row on every mouse move, the table may become the bottleneck. Corusco selection values and throttled derived state can keep these relationships explicit. Geometry performance can be damaged by non-geometry components when state propagation is undisciplined.
+
+Autosave and background validation can also collide with geometry editing. A paint editor that serializes the whole document after every drag will feel slow no matter how efficient \api{Path2D} painting is. A diagram editor that validates every connector on every mouse pixel may spend more time in validation than drawing. The same generation and cancellation patterns used for background tasks apply. Validate local constraints synchronously when cheap. Schedule expensive whole-document checks as cancellable tasks. Paint problems as structured overlays when results arrive.
+
+The final performance discipline is to know the current budget. At 60 frames per second, one frame has about 16 milliseconds before other work. Swing applications do not always need animation-frame budgets, but mouse drag feedback should feel immediate. A one-time import can take longer if progress and cancellation are clear. A print export can take seconds. A hover highlight should not. Different actions deserve different budgets. When the budget is named, a performance design can be evaluated.
+
+The budget should include the EDT, not only worker threads. A background renderer that produces tiles quickly but publishes thousands of individual repaint events can still make the UI sluggish. Coalesce repaint requests. Combine model updates when appropriate. Suppress stale generations. Avoid firing table data changes for every geometry point when a layer snapshot changed. The geometry renderer and the observable model system must cooperate; otherwise each correct layer can overwhelm the other.
+
+\section{Use Cases: GIS, Paint Editors, Diagrams, and Charts}
+
+A GIS viewer is the sternest teacher because it combines large coordinates, many features, layers, projections, labels, selection, hit tolerance, background loading, and level-of-detail. The geometry model may come from shapefiles, GeoJSON, databases, vector tiles, or service calls. Java 2D can render the final shapes, but the application must decide projection, local origin, simplification, indexing, and styling before painting.
+
+Projection is outside \api{java.awt.geom}, but its result becomes geometry. Latitude and longitude are not screen x and y. A projected coordinate system may produce meters. A tile system may produce tile-local coordinates. A view transform maps projected model coordinates to Swing view coordinates. Keep projection separate from pan and zoom. Otherwise a map bug becomes impossible to isolate.
+
+Large world coordinates can reduce local precision if handled carelessly. A common GIS strategy is to subtract a local origin near the current viewport before rendering, then draw local coordinates through the view transform. The model still knows global coordinates. The renderer uses local coordinates for precision and manageable numbers. The origin becomes part of the transform chain and diagnostics.
+
+Map styling often distinguishes semantic and screen-space width. A river polygon has real geometry. A road centerline symbol may be drawn with a screen-space stroke at low zoom and perhaps a model-space corridor at high zoom. A selected feature may receive a constant screen-space halo. A label may avoid collisions in view space. Each style decision should name its coordinate system.
+
+Hit testing in GIS is layered. A click may test editing handles, selected features, visible vector layers, labels, and background map features in priority order. Bounds and spatial indexes reject most candidates. Stroked shapes provide tolerance for lines. Polygon containment tests handle regions. Attribute filters may hide or disable features. A good hit result contains feature id, layer id, geometry part, and model coordinate.
+
+Paint editors emphasize path editing. A freehand stroke may begin as many mouse points, be smoothed into curves, be simplified, be stored in document coordinates, and be rendered with a brush. The brush may be a stroke, a repeated stamp, a pressure-sensitive width, or a textured fill. \api{Path2D} and \api{BasicStroke} cover some of these needs. More advanced brush engines may build custom geometry, but the same principles apply.
+
+Undo in a paint editor is geometry ownership. If a path is mutable and the undo stack stores references to it, later edits can corrupt history. Store immutable edit commands, immutable path snapshots, or structural changes that can be reversed. A temporary path during a drag can be mutable; the committed document path should have clear ownership. This is not a Java 2D detail, but Java 2D mutability makes it visible.
+
+Paint editors also need handles and control points. Bezier control points are model geometry. The small squares or circles drawn for handles are view-space affordances. Dragging a handle converts view deltas to model deltas. Snapping may occur in model space. The handle's visual size may remain constant during zoom. This is the transform chapter in miniature.
+
+Diagram editors emphasize topology. A node has bounds, ports, labels, and perhaps a shape. A connector has endpoints, route segments, arrowheads, labels, and hit geometry. Moving a node invalidates connectors. A spatial index can find connectors near the dirty region. A layout engine may run in the background and publish new model geometry. The renderer should not invent topology during painting.
+
+Arrowheads are a practical transform exercise. An arrowhead can be defined in local coordinates with its tip at the origin and direction along the x-axis. For each connector end, compute an \api{AffineTransform} that translates to the endpoint and rotates to the connector tangent. Then fill the transformed arrowhead shape. Hit testing can use the same transformed shape.
+
+\begin{lstlisting}[caption={Transforming a local arrowhead shape to a connector endpoint.}]
+static Shape arrowAt(Point2D tip, double angleRadians, Shape localArrow) {
+    AffineTransform at = new AffineTransform();
+    at.translate(tip.getX(), tip.getY());
+    at.rotate(angleRadians);
+    return at.createTransformedShape(localArrow);
+}
+\end{lstlisting}
+
+The local-arrow strategy avoids recalculating triangle coordinates by hand in several places. It also gives export and hit testing the same arrowhead shape that painting uses. If arrowhead size is screen-space constant, apply the strategy in view space. If arrowhead size is model-space semantic, apply it in model space.
+
+Charts appear simpler, but they are geometry-heavy. Axes map data values to view coordinates. Lines and areas are paths. Points are shapes. Selection bands are rectangles. Tooltips need inverse mapping from mouse point to data domain. Zooming and panning are transform changes. Large time series need simplification and clipping. A chart that treats geometry as mere paint code will struggle with interaction.
+
+Text labels in charts and maps are collision problems. A label has bounds, baseline, priority, anchor point, and perhaps rotation. The program may need to hide, move, or abbreviate labels to avoid overlap. Text layout should be measured in the graphics context or a compatible font render context. Label placement often happens in view space because collisions are visual.
+
+CAD-like tools add constraints. Lines may be horizontal, vertical, parallel, perpendicular, tangent, or equal length. Snapping and constraints are not painting features; they are model geometry and algebra. Java 2D can draw and hit-test the resulting shapes, but the constraint solver lives above it. Keeping this boundary clear prevents drawing code from becoming an accidental geometry engine.
+
+Visual query builders and workflow editors often use orthogonal connectors. A connector route may be a \api{Path2D} for painting, but the model may store route points and semantic endpoints. Recomputing the path from route points is cheap and keeps editing meaningful. Storing only the path loses information such as which segment is allowed to move when a node moves.
+
+All these applications share a workflow: model geometry, view transform, visible candidate query, painting, hit testing, editing, and diagnostics. The details vary, but the architecture repeats. A chapter that teaches only how to call \api{draw(new Line2D.Double(...))} misses the real engineering problem. The API call is easy. Keeping the same geometry honest across features is the work.
+
+\begin{lstlisting}[caption={A visual layer contract for rich components.}]
+interface VisualLayer {
+    Rectangle2D modelBounds();
+    Stream<VisualFeature> query(Rectangle2D modelRegion);
+    void paint(Graphics2D g2, ViewportTransform viewport, Rectangle2D modelClip);
+    Optional<Hit> hit(Point2D modelPoint, double modelTolerance);
+}
+\end{lstlisting}
+
+This interface is not a framework recommendation. It is a vocabulary sketch. A layer knows its bounds, can query visible features, can paint with a viewport, and can hit-test in model space. A GIS layer, diagram layer, annotation layer, selection layer, and handle layer may implement different policies. The component orchestrates them.
+
+Layered design also supports progressive rendering. A base raster layer may appear first. Vector features may load next. Labels may refine after geometry. Selection overlays remain interactive. Background tasks can update layer readiness. The screen can report which layers are loading. Users of rich visual apps often accept progressive detail if interaction stays responsive and state is visible.
+
+Scrolling containers add another boundary. A large canvas inside \api{JScrollPane} may report a preferred size in view coordinates, while the model bounds are much larger or effectively unbounded. Zoom changes preferred size. Panning may be represented by scroll bar positions, by a transform translation, or by both. Choose one policy and document it. Fighting \api{JViewport} with a second hidden pan model leads to drift.
+
+For finite documents, using scroll bars as view translation is natural. The component's preferred size is the document size at current zoom. The viewport position is the view translation. For infinite canvases or GIS views, scroll bars may be less appropriate, and pan may live entirely in the viewport transform. Some applications use scroll bars for page documents and mouse-drag pan for maps. The user model should drive the choice.
+
+When zoom changes inside a scroll pane, keep the anchor stable. If the user zooms around the mouse or center of the viewport, adjust preferred size and scroll position so the same model point remains visible. This requires model-view conversion before and after zoom. It is the same transform algebra, now mediated by \api{JViewport}.
+
+\begin{lstlisting}[caption={Keeping a model anchor visible while zooming a scrollable canvas.}]
+void zoomInViewport(JViewport viewport, Point viewAnchor, double factor) {
+    Point componentPoint = SwingUtilities.convertPoint(
+            viewport, viewAnchor, this);
+    Point2D modelAnchor = viewportTransform.toModel(componentPoint);
+    setZoom(getZoom() * factor);
+    revalidate();
+    Point newView = viewportTransform.toViewPoint(modelAnchor);
+    Point oldPosition = viewport.getViewPosition();
+    viewport.setViewPosition(new Point(
+            oldPosition.x + newView.x - componentPoint.x,
+            oldPosition.y + newView.y - componentPoint.y));
+    repaint();
+}
+\end{lstlisting}
+
+The listing is a sketch because real code must clamp scroll positions and handle layout timing. The point is that zoom, preferred size, and viewport position are one geometry problem. Treating them independently produces the familiar bug where the document jumps unpredictably during zoom.
+
+Export is the use case that exposes hidden coordinate assumptions most brutally. A screen renderer may draw at the current pan and zoom. A print renderer must map model bounds to paper bounds. A PNG export may choose a fixed pixel size. An SVG-like export may want model-space paths and text metadata. A clipboard transfer may serialize selected shapes relative to a local origin. If the paint code reads scroll-bar positions directly or assumes the current component size is the destination, export becomes a patchwork. A serious visual surface should have a rendering entry point that accepts a destination frame.
+
+\begin{lstlisting}[caption={Destination frames separate screen paint from export paint.}]
+record RenderDestination(
+        AffineTransform modelToDestination,
+        Rectangle2D modelClip,
+        RenderProfile profile,
+        boolean includeSelection,
+        boolean includeDiagnostics) {
+}
+
+void render(Graphics2D g, SceneSnapshot scene, RenderDestination destination) {
+    configure(g, destination.profile());
+    paintSceneGeometry(g, scene, destination);
+    if (destination.includeSelection()) {
+        paintSelection(g, scene, destination);
+    }
+    if (destination.includeDiagnostics()) {
+        paintDiagnosticOverlay(g, scene, destination);
+    }
+}
+\end{lstlisting}
+
+The screen component can build a destination from the current viewport. The print command can build another destination from page geometry. The screenshot harness can build a deterministic destination with fixed size and theme. Tests can render a small scene into an offscreen image and inspect nonblank pixels or recorded paint statistics. The common renderer is not a requirement for every application, but a common destination vocabulary prevents the screen from becoming the only place where geometry works.
+
+Printing has one additional rule: page transforms should be explicit and reversible enough for diagnostics. A diagram may be fit to one page, tiled across pages, or printed at actual size. A map may print at a scale. A paint document may include crop marks. Each policy creates a transform from model space to page user space. The policy should record scale, margin, page index, model bounds, and clip. A user who says "print is shifted" should be met with numbers, not speculation.
+
+Vector export is even stricter about text. If export preserves text objects as text, it needs font family, size, style, transform, and sometimes embedding policy. If export converts text to outlines, it needs glyph outlines and must accept the loss of searchability. If the target does not support Java's winding or stroke semantics directly, the exporter may need to flatten curves, convert strokes to fills, or approximate joins. These operations are geometry transformations and should be tested with curves, holes, dashed strokes, and glyph outlines.
+
+\begin{lstlisting}[caption={Export policy is explicit, not a side effect of paint.}]
+enum TextExportPolicy {
+    PRESERVE_TEXT,
+    OUTLINE_WHEN_FONT_MISSING,
+    ALWAYS_OUTLINE
+}
+
+enum StrokeExportPolicy {
+    PRESERVE_STROKE,
+    EXPAND_TO_FILLED_SHAPE
+}
+\end{lstlisting}
+
+The choices are product choices. A technical drawing may require preserved strokes because downstream tools edit them. A logo export may require outlines for exact appearance. A map snapshot may rasterize labels but export vector roads. The Java 2D APIs can produce many of the intermediate shapes, but the application must know which semantic loss is acceptable.
+
+Clipboard and drag transfer also need coordinate policy. Copying selected diagram nodes can store model coordinates relative to the selection bounds, so pasting near the mouse is natural. Copying a paint path can store document coordinates if the target is the same document, or local coordinates if the target is another document. Dragging map features between layers may preserve global coordinates. A transfer payload that stores only screen coordinates is rarely correct. It makes the paste depend on the old zoom and scroll position.
+
+The transfer chapter will discuss \api{TransferHandler}; the geometry chapter supplies the data lesson. A selection has model ids, model geometry, optional style, and a local frame. A drag image has view geometry and pixels. These are different payloads. The drag image can be cheap and temporary. The transferred geometry should be durable and independent of the source viewport unless the gesture is explicitly screen-relative.
+
+\begin{lstlisting}[caption={Selection transfer with a local geometry frame.}]
+record GeometrySelection(
+        Rectangle2D selectionBounds,
+        List<SelectedShape> shapes) {
+
+    Point2D toLocal(Point2D modelPoint) {
+        return new Point2D.Double(
+                modelPoint.getX() - selectionBounds.getX(),
+                modelPoint.getY() - selectionBounds.getY());
+    }
+}
+\end{lstlisting}
+
+Testing this transfer object is a non-Swing test. Select two shapes, serialize them relative to selection bounds, paste them at a new model point, and assert that relative distances are preserved. Then test that changing zoom does not change transferred model geometry. These tests catch the common bug where copy and paste work at 100 percent zoom and fail elsewhere.
+
+GIS editing adds topology tests. Moving a parcel vertex may need to keep shared boundaries with neighboring parcels. Splitting a road may need to preserve route attributes. Snapping a new line to an existing network may need a tolerance and a target layer. Java 2D can draw and hit-test the shapes, but topology rules belong to the domain model. The renderer can show violations as problem overlays. The editor can prevent commit or mark the feature dirty. The geometry API is necessary, not sufficient.
+
+Paint editors add stroke semantics beyond \api{BasicStroke}. A pressure-sensitive brush may produce a variable-width outline. A textured brush may place stamps along a path. A calligraphy brush may use a nib shape transformed along the tangent. A blur or shadow may expand repaint bounds beyond vector outlines. Java 2D still helps: paths, transforms, shapes, and areas remain useful. But the brush engine may need its own model objects and caches. The review rule is the same: separate the user's edit geometry from the temporary display geometry and from the final raster effect.
+
+\begin{lstlisting}[caption={Brush effects must report visual extent for repaint.}]
+interface BrushStroke {
+    Shape modelShape();
+    Rectangle2D visualBounds(BrushStyle style, RenderProfile profile);
+    void paint(Graphics2D g, BrushStyle style, RenderDestination destination);
+}
+\end{lstlisting}
+
+The visual bounds method is not a decorative convenience. It is the contract that lets undo, drag preview, layer caching, and repaint precision work. A shadow, blur, texture, or halo that fails to report its visual extent will leave stale pixels. A brush that reports only its centerline bounds will look correct only when repainted by accident.
+
+Diagram editors add routing policies. A connector may be straight, orthogonal, curved, bundled, or obstacle-avoiding. The route may be recomputed when nodes move. The rendered path may be derived from semantic endpoints and intermediate route points. Arrowheads and labels may be attached to path tangents. Hit testing may use a wide stroked shape. Editing may expose route handles. The connector therefore has several geometries: semantic endpoints, route control geometry, visual path, hit path, arrowhead shapes, label geometry, and dirty bounds.
+
+This multiplicity should be visible in code. A class with one field named \api{shape} will soon be insufficient. A connector model might expose endpoints and route points. A connector presentation object might cache path, hit shape, arrowheads, label layout, and bounds for a given viewport/style version. Corusco can model selected connector id, active route handle, and command state. Java 2D paints and tests the shapes. The separation keeps connector behavior from turning into a pile of special cases inside \api{paintComponent}.
+
+Charts add the lesson of inverse scales. A plot scale maps data value to view coordinate. Logarithmic scales, time scales, category scales, and discontinuous trading-day scales are not ordinary affine transforms, even if the final screen mapping may use affine pieces. A mouse point must be converted back to a domain value through the scale. A selection band must map to a data range. A zoom rectangle must update scale domains. Java 2D draws the resulting path, but the chart scale owns domain algebra.
+
+\begin{lstlisting}[caption={A chart scale is a geometry boundary above AffineTransform.}]
+interface AxisScale<T> {
+    double toView(T value, Rectangle2D plotArea);
+    T fromView(double coordinate, Rectangle2D plotArea);
+    List<Tick<T>> ticks(Rectangle2D plotArea);
+}
+\end{lstlisting}
+
+Once this boundary exists, labels, grid lines, selection bands, tooltips, and data paths can share it. A time-series chart does not have to pretend that dates are pixels. A category chart does not have to encode category order into random x-coordinates inside paint code. The geometry is still precise, but the domain remains visible.
+
+Rich visuals also need keyboard geometry. Keyboard users should be able to move selection, resize handles, nudge points, traverse features, and open context commands. A nudge command moves model geometry by a model delta derived from view policy. A "select next feature" command uses geometry ordering or layer order. A "fit selection" command computes model bounds and updates viewport state. These are not mouse-only concepts. If geometry lives only in mouse listeners, keyboard operation will be second-class.
+
+Accessibility bounds should follow the same model-to-view transform used by painting. A custom accessible child representing a diagram node can report screen bounds derived from node geometry. A map feature can expose a name, role, selected state, and approximate bounds. A chart point can expose series name and value. The accessible layer need not expose every vertex, but it must not invent separate coordinate math. Reusing transform services keeps accessibility aligned with what the user sees.
+
+The most useful examples for this chapter are therefore deliberately small but structurally honest. A shape vocabulary panel proves paths and areas. A transform panel proves coordinate names. A stroked-shape panel proves hit geometry. A spatial-index panel proves broad phase. Font panels prove baseline and outline geometry. A full GIS engine would be too large for the book; a fake line-drawing snippet would be too small. Didactic examples should be compact, executable, and faithful to the contracts that survive in larger software.
+
+For a companion example beyond the figures, a good next program is a mini vector canvas. It should have three layers, several editable shapes, zoom, pan, selection, hit tolerance, text labels, a property panel, and screenshot support. It does not need a full file format. It should log paint statistics and expose component keys. It should use FlatLaf and MigLayout for surrounding controls. The chapter's concepts would then be visible in one runnable surface without burying the reader in GIS or paint-editor scale.
+
+Another useful companion is a chart canvas with a real inverse scale. Generate deterministic data, render a clipped path, simplify it for overview, show hover using inverse mapping, and keep axis labels from colliding. This example would connect geometry to ordinary business Swing work: dashboards, monitoring tools, and analysis screens. Not every rich visual app is a paint editor; many are data tools that need correct geometry under interaction.
+
+The examples should also produce screenshots with diagnostics enabled. One screenshot can show the normal surface. Another can show model bounds, dirty region, selected shape, and candidate count. The diagnostic screenshot is not decorative. It teaches the reader what to look for when reviewing a custom component. A book that tells readers to build diagnostics but never shows a diagnostic overlay misses an opportunity.
+
+Accessibility in these applications should not be ignored. A map feature, diagram node, or chart point may need a semantic description. The geometry can provide bounds and hit testing; the model provides text. A screen reader does not need every vertex of a polygon, but it may need feature name, role, selection state, and location. Rich visual apps are not exempt from accessibility because they draw custom shapes.
+
+Diagnostics should be designed into rich visual apps from the beginning. A debug overlay can show model bounds, view transform, clip rectangle, spatial-index candidates, hit-test result, repaint bounds, and layer loading state. A support dump can report zoom, pan, scale, selected ids, visible layers, feature count, cache sizes, and last paint duration. These facts make visual bugs discussable.
+
+\section{Corusco Boundaries, Drills, and Checklist}
+
+Corusco's role in a geometry-heavy application is not to abstract away \api{java.awt.geom}. The Java 2D geometry classes are already the right low-level vocabulary for shapes and transforms. Corusco helps around the geometry: observable viewport state, command descriptors, task services, selection models, problem sets, component keys, diagnostics, and lifecycle scopes. The boundary is important.
+
+A viewport model can expose readable values for zoom, pan, active tool, snap enabled, visible layer set, selected ids, and hover hit. Commands such as Zoom In, Zoom Out, Fit Selection, Pan, Select, Delete, Bring Forward, and Export can derive enablement from those values. Swing components then bind buttons, menu items, keyboard shortcuts, and status text to the same command facts. The geometry remains in model classes and Java 2D shapes.
+
+A task service can load geometry, simplify layers, build spatial indexes, or render tiles away from the EDT. Results return through generation checks and EDT delivery. Busy overlays and progress status can be bound to task state. Cancellation matters: if the user pans away from a tile or hides a layer, obsolete work should be cancelled or ignored. Geometry-rich apps are often task-rich apps.
+
+Problem sets can describe geometry validation. A self-intersecting polygon, missing connector endpoint, invalid route, unsupported transform, or failed projection can become a targeted problem. The target might be a feature id, layer id, field key, or component key. A paint editor can show a warning overlay while a support bundle records the exact problem code. Visual problems deserve structured diagnostics.
+
+Component keys help tests and support tools find the canvas, zoom control, layer table, status label, and tool palette. They do not identify every shape inside the canvas; model ids do that. The component key gets us to the canvas; the geometry hit test gets us to the feature. Mixing these identities creates fragile tests.
+
+Generated code can help with commands and resources, but generated geometry should be approached carefully. A generated command descriptor for Zoom In is useful. A generated table descriptor for layer properties is useful. A generated form for style settings is useful. The actual geometry model often remains hand-designed because it reflects the file format, spatial index, editing model, and performance profile.
+
+\begin{migrationbox}{from painting method to visual model}
+When a custom component grows beyond decoration, extract model geometry, viewport state, hit testing, repaint bounds, and commands before adding more paint branches. The extraction makes later use of \api{Path2D}, \api{Area}, transforms, and Corusco bindings much safer.
+\end{migrationbox}
+
+The first drill is a shape vocabulary drill. Build a panel that stores three model shapes: a rectangle, an ellipse, and a cubic path. Paint them through one viewport transform. Add hit testing with bounds first and exact shape tests second. Print the selected shape id in a status label. The drill teaches that painting and hit testing share data.
+
+The second drill is a transform drill. Create a viewport with scale and translation. Write tests for model-to-view, view-to-model, drag delta conversion, and zoom around an anchor point. Then add the same viewport to a Swing component. The tests should fail if the visual code changes composition order incorrectly.
+
+The third drill is a stroked-shape drill. Draw a narrow connector but select it with a wider \api{createStrokedShape} hit shape. Try butt, round, and square caps. Try miter, bevel, and round joins. Observe how the selection feel changes at sharp corners and endpoints. This drill makes stroke style part of interaction design.
+
+The fourth drill is an area drill. Create two overlapping polygons and implement add, subtract, intersect, and exclusive-or selection modes. Display the resulting area and its bounds. Measure how operation cost grows as polygon complexity increases. The drill teaches when \api{Area} is expressive and when it needs a broad-phase filter.
+
+The fifth drill is a clipping drill. Generate ten thousand random shapes, give each cached bounds, and paint only shapes whose bounds intersect the transformed clip. Add a counter showing candidates and painted shapes. Then turn the filter off. The difference is often large enough to convince the most skeptical reader.
+
+The sixth drill is a scroll and zoom drill. Place a finite document canvas in a \api{JScrollPane}. Implement zoom around the mouse while preserving the model anchor. Test at several zoom factors and viewport positions. This drill connects component preferred size, scroll bars, transforms, and repaint.
+
+The seventh drill is a GIS-style layer drill. Create two layers, one with polylines and one with polygons. Give each layer a visibility value, a spatial index, a paint style, and a hit priority. Bind layer visibility to checkboxes and report hit results in a status label. This drill shows where Corusco state can sit around Java 2D geometry.
+
+The eighth drill is a paint-editor path drill. Record mouse points into a temporary path, simplify or smooth at commit time, store the committed path in document coordinates, and add undo. Ensure the temporary path does not enter the undo history by reference. This drill teaches geometry ownership and mutable builder scope.
+
+The ninth drill is a performance drill. Add counters for path count, flattened segment count, stroked-shape creations, area operations, spatial-index candidates, repaint rectangle size, and paint duration. Exercise drag, zoom, selection, and layer toggling. Use JFR to compare allocation before and after caching. This drill teaches measurement vocabulary.
+
+The tenth drill is an export drill. Render the same model geometry to screen, image, and print-like graphics using different transforms and rendering hints. Verify that hit testing still uses model geometry and does not depend on export transforms. This drill separates model truth from destination policy.
+
+Use the following checklist when reviewing a rich visual Swing component.
+
+\begin{itemize}
+\item Model geometry is stored in model coordinates, not repeatedly rewritten for zoom or pan.
+\item Painting, hit testing, selection, tooltips, accessibility bounds, screenshots, and export share the same transform vocabulary.
+\item The code distinguishes model-space geometry from view-space affordances such as handles and constant-width halos.
+\item \api{getBounds2D} is used as a broad-phase filter, not as exact truth for concave or stroked shapes.
+\item Stroked hit shapes use intentional cap, join, width, dash, and coordinate-system policy.
+\item \api{Area} operations are reserved for exact region algebra after cheaper filters.
+\item Repaint bounds include old and new visual geometry, stroke width, handles, halos, and antialiasing margin.
+\item The paint path respects the clip and queries only visible candidates for large scenes.
+\item Shape caches have clear invalidation rules tied to geometry version, style, transform, theme, or scale.
+\item Background geometry loading, tile rendering, simplification, and indexing never block the EDT.
+\item Mutable geometry builders do not leak into model history or shared renderer state.
+\item Scrollable canvases define how preferred size, zoom, viewport position, and model bounds interact.
+\item Diagnostics can report transform, visible layers, selected ids, candidate counts, paint time, and cache sizes.
+\item Corusco values and commands model viewport and selection state without replacing \api{java.awt.geom}.
+\end{itemize}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Implement a \api{ShapeLayer} that paints model shapes through an \api{AffineTransform} and hit-tests with the inverse transform.
+\item Add a spatial index based on cached \api{Rectangle2D} bounds and compare candidate counts with a full scan.
+\item Use \api{BasicStroke.createStrokedShape} to create a connector hit target wider than the visible stroke.
+\item Implement lasso add, subtract, and intersect modes with \api{Area}; measure cost on simple and complex paths.
+\item Build a scrollable zoomable document view that keeps the mouse anchor stable during zoom.
+\item Convert an open \api{Path2D} into a filled outline and export the resulting path through \api{PathIterator}.
+\item Add a debug overlay that displays the current clip, model clip bounds, transform scale, and number of painted shapes.
+\item Create a constant-screen-size resize handle for a transformed model rectangle and implement dragging by model delta.
+\item Cache flattened paths per zoom bucket and verify that editing invalidates the correct cached entry.
+\item Write a support dump for a geometry canvas: zoom, pan, selected ids, visible layer count, paint duration, cache sizes, and last hit result.
+\end{enumerate}
+\end{exercisebox}
+
+The chapter's central lesson is that geometry is not decorative mathematics. In a rich Swing application, geometry is the contract between model state, painting, input, performance, and support. \api{java.awt.geom} is old enough to be trusted and deep enough to reward study. Used casually, it draws shapes. Used carefully, it lets a desktop application remain precise under zoom, fast under load, and honest when the user clicks what they see.

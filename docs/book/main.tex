@@ -1,0 +1,220 @@
+\documentclass[11pt,a4paper,twoside,openright]{book}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{libertine}
+\usepackage[scaled=0.88]{inconsolata}
+\usepackage{microtype}
+\usepackage[a4paper,inner=30mm,outer=24mm,top=27mm,bottom=30mm,headheight=23pt,headsep=10pt,footskip=13mm]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{titletoc}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{epigraph}
+\usepackage{marginnote}
+\usepackage{needspace}
+\usepackage{emptypage}
+\usepackage{nowidow}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{caption}
+
+\hypersetup{
+  pdftitle={Swing with Corusco},
+  pdfauthor={Auderis},
+  pdfsubject={Progressive Java Swing engineering with Corusco, MigLayout, and JDK 25},
+  pdfkeywords={Java, Swing, Corusco, MigLayout, FlatLaf, JDK 25, EDT, JTable, forms, bindings, annotation processing},
+  hidelinks
+}
+
+\definecolor{RuleGray}{gray}{0.28}
+\definecolor{SoftGray}{gray}{0.94}
+\definecolor{BoxGray}{gray}{0.18}
+\definecolor{CodeGray}{gray}{0.97}
+\definecolor{LinkBlue}{RGB}{32,70,120}
+
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries}
+  {\filleft\Large\chaptertitlename\,\thechapter}
+  {1.2ex}
+  {\titlerule\vspace{1.8ex}\filright}
+  [\vspace{1.0ex}\titlerule]
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries}
+  {\thesection}{0.75em}{}
+\titleformat{\subsection}
+  {\normalfont\large\bfseries}
+  {\thesubsection}{0.75em}{}
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries}
+  {\thesubsubsection}{0.75em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\small\scshape Swing with Corusco}
+\fancyhead[RO]{\small\scshape\leftmark}
+\fancyfoot[LE,RO]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\setlength{\parskip}{0.38em}
+\setlength{\parindent}{1.1em}
+\setlist[itemize]{leftmargin=*,itemsep=0.18em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=*,itemsep=0.18em,topsep=0.25em}
+\raggedbottom
+\emergencystretch=3em
+\sloppy
+
+\captionsetup[figure]{
+  font={small,it},
+  labelfont={bf,sf},
+  justification=raggedright,
+  singlelinecheck=false,
+  margin=1.3em,
+  skip=0.55em
+}
+
+\lstdefinestyle{javaswing}{
+  language=Java,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\bfseries,
+  commentstyle=\color{RuleGray},
+  stringstyle=\color{BoxGray},
+  backgroundcolor=\color{CodeGray},
+  frame=single,
+  rulecolor=\color{RuleGray},
+  framerule=0.25pt,
+  xleftmargin=1.0em,
+  xrightmargin=0.4em,
+  aboveskip=0.8em,
+  belowskip=0.8em,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{RuleGray}{$\hookrightarrow$}\space},
+  columns=fullflexible,
+  keepspaces=true,
+  tabsize=4,
+  upquote=true,
+  numbers=left,
+  numberstyle=\scriptsize\color{RuleGray},
+  numbersep=6pt
+}
+\lstset{style=javaswing}
+
+\newcommand{\api}[1]{\texttt{#1}}
+\newcommand{\concept}[1]{\textbf{#1}}
+\newcommand{\jdk}{JDK~25}
+\newcommand{\swing}{Swing}
+\newcommand{\edt}{event dispatch thread}
+\newcommand{\EDT}{Event Dispatch Thread}
+\newcommand{\corusco}{Corusco}
+\newcommand{\miglayout}{MigLayout}
+\newcommand{\flatlaf}{FlatLaf}
+\newcommand{\termdef}[2]{\textbf{#1}---#2}
+
+\newtcolorbox{principlebox}[1]{
+  enhanced, breakable, colback=SoftGray, colframe=BoxGray,
+  title={#1}, fonttitle=\bfseries, boxrule=0.35pt,
+  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+}
+\newtcolorbox{pitfallbox}[1]{
+  enhanced, breakable, colback=white, colframe=BoxGray,
+  title={Pitfall: #1}, fonttitle=\bfseries, boxrule=0.35pt,
+  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+}
+\newtcolorbox{detailbox}[1]{
+  enhanced, breakable, colback=white, colframe=RuleGray,
+  title={Less-known detail: #1}, fonttitle=\bfseries, boxrule=0.28pt,
+  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+}
+\newtcolorbox{coruscobox}[1]{
+  enhanced, breakable, colback=SoftGray, colframe=BoxGray,
+  title={What Corusco changes: #1}, fonttitle=\bfseries, boxrule=0.35pt,
+  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+}
+\newtcolorbox{migrationbox}[1]{
+  enhanced, breakable, colback=white, colframe=RuleGray,
+  title={From plain Swing to Corusco: #1}, fonttitle=\bfseries, boxrule=0.28pt,
+  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+}
+\newtcolorbox{examplebox}[1]{
+  enhanced, breakable, colback=CodeGray, colframe=RuleGray,
+  title={Companion example: #1}, fonttitle=\bfseries, boxrule=0.28pt,
+  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+}
+\newtcolorbox{exercisebox}{
+  enhanced, breakable, colback=SoftGray, colframe=RuleGray,
+  title={Exercises}, fonttitle=\bfseries, boxrule=0.28pt,
+  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+}
+
+\newenvironment{chaptermap}{
+  \begin{center}\small\begin{tabular}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}p{0.65\linewidth}}\toprule
+}{
+  \bottomrule\end{tabular}\end{center}
+}
+
+\newcommand{\chapterquote}[2]{\epigraph{#1}{#2}}
+\input{examples}
+
+\begin{document}
+\frontmatter
+\include{frontmatter/title}
+\include{frontmatter/preface}
+\tableofcontents
+\mainmatter
+\part{Foundations}
+\include{chapters/ch01_swing_refresh}
+\include{chapters/ch02_components}
+\include{chapters/ch03_miglayout}
+\include{chapters/ch02_models_boundary}
+\include{chapters/ch04_practices}
+
+\part{Swing Mechanics}
+\include{chapters/ch01_painting}
+\include{chapters/ch02_edt}
+\include{chapters/ch03_java2d_hidpi}
+\include{chapters/ch08_geom_shapes}
+\include{chapters/ch07_laf}
+\include{chapters/ch06_layers_overlays}
+\include{chapters/ch05_actions_focus}
+\include{chapters/ch08_text}
+\include{chapters/ch04_tables_trees}
+\include{chapters/ch09_transfer}
+\include{chapters/ch10_accessibility_input}
+\include{chapters/ch11_diagnostics_leaks}
+\include{chapters/ch13_modern_java_swing}
+
+\part{Corusco Core Concepts}
+\include{chapters/ch20_core_values}
+\include{chapters/ch21_observable_lists}
+\include{chapters/ch22_forms_validation}
+\include{chapters/ch23_commands_resources_help}
+\include{chapters/ch24_lifecycle_tasks}
+
+\part{Corusco Swing Integration}
+\include{chapters/ch30_bindings_behaviors}
+\include{chapters/ch31_corusco_tables}
+\include{chapters/ch32_dialogs_forms}
+\include{chapters/ch33_background_busy}
+\include{chapters/ch34_testing_swing}
+
+\part{Generation and Complete Applications}
+\include{chapters/ch40_compile_time_generation}
+\include{chapters/ch41_real_screen}
+\include{chapters/ch12_packaging}
+\backmatter
+\include{backmatter/glossary}
+\include{backmatter/references}
+\end{document}

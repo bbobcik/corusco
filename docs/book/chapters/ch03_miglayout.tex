@@ -1,0 +1,1149 @@
+\chapter{Layout as a Design Tool: MigLayout First}
+\label{ch:miglayout}
+\chapterquote{A layout manager is not merely a way to avoid coordinates; it is the written geometry contract of the screen.}{The layout maxim}
+
+\begin{chaptermap}
+Core question & How should ordinary production Swing screens be laid out today?\\
+Primary APIs & \api{LayoutManager2}, \api{JPanel}, \api{JScrollPane}, \api{JLabel}, \api{JTextField}, \api{JButton}.\\
+Primary library & \miglayout{} for dense, maintainable forms, dialogs, filter bars, and workspaces.\\
+Prerequisite & Chapter~\ref{ch:components}: preferred size, validation, repainting, focus, scroll panes, and component geometry.\\
+Companion example & \migLayoutExample.\\
+\end{chaptermap}
+
+\section{Why MigLayout is the default}
+
+Swing's built-in layout managers are useful foundations. \api{BorderLayout} teaches regions. \api{FlowLayout} teaches preferred sizes. \api{BoxLayout} teaches axes. \api{GridLayout} teaches uniform cells. \api{GridBagLayout} teaches constraints, weight, fill, anchors, and insets. None of these lessons should be forgotten.
+
+But most production screens are not pure examples of one lesson. A business dialog wants labels aligned by baseline, fields that grow horizontally, related and unrelated gaps, command buttons right-aligned at the bottom, optional sections, scrollable form bodies, and occasionally a table or message area that consumes the remaining height. \miglayout{} is a practical language for that geometry.
+
+The library is not magic. It asks the same questions described in Chapter~\ref{ch:components}: what is each component's preferred size, minimum size, maximum size, baseline, and current visibility? Then it combines those answers with panel, column, row, and component constraints. It is powerful because it makes the parent-side contract visible.
+
+The most useful way to read this chapter is therefore as the other half of the
+component contract. Chapter~\ref{ch:components} explained how a child reports
+natural size, baseline, opacity, focus, input behavior, and scrollable extent.
+MigLayout explains how the parent uses that evidence. When a layout fails, do
+not ask "what MigLayout incantation is missing?" first. Ask whether the child
+reported truthful geometry and whether the parent constraints express the
+desired relationship.
+
+\begin{principlebox}{Layout text is code}
+A MigLayout constraint string is part of the source contract. Keep it short, local, and reviewed. A good constraint says what grows, what aligns, where related fields live, and which region absorbs extra space.
+\end{principlebox}
+
+The most common mistake with MigLayout is to treat it as a shorthand for pixel
+placement. That misses its real value. MigLayout is a compact notation for
+relationships: this label belongs to this field, this field grows before that
+button, this table owns extra height, this command row remains near the
+decision point, this optional area collapses when hidden, and this form behaves
+as a vertical document inside a viewport. A constraint string should read like
+that relationship, not like the transcript of a visual tug-of-war.
+
+There is a useful analogy with types. A Java type does not merely satisfy the
+compiler; it documents what values a method accepts. A MigLayout constraint does
+not merely satisfy the layout manager; it documents what geometry a panel
+accepts. When the panel is changed later, the constraint should still tell the
+maintainer which part of the screen is allowed to absorb space and which part is
+not. If the maintainer must run the application after every small edit to
+understand the intent, the layout is underdocumented even if it renders.
+
+This is why examples in the book keep constraint strings near the panels they
+describe. A shared constant such as \api{FORM\_COLUMNS} can be useful when a
+team intentionally standardizes form geometry. A global constant named
+\api{DEFAULT\_LAYOUT} is less helpful if it hides the interesting decision from
+the reader. Prefer local constraints until a repeated shape has proven itself.
+Then extract the repeated shape with a name that explains the geometry, not with
+a name that merely says "standard".
+
+MigLayout also rewards reading the screen from large regions to small
+relationships. First identify the shell: header, body, status, command row,
+sidebar, table, detail, preview. Then identify each region's local grammar:
+label/editor rows, dense filters, button clusters, tables, notes areas, warning
+strips. Finally write component constraints. If the component constraints are
+written before the regions are understood, they often become a long list of
+special cases.
+
+\textbf{The three constraint layers.}
+MigLayout has three constraint layers. The constructor usually receives layout constraints, column constraints, and row constraints. Each component added to the panel may also receive component constraints.
+
+\begin{lstlisting}[caption={The three MigLayout constructor constraints plus component constraints.}]
+JPanel form = new JPanel(new MigLayout(
+        "fillx, insets 16, gap 8",  // layout constraints
+        "[][grow,fill]",            // column constraints
+        "[][][]push[]"));           // row constraints
+
+form.add(new JLabel("Name"));
+form.add(nameField, "wrap");        // component constraints
+form.add(new JLabel("Type"));
+form.add(typeBox, "wrap");
+form.add(buttons, "span 2, align right");
+\end{lstlisting}
+
+The layout constraints describe the panel as a whole. The column constraints describe vertical tracks. The row constraints describe horizontal tracks. The component constraints describe how one child participates in the grid.
+
+This is why long, clever component constraints are often a smell. If every component says \api{growx}, \api{pushx}, \api{span}, \api{split}, \api{gapleft}, and \api{align}, the parent geometry may not be well described. Prefer a clear column that grows and fills over repeating the same behavior on every field.
+
+The layers should not fight each other. If a column says that editors grow and
+fill, each editor should not need to repeat the same instruction. If a row is
+the only vertical consumer, the components in that row should not also carry
+unrelated push instructions merely to make the screenshot look right. The more a
+child constraint repeats a parent rule, the harder it is to discover which rule
+actually matters. Repetition in layout strings is not harmless; it is competing
+documentation.
+
+The component constraint is best used for facts that are local to that
+component's participation in the grid. A field may wrap because it ends a row. A
+button panel may span both columns because it belongs to the whole form. A help
+link may split a cell with another small control. A warning label may span the
+editor column but not the label column. These facts cannot be stated cleanly in
+column or row constraints because they are about one child.
+
+Column and row constraints should describe tracks, not widgets. A column can be
+the label column, the editor column, the action column, or the gutter. A row can
+be a preferred field row, a growing notes row, a warning row, or a command row.
+Once a row constraint is meaningful only because "the third component happens to
+be there", the layout is too dependent on add order. MigLayout still uses add
+order, of course, but the design should be visible at the grid level.
+
+The constructor form is not the only readable form. For large panels, teams
+often build small helper methods for region construction: \api{createFilterBar},
+\api{createEditorBody}, \api{createCommandRow}. The important part is that each
+helper owns one coherent geometry. A single method that creates every component
+and adds them all to one huge grid can be as hard to read as \api{GridBagLayout}
+code. MigLayout reduces ceremony; it does not remove the need for composition.
+
+\section{Vocabulary before notation}
+
+MigLayout is easiest to learn when its words are understood before its
+abbreviations are memorized. A constraint such as \api{span 2, growx, wrap}
+looks cryptic only if the reader has not yet formed the picture behind it. The
+picture is simple: the parent has a grid; rows and columns are tracks in that
+grid; a component starts in a cell; the component may occupy more than one
+cell; extra space is assigned according to growth rules; the component may or
+may not fill the space it receives; gaps express visual relationship; wrapping
+moves the insertion point to the next row.
+
+This vocabulary is not ornamental. It is the language used when debugging a
+screen. "The field does not grow" is an ambiguous complaint. "The editor column
+does not grow" is one complaint. "The editor column grows, but the field does
+not fill" is another. "The field fills, but its maximum size prevents useful
+width" is a third. A team that knows the vocabulary can discuss layout without
+inventing a new story for every screenshot.
+
+Figure~\ref{fig:miglayout-vocabulary} shows the mental model. It is not a
+complete MigLayout manual, but it names the relationships that appear in nearly
+every useful panel. The vocabulary should be read together with the previous
+chapter's component contract: MigLayout arranges components by asking them for
+minimum, preferred, maximum, and baseline information, then applying parent
+constraints to the available space.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.96\linewidth]{\migLayoutVocabularyFigure}
+\caption{MigLayout vocabulary as geometry. The component begins in a cell; columns and rows form tracks; a component may span cells; gaps separate related and unrelated facts; grow receives slack; fill consumes the allocated cell; wrap moves the next component to the following row.}
+\label{fig:miglayout-vocabulary}
+\end{figure}
+
+Read Figure~\ref{fig:miglayout-vocabulary} as a sequence rather than as a
+poster. First find the grid. The grid belongs to the parent panel, not to any
+one child. Then find the starting cell for a component. The starting cell is the
+place where the component enters the grid. Next look for span: a component can
+occupy more than its starting cell when the visual relationship is wider than
+one track. Only after those facts are clear should the reader think about grow,
+fill, and wrap. This order mirrors the debugging order: where is the component,
+what space is available, what space was allocated, and how did the component
+use it?
+
+The figure also separates relationship from measurement. Gaps are shown as
+meaningful spaces between related and unrelated controls; they are not merely
+empty pixels. Grow is shown as slack distribution; it is not the same as a text
+field's preferred width. Fill is shown as a component using the cell it has
+received; it is not the same as receiving extra space. Wrap is shown as the
+insertion point moving to the next row; it is not a visual line break inside a
+component. These distinctions are small enough to learn quickly and important
+enough to prevent many wrong fixes.
+
+The vocabulary is intentionally larger than a short glossary because layout
+mistakes usually arise between terms. A component may be in the right cell but
+not span enough columns. It may span correctly but sit in a non-growing column.
+The column may grow while the component does not fill. The component may fill
+but report a maximum size that prevents useful expansion. A form may grow
+correctly until it is placed inside a scroll pane whose view does not track
+viewport width. Once the terms are known separately, these combined failures can
+be named instead of guessed.
+
+\textbf{A cell is a starting position, not a widget.} A cell is the grid
+location at which a component begins. The component is then allowed to occupy
+that one cell or to span additional cells. This distinction matters because the
+grid is a parent-side structure, while the component is a child-side object. A
+text field is not "the second column"; it is a component whose starting cell is
+in the editor column for one row. Another field may start in the same column on
+the next row. A validation summary may start in the editor column and span the
+command column. The cells describe the parent grammar; the components supply
+content.
+
+The common beginner mistake is to think that each visual object creates a new
+permanent column. A form with a unit label, a help button, and a required
+marker can quickly become a seven-column grid if every local detail is promoted
+to a global track. That is usually the wrong abstraction. The main grid should
+describe repeated structure: labels, editors, action column, perhaps a marker
+column. Local composition belongs in a split cell or a nested panel when the
+exception is truly local. The goal is not to minimize the number of columns.
+The goal is to make the grid's columns meaningful across the region.
+
+A cell also explains why add order remains important. MigLayout is not a
+declarative constraint solver that ignores insertion order. It places
+components as they are added, subject to the current cell, wrapping, spanning,
+splitting, and other constraints. Good source code therefore makes add order
+follow reading order. If a user reads label, field, help, warning, command, the
+source should not add those objects in a surprising order merely because the
+constraints can still produce the desired picture. Layout source is a reading
+artifact as well as a rendering artifact.
+
+\textbf{A track is the row or column policy.} The word "track" is useful
+because rows and columns are not merely locations. They are policies for a
+strip of space. A label column may be preferred width. An editor column may
+grow and fill. A command column may stay at preferred width. A notes row may be
+the only vertical consumer. A warning row may be preferred height but may
+appear and disappear. When the chapter says "column constraint" or "row
+constraint", it is talking about those track policies.
+
+Track thinking prevents a familiar maintenance failure. Suppose every text
+field in a form is added with \api{growx, pushx}. The screen may look correct,
+but the source hides the actual rule: the editor column is the thing that
+should receive extra width. If a later developer adds a combo box and forgets
+the local growth flags, that one row behaves differently. If the editor column
+itself says \api{grow, fill}, the repeated policy has one home. The component
+constraint can then say only what is exceptional about that component's
+placement.
+
+Rows deserve equal discipline. A panel that grows vertically should say which
+row receives the extra height. A table row, notes area, preview pane, or empty
+push row can legitimately be the vertical consumer. They are different design
+answers. If every row grows, the form may stretch fields into awkward heights.
+If no row grows, a tall window may produce unclaimed whitespace or strange
+alignment. A row constraint is therefore not housekeeping; it states which
+part of the screen benefits from vertical space.
+
+\textbf{Grow allocates extra space.} Growth begins when the parent has more
+space than the preferred layout requires. MigLayout must decide where that
+slack goes. A growing column may become wider. A growing row may become taller.
+A growing component may receive more space inside the cell or cells it
+occupies. In the common form case, the editor column grows horizontally, while
+the label column remains at preferred width. The result is a form that becomes
+more useful as the window widens: the fields gain editing room instead of the
+labels drifting away from them.
+
+Growth is a negotiation, not a command that one object executes in isolation.
+If the panel itself is not given extra width by its parent, the editor column
+cannot grow. If the column grows but the component does not fill, the field may
+still sit at preferred width inside a larger cell. If the component has a
+restrictive maximum size, it may refuse to become wider. This is why layout
+debugging must inspect containment, track constraints, component constraints,
+and component size contracts together. A single word in one layer is rarely the
+whole story.
+
+Growth should also have priority. A filter bar may contain a search field, a
+status combo box, a date field, and a Search button. It is usually wrong to let
+all of them grow equally. The search field may deserve the slack because it
+contains arbitrary text. The status combo box has a bounded vocabulary. The
+date field has a predictable length. The button is a command, not a data
+region. Writing a growth policy is therefore an act of interface design: it
+tells the application what kind of user work benefits from extra space.
+
+\textbf{Fill uses the space that has already been assigned.} Fill is often
+confused with grow because good form fields frequently need both. They are
+nevertheless different ideas. Grow is about receiving extra space from the
+layout. Fill is about occupying the space once it has been received. A field in
+a wide cell may remain at preferred width if it does not fill. A button in a
+wide cell might deliberately avoid filling because stretched command buttons
+can look clumsy. A scroll pane, text field, table, and notes area commonly
+fill. An icon, button, color swatch, or compact status label commonly does not.
+
+This distinction gives a useful diagnostic sentence: "The cell is large, but
+the component is not using it." That sentence points toward fill, alignment,
+or maximum size. It does not point toward the column's growth policy. Without
+the distinction, teams often add more \api{growx} declarations and become
+frustrated when nothing changes. The field already received space; it simply
+did not fill it.
+
+Fill also interacts with baseline and alignment. A component can fill
+horizontally and still align its text by baseline with neighboring labels. A
+component can fill vertically and make a row look wrong if it was meant to stay
+at preferred height. This is why form rows usually grow horizontally but not
+vertically. Width helps text entry. Arbitrary height often just makes controls
+look bloated.
+
+\textbf{Shrink is the other half of grow.} Many layout explanations discuss
+only what happens when the window becomes larger. Production screens also
+become smaller: a laptop display, a remote session, a split workspace, a user
+font increase, a translated resource, or a docked tool window can all compress
+the panel. The layout must decide what gives way. Does the search field become
+shorter? Does the table scroll horizontally? Does a label wrap? Does an
+advanced filter move to another line? These are not merely visual details; they
+determine whether the screen remains usable under ordinary conditions.
+
+MigLayout constraints can express minimum and maximum sizes, but the first
+question is design. A fixed-width currency code may shrink little because its
+domain is short. A customer name field may shrink but should keep a sensible
+minimum. A table may keep its height claim and let columns manage their own
+compression. A command row should usually remain visible and preferred height.
+When a panel has no shrink story, it often survives the developer's monitor and
+fails everywhere else.
+
+The shrink story should be tested deliberately. Open the example at a smaller
+size. Increase the default font. Replace labels with longer resource strings.
+Use FlatLaf light and dark themes. Put the form inside a scroll pane. If the
+screen fails, do not immediately add magic widths. Ask which track is allowed
+to surrender space and which component's minimum size represents a real
+usability promise.
+
+\textbf{Span means one component occupies several cells.} A component has one
+starting cell, but it may span horizontally, vertically, or both. The common
+form examples are command rows that span the label and editor columns, warning
+messages that span the editor area, and scroll panes that span several columns
+in a workspace. Spanning is a statement that the component belongs to a larger
+region than the ordinary field row.
+
+Span becomes messy when it is used to compensate for a poor grid. If half the
+components span two columns and the other half span three, the grid may not be
+describing the screen's repeated structure. Sometimes that is legitimate: a
+workspace is less regular than a form. Often it means the region should be
+split into smaller panels with different local grammars. A filter bar, result
+table, detail form, and status strip do not need one universal grid.
+
+Spanning should preserve reading order. A validation summary that spans the
+editor column and command column should still appear near the fields it
+explains. A section heading that spans all columns should start a group, not
+float between unrelated controls. A button row that spans the form should
+communicate that the commands apply to the whole form. When span is merely a
+way to push pixels into place, the source becomes harder to review than the
+geometry it tries to express.
+
+\textbf{Split is local composition inside a cell.} A split cell allows more
+than one component to participate in the same cell. This is useful for small
+local relationships: a text field with a unit label, a search field with a
+clear button, a compact pair of date fields, or a group of tiny command
+buttons. Split should not be used to build an entire toolbar inside a form
+cell unless that toolbar is genuinely part of the field's local interaction.
+
+The difference between span and split is worth keeping clear. Span says one
+component occupies more of the parent grid. Split says one parent-grid position
+contains a small local sequence. If the local sequence has its own growth,
+alignment, visibility, and lifecycle rules, a nested panel may be clearer than
+a long split constraint. MigLayout makes split convenient; it does not remove
+the need to name boundaries.
+
+Split is also where accessibility and focus order can become subtle. If a
+field cell contains a text field, clear button, and help link, keyboard
+navigation should still make sense. The source order should match the intended
+focus order. Accessible names should explain the small controls. Corusco can
+provide stable help topics and commands, but the view still decides that these
+controls are local companions of one field rather than global actions.
+
+\textbf{Wrap controls the flow of additions.} A wrap says that the next
+component begins on the next row. In a two-column form, a row is often written
+as label, field with \api{wrap}. That is readable because it mirrors the
+screen. In denser panels, explicit wrapping prevents a later addition from
+silently continuing the previous row. It also documents which component ends
+the current thought.
+
+Wrap is a small word with large review value. A missing wrap can make a new
+field appear in the wrong row. An accidental extra wrap can create a blank
+line or a jagged form. When reviewing a form, read each row as a sentence. If
+the sentence ends after the editor, wrap there. If a local help button belongs
+to the same row, do not wrap too early. If a section heading starts a new
+group, wrap before it and consider an unrelated gap.
+
+It is tempting to treat wrap as punctuation that can be fixed by running the
+program. Prefer to make it visible in the source. A line ending with
+\api{"wrap"} is often easier to review than a clever default wrap count hidden
+in the layout constraints. Defaults are useful for uniform grids, but ordinary
+forms usually benefit from explicit row endings, especially while the screen is
+still evolving.
+
+\textbf{Gap is visual grammar.} A gap is the space between components or around
+panel content. The important point is not the numeric size. The important point
+is the relationship it expresses. Related controls are closer. Unrelated groups
+are farther apart. Insets keep content from touching the panel boundary.
+Command rows often receive separation from the editable body. A warning may sit
+near the field it explains, while a form-level summary may sit above the group
+it governs.
+
+Random gaps make a screen look unsettled. They also make maintenance harder
+because a later developer cannot tell whether a particular distance is
+semantic, accidental, or a compensation for another layout defect. Use
+platform gaps, named gap policies, or a small local vocabulary of spacing
+decisions. If a gap is unusual, a short comment may be justified. If every gap
+requires a comment, the region may be visually overcomplicated.
+
+Gaps are especially important when screenshots are used as documentation. A
+single screenshot can hide whether spacing survives font changes. A layout
+whose gaps express relationships will usually remain readable as metrics
+change. A layout whose gaps are tuned as pixels will not. This is why the book
+examples prefer modest, repeated gaps and let component preferred sizes do
+their work.
+
+\textbf{Insets are the panel's boundary grammar.} Insets are gaps between the
+panel edge and its content. They are easy to overuse because nested panels can
+each add their own insets. A dialog body may need insets. A nested panel that
+already sits inside a padded region may not. A card-like repeated item may need
+internal padding because it is a visual object. A transparent grouping panel
+inside a form may need no extra insets at all.
+
+When a screen feels both cramped and wasteful, inspect nested insets. The
+content may be squeezed by several layers of padding even though the outer
+window has plenty of space. This is not a MigLayout-specific failure; it is a
+general Swing containment failure. MigLayout simply makes the policy visible
+enough to review. The rule is to decide which boundary owns the breathing room.
+Do not let every boundary claim it by habit.
+
+\textbf{Push claims unassigned slack.} Push is often used to move a region
+away from another region or to make one area claim leftover space. A common
+form pattern uses a push row before the command row, so the buttons remain near
+the bottom while the fields keep preferred height. A status strip may use push
+to separate left-side messages from right-side counters. A workspace may use
+push so the central table receives the height not needed by filters and status.
+
+Push should be used with intent. It is not a general remedy for "the component
+is in the wrong place." Ask what slack exists and who should own it. If a form
+body is a vertical document, the slack may belong to the scroll pane rather
+than to a blank row. If a detail pane has a notes area, the notes row may be a
+better owner than an empty push. If the command row should remain adjacent to
+the final field, a bottom push may be wrong. Push is a spatial policy, not a
+decoration.
+
+Push also makes invisible policy visible. Without it, extra space may be
+distributed in a way that looks acceptable on one size but strange on another.
+With it, the source says where unused space belongs. This is one of the reasons
+MigLayout is valuable in business screens: ordinary layout code can state
+ordinary workflow priorities without a page of \api{GridBagConstraints}.
+
+\textbf{Alignment describes where a component sits inside its allocation.}
+After size has been assigned, a component still needs a position inside the
+cell or span. It may align leading, trailing, centered, baseline, top, or
+bottom depending on the context. Alignment is not the same as fill. A component
+that fills has little remaining internal positioning choice. A component that
+does not fill must still be placed.
+
+Alignment is where many screens reveal whether they were designed or merely
+assembled. Text fields usually align as a column. Labels usually align with
+their fields by baseline and often by trailing edge in left-to-right forms.
+Small buttons may align with the field they supplement. Command rows usually
+align according to platform and workflow convention. Icons and color swatches
+may align center. A screen with arbitrary center and right alignment reads
+poorly even if all components are technically visible.
+
+Use leading and trailing language mentally even when a constraint string uses a
+concrete word. Localization and right-to-left orientation make absolute
+"left" and "right" assumptions less portable. The application may still choose
+a platform-specific command order, but the design idea should be explicit:
+commands are trailing, Help may be separated, destructive commands may be
+visually distinct, and field labels follow the reading direction.
+
+\textbf{Baseline is typographic alignment.} Swing components can report a
+baseline, the line on which their text sits. MigLayout can use that information
+to align labels, fields, combo boxes, and buttons so that a row reads as one
+line of text rather than as a stack of boxes. Baseline alignment is one of the
+small differences between a professional form and an amateur arrangement.
+
+Baseline depends on the child component. Standard labels, fields, buttons, and
+combo boxes usually provide useful baselines. A custom component may not. A
+custom date editor, token field, formatted field, or search component that is
+intended to sit in a text row should decide what its baseline is. Otherwise the
+parent layout must fall back to top, center, or bottom alignment, and the row
+may look slightly wrong at every font size.
+
+Validation decoration can disturb baseline if it changes borders or insets
+while the user types. A red border that adds pixels around the field may change
+preferred size and baseline. A problem icon inserted into the row may push the
+editor. A stable decoration area, overlay, or carefully composed border keeps
+the row from jumping. The layout vocabulary therefore meets the validation
+vocabulary: a problem is semantic, but its visible mark still participates in
+geometry.
+
+\textbf{Size groups express equality when equality matters.} Some screens need
+several controls to share a width even though their preferred sizes differ.
+Button rows are a common example: OK, Cancel, and Apply may use equal widths
+under a chosen platform policy. A pair of short numeric fields may have the
+same width because the domain says they are comparable. Size grouping should
+not be a reflex. Equal widths can clarify peer controls; they can also waste
+space or imply a relationship that does not exist.
+
+The useful test is semantic. If two controls are peers in the user's decision,
+a shared size may help. If one field accepts a name and another accepts a
+postal code, equal width is probably less important than giving the name field
+room to breathe. MigLayout can state equality, but the screen must justify it.
+This mirrors Corusco's broader design: descriptors and keys can make identities
+stable, but visual grouping remains a presentation decision.
+
+\textbf{Docking, absolute positions, and bounds are escape hatches.} MigLayout
+has features for special cases, but ordinary forms should not reach for
+absolute coordinates. The moment a panel depends on specific pixel positions,
+it becomes fragile under font, Look-and-Feel, localization, and scaling
+changes. A rich visual component such as a map or canvas may use coordinates
+inside its own painting model. The parent panel should still place that
+component through normal layout relationships.
+
+Escape hatches are not forbidden. They are expensive. Use them when the screen
+really has a spatial model that cannot be described as rows, columns, tracks,
+and regions. Then isolate the special component. Do not let one unusual visual
+region infect the surrounding form with fixed coordinates. A GIS viewport,
+paint editor canvas, or diagram component may be custom and coordinate-heavy;
+the toolbar, properties pane, status strip, and dialogs around it can still be
+ordinary MigLayout panels.
+
+\textbf{Debug mode shows geometry, not intent.} MigLayout can draw layout
+debugging marks. Temporary borders and background colors can also reveal
+regions. These tools are useful because they make cells, gaps, and spans
+visible. They do not answer the design question. A debug grid can show that a
+notes row receives extra height. It cannot tell whether the notes row should
+receive that height. A debug grid can show that a warning spans three columns.
+It cannot tell whether the warning belongs near the field or at the form
+summary.
+
+Debugging therefore uses two passes. First identify the mechanical fact: which
+cell, which track, which span, which growth rule, which fill rule, which gap,
+which component size. Then identify the design fact: which region is primary,
+which relationship is being expressed, which information should remain visible,
+which model fact drives a visual state. The mechanical pass explains what
+happened. The design pass decides what should happen.
+
+\textbf{Corusco names meaning; MigLayout names geometry.} A generated Corusco
+form can name a field, expose a typed model, bind raw text to semantic state,
+attach validation problems, define command identity, and provide help topics.
+None of that tells the view where the field should appear. MigLayout describes
+the geometry: label column, editor column, growing notes row, trailing command
+row, fixed status strip, scrollable body. This division is a strength. It lets
+the same stable field identity appear in a compact dialog, a wide workspace
+detail pane, or a wizard page without pretending that all three screens share
+one visual grammar.
+
+The division also improves review. If a Save button is enabled incorrectly,
+inspect command state, form committability, bindings, and validation problems.
+If the Save button is in the wrong place, inspect MigLayout constraints and
+platform command policy. If a field shows the wrong problem, inspect Corusco
+problem targets and binding behavior. If the problem mark shifts the row,
+inspect layout and decoration. A clean vocabulary keeps failures from becoming
+one undifferentiated "the UI is wrong" complaint.
+
+\textbf{Read a constraint string as a short design proof.} A useful MigLayout
+review does not begin by asking whether the screenshot looks acceptable today.
+It begins by asking whether the constraints prove the screen's intended
+behavior. A two-column form should be explainable in a few sentences: the first
+column is the label track, the second column is the editor track, the editor
+track grows and fills, ordinary rows stay at preferred height, the notes row or
+scroll pane owns vertical slack, and the command row spans the form. If those
+sentences cannot be spoken, the constraint string is probably doing work that
+is not yet understood.
+
+This proof style is especially valuable for code review because it gives the
+reviewer something better than taste. "The field looks too short" is a weak
+review comment. "The editor column has no growth policy, so the field cannot
+benefit from a wider dialog" is a precise comment. "The warning spans all
+columns, so it reads like a form-level problem even though its target is one
+field" is a precise comment. "The command row sits inside the scrollable body,
+so OK may disappear while correcting long forms" is a precise comment. The
+vocabulary turns visual unease into maintainable engineering observations.
+
+The same habit helps when translating from \api{GridBagLayout}. Many old Swing
+screens already contain the right ideas but express them with too much
+ceremony: weight, fill, anchor, insets, grid width, and grid height are scattered
+across mutable constraint objects. When migrating to MigLayout, do not
+mechanically translate every line. First recover the design proof. Which column
+was meant to grow? Which row held the main work surface? Which components were
+peers? Which gaps expressed grouping? Then write the MigLayout version from the
+proof, not from the accident of the old source.
+
+\begin{detailbox}{Grow and fill are not synonyms}
+A column with \api{grow} may become wider. A component with \api{growx} may be allocated extra width. A component with \api{fillx} uses the width it receives. In simple forms these often appear together, but confusing them makes debugging harder.
+\end{detailbox}
+
+Shrink deserves the same attention as grow. A screen is often designed on a
+wide monitor, then used on a laptop, remote desktop, or split workspace. Which
+component gives up space first? Which field may become narrow but still useful?
+Which table should keep a minimum number of visible columns? Which label may
+wrap? Which command row should remain visible? A layout that only states growth
+policy is half specified; the shrinking behavior is where many production
+annoyances appear.
+
+The preferred-size chapter taught that a component's minimum size is partly a
+usability promise. MigLayout lets the parent respect or override that promise,
+but the team must choose. A search field may shrink to a modest width. A
+currency field may have a strict minimum because partial numbers are dangerous.
+A table may be allowed to lose horizontal space because it has a horizontal
+scroll bar. A form with a required text field may prefer to keep the field
+usable and let the window enforce a minimum size. These choices are design, not
+syntax.
+
+Alignment is also not a decoration added at the end. Leading and trailing
+alignment affect how the screen reads. Baseline alignment affects whether the
+form looks stable. Center alignment may be appropriate for icons or compact
+tools but amateurish for text fields in a business form. Fill may be correct for
+editors and tables but wrong for buttons. A good layout states these choices in
+the smallest place where they are true.
+
+\textbf{A form skeleton.}
+Most form panels start with two columns: labels and editors. Labels normally use their preferred width. Editors normally fill a growing column. Rows normally use preferred height until one row is explicitly marked as the vertical consumer.
+
+This pattern depends on the standard component size stories from
+Chapter~\ref{ch:components}. Labels are allowed to be as wide as their text,
+font, icon, and border require. Text fields are allowed to compute a natural
+height from the Look-and-Feel and a natural width from their columns or content
+policy. The layout then decides that the editor column, not the label column,
+receives extra width. The result is robust because neither side lies.
+
+\begin{lstlisting}[caption={A compact MigLayout form pattern.}]
+JPanel form = new JPanel(new MigLayout(
+        "fillx, insets 16, gap 8",
+        "[][grow,fill]",
+        "[][][]push[]"));
+form.add(new JLabel("Name"));
+form.add(nameField, "wrap");
+form.add(new JLabel("Type"));
+form.add(typeBox, "wrap");
+form.add(new JLabel("Status"));
+form.add(statusField, "wrap");
+form.add(buttons, "span 2, align right");
+\end{lstlisting}
+
+This pattern is deliberately plain. The first column is only as wide as the labels require. The second column grows and fills. The \api{push} before the final row moves the button row toward the bottom if the parent becomes taller. The button row spans both columns and aligns right.
+
+Plain does not mean simplistic. This two-column form pattern is the foundation
+for a large amount of business UI because it follows the user's scanning path.
+The label column names facts. The editor column carries values. The command row
+is visually separated from data entry. The growing policy says that wider
+windows should help editing, not merely add whitespace. The bottom push says
+that extra height belongs to the body, not to random gaps between fields.
+
+When the form grows beyond a few fields, group the rows by meaning before
+adding visual chrome. Identity fields may form one group, contact fields
+another, permissions another, notes another. Related fields may stay close.
+Unrelated groups may receive a larger gap or a small heading. Avoid turning the
+whole form into a stack of bordered boxes; most business forms need rhythm and
+grouping, not card nesting. MigLayout can provide grouping through gaps,
+spanning labels, and row constraints without making every group a visual panel.
+
+A field that needs a unit label is still part of the editor relationship. For
+example, a credit-limit field and a currency label may share the editor cell
+with \api{split} or a small nested panel. The domain fact is one field with an
+adjacent unit, not two unrelated columns in the entire form. Use the parent grid
+for repeated structure and use a nested panel or split cell for local
+composition. This keeps the main form columns from multiplying for one special
+case.
+
+A required marker should be handled with similar care. Some applications use a
+small marker column between label and editor. Others include the marker in the
+label text or use validation decoration. The choice should be consistent within
+a screen. A random marker inserted as another component in an ordinary editor
+cell will disturb alignment and reading order. If markers are layout elements,
+give them a track. If they are decoration, let a behavior own them.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.82\linewidth]{\migLayoutFigure}
+\caption{A small MigLayout form from the companion examples. The field column grows, labels keep preferred width, and the command row is aligned right at the bottom.}
+\label{fig:miglayout-form}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.96\linewidth]{\migLayoutDenseFigure}
+\caption{MigLayout used for a denser business screen. The fields remain readable because growth, wrapping, related gaps, and the result table's vertical claim are stated in the layout constraints.}
+\label{fig:miglayout-dense-screen}
+\end{figure}
+
+\textbf{Column and row thinking.}
+A good MigLayout panel is often easier to read by columns and rows than by component additions. Ask first: which vertical tracks exist? A dense editor may have a label column, a required-marker column, a growing field column, and a small command column. A search bar may have a label, a growing search field, a fixed filter combo, and a command button.
+
+Then ask which horizontal tracks exist. Most rows are preferred height. A table row or notes area may grow. A status row may sit at the bottom. A button row may remain preferred height but be separated from the body by unrelated gap.
+
+When the grid is clear, component additions become simple. If the grid is unclear, component constraints become a pile of local corrections. Layout code should be read as design, not as a log of where individual widgets were shoved until the screenshot looked acceptable.
+
+\textbf{Preferred sizes still matter.}
+MigLayout begins with component size contracts. If a custom component reports a preferred width of 30 pixels, MigLayout will not magically infer that it is a chart needing 500 pixels. If a text field's maximum size prevents growth, a growing column may still not produce a growing field. If a scroll pane's preferred viewport size is too small, the layout may look cramped until constraints override it.
+
+This is the first bridge from Chapter~\ref{ch:components}. Parent constraints cannot repair a lying child. They can only decide how to use the child's reported sizes. When layout behaves strangely, inspect both sides: the component's preferred/minimum/maximum sizes and the parent constraints.
+
+\begin{pitfallbox}{fixing child lies in the parent}
+It is possible to override sizes in MigLayout constraints, but doing so everywhere hides the real problem. If a reusable custom component always needs a better preferred size, fix the component. If one screen has a special visual policy, express that policy in the layout.
+\end{pitfallbox}
+
+\textbf{Gaps as grammar.}
+Gaps are not blank pixels; they are grammar. A small related gap says two things belong together. A larger unrelated gap says a new group begins. Insets say the panel content should breathe inside its border. Button gaps should match platform and Look-and-Feel expectations where possible.
+
+Hard-coded large gaps age poorly. They may look good at one font size and ridiculous at another. MigLayout can use logical gap names and platform-aware spacing. Even when using numeric gaps, keep them modest and consistent. A screen with random 3, 7, 11, 14, and 23 pixel gaps rarely looks intentional.
+
+The grammar metaphor is useful during review. If a gap is increased, ask what
+semantic separation it represents. If a gap is removed, ask whether two controls
+now read as one unit. If a section receives a top gap, ask whether the preceding
+section really ended. These questions keep spacing from becoming a matter of
+personal taste. Taste still matters, but it is disciplined by the screen's
+meaning.
+
+Insets are similar. A panel inside a dialog usually needs insets because the
+content should not touch the window border. A panel inside a cell of a larger
+layout may need no insets because the parent already supplies rhythm. Nested
+insets accumulate quickly. A screen can look padded and cramped at the same time
+when every nested panel adds its own border insets. Inspect the nesting before
+adding more space.
+
+Use visual debugging sparingly but decisively. Temporary borders around regions
+often reveal that the apparent gap is really a nested panel's inset, a scroll
+pane border, a label's preferred width, or a row that grows unexpectedly. Remove
+the temporary borders after the diagnosis. The final source should express
+geometry through constraints, not through debugging artifacts.
+
+\section{Baseline alignment}
+
+Text in labels, fields, combo boxes, and buttons should usually align by baseline. Baseline alignment is one reason MigLayout forms look less amateur than hand-arranged panels. Components with different heights can still appear typographically aligned.
+
+Baseline alignment depends on the components reporting meaningful baselines. Standard Swing components usually do. Custom components may not. If a custom editor appears slightly too high or low in a form row, inspect baseline behavior before adding arbitrary top gaps.
+
+Baseline alignment is most visible when components have different heights. A
+combo box, text field, button, and label may all occupy the same row but draw
+their text at slightly different vertical positions. Top alignment makes the row
+look accidental. Center alignment can look close but still wrong. Baseline
+alignment makes the text read as one line. This small detail is one reason a
+Swing form can feel professional without decorative styling.
+
+Custom components that participate in forms should decide whether they are
+text-like. A color swatch beside a label may not need a baseline; it can align
+center. A custom date editor, token field, or search box probably should expose
+a meaningful baseline. If implementing baseline behavior is too much for the
+component, wrap it in a small panel whose alignment policy is explicit. Do not
+hide the problem with arbitrary top gaps; those gaps will fail when the font
+changes.
+
+Baseline alignment also interacts with validation decoration. A red border or
+problem icon should not push the field text off the baseline. Decoration that
+changes border insets can change preferred size and baseline. A better policy
+is to reserve decoration space, compose borders carefully, or paint markers in
+an overlay. Layout and validation are separate concerns, but their visual
+contracts meet in the row.
+
+\textbf{Growing in one direction.}
+Many screens should grow horizontally but not vertically. A search form might stretch fields when the window widens while keeping row heights stable. A notes field may grow in both directions. A table should usually grow in both directions. A command row should usually grow horizontally only as a container but keep buttons at preferred size.
+
+The important habit is to name the growth consumer. If a panel has extra vertical space and no row claims it, the result may be awkward centering or bottom whitespace. If several rows claim it equally, the result may be stretched fields that should not stretch. One growing row is often clearer than many.
+
+For forms, the vertical growth consumer is often a notes area, a table, a
+preview, or an empty push row before the command row. Choose deliberately. If a
+notes area grows, the user gets more editing space. If a table grows, the user
+sees more rows. If an empty push row grows, the command row stays at the bottom
+while the body remains at preferred height. Each choice communicates a workflow
+priority.
+
+Horizontal growth also needs priority. In a filter bar, the search field may
+deserve most extra width while a status combo box remains preferred size. In a
+details header, a title label may grow but an action button should not. In a
+two-column editor, both editor columns may grow equally or one may dominate.
+Avoid giving every component \api{growx} merely because the window can widen.
+Growth without priority is just stretching.
+
+When a screen is resized smaller, growth policy becomes compression policy.
+MigLayout can only distribute the available space; it cannot decide which
+business fact is more important unless the constraints say so. If the status
+field must remain readable, give it a minimum. If the optional filter can
+collapse or move into an advanced panel, make that a screen behavior. If a table
+can scroll horizontally, accept that policy and keep the surrounding form
+stable.
+
+\textbf{Buttons and command rows.}
+Button rows are not ordinary form rows. They represent decisions. In left-to-right desktop applications, primary and secondary commands often align to the right at the bottom of a dialog or form. Destructive commands may be separated. Help may sit on the opposite side. Platform conventions vary, but random placement is never a convention.
+
+MigLayout can express command rows with \api{span}, \api{split}, \api{align right}, and push constraints. Corusco can supply the commands behind the buttons, but it should not decide the spatial convention. Layout remains part of application design.
+
+\begin{coruscobox}{commands and layout}
+Use Corusco commands to remove duplicated action state. Use MigLayout to place the buttons. A generated command descriptor should not become a layout policy.
+\end{coruscobox}
+
+\textbf{Scrollable form bodies.}
+Long forms should usually scroll vertically and avoid horizontal scrolling. This is a contract among three objects: the scroll pane, the viewport view, and the form layout. The form panel should fill the viewport width, fields should grow within that width, and rows should determine the preferred height.
+
+Swing does not provide a universal "width-tracking panel" out of the box. Some applications implement a small \api{Scrollable} panel whose \api{getScrollableTracksViewportWidth} returns true. Others use layout constraints and viewport listeners. The important point is conceptual: the view should track viewport width when the form is a vertical document of fields.
+
+The scroll-pane discussion in Chapter~\ref{ch:components} gives the missing
+child-side vocabulary: viewport extent is the visible window, the view preferred
+size is the scrollable world, and \api{getScrollableTracksViewportWidth}
+chooses whether the view accepts the viewport width. MigLayout can make the
+fields grow inside the form, but it cannot by itself decide whether the form is
+a width-tracking scrollable view. That decision belongs to the component placed
+inside the viewport.
+
+\begin{lstlisting}[caption={A small width-tracking form panel for scroll panes.}]
+public final class ScrollableFormPanel extends JPanel implements Scrollable {
+    public ScrollableFormPanel() {
+        super(new MigLayout("fillx, insets 16", "[][grow,fill]", ""));
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportWidth() {
+        return true;
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportHeight() {
+        return false;
+    }
+}
+\end{lstlisting}
+
+The remaining \api{Scrollable} methods should still return sensible increments. The example is intentionally incomplete as production code; the point is the width-tracking policy.
+
+A production width-tracking form panel should also answer scroll increments in
+terms of the content. A unit increment might be one text row or a fraction of
+the default field height. A block increment might be the visible height minus
+one row so the user keeps context. These details seem small until keyboard and
+wheel scrolling feel either sluggish or disorienting. Layout and navigation are
+both part of the same reading experience.
+
+Scrollable forms should keep command rows visible when the workflow demands it.
+For a simple dialog, the command row often belongs outside the scroll pane: the
+body scrolls, while OK, Cancel, Apply, and Help remain available. For a long
+wizard page, the navigation row likewise remains fixed. For a document-like
+editor, commands may live in a toolbar outside the document. If the command row
+scrolls away, the user may have to hunt for the action that completes the
+workflow.
+
+The opposite mistake is to keep too much outside the scroll pane. A fixed
+header, fixed warning area, fixed button row, fixed summary, and fixed status
+strip can leave a tiny viewport for the actual form. Decide which information
+must remain visible during editing. Validation summaries often deserve a fixed
+place only when they guide correction; otherwise field-level decoration and a
+short status line may be enough.
+
+Scrollable forms also need a policy for initial focus and initial scroll
+position. If the first invalid field is below the fold, opening the dialog at
+the top may hide the problem. If the dialog always scrolls to the first invalid
+field, the user may lose context. Many applications start at the top, then
+scroll to the first blocking problem only after OK fails. This policy belongs to
+dialog workflow, but the scrollable layout must make it possible.
+
+\textbf{Tables, trees, and split workspaces.}
+Not every screen is a form. Many Swing applications are workspaces: a filter bar above a table, a detail pane beside it, a status strip below, perhaps a log or preview panel in another region. MigLayout can express these screens without retreating to nested \api{BorderLayout} panels everywhere.
+
+A common pattern uses one growing row for the main content and one or more fixed rows for filters and status. Columns may split the main area into a growing table and a fixed detail pane. If the detail pane itself contains a form, it can have its own MigLayout with different constraints.
+
+The rule from the previous chapter still applies: use nested panels for genuine geometry changes. A filter bar, main workspace, and status strip have different geometry. They deserve separate panels. Do not use nested panels merely because one parent constraint became hard to understand.
+
+A workspace layout should name the user's primary work surface. In a search
+screen, the table may be primary. In an editor, the form may be primary. In a
+review screen, the split between list and detail may be primary. Give the
+primary surface the main growth claim. Secondary controls should remain
+available but should not consume the space that makes the workflow useful. This
+principle is often more important than the exact layout manager syntax.
+
+Split panes are sometimes the right tool. MigLayout can place a
+\api{JSplitPane}; it should not reimplement user-resizable split behavior with
+manual column widths. The same is true for tabbed panes, toolbars, and scroll
+panes. Use specialized Swing containers when they own a well-established
+interaction. Use MigLayout to arrange those containers into the larger screen.
+This keeps layout code from becoming an imitation of components Swing already
+provides.
+
+Dense workspaces need restraint. A filter bar with twelve controls may look
+powerful but become unreadable. MigLayout can arrange dense controls cleanly,
+but density is not the same as usability. Group related filters, provide
+advanced sections, use sensible defaults, and let the result table or content
+area remain visually dominant. A layout framework can make density survivable;
+it cannot decide which controls deserve to be visible all the time.
+
+Status strips should not become junk drawers. A left-aligned status message, a
+right-aligned count, and a progress indicator may be useful. Ten labels with
+changing widths will cause jitter and distract from work. Reserve stable space
+for volatile values, and consider whether some status belongs in the model or
+table header instead. MigLayout can align the strip; the screen must decide what
+belongs there.
+
+\textbf{Hiding and showing sections.}
+Business screens often hide optional sections. MigLayout can react to component visibility when configured appropriately. A hidden advanced-search row should not leave a mysterious blank band. A hidden warning label should not collapse the entire form unpredictably.
+
+When visibility changes affect layout, call \api{revalidate} and \api{repaint} on the relevant panel. The visibility change alters geometry and pixels. If the hidden section lives inside a scroll pane, the viewport and scroll bars may need the new preferred size.
+
+Hidden sections should have an explicit layout mode. Some screens collapse
+hidden components completely. Some preserve space to avoid visual jumping. Some
+replace a detailed section with a compact summary row. The right answer depends
+on workflow. A rarely used advanced-search section should probably collapse. A
+validation message area might reserve one line to avoid controls shifting while
+the user types. A busy detail area might preserve space so the screen does not
+reflow during a load.
+
+When hiding a group, hide the group as a meaningful unit. Do not hide one label
+and forget its field. Do not hide the field and leave a required marker behind.
+Do not hide the body of an advanced group while its separator remains. Grouping
+optional sections into small panels can be legitimate even in MigLayout because
+the panel represents a lifecycle and visibility unit, not a workaround for
+constraints.
+
+Generated Corusco descriptors can help identify groups, but they should not
+decide the visual hide policy. A field may be optional in the model and still
+visible in one screen. A field may be read-only in one workflow and hidden in
+another. Layout visibility is a presentation decision over model facts.
+
+\textbf{Localization and text growth.}
+Layouts that only work in English are not finished. Labels become longer in other languages. Buttons may need wider text. Mnemonics may change. Some components need right-to-left orientation. MigLayout helps because it can let the label column take the width it needs while the field column absorbs the remaining space.
+
+Avoid fixed pixel widths for text-bearing controls unless there is a domain reason. A field for a two-letter country code may be fixed. A customer name field should not be fixed merely because it looked neat in a screenshot. Use column growth and sensible minimum sizes.
+
+Localization also changes grouping. A pair of short English labels may fit
+comfortably in one row, while translated labels need two rows. A button strip
+may need more width or a different order under platform conventions. A label
+with an embedded mnemonic may conflict with another mnemonic after translation.
+The layout should tolerate longer text; the resource and command layers should
+make the text discoverable; tests or screenshot reviews should include at least
+one long-string scenario.
+
+Right-to-left orientation is not only a final polish item. Leading and trailing
+alignment, icon placement, table column order, scroll bar placement, and command
+row order can all be affected. MigLayout can cooperate with component
+orientation when the layout uses relational terms rather than absolute pixel
+positions. Code that says "align right" for a trailing command row may need a
+platform or orientation review; code that expresses "trailing" as a design idea
+is easier to adapt.
+
+Text growth is not restricted to localization. User preferences may increase
+font size. Accessibility settings may alter default fonts. FlatLaf themes may
+use different metrics. A screen shown through remote desktop may use different
+scaling. If a form is built from preferred sizes, growth columns, baseline
+alignment, and scrollable bodies, these changes are ordinary inputs. If it is
+built from fixed rectangles, each change becomes a bug.
+
+\section{Look-and-Feel and font changes}
+
+Look-and-Feel changes can alter borders, insets, preferred sizes, and baselines. Font changes do the same. A layout that depends on exact preferred sizes from one Look-and-Feel will be brittle. This is another reason to describe relationships instead of coordinates.
+
+The companion examples use \flatlaf{} because it gives consistent modern screenshots, not because the layout should depend on FlatLaf-specific sizes. A well-written MigLayout form should survive reasonable LAF changes with little or no adjustment.
+
+\textbf{Corusco and layout.}
+Corusco deliberately does not choose the layout. Generated form companions define fields, models, view contracts, and bindings. The application still builds the panel. This is the right division: generation should not become a GUI builder that hides geometry from the developer.
+
+\begin{coruscobox}{generated forms still need designed panels}
+Use generated view interfaces and binding facades to remove repetitive wiring. Use MigLayout to make the screen legible. The two tools solve different problems.
+\end{coruscobox}
+
+This division is especially important for teams. Generated code can make field identity stable. It can bind a text field to a form model. It can attach validation decoration. It cannot know whether the field belongs in a compact header, a two-column dialog, a scrollable wizard page, or a dense operations workspace. Human layout design remains necessary.
+
+The boundary is easiest to remember as a question: is this fact about what the
+screen means, or where the screen puts it? Field identity, resource keys,
+problem targets, help topics, command identity, and dirty state are meaning.
+Rows, columns, gaps, spans, split panes, scroll ownership, and command placement
+are geometry. Generated code may expose meaning to the view. Handwritten layout
+turns that meaning into a readable screen.
+
+This boundary also keeps examples honest. A generated form that constructs its
+own panel can be useful as a smoke test, but it is rarely the screen a user
+should see. The book's examples should show handwritten MigLayout panels using
+generated bindings where appropriate. That demonstrates the actual production
+division: Corusco removes repetitive wiring, while the developer still designs
+the user's workspace.
+
+There is one exception worth naming. A generator may create a simple diagnostic
+or test view so generated models can be exercised without writing a full screen.
+Such a view is an aid to testing, not an application layout recommendation. It
+should not become the default visual language of a product.
+
+\textbf{A Corusco-shaped form panel.}
+The normal Corusco form shape is not a generated panel. It is an application panel that implements a generated view contract. The panel exposes components through methods or fields required by generated bindings. MigLayout arranges those components. A \api{BindingScope} or \api{BehaviorScope} owns the installed relationships.
+
+\begin{lstlisting}[caption={The intended division: handwritten layout, generated binding.}]
+CustomerEditFormModel model = new CustomerEditFormModel(customer);
+CustomerEditPanel view = new CustomerEditPanel(); // MigLayout inside.
+BindingScope scope = new BindingScope();
+
+CustomerEditBindings.install(view, model, scope);
+\end{lstlisting}
+
+The generated call should be boring. The layout code should be visible. If the generated binding fails, inspect generated source. If the form looks wrong, inspect MigLayout constraints and component size contracts.
+
+\textbf{Debugging layout.}
+Layout debugging begins with preferred sizes, minimum sizes, and grow rules. If a field refuses to expand, inspect the column and component fill behavior. If a panel grows but the scroll pane does not, inspect containment. If a button row jumps, inspect push, wrap, span, and unrelated gaps.
+
+Use temporary borders or background colors when debugging. Give panels names. Print preferred sizes for suspicious components. Reduce the layout to a small reproduction. A layout bug hidden inside a full application is often just a three-component disagreement.
+
+When a component is custom, also inspect the custom component before blaming
+the layout. Does \api{getPreferredSize} describe content and insets? Does a
+geometry change call \api{revalidate}? Does the component implement
+\api{Scrollable} if it is the viewport view? Does it report a useful baseline
+if it is meant to align with labels and fields? These questions come directly
+from Chapter~\ref{ch:components}; MigLayout cannot infer answers the child does
+not provide.
+
+The fastest layout debugging technique is subtraction. Copy the panel into a
+small example, remove half the components, and keep the half that still shows
+the problem. Repeat until the layout surprise is reduced to a few controls and
+one or two constraints. This technique is more useful than staring at a full
+screen because many layout bugs are interactions among exactly two facts: a
+component preferred size and a missing grow rule, a scroll pane and a
+non-tracking view, a hidden component and a missing revalidation, a nested inset
+and an outer gap.
+
+MigLayout's own debug mode can be useful during development, but it should not
+be a substitute for understanding. Lines and cell markers show where the layout
+manager placed things. They do not tell whether the chosen geometry matches the
+workflow. Use debug visuals to see the grid, then return to the design
+questions: which region is primary, which row grows, which gap expresses a
+group, which control should remain visible, and which component is reporting a
+surprising size.
+
+Print sizes when visual inspection is ambiguous. Log preferred, minimum,
+maximum, and actual sizes for the suspicious component and its parent. Log the
+visible rectangle when a scroll pane is involved. Log whether the component is
+showing and whether it is visible. These numbers are often enough to reveal that
+the component is truthful but the parent is wrong, or the parent is sensible but
+the component reports nonsense.
+
+Do not debug layout by adding permanent arbitrary gaps. A top gap of 6 pixels
+may hide the immediate overlap, but it also encodes no reason. The next font,
+theme, locale, or validation state may break again. If a gap is the right fix,
+name the relationship it represents: related, unrelated, paragraph, command
+separation, section separation, viewport inset. If no relationship can be
+named, the gap is probably compensating for a different defect.
+
+\begin{detailbox}{The question sequence}
+When a layout surprises you, ask in order: what is the component's preferred size; which cell contains it; does the column or row grow; does the component fill; does it span; is a scroll pane changing the visible extent; did visibility change require revalidation?
+\end{detailbox}
+
+\textbf{When built-in layout managers are enough.}
+MigLayout should be the default for serious forms and workspaces, not a reflex for every panel. \api{BorderLayout} is excellent for "header, center, footer" shells. \api{FlowLayout} can be fine for tiny button strips, though MigLayout often gives better alignment. \api{BoxLayout} is useful for simple stacks. Specialized components such as \api{JSplitPane}, \api{JTabbedPane}, and \api{JToolBar} have their own layout behavior.
+
+The pragmatic rule is to use the simplest layout that states the geometry clearly. MigLayout often wins because it states dense geometry clearly. It loses when a standard container already embodies the pattern.
+
+\section{Worked example and review}
+
+\begin{examplebox}{MigLayout}
+\migLayoutExample{} builds the form shown in Figure~\ref{fig:miglayout-form}. It is small enough to quote, but it uses the same constraints as larger dialogs: label column, growing field column, preferred rows, bottom push, and right-aligned command row.
+\end{examplebox}
+
+\textbf{Case studies and design drills.}
+The following small cases are meant to be read as layout diagnoses, not as
+separate recipes. Each begins with an unpleasant screenshot symptom and then
+asks which part of the geometry contract is missing. This is the practical way
+to use MigLayout well: translate visual unease into vocabulary, then adjust the
+owner of the relevant relationship.
+
+\textbf{The expanding label.}
+A translated label becomes much longer than its English original. The label column expands and steals space from the field column. This may be correct. If the field becomes unusably small, consider wrapping labels, placing labels above fields in narrow contexts, or setting sensible minimum widths for the field column.
+
+\textbf{The notes area that will not grow.}
+A \api{JTextArea} sits in a scroll pane, but the notes region remains tiny when the dialog grows. The likely cause is a row that does not grow. The scroll pane may be willing to fill, but no vertical space reaches its row.
+
+\textbf{The mystery horizontal scroll bar.}
+A form inside a scroll pane reports a preferred width larger than the viewport and does not track viewport width. The scroll pane dutifully shows a horizontal scroll bar. Fix the view policy; do not merely hide the horizontal scroll bar while leaving clipped content.
+
+\textbf{The vanishing advanced section.}
+An advanced section is hidden, but the blank space remains. The layout may be configured to keep hidden components, or the parent was not revalidated. Decide whether hidden sections should collapse. Then make that policy explicit.
+
+\textbf{The generated form that looks generated.}
+The team lets generation create too much of the visual structure. The result is a uniform but awkward screen. Move layout back into handwritten panels. Keep generation for descriptors, models, and binding facades.
+
+\textbf{Reviewing the example as a screen.}
+The companion form should be reviewed in the same way as a production panel,
+only faster. Read the layout constraints aloud before running it: the panel
+fills horizontally, has insets, owns a label column and a growing editor column,
+keeps ordinary rows at preferred height, pushes the command row toward the
+bottom, and aligns commands at the trailing edge. Then resize the window and
+ask whether the prediction was true. If the fields grow and the command row
+stays stable, the constraint text has earned trust. If the screenshot surprises
+the reader, the constraint text needs to be made clearer or the component size
+contract needs inspection.
+
+Next perturb the example deliberately. Replace a short label with a long one.
+Put the form body into a scroll pane. Add a notes area that should grow
+vertically. Hide an optional section and bring it back. Change the Look-and-Feel
+font size. These perturbations are not artificial. They are exactly what real
+applications do through localization, accessibility, user resizing, validation,
+advanced options, and theme changes. A layout that survives them has a design;
+a layout that breaks under the first perturbation was a screenshot arrangement.
+
+Finally decide what should become a reusable shape. The two-column form pattern
+may deserve a helper in a codebase that uses it everywhere. The exact fields,
+groups, and command placement still belong to the screen. A dense filter bar may
+deserve a helper for related gaps and trailing commands. A generated form view
+contract may deserve a test fixture. The decision should be made after several
+screens prove the pattern, not before the first screen is understood. Premature
+layout helpers are merely global constraint strings with better names.
+
+This is also where screenshots help without replacing judgement. A screenshot
+can show that a dense screen looks balanced under one theme and size. The
+constraint review explains why it should remain balanced when the screen is
+wider, narrower, translated, or placed in a scroll pane. Keep both forms of
+evidence. The picture catches visual awkwardness; the constraint proof catches
+fragility before it becomes a visual bug.
+Both matter.
+
+\textbf{Checklist for layout.}
+\begin{itemize}
+\item Prefer MigLayout for nontrivial forms, dialogs, filter bars, and dense workspaces.
+\item Keep layout constraints close to the panel they describe.
+\item Give exactly the columns and rows that should grow a grow constraint.
+\item Distinguish grow from fill, and parent growth from child preferred size.
+\item Use nested panels for genuinely different geometry, not to hide confusion.
+\item Make scrollable forms track viewport width when horizontal scrolling is not desired.
+\item Revalidate and repaint after visibility or preferred-size changes.
+\item Treat Look-and-Feel, font, and localization changes as normal layout inputs.
+\item Use Corusco for screen facts and bindings; keep geometry readable in application code.
+\end{itemize}
+
+MigLayout is also a communication tool for code review. A reviewer should be
+able to read the column and row constraints and predict the screen's behavior
+under resizing. If the constraints require a screenshot to understand, they are
+probably too clever. Prefer a few named layout constants, clear growth columns,
+and local comments for unusual constraints over dense strings that only the
+author can decode.
+
+The Corusco boundary matters here. Generated field descriptors can say which
+field exists, what label resource it uses, which help topic belongs to it, and
+which binding should connect it. They should not force a universal visual grid.
+Two screens may edit the same record with different emphasis. One may be a
+compact dialog; another may be a wide workspace panel. MigLayout lets the view
+express that difference while Corusco keeps the facts consistent.
+
+A final review of a MigLayout screen should read like a short design proof. The
+screen has one primary region. The primary region receives extra space. The
+fixed regions remain useful at preferred size. Scroll ownership is explicit.
+Labels and editors align by baseline. Related and unrelated gaps express
+meaning. Localization and font growth have a path. Commands are placed by
+workflow, not by accident. Corusco bindings attach to named components without
+owning geometry. If the proof cannot be stated, the layout is not ready merely
+because it looks acceptable today.
+
+This review proof is also what makes the chapter fun rather than fussy.
+MigLayout is satisfying when it turns a messy screen into a few clear
+sentences. "Two columns; editor grows; notes row consumes height; body scrolls
+vertically; buttons stay trailing" is a pleasant thing to read in code. It is
+also a pleasant thing for the user, because the screen behaves as if someone
+understood the work.
+
+That understanding should remain visible when the screen evolves. A new field
+should join an existing row grammar or create a clearly named exception. A new
+warning should fit the validation area instead of pushing controls around
+unpredictably. A new table should claim height only if it becomes part of the
+primary work surface. A new generated binding should attach to an existing
+component role, not force the layout to reveal generated structure. Layout
+maintenance is therefore a continuation of layout design, not a separate
+cleanup phase.
+
+The practical ambition is simple: a future maintainer should be able to change
+the screen without fear. They should know which constraint to touch when the
+notes field must grow, where to put a new optional field, how to keep the dialog
+from scrolling sideways, and why generated companions do not own geometry. That
+confidence is the real payoff of using MigLayout as the book's primary layout
+framework.
+
+Once this discipline is learned, layout work becomes less theatrical. The team
+does not chase pixels; it edits relationships. That is the habit this chapter
+tries to make ordinary, and it is also the habit that keeps screenshots stable.
+Stable screenshots make review calmer because they are consequences of a stated
+geometry contract rather than lucky captures of one window size.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Recreate Figure~\ref{fig:miglayout-form} with \api{GridBagLayout}. Compare the amount of code and the review burden.
+\item Add a growing notes area above the command row. Predict which row constraint must change before running the example.
+\item Place the form in a scroll pane and make it track viewport width but not height.
+\item Replace the button text with longer localized strings. Adjust only layout constraints, not component bounds.
+\item Implement the same generated-form binding shape with a handwritten MigLayout panel and a Corusco \api{BindingScope}.
+\end{enumerate}
+\end{exercisebox}

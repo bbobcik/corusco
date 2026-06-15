@@ -28,3 +28,11 @@ dependencies {
 tasks.named('compilePublishedArtifactsJava') {
     description = 'Compiles example sources against Maven-local Corusco artifacts instead of project dependencies.'
 }
+
+tasks.register('generateBookFigures', JavaExec) {
+    group = 'documentation'
+    description = 'Generates deterministic screenshots used by docs/book.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'cz.auderis.corusco.examples.book.BookFigureGenerator'
+    args rootProject.file('docs/book/figures').absolutePath
+}

@@ -1,0 +1,1295 @@
+\chapter{Dialogs and Form Workflows}
+\label{ch:dialogs-forms}
+\chapterquote{A dialog is a temporary window around a durable decision. Keep those responsibilities separate.}{The dialog rule}
+
+\begin{chaptermap}
+Core question & How should form dialogs coordinate commit, cancel, validation, keyboard behavior, dirty state, and cleanup without becoming piles of listeners?\\
+Primary APIs & \api{FormDialog}, \api{FormDialogShell}, \api{FormDialogLifecycle}, \api{FormDialogValidationBinding}, \api{FormDialogKeyboardBinding}, \api{ProblemFocusResolver}, \api{SwingEditors}, \api{DirtyState}, and \api{CancelConfirmation}.\\
+Layout topic & MigLayout dialog bodies with generated or handwritten field bindings.\\
+Corusco connection & Corusco centralizes dialog semantics while leaving component layout and business workflow in application code.\\
+Companion examples & \dialogExample, \dialogValidationExample, \dialogActiveEditorExample, \dialogDirtyCancelExample, \dialogLifecycleExample, and \dialogKeyboardExample.\\
+\end{chaptermap}
+
+\section{The modal transaction}
+
+\termdef{Modal dialog}{in Swing} is a window that temporarily prevents the user
+from interacting with some other window until the dialog reaches a terminal
+decision. The word terminal is important. A modal dialog is not merely a
+\api{JDialog} with fields in it. It is a small transaction in which the program
+asks the user for a value, a decision, a correction, or a confirmation, and then
+returns control to the surrounding workflow. The transaction may succeed,
+cancel, or fail to accept the current input. It should not half-succeed by
+closing the window while leaving the caller to guess what happened.
+
+\termdef{Form model}{in this book} is the object that owns editable state,
+validation problems, reset, dirty-baseline acceptance, and result creation for a
+form. It may be a handwritten \api{FormModel}, a generated model, or a facade
+over richer domain state. The key property is that the durable edit state is not
+stored only in the Swing widgets. Text fields, combo boxes, tables, and custom
+editors are user-interface instruments; the form model is the object that can
+answer ``what would be committed if OK succeeded now?'' and ``what is wrong
+with the current input?''
+
+\termdef{Dialog controller}{in Corusco Swing} is an object that coordinates the
+standard modal rules without being a native window. \api{FormDialog} is such a
+controller. It owns OK, Apply, and Cancel semantics for a form model. It does
+not build the form body, it does not show a native \api{JDialog}, and it does
+not decide which repository method will save the result. That restraint is the
+point. A controller that owns only the decision protocol can be tested without a
+screen and reused without imposing a visual form language.
+
+\termdef{Dialog shell}{in this chapter} is the temporary Swing window that hosts
+the form body and the button row. A shell may be a \api{JDialog}, an internal
+frame, an application-specific modal service, or a test harness that never
+shows a native peer. The shell owns modality, ownership, placement, focus
+activation, and disposal. The shell should not be the only place where the
+dialog's business result lives.
+
+\begin{lstlisting}[caption={Controller first, native shell second.}]
+FormDialog<CustomerEditForm, CustomerEdit> controller =
+        new FormDialog<>(form, rootPanel, dirtyState, cancelConfirmation);
+
+FormDialogShell<CustomerEditForm, CustomerEdit> shell =
+        FormDialogShell.create(owner, "Edit Customer", controller);
+
+DialogResult<CustomerEdit> result = shell.showModal();
+\end{lstlisting}
+
+The exact shell helper may vary by application, but the separation should not.
+The form model owns editable facts. The root panel owns Swing components and
+layout. Bindings connect the two. The controller owns the modal decision. The
+shell owns the window. The caller owns what to do with an accepted value. When a
+program merges all five roles into one class named \api{CustomerDialog}, it
+usually starts pleasantly and ends with an untestable knot: private booleans for
+dirty state, private fields for results, action listeners that update labels,
+anonymous keyboard actions, and cleanup code that runs only on the branch that
+the author happened to remember.
+
+This is not a complaint about \api{JDialog}. Swing gives us a useful native
+window. The problem is that \api{JDialog} is a container, not a workflow model.
+It knows how to be shown, hidden, packed, placed, and disposed. It does not know
+that a formatted text field may still contain an uncommitted parse candidate,
+that Apply should move the dirty baseline but not close the window, that Escape
+should respect a dirty-cancel policy, or that validation focus may need to
+select a hidden tab before requesting focus. Those rules belong to the
+application architecture around the shell.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\dialogValidationFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\dialogActiveEditorFigure}
+\end{minipage}
+\caption{Dialog workflow has visible states. Validation should keep the window open and focusable, while OK must commit active editors before reading the model.}
+\label{fig:dialog-form-screens}
+\end{figure}
+
+The two states in Figure~\ref{fig:dialog-form-screens} look ordinary because
+they are ordinary. A useful dialog spends most of its time in ordinary states:
+editing, invalid, dirty, busy, applying, or waiting for a confirmation. The
+trouble is that Swing makes each state easy to implement once and easy to
+forget in the next dialog. A table editor has a last edit; a text field has a
+parse state; a validation summary has a most severe problem; a cancel button
+has a dirty policy; a root pane has a default button and an Escape mapping; a
+background operation has a cancellation boundary. Corusco's dialog classes are
+small because they do not try to make any of these concerns exotic. They give
+the repeated concerns stable names and a single execution order.
+
+There is a useful mental model from database transactions, but it must be used
+carefully. A dialog is transactional in the user-interface sense: it presents a
+temporary editing context and returns a result only after acceptance. It is not
+usually a database transaction. Holding a database transaction open while the
+user thinks, switches windows, takes a phone call, or edits a table is normally
+wrong. The dialog should return a result to the application workflow; the
+workflow may then start an application-level save, possibly asynchronously,
+possibly with conflict handling. Closing the modal shell should not by itself
+mean that the outside world has been changed.
+
+For this reason the first design question for a dialog is not ``which buttons
+will it have?'' but ``what is the result protocol?'' The protocol names the
+accepted value, the cancelled state, the state that prevents acceptance, and
+the cleanup that follows either terminal outcome. A one-field rename dialog
+still has such a protocol, although it may be tiny. A multi-tab customer editor
+has the same protocol, although it must coordinate more fields, validators,
+tables, and background checks. Once the protocol is visible, the button row is
+just one way of invoking it.
+
+The second design question is ``where does incomplete input live?'' In a poor
+dialog it lives partly in text fields, partly in table editors, partly in
+temporary local variables, and partly in a domain object that has already been
+mutated. In a disciplined dialog the incomplete input has one presentation
+model. Widgets can contain transient text during editing, but the form model is
+the place where the dialog evaluates committability and creates its result.
+This keeps invalid user input from leaking into committed domain objects and
+keeps the view from becoming the only source of truth.
+
+The third design question is ``who owns temporary relationships?'' A dialog
+activation installs many short-lived relationships: document listeners,
+selection listeners, command adapters, validation decorations, keyboard
+bindings, task callbacks, popup helpers, generated behavior plans, and perhaps
+a cache attached to a presenter. These things should end with the dialog
+activation. If the dialog object is reused, they should end between
+activations. If the owner window is disposed, they should end even if the user
+never pressed Cancel. Corusco's lifecycle objects exist because these temporary
+relationships are where many Swing memory leaks are born.
+
+It is useful to classify dialogs by the kind of decision they return. A data
+entry dialog returns a newly entered value. An edit dialog returns a replacement
+or patch for an existing value. A chooser returns one value from a larger set. A
+confirmation returns permission to continue. A property sheet may return
+several applied snapshots before it finally closes. A wizard is a sequence of
+dialogs hidden behind one shell; each page may be invalid, dirty, or busy even
+though the final result is produced only at the end. These categories look
+different on the screen, but they all need an explicit result protocol. The
+protocol says when the user has produced a value, when cancellation is allowed,
+and which temporary resources must be released.
+
+The classification prevents two common mistakes. The first mistake is treating
+every dialog as a data-entry editor. A confirmation dialog should not have a
+form model just because the data-entry editor has one; it may need only a
+command and a result. The second mistake is treating every editor as a custom
+case. A chooser with a filter field still has dirty or pending state. A wizard
+page still has validation problems and focus recovery. A property sheet still
+has active editors. If the shared protocol is visible, the special parts stay
+small and the common rules remain common.
+
+The same classification also clarifies ownership of domain mutations. A chooser
+normally should not mutate the chosen object. A data-entry dialog normally
+returns a value to be inserted elsewhere. An edit dialog may edit a detached
+copy, a patch object, or a presentation model that later updates the domain.
+A property sheet with Apply may mutate the live application state after each
+successful Apply. These choices affect dirty baselines and undo policy. They
+should be decided before the first button listener is written, because the
+listener will otherwise smuggle in the policy one branch at a time.
+
+\begin{coruscobox}{What Corusco changes}
+Plain Swing gives excellent building blocks for modal windows, but it leaves
+the modal protocol implicit. Corusco makes the protocol explicit: a
+\api{FormDialog} coordinates commit, validation, result creation, Apply,
+Cancel, dirty confirmation, reset, command enablement, and one-shot close; the
+native shell remains ordinary Swing.
+\end{coruscobox}
+
+\section{OK, Apply, Cancel, and Close}
+
+The OK button does not mean ``close now.'' It means ``attempt to produce a
+valid result.'' The distinction is not philosophical; it is the difference
+between preserving and losing user data. A correct OK path first asks active
+editors to publish their values, then refreshes committability, then reads the
+form result, then accepts the current values as the new baseline, then records
+an accepted dialog result, and only then closes the controller. If any of the
+early steps fails, the dialog remains open.
+
+\api{FormDialog.accept} implements this shape. It is an Event Dispatch Thread
+operation because it inspects Swing editor state and mutates command state. It
+returns a boolean rather than throwing for ordinary validation failure. A false
+return means the current input did not produce a committed result. The caller
+or validation binding can then focus the first problem, update a summary, or
+leave the rejecting editor in place. A true return means the terminal
+\api{DialogResult} is accepted and the controller is closed.
+
+\begin{principlebox}{OK is conditional}
+OK should be a request to produce a valid result. The form model decides
+whether that result currently exists.
+\end{principlebox}
+
+The important invariant is one-way motion. Once OK succeeds, the controller has
+reached a terminal closed state. The OK, Apply, and Cancel commands become
+disabled. The accepted \api{DialogResult} is final. The shell may then dispose
+the native peer, and the caller may continue with the result. This one-shot
+rule makes tests and cleanup much simpler. There is no second OK after a
+successful OK, and there is no hidden branch in which the controller closes but
+the result remains mutable.
+
+Apply is deliberately different. It uses the same active-editor and
+committability path as OK, but it is non-terminal. On success it creates a
+result snapshot, stores it as the last applied result, accepts the current form
+values as the new dirty baseline, refreshes command state, and keeps the
+controller open. Apply is useful when the user should see an effect while
+continuing to edit: changing preview settings, applying filters, updating a
+workspace option, or committing an intermediate page of a long configuration.
+It is not a decorative sibling of OK.
+
+The dirty baseline after Apply is the rule that must be stated explicitly.
+Suppose the user changes three fields, presses Apply, changes one more field,
+and then presses Cancel. In most desktop applications, the first three changes
+remain because Apply committed them to the surrounding workflow; Cancel
+abandons only changes since the last successful Apply. In a few specialized
+workflows, Cancel may revert everything since the dialog opened. Both policies
+can be defensible, but only one can be the user's mental model. Corusco's
+default controller supports the conventional rule by calling
+\api{acceptCurrentValues} after a successful Apply. A program that chooses a
+different policy should not hide it in a listener; it should name it and test
+it.
+
+Cancel is also a decision. It is not simply \api{dispose}. A clean dialog should
+cancel quickly. A dirty dialog may need to ask whether user edits may be
+discarded. \termdef{Dirty state}{for a dialog} is an aggregate answer to the
+question ``does this activation contain user work that cancellation would lose?''
+It may be derived from field dirty flags, table edits, nested editors, uploaded
+files, or presenter state. Corusco represents that aggregate answer with
+\api{DirtyState}. The controller asks it only for user cancellation, not for
+lifecycle cleanup.
+
+\termdef{Cancel confirmation}{in Corusco} is application policy invoked before
+dirty edits are discarded. The \api{CancelConfirmation} hook may show a
+\api{JOptionPane}, call an application dialog service, consult a presenter, or
+return a canned decision in a test. It returns true to continue cancellation
+and false to leave the controller open. The hook is intentionally not a Swing
+component type. A library should not require every application to use the same
+visual confirmation widget.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.86\linewidth]{\dialogCancelFigure}
+\caption{Dirty cancel confirmation is part of the modal protocol, not a private trick in the Cancel button listener.}
+\label{fig:dialog-dirty-cancel}
+\end{figure}
+
+Figure~\ref{fig:dialog-dirty-cancel} shows the visible effect of this policy.
+The user sees an ordinary question, but the controller sees a named sequence:
+query dirty state, ask confirmation only when dirty, reset the form only after
+confirmed cancellation, store a cancelled result, close, and disable commands.
+That sequence should be shared by the Cancel button, the close-box branch if it
+means user cancellation, and the Escape key. A codebase that implements dirty
+confirmation three times will eventually have three slightly different
+answers.
+
+Programmatic close is different from user cancellation. \api{FormDialog.close}
+forces controller cleanup as a cancelled dialog and bypasses dirty
+confirmation. This is correct for owner-window disposal, application shutdown,
+test cleanup, and lifecycle teardown. At that point the application is no
+longer asking the user whether to discard a change; it is releasing resources
+because the view lifetime has ended. Showing a dirty confirmation while the
+owner window is already closing is one of those small UI defects that makes an
+application feel as if its parts do not agree about who is in charge.
+
+The controller also exposes OK, Apply, and Cancel as mutable commands. Commands
+matter because a dialog operation is rarely invoked from exactly one button.
+OK may be invoked by a button, a default-button Enter action, a toolbar action
+in an embedded editor, or a test. Cancel may be invoked by a button, Escape, a
+window close operation, or application navigation. If each surface owns its own
+listener, command enablement and semantics drift. If each surface adapts the
+same command, the operation has one identity, one enabled state, one resource
+key, and one place to test.
+
+\begin{lstlisting}[caption={Dialog buttons adapt dialog commands.}]
+JButton ok = new JButton(new SwingActionAdapter(dialog.okCommand(), resources));
+JButton apply = new JButton(new SwingActionAdapter(dialog.applyCommand(), resources));
+JButton cancel = new JButton(new SwingActionAdapter(dialog.cancelCommand(), resources));
+
+buttonRow.add(ok, "tag ok");
+buttonRow.add(apply, "tag apply");
+buttonRow.add(cancel, "tag cancel");
+\end{lstlisting}
+
+The resource keys behind the standard commands give the application a single
+place for button text and other command metadata. The action keys give tests
+and generated companions stable identities. The enabled state follows
+\api{refreshCommandState}: OK and Apply are enabled only while the controller
+is open and the form is committable; Cancel is enabled while the controller is
+open. If the form model does not expose observable command-state changes, call
+\api{refreshCommandState} after validation or parse state changes. This is a
+small explicit call, but it is better than hidden listeners that revalidate the
+dialog at surprising times.
+
+There is one more rule that is easy to miss: \api{toResult} must return a real
+result. A null result is not a cancelled result and not an invalid result; it is
+a programming error. The form model already has \api{isCommittable} and
+\api{problems} for ordinary invalid input. By requiring non-null committed
+values, the controller avoids a three-valued outcome in which accepted-null and
+cancelled are accidentally confused. If a domain result is naturally optional,
+the accepted value should be an explicit optional domain object, not a null
+reference smuggled through the dialog protocol.
+
+The controller can be read as a small state machine. It starts open with a
+cancelled result. OK may either leave it open or move it to accepted and closed.
+Apply may either leave it unchanged or update the last-applied snapshot while
+remaining open. Cancel may leave it open if dirty confirmation refuses, or move
+it to cancelled and closed. Close always moves an open controller to cancelled
+and closed without asking confirmation. Every transition refreshes commands so
+the visible controls do not advertise actions that the controller will ignore.
+The state machine is small enough to test exhaustively, and that is one of the
+main reasons to keep it out of anonymous listeners.
+
+The state machine also gives a precise meaning to idempotence. Calling Cancel
+after the controller is already closed is harmless. Calling Close after it is
+closed is harmless. Closing a keyboard binding or lifecycle twice is harmless.
+Idempotence is not an excuse to call methods randomly; it is protection for
+real shutdown paths in which the user closes a window, a parent disposes, and a
+test finally block also tries to clean up. A modal workflow should end once,
+but cleanup requests may arrive more than once.
+
+Applications sometimes ask whether OK should be disabled while the form is
+invalid or enabled and then explain problems after the user presses it. Both
+policies can be reasonable. Disabling OK can reduce futile attempts, but it
+must be paired with visible validation state; otherwise the user sees a dead
+button and no explanation. Leaving OK enabled can be useful when validation is
+expensive or when the user expects to press OK to discover what remains. The
+controller supports command enablement from \api{isCommittable}; the
+application chooses how eagerly the model updates that answer. The chapter's
+examples use ordinary immediate validation, but the protocol does not require
+every field to validate on every keystroke.
+
+\begin{migrationbox}{From button listeners to commands}
+Start by moving the existing OK logic into a method that returns a boolean.
+Then make that method commit active editors, ask the form model for
+committability, and create a result only on success. Next adapt the method as a
+\api{FormDialog} command. Finally wire buttons, Enter, Escape, and tests to the
+same command objects.
+\end{migrationbox}
+
+\section{The edit boundary}
+
+\termdef{Active editor}{in Swing} is an editor component that currently holds a
+candidate value for another component. The most familiar example is a
+\api{JTable} cell editor. While the user edits a table cell, the editor
+component may show the new text even though the table model still contains the
+old value. \api{JFormattedTextField} and \api{JSpinner} have a related problem:
+the visible text may not yet have been parsed and committed to the component's
+value. A dialog that reads its model before flushing active editors can silently
+lose the user's last edit.
+
+The last-edit bug is common because the ordinary manual test path does not
+always reveal it. A tester types a value, tabs out of the field, and presses
+OK; the focus transfer commits the edit. A user types a value and immediately
+presses OK; the active editor may still hold the candidate value. A tester
+edits a table, clicks another row, and presses OK; the table stops editing. A
+user edits a table cell and presses the dialog's default button; the model may
+not see the change unless the dialog stops editing first. The difference is a
+single gesture, and the data loss is hard to notice because the dialog closes.
+
+\api{FormDialog} handles this boundary through \api{commitActiveEditor}. The
+default implementation delegates to \api{SwingEditors.commitActiveEditor},
+which inspects the focus owner inside the dialog root, commits focused
+formatted fields and spinners, stops the focused table editor, and also walks
+tables below the root to stop any active table editing. A false return means an
+editor rejected the commit, so OK and Apply remain blocked and the controller
+stays open.
+
+\begin{pitfallbox}{the last edit bug}
+If a dialog loses only the final table-cell or formatted-field edit when OK is
+pressed, active-editor commit is missing from the OK path.
+\end{pitfallbox}
+
+It is tempting to treat active-editor commit as merely a table issue. That is
+too narrow. Any component that separates text editing from semantic value
+commit can have this boundary. A formatted decimal field may display a string
+that cannot be parsed; a date field may contain a partial date; a spinner may
+hold a typed value that is not yet committed; a custom GIS coordinate editor
+may have a temporary local point; a color editor may have a popup selection
+that has not yet updated the model. The correct rule is general: before the
+dialog creates a result, every editor under the root must either commit its
+candidate value or reject the commit visibly.
+
+Do not respond to a rejected active-editor commit by showing a generic error
+dialog. The editor already knows why it rejected the value more precisely than
+the dialog controller does. A formatted field can keep focus and show its
+parse feedback. A table cell editor can remain active. A generated binding can
+update a problem set. The controller's job is to stop the modal transaction
+from completing while the candidate value is unresolved.
+
+The form model's \api{isCommittable} check is the next boundary. It asks
+whether the model, after editor commit, can produce a result. In a simple form
+this may be equivalent to ``there are no error problems.'' In a richer form it
+may also depend on asynchronous validation state, required selections,
+cross-field consistency, or a pending lookup. A warning may still permit
+commit; an error normally does not. The distinction should be encoded in the
+problem model and in \api{isCommittable}, not recreated in each OK listener.
+
+\termdef{Parsing}{in form workflows} is the conversion of user text into a
+typed value. \termdef{Validation} is the evaluation of a typed value, or a
+group of typed values, against rules. The two concerns often occur near each
+other, but they should not be collapsed. A text field containing \api{abc} for
+a decimal amount has a parse problem; there is no decimal amount yet. A parsed
+decimal amount of \api{-5} may have a validation problem if the business rule
+requires non-negative credit. A dialog can present both as problems, but the
+code should retain the distinction because recovery differs. A parse problem
+usually focuses the field and preserves text. A validation problem may involve
+another field, a table row, or a form-wide invariant.
+
+\begin{lstlisting}[caption={A minimal active-editor test shape.}]
+JPanel root = new JPanel();
+JTable table = new JTable(model);
+table.setDefaultEditor(Object.class, new RejectingCellEditor());
+root.add(table);
+table.editCellAt(0, 0);
+
+FormDialog<TestForm, String> dialog = new FormDialog<>(form, root);
+
+assertThat(dialog.accept()).isFalse();
+assertThat(dialog.isClosed()).isFalse();
+assertThat(table.isEditing()).isTrue();
+\end{lstlisting}
+
+This test is small, but it guards an important user promise. If an editor
+rejects a candidate value, the dialog must not pretend that a result exists.
+The test does not click a native window. It constructs the relevant Swing
+objects on the EDT, drives the controller, and asserts that the modal decision
+did not complete. That is the right level for most dialog workflow tests.
+
+Subclassing \api{FormDialog} is supported for narrow active-editor
+customization. A screen with specialized editors may override
+\api{commitActiveEditor} to integrate a custom editor framework or to improve
+test control. The override should preserve the controller invariants: remain
+EDT-confined, do not mutate result state, do not close the dialog, and return
+false when the current editor cannot publish a value. Once the editor boundary
+is crossed successfully, normal form committability and result creation should
+continue through the standard controller path.
+
+This is also where generated code should be modest. A generated companion can
+know field keys, component keys, parse policies, validation metadata, and
+binding installation. It should not hide a dialog's active-editor policy in
+unreviewed generated listener code. The dialog controller gives generated and
+handwritten parts a common boundary: generated bindings make the model honest;
+the controller asks the whole root to settle before accepting.
+
+There is an important performance angle in large dialogs. Committing active
+editors should be precise, not a full reparse of every field in a five-tab
+editor. The focused editor and actively editing tables need attention because
+they may contain unpublished candidates. The form model may then validate the
+affected fields or cross-field rules according to its own dependency graph.
+Running every remote validator, rebuilding every table model, and repainting
+the whole dialog on each OK attempt makes the dialog feel arbitrary. Users
+accept a short pause when they know a save is happening; they do not accept a
+pause merely because the program could not distinguish the active edit from the
+rest of the screen.
+
+Table dialogs deserve special suspicion. A table has model coordinates, view
+coordinates, selection state, sorting, filtering, renderer state, editor state,
+and sometimes row-level validation. The accepted result should not be assembled
+from selected view rows without translation. The focus resolver should not
+scroll to a model row by treating it as a view row. The active-editor commit
+path should stop editing before the model is read. A small table in a dialog is
+still a \api{JTable}; the scale may be smaller, but the coordinate systems are
+the same as in a full table screen.
+
+Custom components should expose an honest commit contract. If a component can
+hold a candidate value that is not yet in the model, provide a method or binding
+that commits or rejects it. If it cannot reject, the method can always return
+true. If it can reject, the component should preserve the candidate and present
+the reason. Do not make the dialog guess by reading private editor state. The
+dialog root is the traversal boundary; the component remains the authority over
+its own local edit semantics.
+
+\section{Validation that guides recovery}
+
+\termdef{Problem set}{in Corusco} is a structured collection of problems,
+ordered and filtered by severity, target, and code. A problem is more than a
+localized message. It has a stable problem code, a severity, a target, and
+text suitable for the user. A dialog that stores only the string
+\api{"Name is required"} has already thrown away information that focus
+recovery, tests, help, analytics, and generated companions could use.
+
+\termdef{Problem target}{in this context} is the structured address of the
+thing that needs attention. A target may be the whole form, a typed field key,
+a typed component key, a table row and column, or another application-defined
+location. The target is not necessarily a Swing component. This distinction
+lets the same validation rule exist in core code while different Swing screens
+map the target to their own components.
+
+\api{FormDialogValidationBinding} is the Swing presentation companion to the
+controller's commit checks. It reads the current form problems, writes a compact
+summary into a \api{JLabel}, and can ask a \api{ProblemFocusResolver} for the
+component that should receive focus. It does not run validation. It does not
+create dialog results. It does not decide whether OK is enabled. It presents
+the current problem state at one place in the dialog.
+
+\begin{lstlisting}[caption={Validation summary and focus binding.}]
+FormDialogValidationBinding validation =
+        FormDialogValidationBinding.install(
+                dialog,
+                summaryLabel,
+                ProblemFocusResolver.componentTargets(components));
+
+validation.refresh();
+if (!dialog.accept()) {
+    validation.focusFirstProblem();
+}
+\end{lstlisting}
+
+The binding is intentionally pull-based: call \api{refresh} after form state
+changes or after a generated presenter runs validation. In a future form model
+with observable problem state, a listener could call the same refresh method.
+The important architectural rule is unchanged: the form model owns the
+problems; the validation binding owns one Swing presentation of them. A tooltip
+binding, a red border behavior, a status line, a table marker, and a dialog
+summary can all read the same structured data.
+
+The summary policy is compact by design. When there are no problems, the label
+is blank. When there is one problem, the label displays that message. When
+there are several, it displays a count plus the most severe message. This is
+not meant to be the only possible presentation. It is a sane default for the
+bottom of a dialog. A larger screen might also show a problem list, group
+problems by tab, or mark table rows. Corusco's contribution is that all such
+presentations can agree on the same severity ordering and targets.
+
+Focusing the first problem is harder than it looks. The first severe problem
+may be form-wide and have no component. A field problem may live in a tab that
+is currently hidden. A table-cell problem may require translating model
+coordinates to view coordinates after sorting, scrolling the row into view,
+selecting a cell, and starting an editor. A problem in a generated subform may
+belong to a component that is created lazily. The validator should not know any
+of that. Validators describe what is wrong; focus resolvers know how this
+particular Swing screen can lead the user to the place where the problem can be
+fixed.
+
+\api{ProblemFocusResolver.componentTargets} covers the simple and common case:
+component-targeted problems map to typed component keys, and the resolver
+returns the corresponding Swing component. Generated code can produce that map
+from component keys. Handwritten code can build it explicitly. No reflection,
+localized labels, JavaBeans property names, or table view indexes are required.
+For more complex screens, write a resolver that performs the needed navigation
+before returning or focusing a component.
+
+\begin{lstlisting}[caption={A resolver for a tabbed form and a table cell.}]
+ProblemFocusResolver resolver = problem -> {
+    if (problem.target().equals(CustomerTargets.billingAddress())) {
+        tabs.setSelectedComponent(billingPanel);
+        return Optional.of(streetField);
+    }
+    if (problem.target() instanceof CustomerTargets.TableCell cell) {
+        int viewRow = table.convertRowIndexToView(cell.modelRow());
+        int viewColumn = table.convertColumnIndexToView(cell.modelColumn());
+        table.changeSelection(viewRow, viewColumn, false, false);
+        table.scrollRectToVisible(table.getCellRect(viewRow, viewColumn, true));
+        return Optional.of(table);
+    }
+    return Optional.empty();
+};
+\end{lstlisting}
+
+The example is deliberately explicit. A focus resolver is a navigation adapter,
+not a second validation engine. It should not inspect field values and decide
+what is wrong. It should translate problem targets into user recovery. Tests
+for this code should assert that the right tab is selected, the right table
+cell is visible, and the right component receives a focus request.
+
+Validation failure and unexpected failure deserve different presentations.
+Validation failure is ordinary user input. It belongs in problem summaries,
+field decorations, tooltips, and focus recovery. Unexpected failure during a
+save or apply operation belongs to workflow error handling: status text, retry,
+diagnostics, or an application error dialog. A repository exception is not a
+field validation problem unless the field can help the user fix it. Conversely,
+a missing required field is not an exceptional failure and should not produce a
+stack trace dialog.
+
+Asynchronous validation needs another layer of care. Consider a dialog that
+checks whether a customer code is unique. The user types \api{ACME}, the
+program starts a background lookup, the user changes the code to \api{ACME-2},
+and the first lookup returns late. If the old result writes a problem into the
+current form, the dialog lies. The usual solution is a generation counter or a
+request token: each submitted validation captures the input version, and only
+the latest matching generation may publish problems. The dialog's OK command
+should also know whether a required asynchronous validation is pending. A
+pending required validation may disable OK or make \api{isCommittable} false
+until the result arrives.
+
+Corusco's task and value facilities help here because they give pending state,
+busy state, cancellation, and problem publication explicit owners. The dialog
+controller still should not run the uniqueness query. It should ask the form
+model whether the current state is committable. The presenter or validation
+service may update the form's problem set and call \api{refreshCommandState}
+and \api{FormDialogValidationBinding.refresh}. Keeping these roles separate
+prevents a common bug in which the OK listener both starts a validation lookup
+and closes the window on a stale answer.
+
+Problem codes are also a documentation device. A localized message may change
+from ``Name is required'' to ``Enter a customer name'' without changing the
+meaning of the rule. Tests that assert message text become brittle; tests that
+assert problem code and target remain stable. Help systems can link a code to a
+longer explanation. Analytics can count how often a particular validation rule
+blocks a workflow without parsing user text. Generated documentation can list
+the validation rules for a form. These advantages disappear when the problem is
+only a string assigned to a label.
+
+Severity needs the same discipline. An error normally blocks OK. A warning may
+permit OK while still asking the user to review the field. An informational
+problem may explain a derived value or a policy. A dialog summary that treats
+all severities as errors is noisy; a controller that treats warnings as
+non-committable is paternalistic unless the business rule truly requires it.
+The form model is the place to encode which severities block commit. The
+presentation is the place to help the user understand them.
+
+Multiple presentations of the same problem state should not compete. A field
+border, a tooltip, a summary label, and a table marker can all exist together,
+but they should be consistent. If the border says the value is invalid and the
+summary says the form is valid, the user will trust neither. Corusco's binding
+and behavior scopes are intentionally small so a screen can install several
+presentations that all read the same \api{ProblemSet}. The result is richer UI
+with less duplicated validation code.
+
+\begin{coruscobox}{What Corusco changes}
+Corusco treats validation as structured state rather than scattered strings.
+The dialog controller asks whether the form is committable; validation bindings
+present problem state; focus resolvers translate problem targets into Swing
+recovery. The same problems can drive tooltips, borders, summaries, disabled
+commands, and tests.
+\end{coruscobox}
+
+\section{Keyboard, focus, and the native shell}
+
+Swing keyboard behavior is powerful because it is component-local. The same
+power makes dialogs easy to wire inconsistently. A root pane can have a default
+button. A text field can use Enter to fire an action. A text area can use Enter
+to insert a newline. A combo box can use Enter to accept a popup selection. A
+table can use Enter to finish editing or move selection. Escape may close a
+popup, cancel an editor, or cancel the dialog. A correct dialog should respect
+local component meaning before turning a key into a modal decision.
+
+\api{FormDialogKeyboardBinding} installs the shared root-pane part of the
+policy. It maps Escape in the root pane's \api{WHEN\_IN\_FOCUSED\_WINDOW} input
+map to the dialog's cancel command and can install a default OK button. The
+binding does not own cancellation semantics. It routes keyboard events to the
+same command used by visible buttons. Therefore Escape respects dirty
+confirmation, command enablement, one-shot close, and tests in exactly the same
+way as the Cancel button.
+
+The binding also records what it changed and restores it on close. It remembers
+the previous Escape input-map value, the previous action-map entry, and the
+previous default button. Closing the binding restores those values, and closing
+twice is harmless. This may sound like housekeeping, but it is essential when
+dialogs are embedded in reusable shells, internal frames, or test harnesses.
+Root panes are shared infrastructure; a modal activation should not leave its
+Escape mapping behind.
+
+\begin{lstlisting}[caption={Keyboard binding belongs to the dialog lifecycle.}]
+FormDialogLifecycle lifecycle = FormDialogLifecycle.of(dialog);
+lifecycle.addBinding(FormDialogKeyboardBinding.install(
+        rootPane,
+        dialog,
+        okButton));
+\end{lstlisting}
+
+Default-button behavior deserves review rather than superstition. In many
+simple dialogs, Enter should invoke OK from ordinary single-line fields. In a
+multi-line text area, Enter should insert a newline. In a table cell editor,
+Enter may stop editing or move to another row. In an editable combo box, Enter
+may accept the current popup item. Swing's input maps and component actions
+usually handle these local meanings before the root-pane default button becomes
+relevant, but custom components can surprise you. The rule is not ``Enter
+always accepts''; the rule is ``the accepted Enter path must eventually invoke
+the same OK command as the button.''
+
+Focus after validation failure is similarly a dialog responsibility but not a
+dialog-controller responsibility. The controller knows that OK failed. The
+validation binding knows the current problems. The focus resolver knows how to
+map problem targets to components. The native shell knows which window is
+active. These objects cooperate. A single monolithic OK listener often tries to
+do all of this: validate, set label text, select tabs, request focus, decide
+dirty cancel, and close. Such a listener cannot be reused and is tedious to
+test. More importantly, it tempts each dialog author to invent a slightly
+different focus policy.
+
+The native \api{JDialog} shell should remain small. It sets the owner, title,
+modality, content pane, default close operation, packing, placement, and native
+disposal. It may adapt window-closing events to user cancellation or lifecycle
+close according to application policy. It should not store the accepted domain
+object in a public field. It should not rerun validation in a window listener.
+It should not duplicate OK semantics for the close box. If the shell needs to
+know whether the controller has accepted or cancelled, it can inspect the
+controller result after the modal show returns.
+
+There is a subtle distinction between hiding and disposing a native dialog.
+Hiding a reusable dialog keeps component instances, listeners, and model
+references alive. Disposing releases the native peer, but Java object
+references still live if listeners or owners retain them. For most modern Swing
+business applications, one controller and one view activation per modal
+interaction is simpler than reusing the same dialog instance many times. Create
+the form model, create the panel, install bindings, show, collect the result,
+close lifecycle, and let the objects become unreachable. Reuse should be a
+measured optimization, not the default.
+
+Owner relationships affect modality and focus. A dialog with no owner can hide
+behind the main window or keep the wrong window blocked. A dialog owned by a
+stale window can behave strangely during shutdown. A dialog opened from a table
+row, a secondary tool window, or a document tab should normally be owned by the
+nearest active window in that workflow. Corusco does not choose the owner for
+you because application window topology is policy. It does make the controller
+small enough that shell ownership can be reviewed separately from form
+semantics.
+
+Accessibility also starts here. Buttons adapted from commands should have
+stable text and enabled state. Fields should have labels and accessible names.
+Validation summaries should not be the only accessible presentation of an
+error; field-specific descriptions or tooltips may be needed. Focus recovery
+should lead keyboard and assistive-technology users to the same place a mouse
+user would inspect visually. A dialog that paints a red border but gives no
+focus path or accessible description has solved only part of the problem.
+
+Window-closing policy should be written down. Some applications treat the close
+box exactly like Cancel, including dirty confirmation. Others treat owner
+disposal or application shutdown as lifecycle close and bypass confirmation.
+The difference depends on who initiated the close. If the user clicks the close
+box on the dialog, Cancel semantics are usually right. If the owner window is
+being disposed because the application is shutting down, lifecycle cleanup is
+usually right. A shell helper can make this distinction once. A collection of
+anonymous window listeners usually cannot.
+
+Focus activation has its own timing. Requesting focus before a native dialog is
+shown often fails because there is no active window yet. Requesting focus after
+validation failure usually succeeds only if the target component is visible,
+enabled, displayable, and inside the active window. A focus resolver can select
+tabs and scroll tables, but the shell may still need a later focus request on
+initial show. Keep these two cases separate: initial focus is part of shell
+presentation; validation focus is part of problem recovery.
+
+The keyboard binding is deliberately conservative. It does not try to rewrite
+every component's input map. Rich components often have legitimate local key
+bindings, and overwriting them from a dialog helper would create harder bugs
+than it solves. The root-pane binding establishes the shared modal route; custom
+components remain responsible for local editing behavior. This is the same
+architecture as painting and layout throughout Swing: local components keep
+their contracts, and shared containers coordinate only the surrounding policy.
+
+\begin{pitfallbox}{two cancel paths}
+If Escape discards edits immediately but the Cancel button asks for
+confirmation, the dialog has two cancellation paths. Route both through the same
+cancel command.
+\end{pitfallbox}
+
+\section{Dialog bodies with MigLayout}
+
+A dialog body is a design object. It expresses which facts belong together,
+which fields grow, which labels align, where validation feedback appears, and
+which controls are visually secondary. For ordinary Swing business dialogs,
+MigLayout is the right default because it describes this geometry directly.
+The source reads as a form: label, field, label, field, summary, buttons. The
+alternative in old Swing code is often a nest of \api{BorderLayout},
+\api{BoxLayout}, and \api{GridBagLayout} panels whose geometry is distributed
+across too many objects to review easily.
+
+\begin{lstlisting}[caption={Typical MigLayout form body.}]
+JPanel body = new JPanel(new MigLayout(
+        "insets dialog, fillx",
+        "[][grow, fill]",
+        ""));
+
+body.add(new JLabel("Name:"), "right");
+body.add(nameField, "growx, wrap");
+body.add(new JLabel("Credit limit:"), "right");
+body.add(creditLimitField, "growx, wrap");
+body.add(summaryLabel, "span 2, growx, wrap");
+body.add(buttonBar, "span 2, right");
+\end{lstlisting}
+
+The layout constraints are not decoration. \api{insets dialog} says the panel
+is a dialog body and should use dialog-like margins. \api{fillx} says the panel
+may use horizontal space. The column constraint \api{[][grow, fill]} says
+labels have natural width while fields receive extra width and fill their
+cells. \api{wrap} says the next component starts a new row. \api{span 2} says
+the summary and button row belong across both columns. These words are compact,
+but they are also a readable geometry language.
+
+Button rows are one place where MigLayout's platform vocabulary is particularly
+useful. Tags such as \api{tag ok}, \api{tag cancel}, and \api{tag apply} let the
+layout manager arrange buttons according to platform rules where supported.
+Even when an application chooses a fixed order, the tags document semantic
+roles. The buttons themselves should still be command adapters; the layout tag
+does not own behavior.
+
+A validation summary should usually be close to the action row, because it
+explains why the requested action did not complete. Field-level decorations
+should remain near fields. Form-wide problems may appear in the summary, a
+problem list, or a banner. Avoid modal error popups for ordinary validation.
+They interrupt the edit flow and force the user to dismiss a second dialog
+before returning to the first. A validation summary plus focus recovery is
+quieter and more useful.
+
+Growing components need explicit thought. A single-line text field may grow
+horizontally but not vertically. A table, list, text area, preview, or map
+component may need both horizontal and vertical growth. A dialog with no
+vertical grow target may look cramped at large sizes and may waste space. A
+dialog with every row growing may look unstable. MigLayout lets the source say
+which rows grow and which remain at preferred height. For a generated form,
+the generator can provide field metadata, but the screen author should still
+decide growth.
+
+Do not let generated code own the whole layout merely because it can. Generated
+companions are excellent for field keys, resource keys, model/view contracts,
+binding installation, validation metadata, component keys, and tests. Layout is
+often where product decisions live: grouping, density, ordering, progressive
+disclosure, and visual rhythm. A generated layout may be acceptable for an
+administrative prototype, but a durable application screen deserves handwritten
+MigLayout or a generated layout that remains easy to inspect and override.
+
+The same caution applies to resource text. Labels, button text, validation
+messages, tooltips, and help topics should come from resources or generated
+keys where appropriate, but the body should still show the relationship between
+the label and the component. A panel whose source only says
+\api{GeneratedCustomerForm.create()} may compile, but it hides the screen from
+review. A panel that says \api{body.add(view.nameLabel())} followed by
+\api{body.add(view.nameField())} keeps the design visible while still using
+generated components.
+
+Dialog density should match workflow frequency. A rare destructive
+confirmation can be sparse. A daily operational editor should be compact,
+aligned, and predictable. Large business dialogs often need sections, but too
+many visual boxes make the dialog heavy. Use full-width separators or labeled
+groups sparingly. A tabbed dialog should have tabs only when the user benefits
+from separate work areas; tabs are not a substitute for simplifying the model.
+If validation can target hidden tabs, the focus resolver must be able to select
+them.
+
+The best layout test is not a pixel-perfect assertion. It is a small set of
+deterministic screenshots and smoke tests. Render the dialog body at the sizes
+the application supports. Verify that labels do not wrap unexpectedly, buttons
+remain visible, summaries have space, table rows are not crushed, and the first
+invalid field can receive focus. The companion screenshot harness uses FlatLaf,
+fixed dimensions, deterministic data, and generated PNGs precisely so the book
+can show realistic Swing surfaces instead of pseudocode.
+
+A dialog body should also have a resize story. Fixed-size dialogs are sometimes
+appropriate for tiny confirmations, but editors with tables, lists, previews,
+or text areas should usually resize. The resize story says which component
+absorbs width, which component absorbs height, and which parts remain at
+preferred size. MigLayout makes this story explicit with grow and fill
+constraints. If the story is missing, the dialog may look fine at the
+developer's scale factor and poor at 125 percent, 150 percent, translated text,
+or a different look and feel.
+
+Localization tests belong to layout tests. German labels, Czech messages, and
+long generated resource names can reveal fragile columns. A validation summary
+with a count and a long message may need to wrap or elide. Buttons may become
+wider. A design that relies on exact English string lengths is not a design;
+it is an accident. Because Corusco encourages stable resource keys, the visual
+text can change without changing the layout code, but the layout still must be
+tested with realistic strings.
+
+The book's example references are intentionally short. The printed chapter
+should say \dialogExample{} or \dialogValidationExample{}, not a full package
+path that wraps across the page. The repository structure can move; the class
+name remains a readable entry point. The same convention should be used in new
+chapters: name the example by the didactic program, and let the examples index
+or build system point to its physical location.
+
+\begin{examplebox}{dialogs}
+\dialogValidationExample{} and \dialogActiveEditorExample{} are the compact
+examples behind the dialog figures. They use ordinary Swing components and
+short Corusco controllers so that chapter listings can stay small.
+\end{examplebox}
+
+\section{Lifecycle and background work}
+
+\termdef{Dialog lifecycle}{in Corusco Swing} is the owned set of temporary
+resources that live for one dialog activation. It includes field bindings,
+validation bindings, keyboard bindings, behavior scopes, listener handles, task
+services, detachable presenter state, and the dialog controller itself. The
+lifecycle is not the native window and not the form model. It is the cleanup
+owner beside them.
+
+\api{FormDialogLifecycle} collects these resources. It is EDT-confined, like
+the Swing objects it owns. A presenter creates the controller, creates the
+lifecycle, registers installed bindings and services, and closes the lifecycle
+when the dialog activation ends. The lifecycle closes registered resources in
+reverse registration order, then closes the dialog controller in a finally
+block. If a late resource is registered after the lifecycle is already closed,
+the underlying resource scope closes or detaches it immediately. This rule
+removes a surprising number of edge-case branches from presenters.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\dialogLifecycleFigure}
+\caption{A dialog activation should own temporary resources explicitly. Cleanup closes bindings and services before the controller resets the form.}
+\label{fig:dialog-lifecycle}
+\end{figure}
+
+The reverse order is not accidental. If a field binding is still installed
+while the controller resets the form during cancellation, the binding may
+publish reset values back into components or fire listeners after the view is
+already considered dead. Closing bindings first removes the component-model
+relationships. Closing the controller last records the cancelled result and
+resets the model as part of terminal cleanup. If a binding cleanup throws, the
+controller still closes, because a failed listener removal should not leave the
+modal protocol open.
+
+\begin{lstlisting}[caption={One lifecycle for a dialog activation.}]
+FormDialog<CustomerForm, Customer> dialog = new FormDialog<>(form, body);
+FormDialogLifecycle lifecycle = FormDialogLifecycle.of(dialog);
+
+lifecycle.addBinding(fieldBindings);
+lifecycle.addBinding(FormDialogValidationBinding.install(dialog, summary, resolver));
+lifecycle.addBinding(FormDialogKeyboardBinding.install(rootPane, dialog, okButton));
+lifecycle.addTaskService(taskService);
+\end{lstlisting}
+
+Background work inside dialogs is common: loading choices, validating a remote
+identifier, previewing a report, applying a settings change, or saving a large
+object. The dialog should remain responsive. Long work must not block the EDT.
+At the same time, results must return to the EDT before they mutate Swing
+components or form models. This boundary is the same as in full screens, but
+dialogs make the lifetime sharper. If the user cancels the dialog while a task
+is running, the task must not update a disposed view.
+
+A task service registered with the dialog lifecycle gives the work a lifetime.
+Closing the lifecycle closes the service according to the service's own
+semantics. A generation counter or task handle should prevent stale results
+from publishing into a newer activation. Busy state can disable OK or Apply,
+show a progress bar, update status text, and install a busy overlay. The
+controller should still ask the form model whether it is committable; pending
+task state can contribute to that answer through the model or presenter.
+
+Virtual threads in modern Java are useful here, but they do not remove the EDT.
+A virtual thread can perform blocking IO for a validation lookup or save
+operation, but it must hand results back to the EDT before touching Swing. A
+structured task scope can organize related background work, but a dialog
+activation still needs cancellation and stale-result suppression. The modern
+feature changes the worker side of the boundary; it does not make Swing
+thread-safe.
+
+Busy UI should be proportional. A small lookup may need only a disabled OK
+button and a status label. A longer operation may need a progress bar and a
+Cancel current task button. A modal overlay can be useful when the whole form
+is temporarily unavailable, but it should not prevent users from cancelling if
+cancellation is safe. The busy chapter discusses these patterns in depth; the
+dialog-specific rule is that busy state belongs to the same activation
+lifecycle as the task that produces it.
+
+Dialogs that perform a save on OK need special care. One reasonable pattern is
+to let OK produce a result and close the dialog, then let the caller perform
+the save in the surrounding screen with its own busy/error presentation.
+Another pattern is to keep the dialog open while Apply or Save performs a
+background operation, then close only after success. The second pattern is
+valid when the user needs immediate feedback inside the modal context, but the
+dialog must then distinguish validation failure from save failure and must
+avoid accepting stale task results after cancellation. Do not mix the two
+patterns accidentally.
+
+Cancellation should travel down to background work whenever possible. A user
+who cancels a dialog that is loading choices does not expect the loading task
+to keep a database cursor open or to publish into a hidden combo box later.
+Some work cannot be interrupted immediately, but the UI ownership should still
+be cancelled: callbacks check whether the lifecycle is closed, task handles
+are asked to cancel, and stale generations are ignored. This turns cancellation
+from a visual event into a resource boundary.
+
+The lifecycle is also the right place for temporary caches. A dialog may cache
+lookup values, rendered previews, remote validation responses, or table filter
+state for the duration of one activation. Keeping such caches in static fields
+or long-lived presenters often creates stale state in the next activation.
+Registering a detachable cache with \api{FormDialogLifecycle} states that the
+cache is useful only while this modal edit exists. When the lifecycle closes,
+the cache detaches and the next activation starts with a clean boundary.
+
+Pay attention to cleanup side effects. Closing a binding should restore the
+component state it owned and remove listeners it installed. It should not run
+validation, save data, or show UI. Closing a task service should stop accepting
+new work and arrange cancellation according to its contract. Closing the
+controller should reset the form for cancelled cleanup. These operations are
+ordered, but they should remain individually simple. Complex cleanup is a sign
+that the dialog activation has been allowed to own too many unrelated things.
+
+Resource ownership also includes generated behavior scopes. A generated form
+binding plan may install value bindings, validation border behaviors, composed
+tooltips, help hooks, and command adapters. These bindings are not global.
+Register them with the dialog lifecycle or a behavior scope that is itself
+registered. When the dialog closes, the scope should restore component state
+that it changed, such as borders, tooltips, input maps, and listener lists. A
+dialog should leave the application as if its temporary view had never existed.
+
+\begin{coruscobox}{What Corusco changes}
+Corusco makes modal cleanup a first-class object. \api{FormDialogLifecycle}
+lets presenters register bindings, disposables, detachables, and task services
+beside one controller, then close the whole activation in a predictable order.
+\end{coruscobox}
+
+\section{Plain Swing and the migration path}
+
+A hand-written Swing dialog often begins with two button listeners and a field
+named \api{result}. This is not foolish; it is the shortest path to a working
+demo. The problem is that the pattern does not scale with the number of rules a
+real dialog needs. The OK listener grows active-editor commit, validation,
+problem summary, focus selection, result creation, exception handling, dirty
+baseline updates, command enablement, and disposal. The Cancel listener grows
+dirty confirmation and reset. The window listener grows another cancellation
+branch. The root pane grows keyboard actions. Later a test discovers that the
+Escape key does not match the Cancel button.
+
+\begin{lstlisting}[caption={Typical handwritten OK/Cancel drift.}]
+okButton.addActionListener(event -> {
+    if (!form.isCommittable()) {
+        summaryLabel.setText(form.problems().bySeverityDescending()
+                .getFirst().message());
+        return;
+    }
+    result = form.toResult();
+    dialog.dispose();
+});
+
+cancelButton.addActionListener(event -> dialog.dispose());
+\end{lstlisting}
+
+This code omits active-editor commit, dirty confirmation, command enablement,
+keyboard consistency, validation focus, lifecycle cleanup, Apply, and result
+typing. Each omission is easy to fix in isolation. The damage appears when
+every dialog fixes a different subset. Once that happens, the team no longer
+has a dialog policy; it has dialog folklore.
+
+The migration path is incremental. First move durable edit state out of Swing
+widgets and into a form model. The existing panel can remain. Next make OK ask
+the form model for committability and result creation instead of reading fields
+directly. Then introduce \api{FormDialog} and adapt the existing buttons to
+its commands. Add active-editor commit by giving the controller the real root
+component. Add dirty confirmation only after the clean baseline is defined.
+Move the validation summary and focus recovery into
+\api{FormDialogValidationBinding}. Install root-pane keyboard behavior with
+\api{FormDialogKeyboardBinding}. Register everything in
+\api{FormDialogLifecycle}.
+
+\begin{migrationbox}{A practical sequence}
+Do not rewrite an old complex dialog in one step. Extract the form model, then
+the controller, then validation presentation, then keyboard binding, then
+lifecycle cleanup. After each step, delete one private flag, one duplicated
+listener branch, or one manually synchronized button state.
+\end{migrationbox}
+
+This path works because Corusco does not require the layout to change. An old
+dialog can keep its current \api{JPanel}. A screen with a carefully tuned
+MigLayout body can keep it. A generated form can use generated field accessors
+while the body remains handwritten. The controller only needs a form model, a
+root component, and optional dirty/cancel hooks. This is important in mature
+Swing applications, where a modal editor may contain domain-specific custom
+components and years of usability adjustments.
+
+The first useful test usually targets the controller without a native shell.
+Construct a small form model on the EDT, create a root panel, create a
+\api{FormDialog}, drive \api{accept}, \api{apply}, and \api{cancel}, and assert
+the result, closed state, form reset calls, baseline calls, and command
+enablement. This test proves the modal protocol. It does not depend on window
+placement, native focus, or user input timing.
+
+The second useful test targets validation presentation. Give the form model a
+problem set, install \api{FormDialogValidationBinding}, refresh it, and assert
+that the summary label contains the expected message. Provide a resolver that
+maps a typed component target to a test component whose \api{requestFocusInWindow}
+method records calls. Then assert that focusing the first problem chooses the
+right component. This is much more direct than clicking through a modal window
+and hoping focus is observable.
+
+The third useful test targets active-editor commit. Use a table with a custom
+cell editor that rejects \api{stopCellEditing}, or override
+\api{commitActiveEditor} in a test subclass. Assert that OK and Apply return
+false, the controller remains open, and no result is created. This test guards
+the most common data-loss edge.
+
+The fourth useful test targets keyboard and lifecycle. For keyboard behavior,
+install \api{FormDialogKeyboardBinding} on a \api{JRootPane}, trigger the
+Escape action from the input/action maps, and assert that the controller's
+cancel command ran and dirty confirmation was honored. For lifecycle behavior,
+register tracked bindings or disposables and assert reverse cleanup order and
+idempotent close. These tests are not glamorous, but they catch the defects
+that make dialogs feel unreliable.
+
+Generated companions can add stronger tests. A generated form can expose typed
+field keys, component keys, validation problem codes, and command keys. A test
+can assert that each required field has a component, each validation problem
+has a focus target, each generated command is adapted exactly once, and each
+installed behavior is closed with the lifecycle. This is where generation is
+most valuable: not by hiding Swing, but by giving the repeated facts stable
+names that tests can use.
+
+For legacy migration, an adapter layer is often better than direct surgery.
+Wrap the old dialog's domain object in a form model that initially delegates to
+the existing getters and setters, then gradually move state into Corusco
+values. Replace one listener branch at a time. Keep the visual panel stable
+while the modal protocol becomes explicit. This reduces the chance that a
+behavioral migration is blamed on layout changes or resource text changes. Once
+the protocol is tested, visual cleanup becomes less risky.
+
+Do not migrate only the successful path. It is easy to replace OK with a
+controller and leave Escape, close-box, Apply, validation focus, and lifecycle
+cleanup untouched. That produces a dialog with a modern center and legacy
+edges. Users usually find the edges. A migration review should exercise every
+way the dialog can end, every way it can fail to end, and every temporary
+resource it installs. The controller is the center, but the protocol is the
+whole shape.
+
+Screenshot-oriented examples should be compiled examples, not drawing-only
+mockups. The figures in this chapter are deterministic panels, but they are
+generated by the same example project that contains runnable dialog scenarios
+and tests. This keeps the book honest. If a chapter describes active-editor
+commit, there should be a test or example that drives active-editor commit. If
+it describes dirty cancel, there should be a test or example that vetoes and
+confirms cancellation. The screenshot is evidence of presentation; the tests
+are evidence of behavior.
+
+\begin{examplebox}{dialogs}
+\dialogExample{} demonstrates base OK, Apply, and Cancel controller semantics.
+\dialogDirtyCancelExample{} covers dirty confirmation. \dialogKeyboardExample{}
+covers Escape and default-button wiring. \dialogLifecycleExample{} covers
+cleanup ownership. The book names the examples by class so that references stay
+readable in print.
+\end{examplebox}
+
+\section{Worked review of a customer editor}
+
+Consider a customer editor with name, credit limit, active status, billing
+address, a table of contacts, and a server-side uniqueness check for the
+customer code. This is large enough to expose the real problems, but small
+enough that the modal protocol remains visible. The plain Swing version often
+starts as a \api{JDialog} subclass with fields, table model, button listeners,
+and a public \api{getCustomer} method. The Corusco version starts with a
+question: what is the accepted result?
+
+The result might be a record:
+
+\begin{lstlisting}[caption={A dialog result should be explicit.}]
+record CustomerEdit(
+        CustomerId id,
+        String name,
+        BigDecimal creditLimit,
+        boolean active,
+        Address billingAddress,
+        List<ContactEdit> contacts) {
+}
+\end{lstlisting}
+
+The form model then owns editable values and problems for those facts. The
+name field has raw text, parsed value if conversion is needed, dirty state, and
+required validation. The credit limit field distinguishes parse failure from
+negative-value validation. The active checkbox is simple but still participates
+in dirty state. The contacts table has its own table model and perhaps
+row-level problems. The uniqueness check publishes a pending state and then a
+problem if the current code is already used. \api{toResult} creates the record
+only when the model is committable.
+
+The MigLayout body should be reviewed as a screen, not as a generated artifact.
+The top rows contain identity fields. The address group spans both columns
+because it has multiple related fields. The contacts table grows vertically.
+The validation summary sits above the button row. The button row adapts
+dialog commands and uses tags. The root panel is the component passed to
+\api{FormDialog} for active-editor commit. Nothing about this layout requires
+the controller to know field names.
+
+The controller is created after the form model and root panel exist. Dirty
+state may be a composition of field dirty flags, contact-table dirty state, and
+pending uploaded documents. Cancel confirmation may call the application's
+standard confirmation service. If the editor supports Apply, the surrounding
+presenter must define what Apply does: update a preview, save a draft, or call
+a repository. If Apply calls a repository, the successful Apply should move the
+dirty baseline only after the repository confirms success, or the workflow
+should make clear that Apply is a local preview rather than a save.
+
+Validation focus requires a resolver. Name and credit fields can map through
+component keys. Address problems may select an address section or tab. Contact
+table problems translate model rows and columns to view coordinates because
+the table may be sorted or filtered. The uniqueness problem for a customer code
+targets the code field even though it was produced by a server lookup. The
+resolver contains this navigation. The validation rules remain in the model or
+validation service.
+
+Background uniqueness validation needs stale-result suppression. Each code
+change increments a generation. The submitted task captures the generation and
+the candidate code. When the task returns, the presenter checks that the
+dialog lifecycle is still open and the generation still matches. Only then
+does it update the problem set, pending state, validation summary, and command
+state. If the dialog has closed, the result is ignored. If the user changed the
+code, the result is stale. This rule is worth writing in tests because it is
+otherwise invisible until users see flickering or false errors.
+
+Keyboard review checks that Enter from normal fields invokes OK, Enter inside
+the contacts table respects table editing, Escape routes to dirty cancel, and
+the close box follows the application's chosen cancel or cleanup policy. The
+root pane binding handles the shared Escape/default-button part. Custom
+components still need local input-map review. The goal is not to force every
+component to obey the dialog; it is to ensure that when a modal decision is
+made, it uses the same command path.
+
+Lifecycle review checks that field bindings, table bindings, validation
+binding, keyboard binding, behavior scope, task service, and any detachable
+presenter state are registered. Closing the lifecycle should restore root-pane
+state, component decorations, listeners, and task ownership before the
+controller resets the form. A screenshot test can render the body in valid,
+invalid, dirty, and busy states. A model test can assert the result record and
+problem set. An EDT test can assert command behavior. A native-shell smoke test
+can remain small.
+
+\begin{center}
+\textbf{Dialog review table.}
+\end{center}
+
+\noindent\begin{tabularx}{\linewidth}{@{}p{0.32\linewidth}X@{}}
+\toprule
+Observation & Review question\\
+\midrule
+OK loses the final table edit & Is active editor commit in the OK and Apply path?\\
+OK closes with invalid input & Does \api{isCommittable} reflect parse, validation, and pending required checks?\\
+Escape discards edits immediately & Is Escape routed to the same cancel command as the Cancel button?\\
+Cancel asks during shutdown & Is user cancellation being confused with lifecycle cleanup?\\
+Apply closes the dialog & Is Apply accidentally using OK semantics?\\
+Apply then Cancel loses applied work & Is the dirty baseline moved after successful Apply according to policy?\\
+Validation summary changes but focus does not & Is a \api{ProblemFocusResolver} installed for structured targets?\\
+Problem appears on the wrong table row & Are model coordinates translated to view coordinates after sorting or filtering?\\
+Old async validation result appears & Is generation or cancellation suppressing stale task results?\\
+Dialog leaks listeners & Are bindings and task services registered with \api{FormDialogLifecycle}?\\
+\bottomrule
+\end{tabularx}
+
+This review table is intentionally practical. Dialog defects are often
+reported as anecdotes: ``sometimes OK ignores my edit'', ``Escape lost my
+work'', ``the error points to the wrong row'', ``the dialog still updates after
+I closed it.'' Each anecdote corresponds to a missing named rule. Naming the
+rules lets a team review dialogs systematically instead of debugging each
+report as a new mystery.
+
+\section{Exercises and checklist}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Find a dialog OK listener in an existing Swing program and list whether
+it handles active editor commit, validation, focus recovery, result creation,
+dirty cancel, keyboard consistency, and lifecycle cleanup.
+\item Replace a direct OK button listener with a \api{FormDialog} command while
+keeping the existing panel and layout.
+\item Add a \api{ProblemFocusResolver} for a form with two fields and one
+tabbed section. Write a test that proves the tab is selected before focus is
+requested.
+\item Write a dirty-cancel confirmation test that returns false and verifies
+the controller remains open and the form is not reset.
+\item Build a MigLayout dialog body with a validation summary, a growing table,
+and a tagged button row. Render it with the screenshot harness at two sizes.
+\item Add a rejecting table cell editor to a controller test and prove that OK
+does not close while the editor rejects \api{stopCellEditing}.
+\item Add Apply to a settings dialog and state the dirty-baseline policy in a
+test.
+\item Add asynchronous validation for a code field using a generation counter.
+Prove that a stale result cannot publish a current problem.
+\item Register a validation binding, keyboard binding, behavior scope, and task
+service in \api{FormDialogLifecycle}. Prove that cleanup closes them before the
+controller closes.
+\item Review a generated form companion and decide which parts should be
+generated facts and which parts should remain handwritten MigLayout.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{center}
+\textbf{Dialog checklist.}
+\end{center}
+
+\begin{itemize}
+\item The accepted result type is explicit and non-null.
+\item Durable edit state lives in a form model, not only in widgets.
+\item OK and Apply commit active editors before reading the form result.
+\item OK is terminal only after successful commit and committability checks.
+\item Apply is non-terminal and has a stated dirty-baseline policy.
+\item Cancel uses dirty state and confirmation only for user cancellation.
+\item Programmatic close bypasses dirty confirmation and performs cleanup.
+\item Buttons, Enter, Escape, and tests invoke shared dialog commands.
+\item Validation problems have stable codes, severities, and targets.
+\item A focus resolver maps structured problem targets to Swing recovery.
+\item MigLayout expresses the dialog body directly and remains reviewable.
+\item Generated code supplies stable facts without hiding product layout.
+\item Background work has cancellation, stale-result suppression, and EDT handoff.
+\item Bindings, behaviors, task services, and detachables belong to a lifecycle.
+\item The chapter examples are short class-name references, not long printed paths.
+\end{itemize}
+
+Dialog code should be boring in the best sense. The user may see a rich form,
+careful validation, responsive background checks, and polished keyboard
+behavior, but the implementation should have a small number of named moving
+parts. A form model owns state. A panel owns geometry. Bindings connect state
+and widgets. A controller owns the modal decision. A shell owns the native
+window. A lifecycle owns temporary relationships. Once these parts are visible,
+there is little room left for the traditional dialog tangle.

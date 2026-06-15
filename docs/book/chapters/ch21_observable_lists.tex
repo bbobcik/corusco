@@ -1,0 +1,1436 @@
+\chapter{Observable Lists and Large Data}
+\label{ch:observable-lists}
+\chapterquote{A large table is usually not slow because it is large; it is slow because the program lies about what changed.}{A table performance rule}
+
+\begin{chaptermap}
+Core question & How should changing row collections be represented before Swing displays them?\\
+Primary APIs & \api{ObservableList}, \api{ObservableArrayList}, \api{ListChange}, \api{ListChangeSet}, \api{FilteredList}, \api{SortedList}, \api{MappedList}, \api{LoadableList}, \api{EdtObservableList}, and \api{GlazedObservableList}.\\
+Plain Swing baseline & \api{AbstractTableModel}, \api{ListModel}, and \api{ComboBoxModel} need precise events but are often fed broad resets.\\
+Corusco connection & Observable lists adapt to list, combo-box, and table models with precise events and lifecycle-owned bindings.\\
+Companion example & \largeDataExample.\\
+\end{chaptermap}
+
+\section{A list used by a screen is not just storage}
+
+A Java \api{List} answers questions about current contents: how many elements
+exist, which element is at index five, and what the current snapshot looks like.
+A Swing screen needs more. It needs to know what changed. Did a row appear? Did
+a row disappear? Was one row replaced? Did the order change? Was the entire
+collection cleared? Should the table repaint one cell, five rows, or the whole
+viewport?
+
+\termdef{Observable list}{in Corusco} is an indexed collection that publishes
+ordered structural changes. The core contract includes reads, mutations,
+batches, immutable snapshots, and subscriptions. It is the collection sibling of
+\api{ReadableValue}.
+
+\begin{lstlisting}[caption={The shape of the observable-list contract.}]
+ObservableList<CustomerRow> rows = ObservableArrayList.empty();
+
+Subscription subscription = rows.subscribe(changes -> {
+    for (ListChange<CustomerRow> change : changes.changes()) {
+        System.out.println(change);
+    }
+});
+
+rows.add(new CustomerRow("Ada", "active"));
+rows.set(0, new CustomerRow("Ada", "preferred"));
+subscription.close();
+\end{lstlisting}
+
+The list is still an ordinary indexed data source. The important addition is
+that mutations are observable as facts, not merely as "something changed".
+
+\begin{principlebox}{tell the truth about change}
+Large-data Swing programming begins with honest events. If one row changed,
+report one row. If a batch inserted ten rows, report the inserted range. Use a
+reset only when the program really cannot describe the difference.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\largeDataFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\tableCoordinatesFigure}
+\end{minipage}
+\caption{Observable row changes become visible Swing behavior. A large table needs precise data events and a clear distinction between model coordinates, view coordinates, and row identity.}
+\label{fig:observable-list-screens}
+\end{figure}
+
+\textbf{Why broad resets hurt.}
+
+Many table models solve every update by calling \api{fireTableDataChanged}. That
+method is a useful escape hatch, but a poor default. It tells the table that the
+model's contents may have changed broadly. The table must invalidate more state
+than necessary. Selection may need repair. Sorters and row filters may do extra
+work. Renderers repaint cells whose values did not change. Users see flicker or
+lost context.
+
+For ten rows, the bad habit is invisible. For ten thousand rows, it becomes a
+user-interface problem. For a table with sorting, filtering, column persistence,
+cell validation, and selection preservation, it becomes a correctness problem.
+
+\begin{lstlisting}[caption={The common but imprecise table-model update.}]
+void replaceCustomer(CustomerRow updated) {
+    int index = findById(updated.id());
+    rows.set(index, updated);
+    fireTableDataChanged();       // The model knows more than it reports.
+}
+\end{lstlisting}
+
+The model knows that one row was replaced. It should say so.
+
+\begin{lstlisting}[caption={A precise table-model update.}]
+void replaceCustomer(CustomerRow updated) {
+    int index = findById(updated.id());
+    rows.set(index, updated);
+    fireTableRowsUpdated(index, index);
+}
+\end{lstlisting}
+
+Corusco's observable lists preserve this idea before Swing enters the story.
+The presenter can replace row five; the Swing adapter can translate that into
+the proper table event.
+
+\textbf{The core list contract.}
+
+\api{ObservableList<E>} exposes size, indexed read, immutable snapshot, add,
+insert, set, remove, move, clear, batch, and subscribe. The operations are
+deliberately explicit. Mutating through a hidden iterator would make change
+reporting ambiguous. The list owns the mutation vocabulary.
+
+\begin{lstlisting}[caption={Core mutation vocabulary.}]
+rows.add(element);
+rows.add(index, element);
+rows.set(index, replacement);
+rows.remove(index);
+rows.move(fromIndex, toIndex);
+rows.clear();
+rows.batch(list -> {
+    list.add(first);
+    list.add(second);
+});
+\end{lstlisting}
+
+A batch groups inner mutations into one delivered change set. The order of
+changes still matters. A subscriber can see "insert row, insert row, replace
+row" as one delivery and update a dependent structure once.
+
+\textbf{List changes and change sets.}
+
+\termdef{List change}{in Corusco} is one structural mutation: inserted,
+removed, replaced, moved, or cleared. \termdef{List change set}{in Corusco} is
+an ordered delivery of one or more changes. Batches use change sets to avoid
+publishing partial intermediate states.
+
+This is more precise than a plain "changed" callback and less elaborate than a
+complete diff engine. It matches what Swing adapters normally need. A table
+model can turn an inserted change into \api{fireTableRowsInserted}; a removed
+change into \api{fireTableRowsDeleted}; a replaced change into
+\api{fireTableRowsUpdated}; a clear into a deletion range or reset according to
+the model's state.
+
+\begin{pitfallbox}{indexes are temporal}
+Indexes inside a change describe the list at a particular point in the ordered
+change stream. Do not collect indexes from several changes and apply them later
+without respecting order.
+\end{pitfallbox}
+
+\textbf{ObservableArrayList.}
+
+\api{ObservableArrayList} is the ordinary storage implementation. Use it when
+the presenter owns the rows directly. It is not a database, not a virtualized
+data source, and not a replacement for paging. It is a precise in-memory row
+source.
+
+\begin{lstlisting}[caption={Presenter-owned row storage.}]
+final class CustomerRows {
+    private final ObservableArrayList<CustomerRow> rows =
+            ObservableArrayList.empty();
+
+    ObservableList<CustomerRow> rows() {
+        return rows;
+    }
+
+    void loaded(List<CustomerRow> loadedRows) {
+        rows.batch(list -> {
+            list.clear();
+            loadedRows.forEach(list::add);
+        });
+    }
+}
+\end{lstlisting}
+
+This example still clears and repopulates on load. That may be acceptable for a
+fresh search result. It is not ideal for a refresh where row identity should be
+preserved. The point is that even broad replacement is named by the row source,
+not hidden in the table.
+
+\textbf{Filtering.}
+
+\api{FilteredList<E>} exposes a read-only view over a source list using a
+predicate. The source remains the mutation owner. The filtered view subscribes
+to source changes and reports changes in the filtered coordinate space.
+
+\begin{lstlisting}[caption={Filtered view over a source list.}]
+ObservableArrayList<CustomerRow> source = ObservableArrayList.empty();
+FilteredList<CustomerRow> activeRows =
+        FilteredList.of(source, row -> row.status() == CustomerStatus.ACTIVE);
+\end{lstlisting}
+
+Filtering is easy to write badly in Swing. A renderer decides whether to gray
+out rows. A row filter reads values through view indexes. A search listener
+rebuilds the entire table model on each keystroke. Corusco's core view keeps
+the filter before Swing and makes the relationship testable.
+
+\begin{migrationbox}{filter before rendering}
+If a renderer contains business filtering logic, move that logic into a filtered
+row source or table row sorter policy. Renderers should present visible rows,
+not decide which rows exist.
+\end{migrationbox}
+
+\section{Sorting}
+
+\api{SortedList<E>} exposes a sorted read-only view. Swing also has
+\api{RowSorter}, and it is often useful. The choice depends on ownership. If the
+sort order is purely a table-view preference, a Swing row sorter is appropriate.
+If a presenter-owned downstream model needs sorted order before Swing, a sorted
+observable list is appropriate.
+
+The distinction matters for selection. Swing view indexes change when the table
+sorter changes. Model indexes refer to the table model. A presenter-owned sorted
+list is itself the model order. Do not mix these coordinate systems casually.
+
+\begin{lstlisting}[caption={Sorted view for presenter-owned order.}]
+SortedList<CustomerRow> byName = SortedList.of(source,
+        Comparator.comparing(CustomerRow::displayName)
+                .thenComparing(CustomerRow::id));
+\end{lstlisting}
+
+\textbf{Mapping.}
+
+\api{MappedList<S,T>} converts each source element into a view element. This is
+useful for combo-box labels, small summary lists, and table helper projections.
+The source remains the mutation owner. The mapped list is a view.
+
+\begin{lstlisting}[caption={Mapping rows to display choices.}]
+MappedList<CustomerRow, CustomerChoice> choices = MappedList.of(source,
+        row -> new CustomerChoice(row.id(), row.displayName()));
+\end{lstlisting}
+
+Do not use mapping to hide expensive per-row work that should be cached or
+loaded separately. Mapping should be cheap enough to run as part of change
+propagation.
+
+\textbf{Loadable lists.}
+
+\api{LoadableList<E>} models a collection that is loaded through a supplier and
+can be detached. It is useful for presenter-owned cached row sets where the
+screen should release cached rows without discarding the row-source object.
+
+\begin{lstlisting}[caption={A detachable loaded row source.}]
+LoadableList<CustomerRow> rows = LoadableList.of(repository::loadCustomers);
+
+List<CustomerRow> firstSnapshot = rows.snapshot();
+rows.detach();
+List<CustomerRow> secondSnapshot = rows.snapshot();
+\end{lstlisting}
+
+As with \api{LoadableValue}, this does not make slow loading safe for the EDT.
+If loading may block, put the load behind a task boundary and update the list on
+the appropriate thread. The loadable list models storage and detachment, not UI
+threading.
+
+\textbf{EDT adaptation.}
+
+Core observable lists are not Swing dispatchers. Listener delivery is
+synchronous on the mutating thread. Swing table models, list models, and combo
+box models are EDT-confined. The boundary must be explicit.
+
+\api{EdtObservableList} wraps a source list and delivers wrapper subscriber
+callbacks on the EDT. If the source fires on the EDT, delivery is immediate. If
+the source fires elsewhere, delivery is queued with \api{SwingUtilities.invokeLater}.
+The wrapper does not make the source list itself thread-safe.
+
+\begin{lstlisting}[caption={Adapting a row source before Swing consumes it.}]
+ObservableList<CustomerRow> source = presenter.rows();
+EdtObservableList<CustomerRow> swingRows = EdtObservableList.of(source);
+
+ObservableTableModel<CustomerRow> model =
+        ObservableTableModel.of(swingRows,
+                GeneratedCustomerRowTableDescriptor.DESCRIPTOR);
+\end{lstlisting}
+
+\begin{pitfallbox}{EDT adapter is not a lock}
+\api{EdtObservableList} changes callback delivery for subscribers of the
+wrapper. It does not make arbitrary concurrent mutations of the wrapped source
+safe. Use a coherent source ownership policy.
+\end{pitfallbox}
+
+\textbf{ObservableTableModel.}
+
+\api{ObservableTableModel<R>} is the direct Swing table model adapter. It reads
+cell values through a typed \api{TableDescriptor}. It subscribes to an
+\api{ObservableList}. It translates list changes into table events. It is
+EDT-confined and closes its source-list subscription when closed.
+
+This combination addresses several common Swing table failures:
+
+\begin{itemize}
+\item Row storage is not owned by \api{JTable}.
+\item Column meaning is not inferred from localized headers.
+\item Cell values are read through typed column descriptors.
+\item Immutable record rows can be edited by replacing the row.
+\item Source-list changes become precise table events where possible.
+\item Closing the table model removes the source subscription.
+\end{itemize}
+
+\begin{lstlisting}[caption={Descriptor-backed observable table model.}]
+ObservableTableModel<CustomerRow> model =
+        ObservableTableModel.of(rows,
+                GeneratedCustomerRowTableDescriptor.DESCRIPTOR);
+
+table.setModel(model);
+\end{lstlisting}
+
+\textbf{Editing immutable rows.}
+
+Traditional table models often mutate bean properties directly. That is natural
+for mutable beans but awkward for records. Corusco table columns can update a
+row by returning a replacement row. The observable list then reports a row
+replacement, and the table model fires the appropriate cell or row update.
+
+\begin{lstlisting}[caption={Conceptual immutable-row edit.}]
+Column<CustomerRow, String> nameColumn = Column.of(
+        CustomerColumns.NAME,
+        CustomerRow::displayName,
+        (row, value) -> row.withDisplayName(value));
+\end{lstlisting}
+
+The exact generated code may differ, but the ownership is the same. The table
+does not own the row's fields. The descriptor knows how to read and update the
+row. The list owns row replacement.
+
+\section{Selection and row identity}
+
+Large data sets need stable row identity. A selected view row is not enough.
+After sorting, filtering, insertion, or refresh, the same view index may refer
+to a different row. Selection should be preserved by row identity when the user
+expects continuity.
+
+Corusco table selection binding connects Swing selection to typed model state:
+selected model row, selected row object, or selected row id according to the
+screen's needs. The observable list chapter matters because precise row changes
+give the binding a fighting chance to preserve context.
+
+\textbf{GlazedLists interop.}
+
+GlazedLists is a mature library for event lists, filtering, sorting, and
+Swing-table integration. Corusco does not need to pretend that this experience
+does not exist. \api{GlazedObservableList} adapts a GlazedLists \api{EventList}
+to the Corusco \api{ObservableList} contract.
+
+Use this when an application already depends on GlazedLists or needs its
+advanced list machinery. The boundary remains important: decide which library
+owns filtering, sorting, threading, and disposal. Adapt deliberately.
+
+\begin{coruscobox}{interop instead of replacement}
+Corusco's observable-list contract is a presenter and binding contract. It can
+own storage directly or adapt a mature external event-list source such as
+GlazedLists. The goal is not to force every application through one collection
+engine.
+\end{coruscobox}
+
+\textbf{Large-data discipline.}
+
+Large data work starts with a simple question: can the user see all of this at
+once? If not, avoid doing component-level work for every row. A table with
+100000 rows should not allocate 100000 components. Swing renderers already help
+by stamping visible cells. Your model must help by avoiding unnecessary resets,
+expensive per-cell computation, and broad repaint storms.
+
+Useful rules:
+
+\begin{itemize}
+\item Keep row objects compact and meaningful.
+\item Make renderers cheap and complete.
+\item Keep filtering and sorting out of renderers.
+\item Preserve row identity across refresh.
+\item Batch bulk changes.
+\item Avoid firing one event per row when one ordered change set can describe
+the batch.
+\item Measure with realistic row counts, not a five-row demonstration.
+\end{itemize}
+
+\textbf{Plain Swing baseline.}
+
+A careful plain Swing model can be perfectly acceptable:
+
+\begin{lstlisting}[caption={Handwritten precise table model.}]
+final class CustomerTableModel extends AbstractTableModel {
+    private final List<CustomerRow> rows = new ArrayList<>();
+
+    void addCustomer(CustomerRow row) {
+        int index = rows.size();
+        rows.add(row);
+        fireTableRowsInserted(index, index);
+    }
+
+    void replaceCustomer(int index, CustomerRow row) {
+        rows.set(index, row);
+        fireTableRowsUpdated(index, index);
+    }
+
+    @Override
+    public int getRowCount() {
+        return rows.size();
+    }
+}
+\end{lstlisting}
+
+This code is honest. Its limitation is reuse. Every table model must repeat row
+storage, event translation, column metadata, editing policy, resource identity,
+and cleanup. Corusco extracts those repeated concerns.
+
+\textbf{Corusco treatment.}
+
+The Corusco version splits ownership:
+
+\begin{itemize}
+\item The presenter owns an \api{ObservableList<CustomerRow>}.
+\item The descriptor owns columns and cell access.
+\item The Swing table model owns translation to \api{TableModelEvent}.
+\item The binding or scope owns cleanup.
+\item The table owns viewport, selection UI, renderers, and editors.
+\end{itemize}
+
+This is not more abstract for its own sake. It gives each recurring fact a
+stable owner. The same row source can be tested without Swing, displayed in a
+table, adapted to a list, or used by a generated table companion.
+
+\textbf{Worked example.}
+
+\begin{examplebox}{large data}
+\largeDataExample{} builds a deterministic row set, shows it through a table,
+and separates row generation from Swing display. Use it as a base for
+screenshot-scale tables and for model-level tests that run without a visible
+window.
+\end{examplebox}
+
+Read the example by following row identity. Where are rows created? Which code
+owns the list? Which code owns the table model? Which code can be tested without
+Swing? If these answers are visible, the screen can grow.
+
+\textbf{Review notes.}
+
+Observable lists do not remove the need for paging, server-side filtering, or
+database indexes. They make in-memory presentation changes honest. A million-row
+database result should not be blindly loaded into an observable array list just
+because the UI can subscribe to it. Use the right data strategy first; then
+publish the presentation subset precisely.
+
+The most useful design habit is to draw the boundary between the authoritative
+collection and the presentation collection. In a small utility, those two may be
+the same object: an observable array list that directly stores the visible rows.
+In a business system, the authoritative data may live in a repository, a cache,
+a server-side cursor, or a GlazedLists event list. The presentation list is then
+only the current Swing-facing projection. Once this boundary is named, questions
+about filtering, sorting, selection, paging, and disposal become easier because
+they are no longer hidden inside the table.
+
+Row identity should be chosen before row order. A table refresh is not merely a
+new sequence of objects; it is an opportunity to preserve the user's place. If a
+customer row has a stable customer id, selection can survive sorting, filtering,
+and replacement. If a row is identified only by its current integer position,
+every refresh destroys meaning. This is why descriptors and row models should
+expose business identity where the screen needs continuity, even when the table
+itself continues to paint ordinary row indexes.
+
+The precision of change events is not an optimization to postpone until the end.
+It shapes the user's trust in the screen. A broad reset tells a table that many
+assumptions are gone, so sorters, selections, editors, and repaint decisions may
+all become conservative. A precise insert, update, or remove says which facts
+changed and lets the rest of the view stay still. The user experiences this as a
+table that does not jump unnecessarily.
+
+Batching deserves similar respect. Firing one hundred single-row events can be
+correct and still unpleasant if observers perform per-event work. Firing one
+opaque reset can be fast and still destructive. A good observable-list API makes
+the middle path available: related mutations are grouped, but the group still
+describes what happened. Corusco's collection support is valuable exactly
+because it keeps that discipline close to ordinary row operations.
+
+Threading must be decided at the list boundary, not at random subscribers. A
+repository callback may arrive on a pool thread. A GlazedLists event may arrive
+under its own locking policy. A Swing table model must be touched on the EDT.
+If every subscriber tries to repair threading independently, the program becomes
+unreviewable. Wrap the source, adapt the event stream, or publish into an
+EDT-confined presentation list before Swing sees the changes.
+
+Filtering and sorting are also ownership decisions. A view-local sort installed
+by \api{JTable} is useful when ordering is a visual preference and the domain
+model does not care. A presenter-owned sorted list is better when other screen
+facts depend on the same order, when the order must be tested without Swing, or
+when several components share the sorted projection. The important point is to
+avoid having two different owners silently sort the same rows in different ways.
+
+Mapping is attractive because it can keep rows small and presentation-specific.
+It is dangerous when it hides expensive work. A mapped list that formats dates
+or computes small value objects is ordinary. A mapped list that performs service
+calls, loads icons from disk, or consults remote permissions is a latency trap.
+The map function should be cheap, deterministic, and free of Swing component
+state; otherwise the list becomes a disguised background task.
+
+Memory use is part of list design. A screen that shows a current work queue may
+comfortably keep every visible row in memory. A screen that searches years of
+audit history probably should not. Observable lists describe presentation
+mutation; they do not require the whole domain universe to be present. Use
+server-side paging, incremental loading, or summary/detail loading when the
+business problem is larger than the screen.
+
+The companion examples should therefore be read as scale models, not as data
+strategy commandments. The large-data example creates deterministic rows so
+screenshots and tests are stable. A production screen may replace that source
+with a repository-backed loadable list or with a GlazedLists adapter. The table,
+descriptor, renderer, and selection lessons remain the same because they depend
+on the presentation contract rather than the particular data source.
+
+When reviewing a table screen, ask for a short story of one row. Where is it
+created? How does it enter the observable list? How does a cell value reach the
+renderer? What event is fired when the row changes? How is selection preserved
+when a new version of the row arrives? Where are subscriptions closed? A design
+that can answer those questions is usually ready for more rows.
+
+The same story should be told for removal. A row that disappears may be filtered
+out, deleted from the underlying data set, moved to another page, or hidden by a
+permission change. The observable event is similar, but the user meaning is not.
+If the screen must explain the disappearance, preserve enough model context to
+produce a status message or undo action instead of treating every removal as a
+silent table mutation.
+
+For very large data, consider whether the observable list should represent all
+known rows or only the visible window of rows. A virtualized or paged source may
+publish a compact presentation slice while the repository owns the full result
+set. Swing still paints a table, but the table no longer implies that every
+possible row is an in-memory object. This is often the difference between a
+responsive business screen and an impressive demo that cannot survive real data.
+
+\section{Change Sets, Coordinates, and Derived Views}
+
+The list event model is worth studying because it is the bridge between domain
+rows and Swing's strict model contracts. A \api{ListChange.Inserted} says that
+contiguous elements were inserted at one index. A \api{ListChange.Removed} says
+which contiguous elements occupied an index before removal. A
+\api{ListChange.Replaced} says one element was replaced at one index. A
+\api{ListChange.Moved} says one element moved from one index to another. A
+\api{ListChange.Cleared} says the list removed all elements and carries the old
+elements. These are small records, but they encode enough truth for table, list,
+combo-box, filtered, mapped, and diagnostic adapters to do precise work.
+
+The indices are in the coordinate system of the list that emits the change. This
+sentence is more important than it first appears. A source list emits source
+coordinates. A filtered view emits filtered-view coordinates. A sorted view
+emits sorted-view coordinates. A mapped list emits mapped-view coordinates that
+usually correspond one-to-one with source positions. Swing table view rows are a
+different coordinate system again when a row sorter is installed. Most large
+table bugs are coordinate bugs wearing performance clothes.
+
+\begin{lstlisting}[caption={A change is interpreted in the emitting list's coordinates.}]
+ObservableArrayList<CustomerRow> source = ObservableArrayList.empty();
+FilteredList<CustomerRow> active = FilteredList.of(source,
+        row -> row.status() == CustomerStatus.ACTIVE);
+
+active.subscribe(changes -> {
+    for (ListChange<CustomerRow> change : changes.changes()) {
+        // The index belongs to the filtered view, not the source list.
+        updateActiveRowsDiagnostics(change);
+    }
+});
+\end{lstlisting}
+
+This rule prevents a tempting shortcut. If a filtered list reports that one
+visible row was removed at index three, that does not mean source index three
+was removed. The filtered view has already translated the source event through
+its predicate. A Swing adapter over the filtered view should fire Swing events
+in filtered coordinates. A presenter that needs source identity should store row
+ids rather than trying to reverse-engineer source indexes.
+
+Batches preserve ordered change semantics while reducing delivery noise. A batch
+does not mean "some unknown reset happened." It means a set of mutations belongs
+together for delivery. The inner order still matters because later indices are
+interpreted after earlier mutations. This is why subscribers should process
+changes in the delivered order. Sorting the changes by index or saving them for
+later can corrupt the meaning.
+
+\begin{lstlisting}[caption={Process a change set in order.}]
+void listChanged(ListChangeSet<CustomerRow> changeSet) {
+    for (ListChange<CustomerRow> change : changeSet.changes()) {
+        switch (change) {
+            case ListChange.Inserted<CustomerRow> inserted -> insert(inserted);
+            case ListChange.Removed<CustomerRow> removed -> remove(removed);
+            case ListChange.Replaced<CustomerRow> replaced -> replace(replaced);
+            case ListChange.Moved<CustomerRow> moved -> move(moved);
+            case ListChange.Cleared<CustomerRow> cleared -> clear(cleared);
+        }
+    }
+}
+\end{lstlisting}
+
+This processing style also makes tests clearer. A test can assert that a batch
+contains three changes in a specific order. It can assert that a filtered view
+emits no event when a source insertion does not satisfy the predicate. It can
+assert that replacing an inactive row with an active row becomes an insertion in
+the filtered view. These are model tests, not Swing tests, and they catch the
+hard part before table rendering enters the picture.
+
+Snapshots are deliberately immutable. A snapshot lets a caller inspect current
+contents without receiving the mutable storage object. This matters for
+diagnostics, tests, and background preparation. If a presenter hands out the
+internal list and another object mutates it directly, the observable-list
+contract is broken. Mutations must pass through the list's explicit methods so
+events can remain truthful.
+
+\begin{pitfallbox}{do not mutate behind the observable list}
+If some code keeps a reference to the backing collection and modifies it
+directly, subscribers do not receive a truthful change set. Treat the observable
+list's mutation methods as the only public mutation path.
+\end{pitfallbox}
+
+Element immutability is a separate question. Replacing a row object is
+observable. Mutating a field inside a row object is not, unless the row object
+itself has observable fields and the table model knows about them. For ordinary
+table rows, immutable records with replacement updates are easier to reason
+about. A cell edit creates a replacement row; the list emits a replacement; the
+table model fires an update. The row's old and new values are visible in the
+event stream.
+
+\begin{lstlisting}[caption={Immutable row edit through replacement.}]
+CustomerRow old = rows.get(modelRow);
+CustomerRow updated = old.withStatus(CustomerStatus.PREFERRED);
+rows.set(modelRow, updated);
+\end{lstlisting}
+
+Mutable rows can still be used, but they need a policy. If a row object changes
+internally and remains equal to itself, an observable list cannot infer which
+cell changed. The table model may need a row-level notification method, or the
+row object may need its own observable fields. Do not accidentally mix mutable
+domain objects with a list event model that assumes replacement.
+
+Filtered views are read-only because source ownership matters. A filtered view
+can expose rows accepted by a predicate and translate source changes into
+visible changes. If callers could insert directly into the filtered view, the
+API would have to decide where the element belongs in the source list, whether it
+must satisfy the predicate, and what happens when it does not. Those policies
+belong to the source owner. The filtered view observes and translates.
+
+The filter predicate can change. The implementation reports predicate
+replacement as a reset of the filtered view: previous visible contents are
+removed and new visible contents are inserted where applicable. That is a
+conservative and deterministic contract. It avoids pretending that a predicate
+change is a sequence of ordinary source mutations. A user changing the search
+text has changed the view rule, not edited every row.
+
+\begin{lstlisting}[caption={Changing the filter policy resets the filtered view.}]
+FilteredList<CustomerRow> filtered = FilteredList.of(source,
+        row -> row.status() == CustomerStatus.ACTIVE);
+
+filtered.setPredicate(row -> row.displayName().contains(query.value()));
+\end{lstlisting}
+
+Sorted views are also read-only, and their event policy is deliberately
+conservative. Sorting makes many source mutations ambiguous to translate as one
+precise insert, remove, replace, or move in sorted coordinates. A replacement
+may change both row contents and sorted position. A comparator change may
+reorder everything. Corusco's sorted view therefore reports visible content
+changes as reset-style changes: clear old contents, insert current contents
+where needed. This is honest. It may be less granular than a hand-optimized sort
+adapter, but it is deterministic and safe.
+
+Use a sorted observable view when order is part of presenter state. Use Swing's
+\api{RowSorter} when sort order is a local table-view preference. Use GlazedLists
+or another mature event-list engine when the application needs advanced sorted
+and filtered event machinery with stronger incremental behavior. Corusco's
+contract is not a claim that one sorted implementation is best for every data
+volume. It is a way to keep ownership visible.
+
+Mapped views are usually the most straightforward. A source row becomes a display
+row, choice object, key-label pair, or small presentation record. Insertions map
+to insertions, removals map to removals, replacements map to replacements, moves
+map to moves, and clears map to clears. The mapper is invoked when the view is
+created and when source changes arrive. The mapper should be cheap,
+deterministic, and free of Swing component state.
+
+\begin{lstlisting}[caption={Map domain rows into stable combo choices.}]
+record CustomerChoice(CustomerId id, String label) {
+    @Override
+    public String toString() {
+        return label;
+    }
+}
+
+MappedList<CustomerRow, CustomerChoice> choices = MappedList.of(rows,
+        row -> new CustomerChoice(row.id(), row.displayName()));
+\end{lstlisting}
+
+This pattern is common with combo boxes. The combo box can display a
+\api{CustomerChoice} while the presenter keeps stable ids. The visible string is
+not the domain state; it is the rendered label for a choice. If localization or
+formatting changes, the mapped view can be rebuilt or the source rows can be
+replaced. The model remains typed.
+
+Loadable lists are useful when rows have a reusable owner but an attachable
+cache. The first read or mutation loads the cache through a supplier. Detach or
+invalidate releases cached rows without firing a list change. Refresh reloads
+and emits a reset-style change set only when a previously attached snapshot
+changes. As with loadable values, the loader runs on the caller's thread. This
+is a storage and lifecycle helper, not a background worker.
+
+\begin{lstlisting}[caption={Loadable rows have cache lifecycle, not magic threading.}]
+LoadableList<CustomerRow> rows = LoadableList.of(repository::loadCustomers);
+
+List<CustomerRow> first = rows.snapshot(); // invokes loader
+rows.detach();                             // releases cache silently
+List<CustomerRow> next = rows.refresh();   // reloads and may notify
+\end{lstlisting}
+
+Detach without event is correct when the view is not supposed to observe a user
+visible change. A hidden tab releasing its row cache does not mean the user
+deleted rows. Refresh is the explicit operation for visible reload. If the
+screen needs to show "detached", "loading", "failed", or "loaded", model that as
+a separate state value or task state. Do not overload list contents to carry
+every lifecycle fact.
+
+Derived views have lifetimes. A filtered list subscribes to its source. A sorted
+list subscribes to its source. A mapped list subscribes to its source. A
+GlazedLists adapter subscribes to its source. A Swing model subscribes to its
+source. Each relationship should be closed when the owner no longer needs it.
+If a temporary filtered view is created for a dialog and never closed, the source
+list may keep the dialog's graph reachable.
+
+\section{Swing Adapters, Threading, and Lifecycle}
+
+Swing's list and table models are strict about thread ownership. They must be
+created and used on the EDT. Corusco's core observable lists are Swing-free and
+dispatch synchronously on the mutating thread. The boundary is not optional. A
+source list can be mutated only on the EDT while Swing is subscribed, or it can
+be wrapped with \api{EdtObservableList} so subscribers of the wrapper receive
+callbacks on the EDT. The wrapper does not make the source itself thread-safe.
+
+\begin{lstlisting}[caption={A background source still needs a coherent ownership policy.}]
+ObservableArrayList<CustomerRow> source = ObservableArrayList.empty();
+EdtObservableList<CustomerRow> edtRows = EdtObservableList.of(source);
+
+SwingUtilities.invokeLater(() -> {
+    ObservableTableModel<CustomerRow> model =
+            ObservableTableModel.of(edtRows, customerTableDescriptor);
+    table.setModel(model);
+});
+\end{lstlisting}
+
+This listing adapts callback delivery, not arbitrary concurrent mutation.
+If several worker threads mutate \api{source} at the same time, the source list's
+single-owner convention has already been violated. A better design is often:
+workers produce immutable results, an EDT task applies those results to the
+presentation list, and Swing adapters observe the EDT-confined list. The adapter
+exists so thread handoff is explicit, not so every caller can ignore ownership.
+
+\api{ObservableListModel} translates Corusco list changes into Swing
+\api{ListDataEvent} deliveries. Inserted ranges become interval-added events.
+Removed ranges become interval-removed events. Replacements become
+contents-changed events. Moves become contents-changed over the affected range.
+Clears become interval removal. The source list remains the data owner; the
+Swing model owns only event translation and subscription lifecycle.
+
+\begin{lstlisting}[caption={A JList can display a presenter-owned row source.}]
+ObservableListModel<CustomerChoice> model =
+        ObservableListModel.of(choices);
+
+JList<CustomerChoice> list = new JList<>(model);
+\end{lstlisting}
+
+The list component still owns selection UI, cell rendering, focus, keyboard
+behavior, and scrolling. The observable list owns option data. This separation
+matters when the same choices also feed a combo box, command enablement, or test.
+The model adapter should be closed with the screen because it owns a source-list
+subscription.
+
+\api{ObservableComboBoxModel} extends the list model idea for combo boxes. It
+routes mutable combo-box operations back to the source list, so user edits and
+presenter edits share the same observable state. It owns Swing selection state
+separately because Swing permits a selected item that is not present in the
+model. If source changes remove the selected value and no equal value remains,
+the adapter clears selection and fires the standard selection-change event.
+
+\begin{lstlisting}[caption={Combo-box model selection is not list membership.}]
+ObservableComboBoxModel<CustomerChoice> model =
+        ObservableComboBoxModel.of(choices);
+
+combo.setModel(model);
+model.setSelectedItem(previousChoice);
+\end{lstlisting}
+
+This distinction is subtle and practical. A combo box may temporarily select a
+typed value that is not in the list while an editor is active, or while options
+reload. A source-list removal may invalidate selection. The adapter handles the
+Swing contract, while the source list remains the option owner. Presenter code
+that cares about selected customer identity should still use a selected-id value
+or binding rather than treating combo-box selection as the durable fact.
+
+\api{ObservableTableModel} connects an observable row source with typed table
+columns. The row list owns rows. The table descriptor owns column count, column
+ids, headers, classes, value extraction, and edit policy. The table model owns
+translation into \api{TableModelEvent}. The \api{JTable} owns the viewport,
+selection UI, renderers, editors, column model, and row sorter. Keeping these
+owners separate is the difference between a table architecture and a large
+method named \api{getValueAt}.
+
+\begin{lstlisting}[caption={ObservableTableModel is the adapter, not the row owner.}]
+ObservableArrayList<CustomerRow> rows = ObservableArrayList.empty();
+TableDescriptor<CustomerRow> descriptor = customerTableDescriptor();
+ObservableTableModel<CustomerRow> model =
+        ObservableTableModel.of(rows, descriptor);
+
+table.setModel(model);
+\end{lstlisting}
+
+Editable columns can replace immutable rows. This is important for modern Java
+code that uses records and wither-like methods. A cell editor commits a value.
+The column updater creates a replacement row. The observable list emits a
+replacement. The table model fires an update. Undo, validation, and diagnostics
+can observe row replacement as a data event instead of guessing which bean
+property changed.
+
+Table sorting creates another coordinate boundary. If \api{JTable} has a
+\api{RowSorter}, view row zero is not model row zero. A table selection binding
+must use Swing's conversion APIs when writing selected row state. An observable
+list does not remove this Swing rule. It gives the model side precise rows and
+events so the binding has something stable to preserve.
+
+\begin{lstlisting}[caption={View rows must become model rows before reading the list.}]
+int viewRow = table.getSelectedRow();
+CustomerRow row = null;
+if (viewRow >= 0) {
+    int modelRow = table.convertRowIndexToModel(viewRow);
+    row = rows.get(modelRow);
+}
+selectedCustomer.setValue(row, ChangeOrigin.USER);
+\end{lstlisting}
+
+Generated table bindings can hide this boilerplate, but they cannot change the
+rule. Selection is meaningful only when the coordinate system is known. A row id
+is often better than a row object when refresh may replace row instances. A row
+object may be acceptable when row instances are durable and immutable. A model
+row index is usually the weakest choice for long-lived state.
+
+Closing adapters is not optional. \api{ObservableListModel},
+\api{ObservableComboBoxModel}, \api{ObservableTableModel}, filtered views,
+sorted views, mapped views, EDT wrappers, and GlazedLists adapters all own
+subscriptions. The Swing component may become undisplayable, but the source list
+does not know that unless the adapter is closed or a lifecycle scope closes it.
+The user sees a closed window; the heap may still see a subscribed model.
+
+\begin{lstlisting}[caption={A screen closes the adapters it installs.}]
+final class CustomerTableView implements AutoCloseable {
+    private final ObservableTableModel<CustomerRow> tableModel;
+
+    CustomerTableView(ObservableList<CustomerRow> rows, JTable table) {
+        tableModel = ObservableTableModel.of(rows, customerTableDescriptor());
+        table.setModel(tableModel);
+    }
+
+    @Override
+    public void close() {
+        tableModel.close();
+    }
+}
+\end{lstlisting}
+
+Later binding scopes can own this cleanup. The chapter shows it manually because
+the responsibility should be understood before it is automated. A model adapter
+is not merely a value object; it subscribes to a source and talks to Swing.
+
+Renderer performance still matters. Observable lists can make change delivery
+precise, but a renderer that performs repository calls, allocates expensive
+formatters per cell, or forgets to reset state can still ruin the table. The
+list chapter and table chapter meet here: precise row events keep the table from
+doing unnecessary work, while disciplined renderers keep visible-cell work
+cheap. Neither replaces the other.
+
+Editor behavior matters too. A table cell editor may be active when the row list
+changes. A save command should stop or cancel active editing before reading
+model state. A row replacement may invalidate the edited row. A source-list
+clear should normally cancel editing. These are Swing table workflow rules, but
+observable row events make them visible. A broad reset hides what happened; a
+precise remove or replace lets the adapter and controller choose a policy.
+
+\section{Large-Data Workflows and Migration Reviews}
+
+Large data does not always mean many rows in memory. It means the screen cannot
+afford to be vague. A search screen may show fifty rows from a server result of
+millions. A monitoring table may update hundreds of rows per second. A work
+queue may contain a few thousand rows but require stable selection and cheap
+refresh. A combo box may contain enough options that filtering matters. The
+observable-list design should match the workflow, not merely the maximum row
+count.
+
+For a repository-backed search, prefer a load state value plus a presentation
+list. The load state says idle, loading, loaded, failed, or cancelled. The list
+contains the current visible rows. A new search may clear the list, replace it
+with a page, or preserve old rows while a busy overlay appears. These are user
+experience decisions. The observable list should report whatever row change the
+decision implies. The load state should not be smuggled into a fake row.
+
+\begin{lstlisting}[caption={Search state and visible rows are different facts.}]
+SimpleValue<SearchState> searchState =
+        SimpleValue.of(new SearchState.Idle());
+ObservableArrayList<CustomerRow> visibleRows =
+        ObservableArrayList.empty();
+
+void publishResults(List<CustomerRow> rows) {
+    visibleRows.batch(list -> {
+        list.clear();
+        rows.forEach(list::add);
+    });
+    searchState.setValue(new SearchState.Loaded(rows.size()));
+}
+\end{lstlisting}
+
+For refresh, clearing and repopulating may be the wrong event story. If the user
+has selected a row, expanded groups, adjusted columns, and started editing, a
+full clear destroys too much context. A refresh can compare old and new rows by
+id, replace changed rows, insert new rows, remove missing rows, and preserve
+selection by id. This diff can be simple or sophisticated. The important point
+is that row identity makes a more truthful update possible.
+
+\begin{lstlisting}[caption={Refresh by id instead of blind reset.}]
+void refreshRows(List<CustomerRow> freshRows) {
+    Map<CustomerId, CustomerRow> freshById = indexById(freshRows);
+    rows.batch(list -> {
+        removeRowsMissingFrom(freshById, list);
+        replaceRowsThatChanged(freshById, list);
+        insertNewRowsInDisplayOrder(freshRows, list);
+    });
+}
+\end{lstlisting}
+
+This listing is a sketch because real diffing depends on order policy and data
+volume. It is still a better starting point than \api{clear} followed by
+\api{addAll} for every refresh. A row-level diff keeps selection, scrolling, and
+rendering calmer. It also produces better diagnostics: the support log can say
+"three rows replaced, one inserted, one removed" instead of "table reset."
+
+For streaming updates, batching is a pressure valve. A feed may deliver many
+small changes quickly. Applying every update as its own Swing event may keep the
+model truthful and still overwhelm the EDT. Coalesce related updates into
+batches at a known boundary: timer tick, server message, transaction, or
+generation. The batch should still describe the ordered row changes. Do not
+solve event pressure by hiding everything behind a reset unless the reset is
+actually the truthful operation.
+
+\begin{lstlisting}[caption={Coalesce feed updates into one ordered batch.}]
+void applyFeedMessage(List<RowUpdate> updates) {
+    rows.batch(list -> {
+        for (RowUpdate update : updates) {
+            applyOne(update, list);
+        }
+    });
+}
+\end{lstlisting}
+
+For paged data, the presentation list may represent only one page. Page changes
+can be broad resets because the visible slice really changed. Selection may be
+stored outside the page as an id. A detail pane may remain open for a selected
+id even when that row is not on the current page. The observable list then owns
+page contents, while a scalar value owns selected identity and another state
+value owns page/load status. Mixing those facts into the table model makes page
+navigation hard to test.
+
+For virtualized data, Swing's ordinary \api{JTable} model can expose a large row
+count and load cells on demand, but that is a different contract from an
+in-memory \api{ObservableArrayList}. Corusco observable lists are excellent for
+presentation collections and eventful row caches. They are not a demand-paged
+database cursor by themselves. If the application needs true virtualization,
+design a virtual table model or a paged source, then use observable lists for
+the slices or caches that are actually present.
+
+GlazedLists interop is valuable in this part of the design. GlazedLists already
+has mature event-list machinery for filtering, sorting, and Swing integration.
+\api{GlazedObservableList} adapts an \api{EventList} into Corusco's
+\api{ObservableList} contract. The wrapped event list remains the storage owner.
+The adapter uses the event list's locks for reads and direct adapter mutations.
+Closing the adapter removes its listener but does not dispose the wrapped list.
+That ownership sentence should appear in code reviews whenever an adapter is
+introduced.
+
+\begin{lstlisting}[caption={Adapt GlazedLists deliberately at the boundary.}]
+EventList<CustomerRow> eventRows = new BasicEventList<>();
+GlazedObservableList<CustomerRow> rows =
+        GlazedObservableList.of(eventRows);
+
+try {
+    installCoruscoTable(rows);
+} finally {
+    rows.close();      // removes adapter listener
+}
+\end{lstlisting}
+
+Use GlazedLists when it should own the event-list pipeline. Use Corusco core
+lists when the presenter owns simple row storage or projections. Do not stack
+several sorting and filtering systems casually. A table row sorter over a
+Corusco sorted view over a GlazedLists sorted list is probably a design smell
+unless each layer has a clearly different purpose.
+
+Migration from hand-written \api{AbstractTableModel} should begin with event
+truth, not code generation. Find every \api{fireTableDataChanged}. Ask whether
+the model knows a more precise change. Replace the broad reset with a row insert,
+delete, update, or ordered batch where possible. Then extract row storage into an
+observable list. Then introduce typed column descriptors. Then let a Corusco
+table model translate events. This order preserves behavior while reducing
+custom code.
+
+\begin{lstlisting}[caption={A staged migration from a custom table model.}]
+// Step 1: make the existing model precise.
+fireTableRowsUpdated(index, index);
+
+// Step 2: move row storage into an observable source.
+rows.set(index, updatedRow);
+
+// Step 3: let the adapter translate the row event.
+table.setModel(ObservableTableModel.of(rows, descriptor));
+\end{lstlisting}
+
+Migration from a \api{DefaultListModel} or \api{DefaultComboBoxModel} follows the
+same idea. First identify who owns the options. If the component model is the
+only owner and the list is small, the default model may be enough. If presenter
+state, tests, commands, or other components need the same options, move the data
+into an observable list and adapt it. The component should present options; it
+should not be the only repository of application state.
+
+Tests should cover both model events and adapter events. Core tests mutate an
+\api{ObservableArrayList}, filtered view, sorted view, mapped view, or loadable
+list and assert \api{ListChangeSet} contents. Swing tests construct
+\api{ObservableListModel}, \api{ObservableComboBoxModel}, or
+\api{ObservableTableModel} on the EDT and assert Swing event ranges. The first
+kind of test proves collection semantics. The second proves Swing translation.
+Do not rely on a visual table test to prove every list event rule.
+
+\begin{lstlisting}[caption={Core test for precise list changes.}]
+ObservableArrayList<String> rows = ObservableArrayList.of(List.of("b", "c"));
+List<ListChangeSet<String>> events = new ArrayList<>();
+rows.subscribe(events::add);
+
+rows.add(0, "a");
+rows.set(1, "B");
+rows.move(2, 0);
+rows.remove(1);
+
+assertThat(events).hasSize(4);
+\end{lstlisting}
+
+Adapter tests should assert EDT delivery when the adapter claims it. An
+\api{EdtObservableList} test can mutate the source from a worker, wait for a
+callback, and assert that the callback ran on the EDT. An \api{ObservableListModel}
+test can record \api{ListDataEvent} ranges. An \api{ObservableTableModel} test
+can record \api{TableModelEvent} types and rows. These tests are small and catch
+the boundary failures that otherwise appear as intermittent Swing bugs.
+
+Performance tests should use realistic row counts and realistic row shapes. A
+five-row table proves wiring. It does not prove refresh behavior, renderer cost,
+memory footprint, or selection preservation. A useful large-data smoke test
+loads thousands of deterministic rows, applies a filter, replaces a row, moves a
+row, preserves selection by id, and records the event count. It need not render
+a window. The table screenshot can remain modest; the model test should carry
+the scale.
+
+Diagnostics should summarize list operations. A debug status line or support
+dump can report source row count, visible row count, last change set size, last
+event type, selected id, filter text, sort policy, and adapter thread policy.
+When a user reports that a table jumped, these facts matter. Without them, the
+developer is left guessing whether the cause was reset, sorter, selection, data
+load, or repaint.
+
+\begin{lstlisting}[caption={A small list diagnostic snapshot.}]
+record RowDiagnostics(
+        int sourceRows,
+        int visibleRows,
+        int lastChangeCount,
+        String sortPolicy,
+        String filterText,
+        Object selectedId,
+        boolean deliveredOnEdt) {
+}
+\end{lstlisting}
+
+Do not let diagnostics become another observer leak. If a diagnostics panel
+subscribes to row sources, close it. If a support bundle samples snapshots, take
+immutable snapshots and release them. Large-data diagnostics can accidentally
+become large-data retention bugs when they keep old row lists for comparison
+without a retention policy.
+
+Observable lists also affect accessibility. A list or table that receives
+precise events can preserve focus and accessible context more gracefully than a
+table that resets on every update. If the selected row remains the same domain
+object, accessible descriptions can remain stable. If a refresh removes the row,
+the screen can announce a meaningful status. This is another reason row identity
+is not merely a persistence concern.
+
+The final migration review is simple. Ask whether the table tells the truth
+about row changes. Ask whether rows have stable identity where continuity
+matters. Ask whether filtering and sorting have one owner. Ask whether Swing sees
+events on the EDT. Ask whether adapters are closed. Ask whether tests cover the
+core list and the Swing adapter separately. If the answers are yes, the row
+collection is ready to support richer Corusco table, form, and command chapters.
+
+\section{Worked Row-Source Scenarios}
+
+The first scenario is the search result table. The user enters criteria, presses
+Search, and receives a bounded result set. The screen usually needs a load state,
+a visible row list, selected identity, status text, and commands for refresh,
+open, export, and clear. The row list should not carry all of those facts. It
+should carry the visible rows. The load state value says whether the query is
+idle, running, successful, empty, failed, or cancelled. The selected-id value
+says which row is current. Derived values connect those facts to commands.
+
+\begin{lstlisting}[caption={Search screen state around a visible row list.}]
+ObservableArrayList<CustomerRow> visibleRows =
+        ObservableArrayList.empty();
+SimpleValue<CustomerId> selectedId = SimpleValue.empty();
+SimpleValue<SearchState> searchState =
+        SimpleValue.of(new SearchState.Idle());
+
+DerivedValue<Boolean> canExport = DerivedValue.of(
+        () -> !visibleRows.snapshot().isEmpty()
+                && searchState.value() instanceof SearchState.Loaded,
+        searchState);
+\end{lstlisting}
+
+The listing is intentionally imperfect: \api{canExport} reads a snapshot but
+does not observe the row list. In real code, export enablement might be updated
+by a list-size value, a table descriptor, or a command model that observes both
+the list and the load state. The imperfection is a teaching point. Observable
+lists are collections, not scalar values. When scalar state depends on
+collection size, decide how that scalar will be observed. Some screens derive
+size by subscribing to the list and updating a \api{rowCount} value. Others
+derive command enablement inside the table companion. The policy should be
+visible.
+
+\begin{lstlisting}[caption={Expose row count as scalar state when commands need it.}]
+SimpleValue<Integer> rowCount = SimpleValue.of(visibleRows.size());
+Subscription rowCountSubscription = visibleRows.subscribe(changes ->
+        rowCount.setValue(visibleRows.size(), ChangeOrigin.MODEL));
+
+DerivedValue<Boolean> canExport = DerivedValue.of(
+        () -> rowCount.value() > 0
+                && searchState.value() instanceof SearchState.Loaded,
+        rowCount, searchState);
+\end{lstlisting}
+
+This pattern is small and useful. A table model observes row changes for Swing.
+A command observes row count as scalar state. A status label can say "34 rows."
+Tests can mutate the list and assert command enablement. The row-count
+subscription must still be owned by a scope or presenter. There is no free
+lifecycle merely because the state is derived from a list.
+
+The second scenario is refresh with selection preservation. Suppose a user
+selects customer 42. A refresh arrives with updated rows. The selected row may
+still exist, may have new values, may be filtered out, or may have disappeared.
+The table should preserve selection when the id survives. It should clear
+selection when the id disappears. It should avoid jumping when unrelated rows
+change. This requires row identity before it requires a table API.
+
+\begin{lstlisting}[caption={Preserve selected id across a refresh.}]
+void afterRefresh() {
+    CustomerId selected = selectedId.value();
+    if (selected == null) {
+        return;
+    }
+    boolean stillPresent = rows.snapshot().stream()
+            .anyMatch(row -> row.id().equals(selected));
+    if (!stillPresent) {
+        selectedId.setValue(null, ChangeOrigin.MODEL);
+    }
+}
+\end{lstlisting}
+
+The table binding can then select the visible row matching \api{selectedId} if
+one exists. If a filter hides the row, the selected id may remain a valid
+semantic selection even though no visible table row is selected, or the screen
+may choose to clear it. That is a workflow decision. The important point is that
+the decision is no longer a side effect of row indexes.
+
+The third scenario is incremental validation in a row list. A table of imported
+records may show row-level problems. The row object can include a problem
+summary, or a separate problem map can be keyed by row id. Replacing one row
+should update one row. Recomputing validation for every row after one edit may
+be necessary if rules are global, but it should be a named validation pass, not
+a renderer trick.
+
+\begin{lstlisting}[caption={Row problems can be data, not renderer state.}]
+record ImportedCustomerRow(
+        CustomerId id,
+        String displayName,
+        ProblemSet problems) {
+}
+
+void replaceProblems(CustomerId id, ProblemSet problems) {
+    int index = findRowIndex(id);
+    ImportedCustomerRow old = rows.get(index);
+    rows.set(index, new ImportedCustomerRow(
+            old.id(), old.displayName(), problems));
+}
+\end{lstlisting}
+
+This design lets the renderer present problem severity cheaply. It also lets a
+problem summary observe the row list or a separate problem model. The renderer
+does not validate. The table model does not own problems. The row source
+publishes replacement when row presentation facts change.
+
+The fourth scenario is a combo box with mutable options. A user may type a new
+tag, insert it into the option list, and select it. Swing's
+\api{MutableComboBoxModel} supports option mutations. Corusco's combo-box
+adapter routes those mutations back to the source list. This is useful only when
+the option source is allowed to change from the combo. If options come from a
+controlled vocabulary, the combo should not expose arbitrary mutation. The source
+ownership decision comes before the adapter choice.
+
+\begin{lstlisting}[caption={Combo mutations are source-list mutations.}]
+ObservableArrayList<TagChoice> tags = ObservableArrayList.empty();
+ObservableComboBoxModel<TagChoice> model =
+        ObservableComboBoxModel.of(tags);
+
+model.addElement(new TagChoice("urgent"));
+assert tags.snapshot().contains(new TagChoice("urgent"));
+\end{lstlisting}
+
+Selection still deserves its own model when other parts of the screen care. The
+combo-box model selection is a Swing fact. A presenter value such as
+\api{selectedTag} is a screen fact. A binding can connect them. This distinction
+keeps commands and tests from reaching into a component model.
+
+The fifth scenario is a master table with a detail list. Selecting a project
+loads tasks. The project list and task list are separate row sources. The
+selected project id is a scalar value. The task list may be loadable or task
+backed. A project refresh should preserve selected project id if possible. A
+task refresh should not reset project selection. These relationships are easy to
+blur when everything is written inside one table listener.
+
+\begin{lstlisting}[caption={Master id drives a separate detail row source.}]
+SimpleValue<ProjectId> selectedProjectId = SimpleValue.empty();
+ObservableArrayList<TaskRow> taskRows = ObservableArrayList.empty();
+
+selectedProjectId.subscribe(event -> {
+    taskRows.clear();
+    if (event.newValue() != null) {
+        loadTasksFor(event.newValue());
+    }
+});
+\end{lstlisting}
+
+The listing is deliberately plain. In production, loading may be a task with
+cancellation and stale-result suppression. The chapter's point is ownership:
+project selection is a value; tasks are a list; loading is a task; the detail
+table is an adapter. A single table listener should not own all four.
+
+The sixth scenario is a live monitoring table. Rows update frequently. The user
+may sort by severity or timestamp. The screen must avoid both per-cell chaos and
+broad resets. A common strategy is to maintain a map by id for incoming updates,
+then apply changes to the observable list in timed batches on the EDT. If sort
+order is view-local, let the table sorter handle it. If sort order is part of
+the presentation model, publish a sorted view or use an event-list engine.
+
+\begin{lstlisting}[caption={Apply live updates on a scheduled presentation boundary.}]
+void flushPendingUpdates() {
+    List<RowUpdate> updates = pending.drain();
+    if (updates.isEmpty()) {
+        return;
+    }
+    rows.batch(list -> {
+        for (RowUpdate update : updates) {
+            applyUpdateById(update, list);
+        }
+    });
+}
+\end{lstlisting}
+
+The scheduled boundary can be a Swing timer, a task callback, or a domain
+message boundary. What matters is that the UI receives coherent updates at a
+rate it can render. The observable list is not a rate limiter by itself. It is
+the mechanism that describes the mutations once the application chooses when to
+publish them.
+
+The seventh scenario is failure. A row load can fail. A filter can be invalid.
+A repository can time out. A GlazedLists adapter can be closed. A background
+update can arrive after the view is gone. The list should not encode failure by
+inserting a fake row named "Error". Use a load or problem state. Keep rows as
+rows. Then the table can show an overlay, status line, or problem summary
+without corrupting the row model.
+
+\begin{lstlisting}[caption={Failure is state beside the rows, not a fake row.}]
+ObservableArrayList<CustomerRow> rows = ObservableArrayList.empty();
+SimpleValue<ProblemSet> loadProblems =
+        SimpleValue.of(ProblemSet.empty());
+
+void loadFailed(Throwable failure) {
+    loadProblems.setValue(problemFor(failure), ChangeOrigin.SYSTEM);
+}
+\end{lstlisting}
+
+This matters for export and automation. A fake error row might be exported as a
+customer. It might be selected, edited, counted, or sent to a detail loader.
+Modeled failure state can be presented visually without pretending to be data.
+
+The eighth scenario is undo. If table edits are undoable, row replacement events
+are helpful. An undoable edit can store old row and new row, or a domain command
+that knows how to reapply the change. The observable list reports the visible
+replacement. Undo should not be implemented by asking the table what cell was
+last painted. The row source is the right boundary.
+
+\begin{lstlisting}[caption={Undoable row replacement records model facts.}]
+record ReplaceRowEdit(int index, CustomerRow oldRow, CustomerRow newRow) {
+    void redo(ObservableList<CustomerRow> rows) {
+        rows.set(index, newRow);
+    }
+
+    void undo(ObservableList<CustomerRow> rows) {
+        rows.set(index, oldRow);
+    }
+}
+\end{lstlisting}
+
+For sorted or filtered views, storing only the visible index may be too weak.
+Store row identity and enough context to find the row in the source. Again,
+coordinate systems matter. Undo belongs to the model operation, not to whatever
+view position happened to display the row at edit time.
+
+The ninth scenario is generated descriptors. A generated table descriptor can
+name columns, value extractors, editors, resource keys, and perhaps row identity.
+It can build an observable table model from an observable row source. It should
+not own the row source itself unless the generated companion is explicitly a
+screen model. Generation is strongest when handwritten code already separates
+row ownership, column meaning, and Swing presentation.
+
+The tenth scenario is screenshot production. A book screenshot should use a
+deterministic row source with seeded data and stable sorting. It should avoid
+loading from a real repository during capture. It should set selection, filter,
+busy state, and problem state explicitly. Observable lists make this easy:
+construct the row source, apply known mutations, install the adapter, capture
+the component. If a screenshot requires five seconds of timing luck, it is not a
+good companion example.
+
+These scenarios all reduce to one review question: what is the collection fact,
+and who owns it? Once that answer is clear, the rest of the design becomes
+ordinary. A filter is a view over a source. A sort is either a view preference or
+a presenter-owned order. A table model is an adapter. A combo selection is a
+Swing fact unless bound to a presenter value. A large repository result is not
+automatically an in-memory list. A row event should say what changed. This is the
+discipline that makes Swing large-data screens feel calm.
+
+For chapter acceptance, a row-source example should prove more than "the table
+has rows." It should show an insertion, a replacement, a removal, and a refresh.
+It should preserve selection by identity where the workflow promises continuity.
+It should run at least one model-level test without Swing. If it has a Swing
+adapter, it should run one EDT test that records Swing event ranges. If it has a
+screenshot, the data should be deterministic and the table should not depend on
+external services during capture. These checks are small enough for examples and
+strong enough to keep the prose honest.
+
+For code review, start with the row source and walk outward. The row source owns
+membership and order. Derived views own filtered, sorted, or mapped projections.
+Adapters own Swing event translation. Components own interaction and painting.
+Commands own operations. Values own scalar facts such as selection, row count,
+filter text, load state, and disabled reason. When a class owns too many of
+these at once, it becomes hard to test and harder to close.
+
+For performance review, ask what happens when the row count grows by two orders
+of magnitude. Does the refresh still diff by identity or does it reset? Does the
+filter run in a renderer? Does every update allocate expensive presentation
+objects? Does selection survive? Does the adapter receive events on the EDT? Are
+events coalesced at a sensible boundary? Does the screenshot harness use a
+realistic number of rows or only a toy table? These questions are not premature
+optimization. They are how one prevents the classic Swing table that works in a
+demo and collapses under production data.
+
+For lifecycle review, ask which objects subscribe and who closes them. A
+filtered view subscribes to its source. A sorted view subscribes to its source. A
+mapped view subscribes to its source. A Swing list, combo, or table model
+subscribes to its source. A diagnostics panel may subscribe too. The source list
+will not know that a window closed unless those subscriptions are closed. Large
+data leaks are especially painful because the retained objects are large enough
+to be noticed but often hidden behind innocent adapters.
+
+For user-experience review, ask what the user sees during change. A precise row
+replacement should not collapse selection. A refresh should not jump to the top
+unless the result truly changed that way. A filter change may reset the visible
+projection, but the screen should make that policy understandable. A failure
+should be shown as state, not as a fake data row. A busy load should not freeze
+the table. Observable lists do not solve these UX questions automatically; they
+give the program enough truthful events to answer them cleanly.
+
+For architecture review, ask whether the list chapter's lessons are being
+carried into later Corusco features. A Corusco table descriptor without stable
+row identity cannot preserve selection well. A binding scope that installs a
+table model but never closes it leaks. A background task that publishes a list
+from a worker thread without an EDT boundary violates Swing. A generated table
+companion that knows columns but not row ownership is only half the story. The
+observable-list contract is the collection foundation beneath those later
+features.
+
+The next chapters use lists as ordinary building blocks. A form may edit the
+selected row from a list. A command may be enabled only when a list has selected
+rows. A background task may replace a row source after loading. A generated table
+may create descriptors over rows whose membership is owned elsewhere. A real
+screen may combine all of these. If this chapter has done its job, the reader
+will not see a table as a special widget full of mysterious callbacks. The
+reader will see a row source, a set of projections, a table adapter, and a few
+scalar values that describe selection and workflow.
+
+That mental model is intentionally humble. It does not promise that every data
+problem is small. It does promise that when a problem becomes large, the program
+has named places to put the complexity: repository, paging source, event-list
+adapter, observable presentation list, descriptor, binding scope, task service,
+and diagnostics. Swing remains Swing, but the row story is no longer hidden
+inside a table subclass.
+
+In practice this is what makes a large Swing table pleasant to maintain: the
+boring parts stay boring. Adding a row is a list insertion. Replacing a row is a
+list replacement. A filter is a projection. A table model is an adapter. A
+selection is a value. A refresh is a published set of mutations, not a panic
+button. Once those sentences are true, the screen has room for harder domain
+problems without turning every table bug into archaeology.
+The collection model becomes a map, not a maze. That map is what later chapters
+reuse.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Replace one \api{fireTableDataChanged} call with a precise inserted,
+removed, or updated range.
+\item Write a test for an \api{ObservableArrayList} batch and assert the order
+of delivered changes.
+\item Create a filtered row view and verify that changing a source row can add
+or remove it from the filtered view.
+\item Adapt a source list with \api{EdtObservableList}. Confirm that Swing
+subscribers run on the EDT.
+\item Compare a Swing \api{RowSorter} with a presenter-owned
+\api{SortedList}. Decide which one owns a user-selected sort in your screen.
+\item Add stable row identity to a refresh path and preserve selection across
+row replacement.
+\end{enumerate}
+\end{exercisebox}
+
+\textbf{Checklist.}
+
+\begin{itemize}
+\item Fire precise list changes; avoid broad resets as a habit.
+\item Use batches for related bulk mutations.
+\item Keep filtering, sorting, and mapping out of renderers.
+\item Marshal list changes before they reach Swing models.
+\item Close list subscriptions and table models with the screen.
+\item Test large-data behavior with thousands of rows, not five.
+\item Preserve row identity when selections must survive refresh.
+\item Use GlazedLists interop deliberately when its event-list machinery is the
+right owner.
+\end{itemize}

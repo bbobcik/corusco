@@ -76,6 +76,7 @@ lerna-debug.log*
 TEST*.xml
 test-results/
 playwright-report/
+corusco-examples/screenshots/
 
 ##### Archives
 
@@ -155,6 +156,15 @@ storybook-static/
 *.odp
 *.vsd
 *.vsdx
+
+##### LaTeX book build auxiliaries
+
+/docs/book/**/*.aux
+/docs/book/*.aux
+/docs/book/*.fdb_latexmk
+/docs/book/*.fls
+/docs/book/*.out
+/docs/book/*.toc
 
 ##### Large media files
 

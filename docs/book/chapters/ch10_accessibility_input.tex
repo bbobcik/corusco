@@ -1,0 +1,840 @@
+\chapter{Accessibility, Input Methods, International Text, and Keyboard Completeness}
+\chapterquote{A custom component is not finished when it paints correctly; it is finished when it can be operated and understood without seeing it or touching a mouse.}{A desktop usability standard}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How do Swing screens expose names, roles, state, text, focus, commands, and input-method behavior correctly?\\
+Primary APIs & \api{Accessible}, \api{AccessibleContext}, \api{AccessibleRole}, \api{AccessibleState}, \api{InputContext}, \api{InputMethodRequests}, \api{ComponentOrientation}.\\
+Hidden difficulty & Visual state is not semantic state; keyboard operation is broader than shortcuts; IME composition and bidirectional text break naive key and caret assumptions.\\
+Payoff & Applications usable by keyboard-only users, screen readers, high-contrast themes, assistive technologies, and multilingual input.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Accessibility as a Component Contract}
+
+\termdef{Accessibility}{the set of semantic, keyboard, visual, and input contracts that let users operate and understand a program through different abilities and tools} is not a layer added after the last screenshot. It is another presentation of the same screen facts: names, roles, descriptions, values, selection, validation problems, command state, focus, progress, and help.
+
+\termdef{Accessible context}{the object returned by \api{getAccessibleContext} that exposes a Swing component's accessible identity and state} is the primary Swing doorway into that presentation. Standard components already provide useful contexts. A text field has text semantics. A button has action semantics. A table has table semantics. A custom component has only what the developer gives it.
+
+This is why custom painting is never the end of component work. A component that paints five stars and lets the mouse set a rating may look finished. If it has no accessible name, no role, no keyboard operation, no value semantics, and no state-change events, it is silent to many users and tools. The pixels say "rating"; the API says "generic panel." The API is part of the component contract.
+
+\termdef{Accessible name}{the concise identity of a component as exposed to assistive technology} should answer "what is this?" \termdef{Accessible description}{additional operating guidance or context} should answer "what else should I know?" The name should not become a paragraph. The description should not repeat a visible label unless the platform or component requires it. Both should come from the same resource discipline as visible text.
+
+\termdef{Accessible role}{the kind of object a component represents} is equally important. A push button, slider, table, tree, progress bar, text field, and panel are different objects. If a custom control behaves like a slider but exposes itself as a panel, a screen reader cannot offer useful interaction. Choose the closest role and implement the related value, action, selection, or text semantics where appropriate.
+
+\begin{principlebox}{semantics must not depend on pixels}
+Every meaningful visual state should have a semantic equivalent: accessible name, role, state, value, description, relation, action, selection, text, command state, or problem. Pixels are presentation, not the accessibility contract.
+\end{principlebox}
+
+Figure~\ref{fig:accessibility-labels} shows a small but central idea. The visible field, resource-backed label, accessible name, accessible description, and generated field identity all describe the same screen fact. When those facts are duplicated by hand, they drift. When they come from descriptors and resources, they can be reviewed and tested.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\accessibilityLabelsFigure}
+\caption{Accessible names and descriptions should come from stable field facts, not from unrelated string copies. The visible label, tooltip, help, test key, and accessible text should tell one story.}
+\label{fig:accessibility-labels}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\accessibilityChannelsFigure}
+\caption{A meaningful state should survive through several channels. The visible cue, keyboard recovery path, accessible context, resource identity, and test key are different presentations of the same fact.}
+\label{fig:accessibility-semantic-channels}
+\end{figure}
+
+A useful way to read a Swing component is to ask what disappears when the screen is not seen. The layout disappears, but the component hierarchy remains. Colors disappear, but state can remain. Icons disappear, but accessible text can remain. Mouse position disappears, but focus and actions can remain. The stronger the semantic model, the less the program depends on one sensory channel.
+
+The opposite failure is a visually rich but semantically empty screen. A custom chart paints anomalies. A table renderer paints warning icons. A timeline paints selected events. A form paints red borders. A dashboard paints status tiles. If those facts exist only inside paint methods and renderers, accessibility tools cannot reliably find them, tests cannot assert them, and alternative presentations cannot reuse them.
+
+Accessibility is therefore not merely compassion, although it is that. It is also engineering honesty. Important facts deserve stable owners. A validation problem should be a problem object before it is a red border. A command should be a command before it is a toolbar icon. A field label should be a resource before it is a literal string. A selected data point should be model state before it is a highlighted pixel.
+
+\begin{detailbox}{rendered text is not necessarily accessible text}
+A renderer may paint status text, icons, badges, or custom graphics, but the renderer component is reused as a stamp. Important row or cell semantics should usually come from the model and table accessibility path, not from transient renderer state alone.
+\end{detailbox}
+
+This chapter belongs after text and transfer because the same pattern repeats. Text input needs input-method and caret semantics, not key listeners. Transfer needs copy/paste commands and keyboard alternatives, not pointer-only gestures. Components need roles and actions, not paint alone. Accessibility is the chapter where these obligations are named together.
+
+The contract also has a useful negative form: do not require a user to reverse-engineer the screen from side effects. If clicking a colored tile changes hidden selection, expose selection. If dragging a row moves an item, provide a command path or keyboard equivalent. If a spinner starts a background task, expose busy state. If a field is invalid, expose the problem and the way to reach it. The user's tool should not have to infer product semantics from pixels.
+
+This negative form is practical in code review. When reviewing a component, list the facts a sighted mouse user can learn in five seconds. Then ask where each fact lives outside the paint method. Some facts may live in a model, some in a command, some in a problem set, some in a resource, some in a custom accessible context. Facts with no owner are the ones that disappear for assistive technology and tests.
+
+Accessibility is also temporal. A component may be correctly named at construction and wrong after data loads. A button may be keyboard-reachable until a busy overlay appears. A table may announce row count before filtering and become misleading after filtering. A validation summary may list fields that were removed by an optional section. Review state changes, not only initial screens.
+
+Figure~\ref{fig:accessibility-semantic-channels} is the chapter's compact review
+rule. Pick one meaningful state, such as "the customer name is invalid." The
+visible channel may show a red border and inline message. The keyboard channel
+may let the user activate a summary item that moves focus to the field. The
+accessible channel may expose the problem through the field description,
+summary, or problem announcement. The resource channel may give the label,
+message, and help topic stable identities. The test channel may assert the
+problem by field key rather than by fragile screen text. If the state exists in
+only one of these channels, it is not robust.
+
+This multi-channel view prevents two opposite mistakes. The first mistake is to
+make accessibility purely visual by adding more icons, borders, and color. That
+may help some users and still leave assistive tools silent. The second mistake
+is to make accessibility purely textual by adding verbose descriptions while
+leaving keyboard recovery, focus movement, contrast, and validation policy
+unchanged. A Swing screen needs enough channels to support the user's task.
+Most of those channels should be derived from the same facts rather than
+maintained by separate listeners.
+
+The same state may require different amounts of detail in different channels.
+A visible field label should be short. A tooltip can mention one or two helpful
+constraints. A help topic can explain the workflow. A validation summary should
+state the problem and action. An accessible description should be concise enough
+to hear repeatedly. A test key should be stable and not localized. Treating all
+channels as copies of the same string is as wrong as treating them as unrelated
+strings. They are coordinated presentations of one fact, not clones.
+
+Swing's standard components already embody much of this idea. A \api{JButton}
+has visible text, an accessible role, an action, enabled state, focus behavior,
+and keyboard activation. A \api{JTextField} has text semantics, caret behavior,
+input-method support, selection, document events, and accessible text. Trouble
+usually begins when application code paints a new semantic object without
+giving it the same set of channels. The custom object looks like a control but
+behaves like decoration to every tool except the mouse.
+
+Corusco helps because descriptors and behaviors can keep the channels aligned.
+A field descriptor can identify the visible label, resource key, help topic,
+component key, validation target, and generated binding point. A behavior can
+write accessible name and description from those resources. A problem binding
+can update tooltip, border, summary, and command state from the same problem
+set. The result is not merely less code; it is fewer independent copies of the
+screen's meaning.
+
+The review should be concrete. Do not ask, "Is this screen accessible?" Ask,
+"How does the user learn this field's name? How does the user learn it is
+invalid? How does the user reach it without a mouse? How does a screen reader
+identify it? Which resource supplies the words? Which test proves the
+relationship? What happens after the optional section is hidden? What happens
+while the screen is busy?" These questions reveal missing owners faster than a
+general checklist.
+
+\section{Labels, Resources, Descriptions, and Problems}
+
+Labels are the most ordinary accessibility feature and therefore the easiest to neglect. A visible \api{JLabel} should normally be connected to its field with \api{setLabelFor}. That relation lets focus and assistive technologies connect the label text to the input control. A grid of labels and fields that looks clear to sighted users may be a set of anonymous text fields to a screen reader if the relation is missing.
+
+\begin{lstlisting}[caption={Basic accessible labeling for a form field.}]
+JLabel nameLabel = new JLabel("Customer name:");
+JTextField nameField = new JTextField(30);
+nameLabel.setLabelFor(nameField);
+nameField.getAccessibleContext().setAccessibleDescription(
+        "Required. Enter the customer's legal display name.");
+\end{lstlisting}
+
+The snippet is simple, but it points to a deeper rule. The label text, accessible name, tooltip, help topic, validation target, and component key should not be invented independently. They describe one field. If the visible label says "Customer" and the accessible name says "Account name" and the tooltip says "Display title," the user has encountered three inconsistent fields wearing one component.
+
+Resource keys help because they make user-facing text visible to the program. A field descriptor can carry the key for the label, optional tooltip, help topic, and problem target. The view can display the label. A behavior can set accessible text. A validator can target the same field. A test can locate the component by a stable key. Consistency becomes a consequence of shared identity rather than vigilance.
+
+Descriptions should be concise. Screen reader users suffer from missing information, but they also suffer from needless repetition. A description should add information needed to operate the field: required format, unusual constraint, consequence, or relationship. It should not read the whole manual every time focus enters a common text field.
+
+Tooltips are not enough. Some assistive technologies may expose tooltip text, but tooltips are pointer-oriented and transient. A tooltip may also be composed from help, validation, disabled reasons, and status text. If a tooltip is the only place a rule exists, keyboard and screen-reader users may miss it. Treat tooltips as one presentation of structured facts, not as the source of those facts.
+
+Validation is the place where label, description, and problem state most often collide. A red border says little to a screen reader. A tooltip may overwrite help. A status label may be too far from the field. A dialog summary may know the error but not the target. The robust design stores validation and parse failures in structured problems with targets, then presents them through several channels.
+
+For simple forms, an inline message beside the field may be enough if it is tied to the field and mirrored in accessible description or problem state. For complex forms, provide an error summary that can receive focus. Each summary item should be actionable and move focus to the relevant field. This helps screen-reader users, keyboard users, and sighted users lost in a large dialog.
+
+\begin{lstlisting}[caption={An error summary item that focuses the field.}]
+Action focusField = new AbstractAction("Customer name is required") {
+    @Override public void actionPerformed(ActionEvent e) {
+        nameField.requestFocusInWindow();
+        nameField.selectAll();
+    }
+};
+JButton errorLink = new JButton(focusField);
+errorLink.setBorderPainted(false);
+errorLink.setContentAreaFilled(false);
+\end{lstlisting}
+
+The summary item may be styled like a link, but it should remain a real focusable action. A clickable label implemented only with a mouse listener is not the same thing. The action name can be announced, invoked by keyboard, tested, and reused. Styling should not destroy the underlying command semantics.
+
+Required markers need the same redundancy. A colored asterisk may be visually compact, but it should not be the only signal. The requirement belongs to validation rules, accessible description, label text where appropriate, or help. A user who cannot perceive the marker should still be able to learn that the field is required before attempting to submit the form.
+
+Disabled state also needs explanation. A disabled Save button can mean "nothing changed," "form has errors," "permission denied," "background task running," or "service unavailable." Plain Swing enabled state does not carry the reason. Corusco command state can carry a disabled reason, and a behavior can expose it through tooltip, status text, or accessible description. The user should not have to guess.
+
+Progress and busy state belong here too. A progress bar should have an accessible name and value. A busy overlay should not merely dim the screen. It should explain what is happening, whether input is blocked, whether cancellation is available, and when state changes. If the overlay blocks mouse input but leaves keyboard focus in a hidden field, the visual and semantic states have diverged.
+
+\begin{coruscobox}{descriptor-derived accessible text}
+Corusco's accessible text behavior can derive a component's accessible name from a field descriptor's label key and the accessible description from an optional tooltip key. The binding writes to the component's \api{AccessibleContext} and restores previous values when the view scope closes.
+\end{coruscobox}
+
+The restoration detail is not decorative. Screens are opened, closed, reused, and embedded. A behavior that installs accessible text should own cleanup just as a validation border owns restoration of the previous border. Accessibility metadata is component state. If a component is reused with stale accessible text, the bug may be invisible to the developer and obvious to the user.
+
+Localization makes descriptor ownership more valuable. A visible label may grow longer, a mnemonic may need to change, and a tooltip may require a different sentence structure. If accessible names are copied by hand, localization creates several update points. If the descriptor and resource system own them, review can focus on the resource set and the behavior that applies it.
+
+Descriptions should also be reviewed for stability. A description that embeds current validation state may become stale when the problem changes unless it is updated by a behavior. A static help description and a dynamic validation description are different contributions. A composed tooltip or accessible description policy can decide which lines appear and in what order, instead of letting the last listener win.
+
+There is an important distinction between name and value. A text field named "Credit limit" has a current text value. A progress bar named "Import progress" has a numeric value. A rating control named "Customer rating" has a selected rating. Do not put the current value into the name unless the component has no better value channel. Names identify controls; values describe state.
+
+Label association should also survive layout changes. It is common for a form
+to begin as a two-column label/editor panel and later gain an optional section,
+a compact mode, a responsive narrow layout, or a generated binding layer. The
+label relationship should not depend on a label being immediately to the left of
+the field. \api{setLabelFor} records the semantic relationship even if layout
+places the label above the field, hides an optional hint, or moves the editor
+into a scrollable body. Geometry changes; the field identity remains.
+
+The same rule applies to table filters and toolbars. A search field in a filter
+bar may have a nearby label in the first version. Later the label may be
+replaced by placeholder text, a search icon, or a compact toolbar. The
+accessible name should remain "Search customers" or whatever the product
+vocabulary requires. Placeholder text alone is not a reliable label because it
+disappears when the user types, may be styled with low contrast, and may be
+omitted from accessibility paths. The field's name should be a stable fact.
+
+Error summaries should be treated as navigational structures. A summary that
+only displays text helps less than a summary whose entries are actions. The
+entry should say what is wrong and move focus to the control that can repair it.
+If the field is inside a collapsed section, the action may need to expand the
+section first. If the field is inside a scroll pane, it may need to scroll the
+field into view. If the field is inside a table, it may need to select the row
+and start editing the relevant cell. The problem target therefore needs more
+than a string; it needs a route back to the repair surface.
+
+This is where problem severity becomes useful. An error may block OK and appear
+first in the summary. A warning may permit OK but remain visible. An
+informational hint may live in help or description without changing command
+state. Treating all messages as red errors produces noisy screens and
+unnecessarily hostile keyboard workflows. Treating all messages as tooltips
+produces hidden rules. Structured problems let the UI present different
+severities through appropriate channels.
+
+The accessible text should not become a dump of every possible contributor. A
+field may have static help, format guidance, current parse error, current
+business validation problem, disabled reason, and asynchronous validation
+status. Reading all of that on every focus entry would be exhausting. The
+screen needs a composition policy: which message is primary, which is secondary,
+which is visible nearby, which is in the summary, which belongs in help, and
+which should be announced only when it changes. This policy is as much part of
+the screen design as the layout.
+
+Resource review is part of accessibility review because words are the user's
+interface. A field named "ID" may be clear to the developer and useless to the
+user. A button named "Go" may hide whether it searches, saves, imports, or
+navigates. A problem message that says "Invalid value" may satisfy a validator
+and still fail the person trying to repair the form. Resource keys give the
+team a place to review language deliberately. They also make screenshots,
+accessible names, help topics, and tests point to the same vocabulary.
+
+When resources are generated from annotations, avoid the temptation to let Java
+member names become user text. A property named \api{custId} should not leak as
+"Cust Id" in a label, accessible name, or validation message. Generated code can
+enforce that a resource key exists; it cannot guarantee that the wording is
+humane unless humans review the resource set. The book's examples keep class
+names compact for citations, but user-facing words should be product language,
+not implementation language.
+
+Testing labels and descriptions is inexpensive. Construct the view on the EDT,
+install the binding or behavior, and inspect the component's
+\api{AccessibleContext}. Assert the accessible name, concise description, label
+relation where applicable, and restoration after scope close. These tests are
+not a substitute for a screen-reader walkthrough, but they catch the common
+regression where a refactor removes the descriptor or replaces a field without
+copying the semantic relationship.
+
+Figure~\ref{fig:accessibility-focus-order} shows the companion workflow idea. A screen is not accessible because fields have names. It must also have a keyboard path through the work. Search, table, detail, and command surfaces need an order that reflects the task rather than the order in which components happened to be constructed.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\accessibilityFocusFigure}
+\caption{Keyboard order is a workflow contract. Focus should move through the screen in the order a user can understand and recover from.}
+\label{fig:accessibility-focus-order}
+\end{figure}
+
+\begin{examplebox}{Accessibility figures and examples}
+The accessibility screenshots are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. The runnable descriptor example is \api{AccessibleTextExample}, and the screenshot harness is \screenshotHarnessExample. The chapter cites compact class names so the PDF stays readable.
+\end{examplebox}
+
+\section{Keyboard Completeness and Focus Workflow}
+
+\termdef{Keyboard completeness}{the property that essential work can be performed, corrected, and cancelled without a pointing device} is broader than accelerators. It includes focus traversal, mnemonics, default buttons, Escape behavior, context menus, table and tree navigation, editing start and stop, selection extension, error navigation, help, and command invocation.
+
+The simplest test remains powerful: complete a real workflow without touching the mouse. Open the screen. Move through fields. Edit text. Select table rows. Invoke a context operation. Trigger help. Submit with errors. Recover from errors. Cancel. Close. Every place where focus disappears or the next action is not discoverable is a design bug, not a personal inconvenience.
+
+\termdef{Focus owner}{the component that currently receives keyboard input} is only the beginning. There are focus traversal policies, focus cycle roots, temporary focus transfers, default buttons, focusable custom components, input maps, action maps, and accessibility focus. A screen with many composite widgets should decide how focus enters, moves within, and exits each widget.
+
+Visible focus is non-negotiable. A custom component with \api{setFocusable(true)} must paint focus in a way consistent with the Look-and-Feel and high-contrast themes. Do not remove focus rings because they are visually busy. If the default ring is inappropriate for a custom component, design an equivalent ring with adequate contrast and geometry.
+
+\begin{lstlisting}[caption={A custom component that repaints on focus changes.}]
+public RatingStars() {
+    setFocusable(true);
+    addFocusListener(new FocusAdapter() {
+        @Override public void focusGained(FocusEvent e) { repaint(); }
+        @Override public void focusLost(FocusEvent e) { repaint(); }
+    });
+}
+
+@Override
+protected void paintComponent(Graphics g) {
+    super.paintComponent(g);
+    paintStars((Graphics2D) g);
+    if (isFocusOwner()) {
+        paintFocusRing((Graphics2D) g);
+    }
+}
+\end{lstlisting}
+
+Painting the ring is only one part of the component's keyboard contract. The same rating component needs key bindings to change the rating, an accessible value, state-change events, and perhaps actions for increment and decrement. A focusable component that cannot be operated from the keyboard is a trap.
+
+Key bindings are usually preferable to key listeners for commands. Swing's input-map hierarchy lets a binding apply when a component has focus, when an ancestor has focus, or when a window is focused. That hierarchy lets text editing keep its shortcuts while screen commands remain available at the right level. Raw key listeners are harder to reason about and easier to make hostile to input methods.
+
+Mnemonics are modest but valuable. A label mnemonic can move focus to a field. A button mnemonic can invoke a command. Menu mnemonics make menus navigable. Choose mnemonic keys deliberately and avoid conflicts within a screen. Generated resource metadata can help track them, but human review is still needed because mnemonic usefulness is language-dependent.
+
+Default buttons and Escape behavior are part of keyboard completeness. A dialog's default button should match the safe primary action for the current state. Escape should cancel when cancellation is safe, close popups, or leave an editing mode according to the workflow. If Escape sometimes discards data and sometimes closes a menu, the screen must make that state clear.
+
+Tables and trees need more than Tab traversal. The user must be able to move selection, extend selection if supported, start editing, commit editing, cancel editing, open context commands, expand and collapse tree nodes, and reach related detail panels. If the only way to invoke a row command is a mouse double-click, the command is not complete.
+
+Context menus should have keyboard access. Many platforms use a context-menu key or Shift+F10. Swing can expose popup actions through key bindings and actions. The popup itself should not be the only owner of commands. A command should exist before it is placed into a popup, toolbar, menu, or button.
+
+Validation focus is a recovery tool, not a punishment. When OK fails, moving focus to the first blocking field may help. Preventing focus from leaving every invalid field usually hurts because the user may need another field, help, the table selection, or the Cancel command to recover. Prefer visible problems, summaries, disabled reasons, and focusable repair links over focus traps.
+
+Focus traversal order should be designed with the task, not left to construction order. A generated form may create components in field order, but a screen with filter, table, detail, command row, and status area needs workflow order. The order should match visual grouping and reading direction. It should also remain sensible when optional panels are hidden or disabled.
+
+Composite custom components should publish their keyboard contract. A rating control might use Left/Right or Up/Down to change value, Home and End for extremes, Space to activate, Escape to cancel editing, and Tab to leave. A timeline might use arrows to move events, Page Up and Page Down to move by visible page, and Enter to open details. These rules should be discoverable in help or documentation.
+
+Do not steal text-editing shortcuts. A screen-level command that consumes letters, Ctrl+A, Ctrl+C, Ctrl+V, or platform equivalents while a text component has focus will break user expectations and may break input methods. Scope commands carefully. If a command is needed inside a text editor, integrate with the text component's action model rather than intercepting key events.
+
+Keyboard completeness is also a testing strategy. Automated tests can inspect action enabled state and focus traversal in selected cases, but a human keyboard walkthrough remains necessary. The walkthrough should be repeated when a screen gains a new pane, overlay, validation mode, or table interaction. The cost is small compared with repairing a mouse-only workflow late.
+
+Focus should remain visible through scrolling. If an error summary moves focus to a field inside a scroll pane, the field should become visible. If a table starts editing a cell, the editor should be visible and focus should be clear. If a tree expands a node and moves focus, the viewport should follow. Scrolling containers are part of keyboard accessibility because keyboard users cannot simply point to the missing item.
+
+Focus restoration after dialogs and popups matters. When a modal dialog closes, focus should return to a sensible component, usually the invoker or the next logical target. When a context menu closes, focus should remain in the component whose commands were shown. When a validation dialog sends the user to a field, the previous workflow should not be lost. Sloppy focus restoration makes keyboard workflows feel random.
+
+Keyboard shortcuts need conflict review. A screen may define Ctrl+F for search, a table may define the same key for find-in-table, and a text area may need it for its own editor command. The winner should be deliberate. Corusco command descriptors can identify the operation; Swing input maps decide the scope. The mistake is to register global shortcuts until something breaks.
+
+Discoverability matters too. Expert users can memorize shortcuts, but keyboard-only users still need to discover commands. Menus, button text, tooltips, help topics, and accessible descriptions can expose shortcuts. A command palette or help overlay can help in large applications. Hidden shortcuts are efficient only after the user learns them.
+
+Input-map scope is the place where many otherwise careful screens fail. Swing
+has different input-map conditions because the same keystroke can mean
+different things depending on focus. A text field with focus should keep text
+editing keys. A table with focus should keep row navigation and editing keys. A
+dialog root pane may own Enter and Escape. A window may own F1 or a global
+refresh command. Registering every shortcut at the window level is tempting,
+but it often steals keystrokes from the component that knows the current editing
+context. The shortcut's scope should match the command's meaning.
+
+This is another reason to separate command identity from key binding. The
+command named "Search" may be the same operation in a toolbar, menu, and filter
+field. The key binding that invokes it may differ by context. Ctrl+F in a
+workspace might focus the search field. Ctrl+F inside a text editor might open
+find-within-text. F3 might repeat the search only after a search exists. The
+command descriptor names the operation and resources; Swing input maps decide
+where the operation is reachable. Keeping those decisions separate prevents a
+shortcut policy from becoming hard-coded inside button construction.
+
+Focus cycle roots should be used deliberately. A composite component such as a
+date editor, color chooser fragment, or table-with-inline-filter may contain
+several focusable children. The user should be able to enter the composite, move
+within it when that is useful, and leave it predictably. If Tab moves through
+every internal helper button before reaching the next field, the workflow may be
+too noisy. If Tab skips an important internal editor, the composite may be
+inoperable. Focus traversal policy is a workflow policy, not only a container
+property.
+
+Tables are the practical stress test for keyboard completeness. A table can be
+read-only, editable, sortable, filterable, multi-select, tree-like, or backed by
+large data. Each choice affects keyboard behavior. In an editable table, the
+user needs a way to start editing, commit, cancel, move to the next editable
+cell, and recover from validation errors. In a read-only table, the user needs
+row navigation, selection, context commands, column sorting, and a route to
+details. A table whose primary command requires a double-click has only a mouse
+workflow.
+
+Cell validation needs special care. If committing a cell fails, the user should
+learn what failed and where focus remains. A red border around the editor may be
+visible, but the problem should also appear through text or accessible
+description. Escape should have a defined meaning: cancel the edit, close a
+popup, or leave the dialog according to current state. Enter may commit the
+cell, move to the next row, or invoke a default button; the screen must not
+leave that conflict to accident. The table chapter goes deeper, but the
+keyboard rule belongs here.
+
+Dialogs also have states, not only buttons. A pristine dialog, a dirty dialog,
+a dialog with blocking validation, a dialog saving in the background, and a
+dialog with an open popup are different keyboard situations. The default button
+may change or become disabled. Escape may close, ask for dirty confirmation, or
+cancel a task. F1 may open field help or dialog help depending on focus. The
+dialog shell should own these policies consistently so every dialog does not
+invent its own keyboard grammar.
+
+Busy overlays are often designed visually and reviewed too late for keyboard
+behavior. If an overlay blocks the mouse but leaves focus on an underlying
+field, keyboard users may still edit state the overlay claims is unavailable.
+If the overlay moves focus to a progress panel, it should provide a path to
+Cancel if cancellation exists and a sensible focus restoration when work ends.
+If a busy state only disables commands, the disabled reason should be available
+through tooltip, status, or accessible description. The overlay is an input
+policy as much as a visual effect.
+
+Keyboard walkthroughs should be written as scripts, not vague intentions. For a
+customer editor, the script might say: focus search, type filter, move to table,
+select a row, open details, edit name, trigger validation error, move to error
+summary, focus the field from the summary, fix error, save, observe busy state,
+cancel or wait, and close. The script gives tests and human reviewers a shared
+target. It also reveals when a screen has no keyboard story for a state that
+exists visually.
+
+A screen can be technically reachable and still inefficient. Thirty Tab presses
+from the first field to Save is not a good workflow. A table command buried
+behind a context-menu key that no one can discover is not enough. A wizard page
+whose error summary is after every field may force a user to traverse the whole
+page before learning why OK is disabled. Efficiency matters because keyboard
+users are not exercising a fallback; they are using the application normally.
+
+Corusco helps by making keyboard policy attach to named commands and component
+keys. A help behavior can route F1 from the focused component to a help topic.
+A generated command descriptor can expose text, tooltip, accelerator, and
+enabled state. A problem-focus resolver can move focus to a component by typed
+key. A behavior scope can install and remove these relationships with the
+screen. Swing still performs focus and key binding; Corusco supplies stable
+meaning and cleanup.
+
+\section{Custom Components, Renderers, Tables, and Events}
+
+Custom components need accessible semantics proportionate to their meaning. A decorative separator may need little. A custom status tile needs a name and state. A custom chart may need a summary, current selection, keyboard navigation, and perhaps accessible children. A custom editor may need text, caret, selection, input-method, and value semantics. The more interaction a component owns, the more accessibility it owns.
+
+\begin{lstlisting}[caption={Skeleton of a custom accessible component.}]
+public final class RatingStars extends JComponent implements Accessible {
+    private int rating;
+    private AccessibleContext accessibleContext;
+
+    @Override
+    public AccessibleContext getAccessibleContext() {
+        if (accessibleContext == null) {
+            accessibleContext = new AccessibleRatingStars();
+        }
+        return accessibleContext;
+    }
+
+    protected final class AccessibleRatingStars extends AccessibleJComponent {
+        @Override
+        public AccessibleRole getAccessibleRole() {
+            return AccessibleRole.SLIDER;
+        }
+
+        @Override
+        public String getAccessibleName() {
+            String name = super.getAccessibleName();
+            return name != null ? name : "Rating";
+        }
+
+        @Override
+        public String getAccessibleDescription() {
+            return "Rating from zero to five stars. Current value " + rating + ".";
+        }
+    }
+}
+\end{lstlisting}
+
+The skeleton is deliberately incomplete. A slider-like rating component should expose value operations, keyboard actions, state changes, and events. The code shows the boundary: accessibility lives with the semantic component and its model, not inside \api{paintComponent}. Painting can reflect state, but it should not be the only owner of state.
+
+Accessible events are part of the model event contract. When selection changes, value changes, text changes, visible children change, or state changes, assistive technologies may need notification. Standard components do this. Custom components should fire appropriate property changes through their accessible contexts or through the component mechanisms used by their accessible implementations.
+
+A custom chart illustrates the design choice. Exposing every data point as an accessible child might be overwhelming in a chart with ten thousand points. Exposing only "chart" is too little. A useful middle might expose chart title, current series summary, selected point, keyboard navigation among important points, and a command to open the data table. Accessibility is a user task design, not a mechanical count of painted objects.
+
+Tables and trees have standard accessibility support, but renderers can hide meaning. A renderer that paints a warning icon should ensure the model exposes warning state as text or structured value. A tree node with a badge should have node text that includes the badge semantics where appropriate. The renderer is a stamp; the model is the durable fact.
+
+Table cell accessibility intersects with sorting, filtering, and selection. A selected row with a validation problem should remain understandable after the row sorter moves it. A problem should target row identity and column identity, not only a rendered border. Corusco table descriptors and problem targets can help connect cell state, tooltip, accessible description, and tests.
+
+Icon-only buttons are another common failure. A toolbar button with a save icon should have action name, tooltip, accessible name, and keyboard shortcut where appropriate. The icon is only one presentation. The action descriptor should carry the command identity. If the icon fails to load or the user cannot see it, the command should still be understandable.
+
+Progress indicators need semantic values. A \api{JProgressBar} can expose progress, but an indeterminate busy overlay may need accessible description and status text. A task that disables a screen should announce what is happening and how to cancel if cancellation exists. Visual dimming alone is insufficient.
+
+Layers and glass panes can interfere with input and accessibility. A busy glass pane that consumes mouse events but leaves keyboard focus on underlying fields creates inconsistent state. If an overlay blocks interaction, commands should reflect busy state, focus should be managed, and accessible descriptions should explain the blocked workflow. The overlay chapter's lifecycle rules apply here too.
+
+Renderer allocation is not the only renderer concern. Renderers often reset colors, fonts, icons, and text. They should also reset tooltips and any accessible-facing text they set. A renderer that leaves a tooltip from the previous cell can create both visual and semantic confusion. The safer pattern is to derive all visible and semantic cell presentation from current cell state on every render call.
+
+Accessibility for virtual children requires careful indexing. A custom component that exposes logical children must keep child count, child retrieval, bounds, and state synchronized with the model. If children can be filtered or sorted, accessible navigation should follow the same order users perceive. This is the same model-view conversion problem that appears in tables, only now assistive tools are the caller.
+
+Hit testing and accessibility should share geometry. A custom component that maps a mouse point to a timeline event should use the same mapping to provide accessible child bounds and tooltips. If painting uses one coordinate transform, mouse hit testing another, and accessibility a third, users will encounter inconsistent selection and focus behavior.
+
+\begin{pitfallbox}{focus indicators removed for aesthetics}
+Removing focus painting because it looks noisy is a regression unless an equivalent visible focus indicator remains. Keyboard users need to know where actions will apply. Custom components must paint focus deliberately and consistently.
+\end{pitfallbox}
+
+The review rule is straightforward: every custom component should answer role, name, description, state, value, actions, keyboard contract, focus behavior, and event notification. Some answers may be "not applicable." "The paint method shows it" is not an answer.
+
+Accessible tables need special restraint. A table with one hundred thousand rows cannot announce everything. It should expose row and column structure, current selection, cell text, sort state, and problem state where relevant. Summaries, filters, and search commands help users reduce the space. Accessibility is not achieved by making every hidden datum verbose; it is achieved by making the user's navigation and decisions possible.
+
+Headers matter. A table cell without its column header is often meaningless. A renderer that paints compact values should still ensure the accessible path can connect the value to column identity. Column descriptors, resource-backed headers, and typed column keys help here. If a problem targets a column, the same key can inform the visual marker, tooltip, accessible problem, and test assertion.
+
+Tree accessibility should expose hierarchy and expansion state. A custom tree-like component that paints indentation but exposes a flat list has lost essential structure. Conversely, a deep tree may need commands to collapse, expand, search, and jump. Keyboard users need a path through hierarchy that does not require pointer precision.
+
+Drag handles and resize grips are often inaccessible because they are treated as visual affordances only. If a split pane, column header, timeline marker, or reorder handle matters, provide keyboard and command alternatives where possible. At minimum, expose the state and operation through a component or action users can reach without the pointer.
+
+Popups and overlays must not hide semantics. A tooltip that appears on hover should have keyboard or focus access if it contains important information. A popup editor should manage focus and Escape behavior. A glass-pane tutorial should not block screen-reader navigation without explaining the current step. Floating UI is still UI.
+
+Custom components should begin with a semantic inventory before painting begins.
+For a rating component, the inventory is small: current value, minimum, maximum,
+increment, enabled state, focus state, and actions to change value. For a chart,
+the inventory may include title, axes, visible range, selected series, selected
+point, warnings, and a command to open the underlying table. For a canvas editor,
+the inventory may include selected objects, current tool, handles, snap state,
+zoom, and commands. Painting can be designed from that inventory, but the
+inventory should not be discovered only by reading the paint method.
+
+The accessible role is not always perfect. Swing's predefined roles may not
+contain exactly "rating stars" or "timeline lane." Choose the closest role and
+then supply value, action, selection, or text semantics that make the role
+useful. A custom component that behaves like a slider can expose slider-like
+value semantics. A custom component that behaves like a list of selectable
+tokens can expose selection-like semantics. A purely decorative component can
+remain simple. The role is a starting point for interaction, not a taxonomy
+exam.
+
+Accessible children should be used when they help the user's navigation. A
+diagram with ten shapes may expose ten logical children. A map with a million
+features should not expose a million children as a flat list. Instead, it may
+expose current selection, visible layer summaries, search commands, and a data
+table for detailed navigation. Accessibility design should respect the scale of
+the data. The goal is not maximum verbosity; it is operable structure.
+
+Bounds for accessible children are another reason to keep geometry disciplined.
+If a custom component supports zooming, scrolling, or affine transforms, the
+accessible child bounds should describe where the child is visible in screen or
+component coordinates according to the API contract. Mouse hit testing,
+keyboard selection, tooltips, and accessible bounds should share the same model
+to screen mapping. Otherwise a user can focus a logical child whose visual
+position does not match the announced bounds.
+
+Renderer semantics should usually be backed by model facts. Suppose a table
+renderer paints a small lock icon for locked rows. The row model should expose
+locked state; the renderer should display it; the tooltip and accessible text
+should describe it; the command state should respect it. If the renderer alone
+knows the row is locked, sorting, filtering, testing, and accessibility all
+become dependent on a painting stamp. The same principle applies to warnings,
+dirty markers, stale rows, progress cells, severity badges, and generated
+column metadata.
+
+Table headers also carry semantics. A compact column header may fit the screen
+but be ambiguous when heard without context. Column descriptors can provide a
+short visible header, a longer tooltip, an accessible description, and a stable
+key for tests and preferences. A cell value such as "12" may mean dollars,
+days, errors, or percent depending on the header. Assistive technology and tests
+need a way to connect cell values with column meaning.
+
+Icon-only controls should be rare and deliberate. Toolbars often need compact
+icons, but every icon-only button should still have an action name, tooltip,
+accessible name, command identity, and keyboard path where appropriate. If the
+icon represents a toggle, selected state should be exposed. If the icon
+represents a destructive command, the text and confirmation should make that
+clear. A button with no text is not a button with no language; it is a button
+whose language lives in metadata.
+
+Canvas tools deserve special warning. Paint editors, GIS tools, diagram
+editors, and timeline editors often rely on modes: select, pan, draw, measure,
+edit vertices, inspect, annotate. A mode is semantic state. It should be visible
+in the UI, reachable by keyboard, announced or exposed through status/help, and
+tested as command state. If a user can only discover the current mode from the
+cursor shape, the mode is not accessible enough for serious work.
+
+The current tool also affects input interpretation. A mouse drag may pan in one
+mode and draw in another. Arrow keys may move selection, pan the viewport, or
+edit a handle. Escape may cancel the current operation or clear selection. These
+policies should live in actions and tool state, not in anonymous mouse and key
+listeners scattered through the canvas. Corusco commands and observable values
+can help name the current tool and expose command enablement; Swing still
+delivers the raw input.
+
+Layered panes and glass panes should be reviewed as semantic changes. A glass
+pane used for guided help may visually point at a field, but it also changes
+input routing and focus expectations. A validation overlay may draw over a
+component but should not obscure accessible names or prevent keyboard recovery.
+A busy layer may block incompatible commands but should not make the screen
+appear dead. Every layer that changes what the user can do should be paired with
+command state and accessible explanation.
+
+Events from custom components should be precise enough for assistive tools and
+bindings. A rating changed from three to four. A selected shape changed. A chart
+visible range changed. A tool mode changed. A handle became active. These are
+not all generic repaint events. If the component has a model, fire model events.
+If it has accessible state, fire the relevant accessible property changes. If it
+affects commands, update command state. Repaint is the last step, not the
+announcement.
+
+Testing a custom component should therefore have several layers. A model test
+proves value changes, selection, and tool state. An EDT test proves key bindings
+and focus behavior. An accessible-context test proves role, name, description,
+value, and state. A screenshot proves focus rings and visible states. A manual
+keyboard or screen-reader drill proves the task. This may sound like many
+tests, but each one is small when the component has a semantic inventory.
+
+\section{Input Methods, Bidi Text, Orientation, and Contrast}
+
+\termdef{Input method}{a system that lets a user compose text before committing it to the document} is essential for East Asian languages, dead keys, accent composition, and many non-ASCII workflows. During composition, keystrokes do not correspond one-to-one with committed characters. Candidate windows, provisional text, conversion stages, and commit/cancel behavior are part of the user's text workflow.
+
+Standard Swing text components handle input methods. Custom text-like components must implement \api{InputMethodRequests} if they want full participation. They must report text location for candidate windows, committed text, selected text, insertion offset, and related information. This is real editor work. If a component merely needs a text field, use a text field.
+
+\begin{detailbox}{do not build text input from keyPressed}
+For serious text input, use Swing text components or implement the input method contracts. Handling \api{keyPressed} and appending characters is not a multilingual text editor.
+\end{detailbox}
+
+Key listeners are especially risky around input methods. A listener that consumes letters for commands can prevent composed text from reaching the text component. A listener that assumes \api{keyTyped} produces final characters may validate or reject text before composition is complete. Use key bindings for commands, document filters for local text constraints, and text component actions for editing behavior.
+
+Composed text also affects validation timing. A field model may show raw text while a user edits, but the program should not punish every intermediate composition step. Parse state can be displayed gently; final validation may wait for commit, focus loss, or explicit OK depending on the workflow. International input makes the difference between editing and committing visible.
+
+\termdef{Bidirectional text}{text whose logical order and visual order can differ because it mixes left-to-right and right-to-left scripts} breaks naive caret assumptions. Arabic or Hebrew mixed with numbers and Latin names may not move visually the way a simple offset increment suggests. Text components and text layout APIs know far more about this than application key listeners.
+
+\api{ComponentOrientation} affects layout direction, alignment, and sometimes navigation. Use leading and trailing rather than left and right when the meaning is start and end. Layout managers often support orientation; custom painting often forgets it. Test mirrored layout for labels, icons, arrows, tree indentation, timeline direction, drag handles, and validation markers.
+
+Right-to-left orientation does not mean every domain visualization reverses. A time series may still run left to right by product convention, or it may mirror under locale. The important point is to decide deliberately. If an arrow means "next" in a workflow, it probably needs mirroring. If an arrow points east on a map, it probably does not.
+
+High contrast and color independence belong with input because both are alternative ways of perceiving state. Color alone is not a state channel. Validation, selection, warning, success, disabled, busy, and focus should have redundant representation through text, shape, iconography, border, accessible description, or command state.
+
+Look-and-Feel defaults should provide colors where possible. Hard-coded pale red backgrounds may fail in dark themes and high contrast. A validation behavior can use theme defaults, severity icons, problem text, and accessible descriptions together. The goal is not to avoid color; it is to avoid color as the only carrier of meaning.
+
+Selection is a common contrast bug. A renderer that paints semantic foreground colors may make selected text unreadable. Accessibility is not only screen readers; it includes users who need strong contrast and predictable selected states. Renderers should respect selection foreground and background, then add semantic markers in ways that remain visible.
+
+Touch targets and pointer precision are not central Swing topics, but modern desktop users have varied input devices. A tiny drag handle may be hard to use with a touchpad or pen. Keyboard alternatives and command surfaces help here as well. If a feature requires pixel-perfect mouse movement, review whether it is truly a desktop-quality workflow.
+
+Screen magnification changes perception of context. A user may see only a portion of the screen. Error summaries, focus movement, and status messages should not rely on distant visual relationships. When focus moves to a field, the viewport should make it visible. When a table cell has a problem, the row and summary should help the user locate it.
+
+Testing international and high-contrast behavior does not require a full localization project. Use a small string set: Czech accents, German-length labels, Arabic or Hebrew mixed with English, Japanese IME input where available, emoji sequences, and combining marks. Turn on a dark or high-contrast theme. Navigate with keyboard. Inspect focus and validation. These tests expose most naive assumptions quickly.
+
+Accessibility and input-method bugs often hide because developers test with the fastest path they personally use. The discipline is to slow down and use other paths: keyboard only, screen reader, high contrast, larger font, right-to-left orientation, IME, paste, and long text. Each path is a small lens on the same component contract.
+
+Font size changes are part of this same review. Larger fonts can clip labels, hide focus rings, push buttons out of dialogs, and make fixed row heights unusable. A layout that uses \miglayout{} and honest preferred sizes should adapt better than fixed bounds, but custom renderers and delegates must still compute metrics correctly. Accessibility pressure often reveals layout shortcuts.
+
+Motion and animation should be conservative. Busy overlays, progress indicators, flashing validation, and guided tours can distract or confuse. Swing applications are usually work tools; state changes should be clear without being theatrical. If animation communicates state, provide a nonanimated equivalent through text, command state, or accessible description.
+
+Do not assume high contrast means ugly. It means the visual system prioritizes legibility. A component that derives colors from Look-and-Feel defaults, uses clear borders, preserves focus, and provides textual state will usually look more professional in every theme. High contrast testing is therefore not a separate design taste; it is a stress test for visual policy.
+
+International text also affects accessible names. A translated accessible name should match the visible label's meaning, not the source language's word order. Mnemonics may need to change. Reading order may change. Some scripts are longer or require different punctuation. A resource system makes this manageable; copied strings do not.
+
+Input methods also change the meaning of "validation while typing." A Latin-only
+field may appear to contain final characters after each key typed. An IME field
+may contain composition state that is not yet committed. A strict document
+filter that rejects intermediate composition can make the field unusable. A
+better design distinguishes local syntactic constraints from final validation.
+For example, a numeric field may use a formatter or document filter that
+understands the locale, while business validation waits until the value can be
+parsed or the user commits the edit. The form model should be able to say
+"currently unparsable" without treating every composition step as a business
+failure.
+
+Paste is another input path that reveals naive assumptions. Users paste text
+from spreadsheets, emails, browsers, PDFs, and other applications. Pasted text
+may contain non-breaking spaces, combining marks, right-to-left marks, smart
+punctuation, tabs, line breaks, emoji, or invisible control characters. A field
+that only tests keyboard entry is not tested. Document filters, parsers, and
+validators should be written against text values, not against the belief that
+the user typed one simple character at a time.
+
+Caret movement in bidi text should usually be delegated to Swing text
+components and text layout APIs. A custom text-like component that moves caret
+offset by adding or subtracting one may be wrong visually. Selection ranges may
+be logical while visual movement is directional. Hit testing a point in mixed
+direction text requires text layout knowledge. If the application does not
+intend to become a text editor, it should not implement this behavior manually.
+Use standard text components and adapt them through models and bindings.
+
+Component orientation should be included in screenshot and layout review. A
+right-to-left orientation may reveal absolute "left" assumptions in MigLayout
+constraints, icon placement, custom painting, split panes, and command rows.
+Some relationships are directional because of reading order; others are
+domain-specific and should remain fixed. A "Next" arrow may mirror. A compass
+east arrow should not. A timeline may or may not mirror depending on product
+convention. Document the decision where the visual could be ambiguous.
+
+High-contrast review should include selected, focused, disabled, invalid,
+warning, and busy states together. Testing only the normal state is not enough.
+A table renderer may be readable normally and unreadable when selected. A
+disabled command may have sufficient contrast but lose its disabled reason. A
+focus ring may disappear against a validation border. A busy overlay may dim
+the screen so much that progress text falls below contrast expectations. These
+states interact, and users encounter them in combinations.
+
+The safest pattern is redundant but not noisy. Use color, text, icon, border,
+accessible description, and command state where each channel helps. Do not put
+all channels everywhere. A warning cell may use an icon and tooltip, while the
+row details panel supplies text and the accessible path supplies state. A
+required field may use a label marker and validation rule, while the description
+mentions the requirement only when it is not obvious. Redundancy is about
+survivability across channels, not about repeating every message in every
+place.
+
+Font and scale changes also affect input precision. A small drag handle may be
+easy to hit at one scale and awkward at another. A focus ring drawn at a fixed
+one-pixel width may become too subtle on a high-DPI display. A table row height
+fixed for one font may clip text after a user changes font size. Custom
+components should derive metrics from fonts and UI defaults where possible.
+When fixed sizes are necessary, they should be domain decisions, not inherited
+from a screenshot.
+
+International testing should be small but regular. A chapter example can use a
+few representative strings rather than a full translation: long German labels,
+Czech diacritics, Arabic or Hebrew mixed with numbers, Japanese composed input,
+and emoji or combining marks in free text. The goal is not linguistic coverage.
+The goal is to break the assumption that text is short ASCII typed one
+character at a time from left to right. Once that assumption is broken, the
+standard Swing text components and resource discipline become easier to
+appreciate.
+
+\section{Corusco Behaviors and Review Method}
+
+Corusco helps accessibility by making screen facts explicit before Swing presents them. A field descriptor can name a label resource and tooltip resource. A command descriptor can name the action, shortcut, icon, help topic, and enabled state. A problem set can name validation and parse failures. A behavior scope can install accessible text, tooltips, status text, validation borders, and help consistently.
+
+The \api{BindingFactory.accessibleText} helper sets a component's accessible name and description while preserving previous values. Closing the binding restores the old values. That restoration is important in reusable views and tests. Accessibility metadata is not a fire-and-forget string; it is scoped component state.
+
+\begin{lstlisting}[caption={Descriptor-derived accessible text behavior.}]
+try (BehaviorScope scope = new BehaviorScope()) {
+    scope.install(nameField, List.of(StandardBehaviors.accessibleText(
+            GeneratedCustomerEditDescriptors.NAME,
+            resources
+    )));
+}
+\end{lstlisting}
+
+The example uses generated descriptor resources rather than handwritten strings. The accessible name comes from the field label resource. The description comes from the optional tooltip resource. The view code does not need to know the text values. It needs to know which field the component presents.
+
+This is also where behavior conflict detection matters. A component should have one owner for accessible text. Several decorations may contribute to tooltip or visual state, but accessible name ownership should not be accidental. A behavior plan can say which phase installs model binding, which phase installs decoration, and which behavior owns cleanup.
+
+Validation behaviors should compose with accessibility. A validation border can draw attention. A tooltip can explain the problem. An accessible description or summary can make the same problem available without vision. A command disabled reason can explain why OK is unavailable. The common input is \api{ProblemSet}, not a red border flag.
+
+Help should be part of the same structure. F1 behavior can use component keys or descriptors to locate a help topic. A tooltip can summarize. An accessible description can mention essential operation. A help command can open longer material. These are different lengths of the same help system, not unrelated strings.
+
+Testing benefits from explicit identity. Core tests can assert descriptor resources. Swing tests can inspect accessible contexts on the EDT. Behavior-scope tests can assert restoration after close. Screenshot tests can show focus order and visible labels. A screen-reader walkthrough can validate the lived workflow. No single test covers accessibility; the layers reinforce each other.
+
+Automated checks should be treated as useful but incomplete. They can find missing names, unlabeled fields, weak focus traversal, or absent key bindings. They cannot decide whether a screen-reader user understands a custom chart or whether a keyboard workflow is humane. Accessibility review requires mechanical evidence and human task evidence.
+
+The review should begin early. When a field is added, ask for label association, accessible name, description, validation target, help topic, mnemonic, traversal position, and test key. When a custom component is added, ask for role, keyboard operation, focus painting, accessible state, and event notification. Waiting until the end turns these into archaeology.
+
+The review should also be repeated when a screen changes state. Disabled commands, busy overlays, validation errors, empty tables, loaded tables, filtered tables, dialogs, popups, and long-running tasks all alter accessibility. A screen can be accessible in its initial state and inaccessible after the first error.
+
+The case of a custom chart is instructive. If the chart paints revenue by month, highlights anomalies, and supports selection, the accessible surface might expose a concise summary, keyboard navigation through months, current selected point, anomaly count, and a command to open the data table. It need not speak every pixel. It must support the user's task.
+
+The case of color-only validation is simpler. A red border alone fails. Add structured problem state, inline text or summary, accessible description, and focus navigation. The border then becomes one presentation among several. The change is architectural, not cosmetic.
+
+The case of IME-hostile shortcuts shows why input belongs in the same chapter. A component that consumes letter keys for commands may be keyboard-operable for English and broken for Japanese. Key binding scope and text-component delegation are accessibility decisions as much as input decisions.
+
+The keyboard workflow drill should be part of acceptance for important screens. Perform one complete workflow without the mouse: open, navigate, edit, search, select, invoke commands, correct errors, open help, cancel, and close. Record every place focus disappears, the next action is unclear, or a command is unreachable. Those findings are product bugs.
+
+The screen-reader drill should be smaller but real. Pick a representative dialog or workspace. Navigate by headings, controls, table cells, and actions. Listen for names, descriptions, roles, state changes, and redundant noise. A screen that technically exposes names may still be exhausting if every field description repeats an entire paragraph.
+
+The evidence from that drill should be written down while it is fresh. Which component lacked a name? Which command was unreachable? Which table cell spoke a value without a header? Which validation problem was visible but not announced? Accessibility work improves fastest when findings are concrete enough to become ordinary defects with owners, not vague impressions about usability.
+
+The keyboard drill should record timing too. If a user can technically reach a command only after twenty Tab presses through unrelated controls, the workflow is not complete in a practical sense. Add grouping, a mnemonic, a shortcut, a default button, or a command surface that matches the task. Keyboard completeness is about efficient operation, not merely theoretical reachability.
+
+The same evidence helps sighted power users, because efficient keyboard paths are practical productivity features as well.
+
+\begin{migrationbox}{from visual hints to semantic behaviors}
+Start by identifying visual states that carry meaning: required, invalid, selected, busy, disabled, warning, focused, and current. Move those meanings into descriptors, commands, values, or problem sets. Then install scoped Swing behaviors for visual decoration, accessible text, tooltip composition, help, and status. The visual hints remain, but they no longer own the facts.
+\end{migrationbox}
+
+The final reader test is predictability. Given a new accessibility requirement, the code should make it clear whether to change a resource, descriptor, command, problem target, behavior, input map, custom component accessible context, or renderer. Predictability is what keeps accessibility from becoming a late-stage checklist.
+
+This predictability should appear in examples too. A book example that sets a field's accessible name directly is acceptable when teaching Swing basics. A Corusco example should go further and show descriptor-derived text, scoped restoration, and tests that read the accessible context. The reader should see the migration from "remember to set this string" to "the field descriptor already owns this fact."
+
+Generated code can help only if the generator has the right source facts. A generated view cannot invent a useful accessible description when the annotation contains only a Java property name. It can apply resource keys, component keys, help topics, validation targets, and standard behaviors when those are declared. Generation amplifies metadata quality; it does not replace it.
+
+Testing should include negative assertions. It is not enough to assert that a field has an accessible name after installation. Assert that the previous name returns after the scope closes. Assert that a missing optional description becomes blank by policy. Assert that validation updates do not erase static help. Assert that a disabled command exposes the expected reason. These tests catch lifecycle and composition bugs.
+
+The practical acceptance bar for this book is that every visual or interactive chapter shows the visible state and names the nonvisual state behind it. Accessibility is where that requirement becomes explicit. Screenshots prove that users can see one presentation; model and accessible-context tests prove that the presentation is not the only one.
+
+Corusco's behavior model is useful because accessibility is rarely owned by one
+line of code. A field may receive model binding, validation decoration, tooltip
+composition, accessible text, select-all-on-focus, status text, and F1 help.
+Those behaviors must be installed in a predictable order, detect conflicts
+where appropriate, and close together. Without a behavior scope, a screen tends
+to accumulate listener fragments: one listener updates tooltip text, another
+sets a border, another changes status, another writes accessible description,
+and none clearly owns restoration.
+
+Generated companions should make common accessibility facts boring. A generated
+field descriptor can expose field key, label resource, tooltip resource,
+component key, problem target, and help topic. A generated binding can know
+which component presents the field. A behavior can then derive accessible name
+and description without the view repeating strings. The handwritten panel still
+chooses layout and component types, but the semantic identity of the field is
+not retyped in every view.
+
+Command descriptors should do the same for operations. A Save command should
+have stable identity, resource-backed text, tooltip, shortcut, help topic,
+enabled state, and disabled reason. A toolbar button, menu item, popup item,
+keyboard shortcut, and accessible action can all point to that command. If the
+user cannot save because the form is invalid, the disabled reason should be
+available through more than a gray button. If the user can save, the operation
+should be discoverable through the expected keyboard and menu paths.
+
+Problem sets are the accessibility bridge for validation. A problem has a code,
+severity, message, and target. The target can resolve to a component, table
+cell, summary item, or help topic. A visual behavior can draw a border. A tooltip
+behavior can compose text. A summary can list actionable items. A focus resolver
+can move the user to the repair location. An accessible description can expose
+the current primary problem. Tests can assert the problem by code and target.
+This is a much stronger design than passing around strings such as "Name is
+required."
+
+Lifecycle should be part of accessibility testing. Install accessible text,
+validation decoration, help bindings, and status behaviors; assert the component
+state; close the scope; assert restoration or detachment. This catches bugs that
+manual screenshot review cannot see. A field reused in another dialog with old
+accessible description is a real defect even if the visible label changed.
+Scoped restoration keeps semantic state as disciplined as visual decoration.
+
+The review method can be turned into a table for each important screen. Rows
+are meaningful states: required, invalid, disabled, selected, busy, focused,
+expanded, collapsed, stale, loading, empty, and complete. Columns are channels:
+visible cue, keyboard path, accessible text or role, resource identity, command
+or model owner, lifecycle owner, and test proof. Blank cells are not always
+bugs, but they deserve explanation. This matrix is more useful than a generic
+"accessibility OK" checkbox because it names the missing owner.
+
+The matrix also helps scope work. A simple read-only label may need only visible
+text and a resource. A required editor needs label association, validation
+target, problem message, focus recovery, and tests. A custom chart needs a
+summary, selection model, keyboard navigation, accessible role or children, and
+a data-table escape path. A busy overlay needs status text, command state,
+input blocking policy, cancellation if available, and focus restoration. The
+right amount of accessibility follows from the meaning the component owns.
+
+This chapter deliberately treats accessibility, keyboard input, input methods,
+orientation, contrast, and Corusco behaviors together because users experience
+them together. A screen-reader user may also use keyboard shortcuts. A keyboard
+user may also need high contrast. A multilingual user may also rely on paste and
+IME composition. A generated form may also have a custom renderer and busy
+overlay. Splitting these topics too aggressively makes each one look smaller
+than it is. In a working screen they meet at the same contracts.
+
+\begin{detailbox}{accessibility review rule}
+For every meaningful state, ask how it is perceived visually, by keyboard, by accessible context, by tests, and under high contrast. If the answer exists in only one channel, the state is fragile.
+\end{detailbox}
+
+For beginners, the practical checklist is small. Connect labels to fields. Provide accessible names. Do not remove focus rings. Use buttons and actions instead of mouse-only clickable labels. Keep standard text components for text input. Test with the mouse aside. Avoid color-only validation.
+
+For intermediate Swing programmers, the checklist expands. Use input maps and action maps rather than raw key listeners for commands. Define keyboard contracts for custom components. Fire accessible events when semantic state changes. Respect component orientation. Test high contrast, larger fonts, and right-to-left layout. Review renderers for hidden icon-only meaning.
+
+For Corusco programmers, the rule is to make accessibility a consequence of descriptors and behaviors. Accessible text should come from resources. Validation descriptions should come from problems. Disabled reasons should come from commands. Help should come from help topics. Scopes should own installation and cleanup. Tests should assert the same facts the user hears.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Audit a form and add missing \api{setLabelFor}, accessible names, descriptions, mnemonics, and traversal fixes.
+\item Implement keyboard operation for a custom rating component using actions and key bindings.
+\item Add accessible value semantics to the rating component and fire events on value change.
+\item Test a validation UI using only keyboard navigation; add an error summary that focuses fields.
+\item Run a custom-painted status table with color ignored; add textual status equivalents in the model.
+\item Test a form under right-to-left \api{ComponentOrientation} and fix painting or layout assumptions.
+\item Enter Japanese or Chinese text into custom input areas; identify where key listeners break composition.
+\item Review all custom renderers for icon-only semantics and add model-backed text equivalents.
+\item Install Corusco descriptor-derived accessible text on a generated form and assert restoration after scope close.
+\item Capture screenshots for labeled fields, focus traversal, validation summary, high contrast, and keyboard-only command state.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{itemize}
+\item Connect labels to fields with \api{setLabelFor}.
+\item Provide accessible names and concise descriptions.
+\item Make custom components keyboard-operable and visibly focusable.
+\item Fire accessible events when semantic state changes.
+\item Do not encode important state by color alone.
+\item Respect component orientation and test right-to-left layout.
+\item Avoid key listeners for text input and commands when key bindings or text APIs are appropriate.
+\item Use standard text components for IME support unless you implement input method contracts.
+\item Provide error summaries for complex validation flows.
+\item Keep renderer semantics in the model, not only in painted icons.
+\item Use Corusco descriptors and behaviors to derive accessible text from stable resources.
+\item Treat accessibility findings as product bugs, not late polish.
+\end{itemize}

@@ -1,0 +1,769 @@
+\chapter{The Swing Text Package: Documents, Elements, Views, and Editors}
+\chapterquote{A text component is a small document system with a viewport attached, not a string painted in a rectangle.}{A necessary exaggeration}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How do Swing text components represent, render, edit, filter, highlight, scroll, validate, and undo text beyond ordinary fields?\\
+Primary APIs & \api{Document}, \api{AbstractDocument}, \api{StyledDocument}, \api{Element}, \api{View}, \api{EditorKit}, \api{DocumentFilter}, \api{Highlighter}, \api{UndoManager}.\\
+Hidden difficulty & Offsets are model positions, visual positions can be bidirectional, filters run inside document mutation, input methods compose text, and large documents require bounded strategies.\\
+Payoff & Correct custom editors, log viewers, search highlighters, syntax coloring, form validation, undo/redo, and multilingual text handling.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Text Components as Document Systems}
+
+\termdef{Text component}{in Swing, a component that edits or displays text through a document model} is easy to underestimate because the small examples are so friendly. A \api{JTextField} can be constructed with a string and queried with \api{getText}. That is a convenience API, not the architecture. Beneath it is a document, caret, selection, keymap or input map, input-method support, undoable edits, view layout, and Look-and-Feel behavior.
+
+\termdef{Document}{the model that stores text and publishes text mutations} is the first object to name. Swing text components observe a document. A field, text area, text pane, or editor pane is therefore not the sole owner of its text. It is a view and editor over a model that can be listened to, filtered, styled, searched, trimmed, or replaced.
+
+This distinction is the same model-component separation used elsewhere in Swing, but text makes the separation especially visible. A table has rows and columns; a list has elements; a text component has character content, structural elements, positions, attributes, and undoable changes. Treating all of that as one string loses useful information before the program has even become complicated.
+
+The most important beginner correction is this: a key listener is not a text model listener. Key events do not see paste, programmatic replacement, undo, input methods, or all platform editing actions in the right way. If a screen needs to react to text changing, observe the document or the presentation model bound to the document. Key events are for key behavior, not for discovering text truth.
+
+Figure~\ref{fig:text-document-model} shows the document-shaped view of a field. The visual control is only one surface. The document owns raw text; the field model may own parse state; validation may create problems; commands may read whether the field is committable. Once these facts have separate owners, the UI can show the user's current text without corrupting the last valid value.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\textDocumentFigure}
+\caption{A text field is a view over a document, and a Corusco field model gives semantic editing state a separate owner. The important fact is not only the characters, but also whether those characters can become a meaningful value.}
+\label{fig:text-document-model}
+\end{figure}
+
+Swing supplies several document implementations and text components. \api{JTextField} is for single-line editing. \api{JFormattedTextField} adds formatting and commit behavior, although many applications still prefer explicit form models because commit policy is a workflow decision. \api{JTextArea} is a plain multi-line editor. \api{JTextPane} works with styled documents. \api{JEditorPane} uses editor kits for content types such as plain text, styled text, or HTML.
+
+The document family has its own vocabulary. \api{PlainDocument} stores ordinary text and is commonly used by fields and text areas. \api{StyledDocument} stores text with character and paragraph attributes. \api{DefaultStyledDocument} is the general styled implementation. \api{AbstractDocument} supplies locking, filters, listeners, and element support. \api{Position} represents an offset that moves as text is inserted or removed. \api{Segment} allows efficient character access without always copying text into a new string.
+
+\termdef{Element}{a structural node in a document} is how Swing represents lines, paragraphs, sections, or styled runs depending on the document. Plain documents use a root element with line children. Styled documents use richer structures. Element offsets are model positions, not pixels. They are useful for line trimming, syntax structure, and mapping document regions to views.
+
+\termdef{View}{an object that renders part of a document} is the bridge from model to pixels. A view has preferred spans, paints itself, maps model positions to view shapes, and maps view coordinates back to model positions. Ordinary applications rarely write custom views, but knowing that views exist explains line wrapping, styled paragraphs, HTML rendering, bidirectional layout, and caret geometry.
+
+\termdef{EditorKit}{the bundle that supplies document creation, actions, and a view factory for an editing mode} is the next level up. A full editor kit is a serious extension point, not a color hook. It becomes relevant when a text component needs a coherent content type: custom parsing, custom actions, custom views, serialization, and perhaps a specialized document.
+
+\begin{principlebox}{document first}
+For nontrivial text behavior, ask which layer owns it. Content mutation belongs near the \api{Document}; local syntactic constraints belong in a \api{DocumentFilter}; transient decorations belong in a \api{Highlighter}; persistent style may belong in a \api{StyledDocument}; key behavior belongs in actions and input maps; semantic validation belongs outside the widget.
+\end{principlebox}
+
+The architecture pays for itself whenever text is not trivially valid. A date field may temporarily contain \api{2026-}. A decimal field may contain \api{-} or an empty string while the user edits. A search field may contain a query that is syntactically valid but still running. A log viewer may append text continuously but keep only recent lines visible. A syntax editor may derive color from content without turning colors into user-authored text.
+
+Figure~\ref{fig:text-validation-state} shows this second truth: validation is not merely a red border around \api{getText}. The visible text, parse result, validation problem, tooltip, field state, and command enablement form a small system. This is exactly the kind of system that becomes brittle when listeners are the only architecture.
+
+\api{JTextComponent} also arrives with a mature action vocabulary. Cut, copy, paste, select all, delete previous, move caret, extend selection, and insert content are actions, not random key events. A screen-level command should cooperate with that vocabulary. If an application command steals a shortcut while a text field has focus, the user experiences the screen as hostile even if the command architecture is otherwise elegant.
+
+\api{JFormattedTextField} deserves a fair place in the discussion. It can be useful when a field has a compact formatting rule and a clear commit policy. Its difficulty is that commit timing, invalid intermediate text, focus behavior, and semantic validation are workflow decisions. For many business forms, an explicit field model makes those decisions more visible and more testable than burying them in formatter configuration.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\textValidationFigure}
+\caption{Validation state around text should preserve raw input. A parse failure is a structured state with a target, message, and visual treatment, not a reason to destroy what the user typed.}
+\label{fig:text-validation-state}
+\end{figure}
+
+\begin{examplebox}{Text figures and bindings}
+The screenshots in this chapter are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. Figures~\ref{fig:text-document-model}, \ref{fig:text-validation-state}, and~\ref{fig:text-mutation-pipeline} are generated Swing panels. The relevant runnable binding examples are \api{SwingBindingExample} and \api{BehaviorExample}; the screenshot harness is \screenshotHarnessExample. Class names are cited deliberately so the PDF does not contain fragile wrapped paths.
+\end{examplebox}
+
+Text also has layout consequences. A \api{JTextField} computes a preferred size from its columns, font, margin, border, and UI delegate. A \api{JTextArea} inside a scroll pane contributes scrollable behavior. A text pane may become expensive to lay out when it contains many styled paragraphs. The later \miglayout{} chapter can align fields beautifully only if these components report honest sizes and are placed in sensible scrolling containers.
+
+The phrase "small document system" is therefore not an attempt to make simple fields sound grand. It is a warning that text editing has more states than a string variable suggests. The more languages, validation rules, undo commands, background searches, and accessibility requirements the application has, the more valuable Swing's text architecture becomes.
+
+Choosing the right text component is the first design decision. A
+\api{JTextField} is not a short \api{JTextArea}; it has single-line editing
+semantics, horizontal scrolling, action behavior for Enter, and a preferred
+size tied to columns. A \api{JTextArea} is not a cheap document editor; it is a
+plain multi-line component whose view can wrap lines and whose useful home is
+usually a \api{JScrollPane}. A \api{JTextPane} is not a colorful text area; it
+is a styled-document surface. A \api{JEditorPane} is not a web browser; it is a
+component backed by an editor kit for a content type. Each choice brings an
+editing model, action set, layout behavior, and performance profile.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.22\linewidth}X X}
+\toprule
+Component & Best ordinary use & Common misuse\\
+\midrule
+\api{JTextField} & Single-line form values, search fields, compact command input. & Using key listeners for validation or treating Enter as always Save.\\
+\api{JFormattedTextField} & Compact format/commit rules with clear workflow policy. & Rejecting useful intermediate input or hiding commit timing in formatter setup.\\
+\api{JTextArea} & Plain multi-line notes, comments, and simple text blocks. & Giving it a giant preferred height instead of a scroll pane.\\
+\api{JTextPane} & Styled text, severity-colored logs, simple rich text, derived presentation. & Storing unbounded logs with unbounded undo and style history.\\
+\api{JEditorPane} & Content-type driven editing or viewing through an \api{EditorKit}. & Expecting full browser behavior or using HTML for ordinary layout.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The component choice should appear in examples. A form field example should use
+a field and a form model. A notes field should use a text area in a scroll pane
+with sensible growth constraints. A log example should state its retention
+policy before showing colors. A syntax example should say whether the color is
+document content, derived style, or transient highlight. These distinctions are
+not pedantic. They prevent a reader from copying a convenient component into a
+workflow where its hidden contract is wrong.
+
+Documents can be shared, but sharing is a serious statement. Two components may
+view the same document when the product genuinely wants two views of one text
+model: perhaps a plain editor and a preview-adjacent source pane. Sharing a
+document between two fields because it was convenient is usually wrong. Caret,
+selection, focus, undo, validation, and command routing remain component
+concerns even when content is shared. A shared document needs a shared
+ownership story and separate presentation policies.
+
+Documents can also be replaced. A component may start with an empty document,
+then receive a loaded document after a file opens. Replacement should be
+deliberate because listeners, filters, undo managers, document properties, and
+bindings may be attached to the old document. If a binding listens to the
+document, and the component replaces the document, does the binding reattach?
+If an undo manager listens to the old document, is its history cleared? If a
+\api{DocumentFilter} constrained the old document, is the new one constrained?
+These questions belong in construction code, not in bug reports.
+
+The document can carry properties, but properties should not become a hidden
+application database. A document property can be useful for editor-kit state,
+file metadata, or local rendering hints. Semantic form state should live in the
+form model. Validation problems should live in structured problem state. Help
+topics and resource keys should live in descriptors or component metadata. A
+document property is easy to set and hard to discover later.
+
+Finally, do not forget that Swing text components already install many actions.
+Cut, copy, paste, delete previous, delete next, move by word, select by word,
+select all, insert break, and notify action are part of the component's
+keyboard behavior. A screen command should cooperate with these actions. If the
+application replaces text component maps or steals common accelerators, it
+undoes decades of platform convention in one line of code.
+
+\section{Mutation, Filters, Highlights, and Undo}
+
+\termdef{Document event}{a notification that text or attributes changed in a document} is what ordinary observers receive after a mutation has happened. A \api{DocumentListener} can update status text, schedule validation, mark a form dirty, or refresh a preview. It should normally not perform another immediate mutation of the same document, because nested document changes are hard to reason about and can damage undo behavior.
+
+\termdef{Document filter}{an object that intercepts attempted document mutations before they are applied} is the tool for fast local mutation policy. A filter sees insert, remove, and replace operations through \api{DocumentFilter.FilterBypass}. It can reject, transform, or forward the mutation. Maximum length, simple character restrictions, uppercase conversion, and protected regions are filter-shaped problems.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\textMutationFigure}
+\caption{A text edit passes through several owners. Filters run before mutation, the document owns text and positions, listeners observe events after mutation, and highlighters or undo managers add presentation and history without pretending to be the document.}
+\label{fig:text-mutation-pipeline}
+\end{figure}
+
+Figure~\ref{fig:text-mutation-pipeline} shows why a text component cannot be
+reviewed as a string box. The selected text, highlighted parse problem, caret
+position, document events, undo history, and field model are related but
+separate. A paste operation may be filtered before it enters the document. A
+listener may mark a form dirty after the document changes. A highlighter may
+paint a range without changing content. An undo manager may remember the user
+edit while derived visual decoration stays out of the user's undo path.
+
+\begin{lstlisting}[caption={A DocumentFilter that enforces a maximum number of characters.}]
+public final class MaxLengthFilter extends DocumentFilter {
+    private final int maxLength;
+
+    public MaxLengthFilter(int maxLength) {
+        this.maxLength = maxLength;
+    }
+
+    @Override
+    public void insertString(FilterBypass fb, int offset,
+                             String text, AttributeSet attrs)
+            throws BadLocationException {
+        replace(fb, offset, 0, text, attrs);
+    }
+
+    @Override
+    public void replace(FilterBypass fb, int offset, int length,
+                        String text, AttributeSet attrs)
+            throws BadLocationException {
+        Document doc = fb.getDocument();
+        int nextLength = doc.getLength() - length + (text == null ? 0 : text.length());
+        if (nextLength <= maxLength) {
+            super.replace(fb, offset, length, text, attrs);
+        }
+    }
+}
+\end{lstlisting}
+
+The filter above is intentionally local and synchronous. It does not call a database, open a dialog, or ask another screen for permission. Filters run inside the document mutation path. A slow filter makes typing slow. A filter that displays UI during mutation creates reentrancy hazards. A filter that reaches into component focus state is usually mixing layers.
+
+Filters should also preserve ordinary editing expectations. Paste should behave like replacement, not like a series of unrelated keystrokes. Selection replacement should remove selected text and insert the accepted replacement. If a filter transforms text, it should let the document and caret machinery perform the mutation rather than manually manipulating the component after the fact.
+
+A filter should be written against document operations, not against keyboard
+stories. The same \api{replace} call may represent typing one character,
+pasting a paragraph, replacing a selection, an input method committing text, an
+undo operation replaying content, or application code setting a value. A filter
+that assumes every insert is one typed character will fail as soon as the user
+pastes from a spreadsheet or accepts composed text from an input method. Review
+filters with paste and replace first; single-character typing is the easy case.
+
+Rejecting a mutation silently can be correct for a maximum length field and
+confusing for almost everything else. If a filter refuses characters, the user
+may need feedback. A beep, inline hint, problem state, or status message may be
+appropriate depending on the workflow. The filter itself should remain small;
+it can reject the mutation and publish a local fact, but it should not become a
+dialog controller. A filter that opens a modal explanation during document
+mutation is a reentrancy trap.
+
+Transformation filters need an undo policy. Uppercasing input as it enters the
+document is one user edit if the user typed one character. Reformatting a whole
+field after every keystroke can produce a stream of surprising edits and caret
+jumps. Protecting fixed prefix text in a template may require a navigation
+filter as well as a document filter. A filter changes the user's editing
+experience, not only the stored characters, so test selection, caret position,
+undo, and paste after every nontrivial filter.
+
+For numeric and date fields, a document filter is often the wrong first tool.
+Many syntactically incomplete states are useful intermediate input:
+\api{-}, \api{1.}, \api{2026-}, an empty required field, or a locale-specific
+decimal separator. A filter that rejects those states may force users to edit
+in unnatural order. A field model with raw text and parse state can preserve
+intermediate input while keeping the semantic value safe. Use a filter for
+structural constraints that are truly local, such as maximum length or
+forbidden control characters; use parsing and validation for meaning.
+
+\termdef{Navigation filter}{an object that intercepts caret movement} is a less common but useful companion. It is appropriate for masked fields, template editors, protected regions, and structured text where some positions should not be reachable. If the user cannot place the caret somewhere, the protected region should be visible or otherwise understandable. Invisible navigation restrictions feel like broken input.
+
+Do not solve validation by trapping the caret or focus. A user must be allowed to leave an invalid field in many workflows: to copy information, inspect another field, cancel a dialog, or correct a dependency elsewhere. Focus traps are a last resort for specialized controls, not a general validation strategy. Validation state should be presented and commands should reflect committability.
+
+\termdef{Highlighter}{a view decoration mechanism for text ranges} is the right tool for transient marks such as search results, spell-check underlines, current execution line, current search match, or temporary diagnostics. A highlighter paints over the view without changing the document content. That distinction is essential for undo, save/load, copy/paste, and semantic equality.
+
+\begin{lstlisting}[caption={Adding search highlights without modifying the document.}]
+Highlighter highlighter = textPane.getHighlighter();
+Highlighter.HighlightPainter painter =
+        new DefaultHighlighter.DefaultHighlightPainter(new Color(255, 230, 120));
+
+for (Range match : matches) {
+    highlighter.addHighlight(match.start(), match.end(), painter);
+}
+\end{lstlisting}
+
+Search highlights should be managed as a group. If the query changes, remove the old group and install the new group. If a background search is running, associate results with a generation number so stale results do not paint after the user has already typed another query. The stale-result problem is not unique to tables; text search has the same race in a different costume.
+
+For many highlights, performance matters. Adding thousands of highlights on every keystroke can be expensive. Incremental search, delayed update, viewport-limited painting, or a custom layered painter may be more appropriate. A text component can hold substantial content, but every decoration has a cost in event delivery and painting.
+
+Highlight ownership should be explicit. Search highlights belong to the search
+query generation. Spell-check highlights belong to a spell-check analysis
+generation. Parse-error highlights belong to diagnostics for a document
+version. Current-line highlights belong to caret state. Selection belongs to
+the component. If all of these marks are added to the same highlighter without
+owners, removing one group becomes guesswork. Store highlight tags by owner and
+remove the group that changed.
+
+Transient highlights should not become document content. A search result is
+not part of a saved note. A current execution line is not part of a log file.
+A spell-check underline is not the user's text. \api{Highlighter} preserves
+that distinction because it decorates the view. A \api{StyledDocument}
+attribute may be content or presentation; the program has to say which. The
+wrong choice appears later as broken copy/paste, strange undo steps, or saved
+files that contain derived colors.
+
+Highlighters also have geometry. A range may be partly visible, wrapped across
+several visual lines, or hidden outside the viewport. A painter that assumes
+one rectangle per range will fail for wrapped text and bidirectional text. The
+default painters know the view machinery. Custom painters should use the
+shapes provided by the text component rather than inventing line geometry from
+font metrics alone.
+
+\termdef{Undoable edit}{a document change represented as an object that can undo and redo itself} is how Swing text integrates with undo. Documents fire \api{UndoableEditEvent}s. An \api{UndoManager} stores edits and can drive actions. The wiring is short, but the policy is not: undo should match user intention, not internal implementation detail.
+
+\begin{lstlisting}[caption={Basic document undo wiring.}]
+UndoManager undoManager = new UndoManager();
+document.addUndoableEditListener(undoManager);
+
+Action undoAction = new AbstractAction("Undo") {
+    @Override public void actionPerformed(ActionEvent e) {
+        if (undoManager.canUndo()) {
+            undoManager.undo();
+        }
+    }
+};
+\end{lstlisting}
+
+Typing a word may be grouped into a single user edit. A paste should normally be one edit. An auto-format operation should usually be one edit. A syntax highlighter that changes attributes after every keystroke should not add visible undo steps before the user's text edits. This is where many simple styled editors first feel unprofessional.
+
+Styled attributes can represent either data or presentation. Bold text in a rich text document is user-authored data and should be saved, copied, and undone. Syntax color derived from parsing Java source is presentation and usually should not be saved as document content or appear as a user undo step. The API can carry both; the architecture must know which kind it is carrying.
+
+An undo manager also needs a lifetime and a size policy. A small form field may
+clear undo history when the form loads a new model. A document editor may keep
+history until the document closes. A streaming log viewer often should not keep
+user undo at all. A generated report viewer may be read-only and need no undo
+history. Leaving an \api{UndoManager} attached to a long-lived, growing
+document by default is an easy way to keep old text alive.
+
+Grouping edits is where user intention becomes visible. Typing a word,
+accepting a paste, auto-indenting a line, formatting a value on commit, or
+renaming a selected token can each be one logical edit. Swing's low-level edit
+events may be smaller. A serious editor may need compound edits, coalescing,
+and explicit boundaries around command operations. A business form may need
+only document-level undo while the dialog is open. The correct policy depends
+on the promise the UI makes to users.
+
+Derived edits should usually stay out of the user's undo stack. If syntax
+coloring changes attributes after every text edit, Undo should not first remove
+the color and only later remove the user's character. If validation decoration
+adds a highlight, Undo should not undo validation. If a field formats accepted
+text on commit, the formatting may or may not be part of the user edit
+depending on the product. The chapter's rule is to decide, not to inherit the
+answer accidentally from whichever listener fired.
+
+\begin{detailbox}{listeners after, filters before}
+Use a \api{DocumentFilter} to control a mutation before it enters the document. Use a \api{DocumentListener} to observe the result and update other state. A listener that rewrites the same document on every event creates recursion and undo surprises; a filter that performs slow validation makes typing sluggish.
+\end{detailbox}
+
+\api{Position} is the forgotten helper in many text features. A raw integer offset is true only until text before it changes. A position tracks a location as edits occur. Bookmarks, parse diagnostics, search results, and caret-adjacent markers often want positions rather than integers. Even then, the feature must define its bias: should the marker stay before inserted text, after inserted text, or attached to a semantic token?
+
+There are times when raw offsets are enough. A batch operation that computes all ranges from a stable snapshot and immediately applies highlights may use integers safely. A long-lived diagnostic reported by a background analyzer probably should not. The useful rule is to ask whether the text can change between computing the offset and using it. In editors, the answer is usually yes.
+
+Document versions complement positions. A \api{Position} can move with edits,
+but it cannot by itself prove that a background diagnostic still describes the
+same text. A parser can analyze snapshot version 17 and return diagnostics
+against offsets in that snapshot. When results return to the EDT, the current
+document may be version 19. The screen can discard the results, translate them
+through an edit history, or rerun analysis. Pretending that old offsets are
+still exact is how stale diagnostics underline the wrong word.
+
+Markers also need retirement. If a log viewer trims old lines, positions inside
+trimmed content should not keep semantic markers alive forever. If a user
+deletes the paragraph containing a warning, does the warning disappear, attach
+to the insertion point, or move to a summary? Each answer can be correct for a
+different feature. A code diagnostic may disappear when its range is deleted.
+A bookmark may move to the nearest surviving position. A search result may be
+discarded when the query changes. Name the policy beside the marker owner.
+
+Line and column numbers are another offset trap. They are convenient for users
+and logs, but the document stores offsets. Converting between offset and line
+requires the document's element structure or an index. Wrapped visual lines
+are different again. A gutter that displays document line numbers should use
+document line elements. A caret location in a wrapped paragraph should use the
+view mapping. A parser diagnostic from an external tool may arrive as
+line/column and must be translated against the same snapshot it analyzed.
+
+Threading belongs in this section because document mutation is still UI state mutation when the document is attached to a live component. \api{AbstractDocument} has internal locking, but that does not give application code permission to mutate a live document from arbitrary worker threads. Keep live document mutation on the EDT unless you have deliberately isolated the model and know exactly which objects observe it.
+
+For background loading, parse or read away from the EDT, then publish batches to the EDT. Avoid one \api{invokeLater} per line. A background reader can collect decoded records into a chunk, then the EDT appends the chunk, trims old content, updates search markers, and repaints once. This turns a stream of tiny UI events into a controlled editing transaction.
+
+When analysis runs away from the EDT, pass it a snapshot. A snapshot may be a string, a list of immutable line records, a document version plus extracted text, or a file range. It should not be a live \api{Document} observed by a component. The worker can return diagnostics against the snapshot, and the EDT can decide whether those diagnostics still apply to the current document version.
+
+\api{Segment} is useful when code needs to read document content without repeatedly allocating strings. It is not a magic performance switch, but it reminds us that documents are model objects with access patterns. A tokenizer that calls \api{getText} for every character range may allocate far more than necessary. A tokenizer that reads stable chunks from a snapshot is usually easier to reason about.
+
+\section{Styled Text, Logs, and Large Content}
+
+\termdef{Styled document}{a document whose text carries character and paragraph attributes} is appropriate for rich text, severity-colored logs, simple syntax coloring, and formatted reports. \api{StyledDocument} gives the program a model-level way to represent attributes, but it also makes mutation more expensive. Every style change is a document change, and every document change may affect layout, undo, and listeners.
+
+\begin{lstlisting}[caption={Applying a severity style to an appended log line.}]
+public void appendLogLine(String text, Severity severity) throws BadLocationException {
+    StyledDocument doc = textPane.getStyledDocument();
+    Style style = textPane.getStyle(severity.name());
+    int start = doc.getLength();
+    doc.insertString(start, text + "\n", style);
+    trimIfNecessary(doc);
+}
+\end{lstlisting}
+
+A log viewer is the common styled-document trap. It begins as a convenient \api{JTextPane}: append a line, choose a color, scroll to the end. It works in the demonstration. In production it runs all day, stores millions of characters, keeps undo history, maintains styled element structures, and becomes the largest object in the heap. The bug is not in \api{JTextPane}; the missing requirement is retention.
+
+Every live log view needs a bound. The bound may be maximum lines, maximum characters, maximum age, or a visible tail backed by an external file. If users need full history, store full history outside the live document and provide search or export commands. The Swing document should contain what the UI can use interactively.
+
+\begin{lstlisting}[caption={Trimming a document by line count using the root element.}]
+static void trimToLineCount(Document document, int maxLines)
+        throws BadLocationException {
+    Element root = document.getDefaultRootElement();
+    int extra = root.getElementCount() - maxLines;
+    if (extra <= 0) {
+        return;
+    }
+    Element lastRemoved = root.getElement(extra - 1);
+    int end = lastRemoved.getEndOffset();
+    document.remove(0, end);
+}
+\end{lstlisting}
+
+The trim operation uses the root element because line boundaries are better than arbitrary character cuts. Removing half of a line may preserve memory but damage user understanding. In a styled document, verify the element model before assuming plain-line behavior. In a wrapped text area, remember that visual lines and document lines are not the same thing.
+
+Trimming has marker consequences. Search highlights, diagnostics, bookmarks, and positions inside the removed region must be retired or migrated. The scroll position may need adjustment so the viewport does not jump unexpectedly. If the caret was in the trimmed region, the component needs a sensible new caret position. Retention is therefore not one call to \api{remove}; it is a policy.
+
+A production log view should also bound undo. Users rarely need to undo incoming log records. If the document is read-only, disable editing and avoid installing a general undo manager. If the user can type annotations, separate user edits from incoming stream appends. A single undo stack for machine-generated text and user-authored text usually produces odd behavior.
+
+\api{JTextArea} and \api{JTextPane} can handle substantial documents, but they are not virtualized million-line editors. View layout, document events, highlights, styled attributes, wrapping, and undo history all scale with content. A 500 MB file requires a file strategy, an index strategy, and a rendering strategy. Putting it into a \api{JTextArea} merely postpones architecture until the program stalls.
+
+The first large-content question is whether the product needs an editor, viewer, tailer, or search interface. An editor must support mutation, undo, selection, caret navigation, input methods, accessibility, and saving. A viewer may render immutable chunks. A tailer may show recent records. A search interface may build an external index and show snippets. These are different systems that happen to display text.
+
+Syntax highlighting has the same scaling problem in miniature. Highlighting an entire file after every keystroke is tolerable only for small files. Incremental tokenization, dirty ranges, delayed analysis, cancellation, and stale-result suppression become necessary as files grow. Syntax colors are often presentation, so they should not pollute undo or create unnecessary document events.
+
+The tokenizer boundary is important. A tokenizer may read a snapshot of the
+document, produce tokens and diagnostics away from the EDT, and return a result
+tagged with a document version. The EDT can then apply derived highlights if
+the version still matches. A tokenizer should not hold a live document read lock
+for long periods while the user is typing. Nor should it mutate styled
+attributes from a worker thread. Treat tokenization as analysis of a snapshot,
+then apply presentation state at the Swing boundary.
+
+Very large files need a different promise. A virtual viewer may show only the
+visible chunk plus a cache around it. It may use a custom component, a table-like
+line model, or a paged document abstraction. It may offer search over an
+external index rather than over a live Swing document. Such a viewer can still
+look like text to the user, but it is no longer an ordinary \api{JTextArea}
+containing all characters. The product should say whether editing, selection,
+copy, search, line numbers, and accessibility apply to the whole file or only
+the loaded window.
+
+A tailing log has yet another promise. New records arrive at the end. The user
+may be following the tail or inspecting older text. If the user is at the end,
+new records can keep the view pinned to the bottom. If the user has scrolled
+up, new records should usually not steal the viewport. A small "new records"
+indicator may be better than forcing scroll. This is not only scroll-bar
+polish; it is respect for the user's current reading task.
+
+Severity coloring in logs should be derived from records, not from ad hoc text
+search after append. A log record has timestamp, severity, source, message, and
+perhaps structured fields. The styled document is a presentation of those
+records. If the program later exports logs, filters by severity, or copies a
+selected record, the structured record should still exist. Styling plain text
+after the fact may be adequate for a toy console and limiting for an operations
+tool.
+
+Line numbers are a useful example of composition. They are often implemented as a row header view in a \api{JScrollPane}, not painted inside the text component. The gutter gets its own width, font metrics, repaint policy, and coordinate system. It can listen to document and viewport changes while leaving the document content alone.
+
+\begin{lstlisting}[caption={Installing a line-number component as row header.}]
+JTextArea area = new JTextArea();
+JScrollPane scroll = new JScrollPane(area);
+scroll.setRowHeaderView(new LineNumberView(area));
+\end{lstlisting}
+
+A robust line-number view maps document positions to view coordinates. It must handle font changes, wrapped lines, document insertions, removals, viewport scrolling, and Look-and-Feel changes. If line wrapping is enabled, document line 10 may occupy several visual rows. The gutter must decide whether to number document lines, visual rows, or paragraphs.
+
+Scrolling containers deserve direct attention. A text area in a scroll pane is not the same thing as a text area with a large preferred size. The scroll pane owns the viewport, scroll bars, row and column headers, and policies for showing them. The text component provides scrollable increments and preferred viewport size. Layout should normally give growth to the scroll pane, not to a naked text area.
+
+This is where the component chapter and \miglayout{} chapter meet the text chapter. The text component reports preferred geometry. The scroll pane clips and scrolls. \miglayout{} assigns the scroll pane a growing cell. If any one of those three lies, the screen looks wrong. A notes area that never grows may be a layout-row problem; a text component that grows without scrolling may be a missing scroll pane; a gutter that drifts may be a coordinate-conversion problem.
+
+\api{Scrollable} behavior affects how the viewport asks a component to move. Standard text components already implement the behavior users expect: unit increments by line or character-ish movement, block increments by viewport-sized movement, and tracking policies that decide whether the view should stretch to the viewport. Custom text-like components inside scroll panes should study that contract before inventing scroll math.
+
+Column headers and row headers are not only for tables. A text editor can put a ruler, search status, breakpoint gutter, diff marker lane, or folding controls around the viewport. The important rule is ownership: headers and gutters should have their own component lifecycles and coordinate conversions. Painting every surrounding concern inside the text component makes repainting and accessibility harder.
+
+HTML in \api{JEditorPane} is useful for modest rich display, help fragments, and simple formatted text. It is not a browser. Large, script-heavy, CSS-heavy documents belong elsewhere. Treat Swing HTML as a convenient editor-kit format with Swing-era capabilities. If the product needs browser behavior, embed or launch a browser component deliberately rather than stretching \api{JEditorPane} beyond its design.
+
+The design discipline for styled and large text is to choose the smallest architecture that preserves the user's mental model. A bounded log tail should feel continuous without storing forever. A search result should mark matches without rewriting content. A rich note editor should save user-authored styles. A code editor should keep derived syntax color out of content. The APIs do not decide these policies; the application does.
+
+\section{International Text, Input Methods, and Visual Positions}
+
+\termdef{Offset}{a position in a Swing document model} is not a user-perceived character. In Java text, the representation involves UTF-16 code units. A Unicode code point may require two \api{char} values. A grapheme cluster may contain a base character plus combining marks. An emoji sequence may contain several code points joined into one visible symbol. A glyph is what a font draws. These are different units.
+
+The common bug is to delete the previous "character" by subtracting one from the caret offset. That can split a surrogate pair, detach a combining mark, or produce surprising behavior around composed text. The standard text actions know more about text boundaries than most application code. Use them unless the product truly needs custom text semantics.
+
+\api{BreakIterator} is often a better starting point than hand arithmetic when
+code must reason about words, sentences, or character-like boundaries. It is
+locale-aware and expresses the fact that boundary decisions are not the same in
+every language. It still does not turn a custom component into a full text
+editor. It is one tool for text analysis; caret movement, selection painting,
+and input-method composition remain component responsibilities.
+
+Bidirectional text adds another distinction. Logical order is document order. Visual order is the order in which glyphs appear on screen. In mixed left-to-right and right-to-left text, pressing the left arrow may not mean subtracting one from the model offset. Caret movement, selection, and hit testing should rely on text component navigation or layout APIs that understand bidi.
+
+\termdef{Input method}{a system that lets users compose text before committing characters to the document} is essential for East Asian languages, dead keys, accents, and many non-ASCII workflows. A key listener that assumes key presses are characters breaks input methods. Standard Swing text components cooperate with input methods. Custom text-like components must either delegate to standard components or implement the relevant contracts seriously.
+
+Composed text is not yet ordinary committed text. A validation rule that fires on every intermediate composition may distract the user or reject text before the input method has finished. Field models and validation behaviors should distinguish raw editing from committed form acceptance. Sometimes the right behavior is to show gentle parse state while leaving final validation for commit or focus loss.
+
+Input method support is one reason custom text-like components are expensive.
+The component must know where composed text appears, where candidate windows
+should be placed, which committed characters enter the document, and how caret
+geometry maps to screen coordinates. A custom painted field that handles only
+\api{keyTyped} events may work for ASCII typing and fail for users whose normal
+input path composes text. Reusing a standard text component is often the most
+internationalization-friendly decision a Swing application can make.
+
+Locale matters for parsing and formatting. Decimal separators, grouping separators, date formats, calendars, and directionality vary. A converter should document null and empty-string handling, but it should also be clear about locale. A field that accepts \api{1,25} in one locale and rejects it in another should do so by policy, not by accident.
+
+Text measurement also changes with font fallback. A string may contain characters not supported by the primary font. The rendering system may use fallback fonts with different metrics. A custom component that assumes one font can measure every glyph precisely is optimistic. For ordinary labels, \api{FontMetrics} is often enough. For precise caret positions, bidi, and shaping, use text layout APIs or delegate to Swing text views.
+
+Accessibility overlaps internationalization. A screen reader needs meaningful accessible names and descriptions. A validation state conveyed only by red underline may be unavailable. A custom editor should expose role, value, selection, caret, and state as appropriate. If that sounds like too much work, it is a signal to reuse a standard text component whenever possible.
+
+Keyboard shortcuts must respect text editing conventions. Global commands should not steal \api{Ctrl+A}, \api{Ctrl+C}, \api{Ctrl+V}, or platform equivalents while a text component has focus. Swing's input-map hierarchy lets commands be scoped by focus condition. Use that structure. A command palette shortcut that breaks paste in a text field will be remembered longer than the clever architecture behind it.
+
+Focus policy is also a text issue. A form may want to select all text on first focus, preserve caret on later focus, commit on focus loss, or validate on focus loss. These are product decisions. Implement them deliberately through focus listeners or behaviors, and test keyboard navigation. Do not bury them inside a converter or document filter.
+
+Wrapped text complicates line concepts. A document line ends at a newline. A visual line ends where layout wrapped. A paragraph may span several visual lines. A row header that numbers document lines should not be surprised when the viewport shows line 4 in three visual rows. Search navigation should decide whether "next line" means document line or visual row.
+
+The model-to-view and view-to-model conversions in text components exist for these reasons. They answer questions such as "where is offset 57 drawn?" and "which model position is under this point?" These conversions can return shapes, account for wrapping, and depend on the current view. They should be preferred over arithmetic when mapping text to pixels.
+
+Those conversions are also stateful with respect to layout. A component must be
+realized, sized, and laid out before every position has a meaningful view
+shape. A test that calls model-to-view on a zero-size text area is testing
+nothing useful. A gutter that caches rectangles across font changes or wrapping
+changes will drift. A search highlight captured before a layout change may need
+to repaint after the view recomputes. Text geometry is current-view geometry,
+not timeless document metadata.
+
+Directionality affects screenshots as well as interaction. A figure that
+contains only short English text will not reveal whether labels, carets,
+selection, validation bubbles, and gutters survive longer words or mixed
+direction runs. Text-oriented screenshots should include at least one long
+localized label or message during review. The goal is not to demonstrate every
+language in the book; it is to keep the examples honest about geometry.
+
+High-DPI rendering and font scaling matter because text is read, not admired. A custom gutter, underline, or inline icon must align with current font metrics and scale. Fixed pixel offsets that look acceptable at 100 percent may drift at 150 percent. The Java2D chapter covers the rendering machinery; the text chapter's rule is simpler: measure with the current context and leave space for the text the user actually sees.
+
+Testing international text does not require a complete translation project. Keep a small test set: accented Latin text, Czech or German labels with longer words, Arabic or Hebrew mixed with English, Japanese composition if an IME is available, emoji with skin-tone or joiner sequences, and combining marks. Run caret, deletion, selection, search, validation, and screenshot checks over that set.
+
+\begin{pitfallbox}{character equals char}
+Java \api{char} is a UTF-16 code unit, not a user-perceived character. Surrogate pairs, combining marks, emoji sequences, and bidirectional layout all break simple offset arithmetic. For many editor commands, use existing text component navigation or boundary analysis rather than subtracting one from the caret offset.
+\end{pitfallbox}
+
+The pleasant surprise is that ordinary Swing text components already solve many of these problems. The application gets into trouble mostly when it bypasses them with key listeners, offset arithmetic, custom drawing, or premature rejection of composed input. Respect the text package before replacing it.
+
+\section{Corusco Field Models and Text Bindings}
+
+Corusco enters the text story at the presentation boundary. Swing's \api{Document} owns editing mechanics: characters, positions, filters, undoable edits, input methods, and caret interaction. A Corusco \api{TextFieldModel} owns screen meaning: raw text, parsed value, parse state, dirty state, touched state, and parse problems. These two objects should cooperate, not compete.
+
+The key idea from the Corusco Javadocs is that a user must be able to type invalid intermediate input without corrupting the last meaningful semantic value. A decimal field may temporarily contain \api{-}. A date field may temporarily contain an incomplete date. A required string may temporarily be blank. The raw text is real user input even when it is not yet a valid domain value.
+
+\termdef{Raw text}{the exact editable string currently shown to the user} is therefore separate from \termdef{semantic value}{the typed Java value a form may commit}. Parse success updates the semantic value and clears parse problems. Parse failure keeps the raw text, preserves the previous semantic value, marks the field touched, and exposes a parse problem targeting the field key.
+
+\termdef{String converter}{a Swing-free object that parses raw text into a semantic value and formats a semantic value back into text} is the boundary between editing and typing. Parsing asks whether text can become a value. Formatting asks how an accepted value should appear when the model resets or initializes. Null and empty-string behavior must be explicit, because most form bugs hide there.
+
+\begin{lstlisting}[caption={A Corusco text field model bound to a Swing field.}]
+TextFieldModel<CustomerEdit, BigDecimal> creditLimit =
+        new TextFieldModel<>(CREDIT_LIMIT, BigDecimal.TEN,
+                Converters.bigDecimal(EmptyTextPolicy.REJECT));
+
+JTextField creditLimitField = new JTextField();
+SubscriptionScope scope = new SubscriptionScope();
+scope.add(BindingFactory.textField(creditLimitField, creditLimit));
+\end{lstlisting}
+
+The binding installs a document listener, initializes the component from the model's raw text, propagates user document changes to the model with \api{ChangeOrigin.USER}, and removes both listener and subscription when closed. That lifecycle detail is not ornamental. Text fields appear in dialogs, tabs, popups, and generated forms; bindings that do not close become leaks or duplicate event paths.
+
+The feedback guard inside a binding is equally important. A user edit changes the document, which changes the model, which may notify observers. A model reset changes the raw text, which changes the document. Without a guard, model-originated updates can loop back as user-originated edits. Corusco's binding machinery gives this loop a named owner instead of relying on fragile listener flags in every screen.
+
+Parse is not validation. A converter for \api{BigDecimal} should report that \api{abc} cannot become a decimal. It should not decide that the credit limit is too high for a customer's risk class. That second question is semantic validation and belongs to validators or rule sets after a semantic value exists. Separating these questions makes messages clearer and state easier to test.
+
+\api{ProblemSet} is the bridge from form state to visual treatment. A parse problem may become an inline message, tooltip, validation border, dialog summary, disabled OK button, table-cell marker, or test assertion. The text field should not directly decide all of those surfaces. It should expose structured state that behaviors can present consistently.
+
+\begin{coruscobox}{raw text without semantic damage}
+Corusco \api{TextFieldModel} preserves the user's raw text while protecting the last valid semantic value. Swing continues to provide the document and editor behavior; Corusco provides parse state, dirty/touched state, typed field identity, problems, and lifecycle-owned bindings. The result is less listener code and fewer accidental commits of invalid text.
+\end{coruscobox}
+
+This model also improves command enablement. The Save command should not parse every component when it needs to know whether it can run. It should observe form state: dirty, touched, parse problems, validation problems, busy state, and permissions. The field can display invalid raw text while the command remains disabled for a structured reason.
+
+Generated forms build on the same idea. An annotated text field can produce a typed \api{TextFieldModel} with a converter, resource keys, component keys, validation rules, and binding companions. Generation does not remove Swing; it removes repetitive wiring around Swing. The generated view still contains \api{JTextField}, \api{JTextArea}, \api{JScrollPane}, labels, and \miglayout{} constraints.
+
+Text areas can participate too. \api{BindingFactory.textArea} has the same raw-text and listener ownership semantics as text-field binding. That does not mean a large log viewer should be a \api{TextFieldModel}. Form text areas such as notes, descriptions, and comments are good candidates. Streaming logs and editor buffers usually need document-specific models and retention policies.
+
+This distinction prevents framework overreach. Corusco field models are excellent when text is an editable representation of a form value. They are not a substitute for a document model in a code editor, a virtualized file viewer, or a streaming console. A library becomes more useful, not less, when it leaves Swing's specialized text machinery in charge of specialized text work.
+
+Validation decoration should be a behavior, not a private border call in every panel. A behavior can observe \api{ReadableValue<ProblemSet>}, install a border or tooltip, restore the original border on close, and keep the visual policy consistent with Look-and-Feel defaults. This is the same ownership rule used in the Look-and-Feel chapter applied to text validation.
+
+Tooltips are another place where structured text state helps. A field may have static help, a current parse problem, a validation problem, a disabled reason for a related command, and perhaps an F1 help topic. A tooltip policy can compose those facts. A screen that calls \api{setToolTipText} from several listeners will eventually lose one of them.
+
+Corusco's change origins matter in text because programmatic changes and user changes have different meanings. A user edit should mark touched state and perhaps dirty state. A system reset should restore baseline text without pretending the user typed it. A model load should update components without firing user-intent workflows. The origin is small metadata with large behavioral consequences.
+
+Origins also make logging and diagnostics more useful. If a field becomes dirty
+because the user typed, the screen may enable Save and mark the field touched.
+If the same raw text changes because a model load arrived, the screen may
+update baseline state and leave touched false. If a reset command restores the
+original value, the screen may clear dirty state without reporting a user edit.
+Without origins, all document changes look alike and every listener has to
+guess why it fired.
+
+Converters should be narrow, deterministic, and Swing-free. They should not
+read component focus, open dialogs, mutate other fields, or query services.
+They parse and format. That discipline makes converter tests cheap and makes
+field behavior predictable. Locale, empty text, trimming, grouping separators,
+scale, and rounding are converter policy. Cross-field rules, permissions, and
+server uniqueness checks are validation or task policy.
+
+Async validation is common around text fields: customer code uniqueness, email
+deliverability hints, address lookup, file path existence, or expensive syntax
+analysis. The text binding should not perform that work inside the document
+listener. It should update raw text and parse state quickly, then a validation
+or task behavior can observe the relevant field, start cancellable work, and
+publish problems or suggestions with generation checks. This keeps typing
+responsive and prevents stale results from decorating newer text.
+
+Touched state and dirty state are different. A field may be touched when the
+user focuses and edits it, even if the final text equals the baseline. A field
+may be dirty after paste, undo, or programmatic user-intent operation. A loaded
+model update may change raw text without making the form dirty. These facts
+matter for validation timing, command enablement, dirty-cancel prompts, and
+testing. A document listener that sets one boolean named \api{changed} cannot
+carry all of them.
+
+Binding text areas deserves a separate policy. A comments field in a customer
+form can be a raw-text field with parse state that is usually trivial. A
+markdown note editor may need document-level undo, preview generation, and
+scroll-state preservation. A log viewer should not be a form field at all.
+Corusco bindings are useful when text represents a form value; specialized
+document models remain useful when text itself is the product.
+
+Generated form companions can remove the most error-prone text wiring:
+component keys, label associations, resource keys, converter construction,
+binding installation, parse-problem targets, and cleanup. They should not hide
+layout, scroll policy, or text-component choice. A generated form that chooses
+\api{JTextArea} without a scroll pane would still be a bad Swing form. The
+generator can make the routine parts consistent; the screen designer still
+owns the interaction policy.
+
+The generated companion should also expose names useful to tests. A test should
+be able to find the credit-limit field by component key, set raw text, assert
+parse state, inspect problem targets, and verify Save enablement. A screenshot
+test should then verify that the same state appears through border, tooltip,
+inline message, or command disabled reason. This ladder from model to pixels is
+the recurring Corusco theme.
+
+\begin{migrationbox}{from document listeners to field models}
+Start with the existing \api{DocumentListener}. Identify the facts it updates: raw preview, parsed value, error label, command enablement, dirty flag, tooltip. Move raw text and parse state into a \api{TextFieldModel}. Move semantic validation into rules that produce \api{ProblemSet}. Bind the Swing document to the model, then bind visual surfaces to named state.
+\end{migrationbox}
+
+Testing becomes simpler after the split. Converter tests do not need Swing. Field-model tests can assert raw text, parse state, problem set, dirty state, and touched state. Swing binding tests can run on the EDT and verify that document changes update the model and model resets update the component. Screenshot tests can focus on visual presentation rather than parsing.
+
+The split also prevents premature formatting. A common annoyance is a field that reformats the user's input on every keystroke: type \api{1.}, and it becomes \api{1}; type a partial date, and it snaps to another shape. Formatting accepted values on reset or commit is usually kinder than formatting every intermediate edit. If a control is truly masked, make that behavior visible and deliberate.
+
+The philosophical rule is practical: Swing should own editing mechanics, Corusco should own presentation meaning, and the domain should receive only committed semantic values. When those layers are clean, a user can type freely, validation can be honest, and a dialog can decide when acceptance is allowed.
+
+This rule also clarifies documentation. A chapter example should show the Swing document mechanics when the topic is filtering, highlighting, undo, or scrolling. It should show Corusco field models when the topic is parsing, validation, dirty state, or form commands. Mixing those examples without naming the boundary teaches readers to put every concern in whichever object they happen to touch first.
+
+\section{Design Drills and Review Rules}
+
+The first review question for any text feature is "which layer owns this behavior?" If a \api{DocumentFilter} calls a service, the layer is wrong. If a \api{DocumentListener} rewrites text on every change, the layer may be wrong. If a renderer parses a field by reading \api{getText}, the layer is wrong. If a form model stores only committed values and cannot explain invalid raw input, the layer is incomplete.
+
+Review thread boundaries next. A live document attached to a component is part of the Swing state graph. Background work may read files, decode bytes, tokenize snapshots, or compute search results. The EDT should apply document mutations in batches. If a worker thread appends directly to a text area because "it is only a model," the same bug from table models has returned in text clothing.
+
+Review retention for every growing document. Logs, consoles, traces, chat transcripts, and generated reports all need a bound or an external store. The review should find the maximum size and the trim boundary. It should also find what happens to highlights, markers, caret, selection, undo history, and scroll position when old content leaves.
+
+Review undo by user intention. Type, paste, format, generated color, automatic indentation, external append, and validation marker are not the same kind of edit. A user pressing Undo should not have to travel through hidden implementation changes before reaching their own text. If styled attributes are involved, decide which attributes are content and which are presentation.
+
+Review input methods and Unicode with humility. The absence of a failing English test proves little. Add text with combining marks, surrogate pairs, and bidirectional runs. Try paste as well as typing. If possible, use an actual IME. If the feature cannot support full editor behavior, narrow its interaction model or reuse a standard component.
+
+Review paste separately from typing. Paste may insert a large string, replace a selection, introduce newlines, include unsupported characters, or arrive from a clipboard format whose text representation is only one choice among several. Filters and converters that behave well for single-character typing often reveal their real policy when the user pastes a messy value from a spreadsheet, browser, or email.
+
+Review scrolling as geometry, not decoration. A multi-line text component in a form should almost always be inside a \api{JScrollPane}. The scroll pane should receive \miglayout{} growth constraints. Gutters belong in row headers or adjacent components with explicit coordinate conversion. Column headers can hold rulers or search bars when appropriate. A text area with a giant preferred height is not a scroll strategy.
+
+Review accessibility as content, not afterthought. A parse problem should be available as text, not only as a border. A required field should have a label association. A custom gutter should not confuse screen readers. A read-only log should be discoverable as read-only. Keyboard commands should be reachable without stealing standard text shortcuts.
+
+Review resource length. Text controls are where localization becomes geometry. A long label may change field alignment. A long validation message may need wrapping. A long tooltip may need a summary and detail. A button row may need different grouping. Screenshots should include realistic long text, not only short English labels that make every layout look better than it is.
+
+The unbounded log viewer drill is worth doing once. Append one hundred thousand lines one by one on the EDT and watch responsiveness. Then append in batches with a retention policy. The difference teaches more than a lecture about event coalescing. It also reveals whether row headers, search highlights, and scroll-to-end behavior survive trimming.
+
+The syntax-highlighting drill is equally useful. Implement a tiny highlighter three ways: \api{StyledDocument} attributes, \api{Highlighter} decorations, and a custom view or painter. Then ask which version affects undo, copy/paste, saving, accessibility, and repaint cost. The answer depends on whether the color is content, presentation, or transient query state.
+
+The offset drill should include uncomfortable text. Put the caret after an emoji sequence, before a combining mark, and inside mixed Arabic-English text. Try delete previous, move left, select word, and search next. If the custom code treats offsets as visible characters, it will fail. The lesson is better learned in a drill than in a production bug report.
+
+The form-field drill is Corusco-shaped. Build a decimal field with a plain document listener that parses on every change, updates an error label, and enables Save. Then rebuild it with \api{TextFieldModel}, converter, problem set, binding, and command state. The second version has more named objects but fewer hidden rules. It is also easier to test without Swing.
+
+\api{EditorKit} deserves one final review question. Are you building a content type, or are you coloring a field? A content type has document creation, actions, views, serialization, paste policy, and perhaps a file format. Coloring a field may need only a highlighter or styled attributes. Choosing the large extension point too early creates a framework that the product then has to maintain.
+
+Screenshot review should include motion through states, not only final appearance. Capture the form before input, after invalid raw input, after parse recovery, with focus on the field, with a disabled command, and with a long localized label. Text screens often fail during transitions: the border appears and shifts the row, the tooltip replaces help text, the caret jumps after formatting, or the scroll pane loses the user's position.
+
+A worked text field lifecycle is a good final rehearsal. The screen opens with
+a domain value, for example a credit limit of \api{120.00}. The converter
+formats that value into raw text. The binding sets the Swing document from the
+model with a system origin. The field is not touched, not dirty, and has no
+parse problem. The Save command remains disabled because the form has not
+changed. Nothing in this state requires a document listener to guess intent.
+
+The user types \api{x} into the field, producing \api{12x0.00} or another
+temporarily invalid raw string. The document changes on the EDT. The binding
+observes the completed mutation, marks a user origin, updates raw text, tries
+to parse, records parse failure, preserves the last valid semantic value, marks
+the field touched, and updates the problem set. The Swing document still
+contains exactly what the user sees. The domain does not receive a bad decimal.
+
+Visual behavior then observes the problem set. It may add a border, inline
+message, tooltip, accessible description, and problem-summary entry. It may
+also repaint only the affected field region. The behavior does not parse text.
+The converter does not install borders. The document listener does not decide
+whether Save is allowed. Several visible consequences appear, but they all
+come from named state.
+
+The Save command observes the form model. It sees that the form is touched and
+has a blocking parse problem. It remains disabled or rejects execution with a
+disabled reason such as "Credit limit is not a decimal." A toolbar button,
+default button, menu item, and shortcut can all show the same state because
+they observe the same command model. No presenter reparses \api{getText}.
+
+The user repairs the value to \api{1200.00}. The document changes again. The
+binding updates raw text, parse succeeds, the semantic value becomes a
+\api{BigDecimal}, and the parse problem disappears. If semantic validation
+allows the value, Save becomes enabled. If a business rule rejects the value,
+the parse problem is gone but a validation problem remains. This distinction is
+the reason the chapter separates parse and validation so firmly.
+
+The user presses Undo. The document restores the previous text according to the
+undo manager's policy. The binding treats this as a user-originated document
+change, recomputes raw text and parse state, and command enablement follows.
+Undo is not a secret back door around the form model. It is another editing
+operation flowing through the same document-to-model boundary.
+
+The user presses Cancel. The dialog decides whether dirty state requires
+confirmation. If the user confirms, the scope closes. The binding removes its
+document listener, validation behavior restores visual state, command adapters
+detach, async validations are canceled or detached, and late results are
+ignored. This final step is where many small examples are silent and many real
+screens leak. Text bindings are subscriptions, and subscriptions need owners.
+
+The same lifecycle can be written for a notes area. The raw text may always be
+syntactically valid, but dirty state, undo, scroll position, accessibility,
+Save enablement, and cleanup still exist. It can be written for a log viewer,
+with the difference that incoming records are not user edits and retention
+trims old content. It can be written for a search field, with the difference
+that async search results need generation checks. Once the lifecycle is named,
+each text feature becomes a variation rather than a new pile of listeners.
+
+\begin{detailbox}{text review rule}
+A text feature is suspicious when it treats \api{getText} as the only truth. Ask about the document, raw text, semantic value, parse state, validation problems, undo, input methods, focus behavior, scrolling, and lifecycle. Not every feature needs every answer, but advanced code should know which questions it is intentionally not answering.
+\end{detailbox}
+
+For beginners, the practical checklist is small. Use text components rather than custom drawing for editable text. Listen to documents rather than keys when text changes matter. Put multi-line text in scroll panes. Keep long work off the EDT. Do not reject every invalid intermediate value. Preserve standard copy, paste, selection, and undo expectations.
+
+For intermediate Swing programmers, the checklist grows. Use filters for local mutation policy, highlighters for transient marks, styled documents for persistent style, positions for moving markers, and undo managers with user-centered grouping. Bound logs. Batch appends. Test large text, long localized labels, and non-ASCII input. Put gutters in scroll-pane headers.
+
+For Corusco programmers, the checklist has a presentation-boundary shape. Bind documents to \api{TextFieldModel} when a field edits a semantic value. Keep parse and validation separate. Present \api{ProblemSet} through reusable behaviors. Close bindings with the view scope. Let commands observe model state. Let generated form companions remove repetitive wiring but keep layout and editing policy explicit.
+
+The final test is whether a reader can predict where to make a change. A new parse message belongs in the converter or resource policy. A new semantic rule belongs in validation. A new border belongs in a behavior or Look-and-Feel default. A new scrolling gutter belongs beside the viewport. That predictability is the practical value of the architecture.
+
+Without it, text code quickly becomes a pile of listeners with good intentions.
+
+The companion examples should keep that predictability visible. A text example
+should not hide all behavior behind a custom helper named \api{installTextMagic}.
+It should show the document or field model, the converter or filter, the
+problem presentation, and the command state as separate named pieces. The code
+can be short, but the ownership should be explicit enough that a reader can
+remove the screenshot harness and still understand the screen.
+
+Screenshots for text need stable typography. Use FlatLaf, deterministic sample
+text, fixed window size, and a font size that leaves room for long messages.
+Capture at least one invalid raw value and one focused editing state. If the
+example demonstrates a log or editor, include a visible scroll pane or gutter
+so the reader sees that scrolling is part of the component contract. A picture
+of a text area without its scroll container teaches the wrong boundary.
+
+The tests should mirror the chapter's layers. Converter tests parse and format
+without Swing. Field-model tests preserve raw text and semantic values. EDT
+binding tests verify document-to-model and model-to-document flow. Screenshot
+tests review borders, messages, focus, and layout. This split keeps pixel tests
+from carrying semantic proof they are not designed to carry.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Implement a \api{DocumentFilter} that accepts only decimal numbers while preserving paste and selection replacement behavior.
+\item Build a bounded log viewer with severity styles, maximum line count, scroll-to-end behavior, and no unbounded undo history.
+\item Add search highlighting to a \api{JTextPane} using \api{Highlighter}; remove stale highlights efficiently when the query changes.
+\item Attach an \api{UndoManager}; keep undo and redo actions enabled and named according to the next user-visible edit.
+\item Implement line numbers as a scroll-pane row header and handle font changes, wrapping, and viewport scrolling.
+\item Write tests for a marker stored as \api{Position}; verify it moves correctly after insertions before it and is retired after trimming.
+\item Append 100,000 log lines one by one, then in batches. Compare EDT latency and repaint behavior.
+\item Explore caret movement through text containing Czech accents, Japanese text, combining marks, emoji sequences, and mixed right-to-left runs.
+\item Convert a plain Swing parsing listener into a \api{TextFieldModel} plus \api{BindingFactory.textField} binding.
+\item Add screenshot states for a text form with valid input, invalid raw input, long localized labels, disabled command state, and focused fields.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{itemize}
+\item Use \api{DocumentFilter} for fast local mutation constraints.
+\item Use \api{DocumentListener} to observe completed mutations, not to rewrite every edit.
+\item Use \api{Highlighter} for transient view decoration.
+\item Use \api{StyledDocument} attributes for persistent styled content or deliberately modeled presentation.
+\item Keep live document mutation on the EDT unless the model is carefully isolated.
+\item Bound log viewers by lines, bytes, time, or an external backing store.
+\item Avoid one EDT task per appended line; batch and coalesce.
+\item Keep derived syntax highlighting out of the user's undo history.
+\item Use \api{Position} for markers that must survive edits.
+\item Treat offsets, code units, code points, graphemes, glyphs, and visual positions as different concepts.
+\item Use row headers or adjacent components for gutters and line numbers.
+\item Bind semantic fields through Corusco \api{TextFieldModel} when raw text and typed values must coexist.
+\end{itemize}

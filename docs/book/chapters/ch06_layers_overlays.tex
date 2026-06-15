@@ -1,0 +1,868 @@
+\chapter{JLayer, Glass Panes, Layered Panes, and Overlays}
+\chapterquote{A cross-cutting visual behavior should not require every child component to know it is being decorated.}{The overlay principle}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How can one add decoration, interception, validation, tutorials, diagnostics, and busy states without contaminating every component?\\
+Primary APIs & \api{JLayer}, \api{LayerUI}, \api{JRootPane}, glass pane, \api{JLayeredPane}, \api{PopupFactory}, \api{SwingUtilities}.\\
+Hidden difficulty & Painting order, coordinate conversion, event delivery, focus, popups, scrolling, accessibility, and lifecycle all interact with overlays.\\
+Payoff & Clean cross-cutting UI behavior: validation highlights, wait shields, magnifiers, guided flows, drag feedback, gesture layers, and instrumentation.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Overlay Scope and the First Question}
+
+\termdef{Overlay}{a visual or input layer that is placed above ordinary component content} is a tempting idea because it sounds purely graphical. Draw something above the screen; the user sees it; the underlying view remains unchanged. That is sometimes true, but not always. A validation outline may be mostly paint. A busy shield may block input. A tutorial layer may route clicks. A drag rectangle may track mouse motion. A diagnostic overlay may repaint frequently and expose internal state. These are different objects even if all of them appear "on top."
+
+The first overlay question is therefore not "how do I paint above a component?" It is "what is the scope of the state I am presenting?" A field-level validation mark belongs to one component or one form subtree. A whole-window busy state belongs to a root pane or screen workflow. A drag image may belong to a glass pane during one gesture. A persistent floating component may belong in a layered pane. Scope decides the tool.
+
+Large Swing screens accumulate cross-cutting behavior. A form needs validation badges. A table needs row warnings. A panel needs to be dimmed while loading. A guided flow wants to point at controls. A diagnostic tool wants to paint repaint regions. If every child component implements these behaviors independently, the code becomes tangled and visually inconsistent. Overlays are a way to centralize presentation policy without making every field and button aware of it.
+
+\begin{principlebox}{Choose the smallest truthful overlay}
+An overlay should cover no more screen area than the state it represents, block no more input than the workflow requires, and outlive no longer than its owner. When any of those dimensions is vague, the overlay will eventually feel arbitrary to users and suspicious to maintainers.
+\end{principlebox}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.22\linewidth}X X}
+\toprule
+Tool & Best use & Main caution\\
+\midrule
+\api{JLayer} & Decorate or intercept one component subtree. & Respect view sizing, event masks, and \api{LayerUI} state sharing.\\
+Glass pane & Window-wide overlay above the root pane content. & Can block focus/input unexpectedly; coordinate conversion is essential.\\
+\api{JLayeredPane} & Persistent z-ordered child components. & Layout responsibility is yours; absolute positioning rots quickly.\\
+Popup/window & Floating transient UI such as menus, tooltips, completions, or teaching surfaces. & Lightweight and heavyweight behavior can affect z-order expectations.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\layersScopeFigure}
+\caption{Overlay choice begins with scope and coordinate ownership. A \api{JLayer} lives with a subtree, a glass pane with a root pane, a layered-pane child with a z-ordered container, and a popup with its own surface.}
+\label{fig:layers-scope-coordinate}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\layersBusyFigure}
+\caption{A busy overlay is not merely a translucent painting effect. It is a workflow state with input policy, status text, cancellation policy, and lifecycle ownership.}
+\label{fig:layers-busy-overlay}
+\end{figure}
+
+Figure~\ref{fig:layers-busy-overlay} demonstrates a busy overlay over a table. The overlay is visually simple, but the state behind it is not. Is the user allowed to select rows while loading? Is Refresh disabled? Can the operation be canceled? Does Escape cancel, close a popup, or do nothing? Does the screen reader know the region is busy? The painting is only the visible part of the answer.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\layersValidationFigure}
+\caption{A validation overlay should decorate structured state owned elsewhere. The outline is a presentation of a problem, not the only place where the problem exists.}
+\label{fig:layers-validation-overlay}
+\end{figure}
+
+Figure~\ref{fig:layers-validation-overlay} shows the opposite kind of overlay. A validation mark should usually not block input. It should not own validation rules. It should not decide whether a form can be saved. It should paint a visual policy over state owned by a form model, problem set, or component property. The user sees an outline; the application owns a problem.
+
+\begin{examplebox}{layers}
+\api{BookVisualFigures} contains the scope, busy, and validation overlay screenshots used in Figures~\ref{fig:layers-scope-coordinate}, \ref{fig:layers-busy-overlay}, and~\ref{fig:layers-validation-overlay}. The figures are generated by \api{BookFigureGenerator} through \screenshotHarnessExample{}, so the chapter's visual examples remain executable Swing surfaces.
+\end{examplebox}
+
+The second overlay question is "does this layer observe state or own state?" A busy layer may observe a \api{busy} value and repaint. A validation layer may observe problem targets and paint badges. A tutorial layer may own the current step. A gesture layer may own the current press point while a drag is active. Each is acceptable if the ownership is named. Bugs begin when an overlay both discovers, mutates, and presents state without a visible owner.
+
+The third overlay question is "what coordinate system does this layer paint in?" A descendant component reports bounds in its parent's coordinates. A glass pane paints in root-pane coordinates. A \api{JLayer} paints in the layer's coordinate system. A popup may be a separate window. Any overlay that targets child components must convert points and rectangles deliberately. Hand-written arithmetic fails as soon as borders, scroll panes, nested panels, component orientation, or HiDPI transforms enter the scene.
+
+Figure~\ref{fig:layers-scope-coordinate} should be read as a warning against
+choosing overlay APIs by taste. The small target rectangle is a field or table
+cell deep in a component tree. If the decoration belongs only to that subtree, a
+\api{JLayer} keeps the coordinate system and lifecycle local. If the visual
+effect crosses unrelated subtrees in the same window, the glass pane may be the
+right root-wide surface. If the overlay is itself a live component, such as a
+floating inspector or completion panel, the layered pane may be the owner. If
+the surface must escape the root pane, a popup or window may be involved. Each
+choice changes coordinate conversion, z-order, focus, and cleanup.
+
+The fourth overlay question is "what input policy changed?" Some overlays
+change no input at all. A validation outline is a visual channel for a problem
+that remains editable. Some overlays block a protected subtree. A busy table may
+consume row selection while a refresh reconciles rows. Some overlays route input
+selectively. A guided step may allow the highlighted button and block the rest.
+Some overlays create an independent input surface. A popup completion list may
+own focus temporarily. These policies should be named before event masks are
+installed.
+
+The fifth question is "what semantic channel changed?" A validation overlay
+should correspond to problem state. A busy overlay should correspond to task
+state. A tutorial overlay should correspond to guide-step state. A drag overlay
+should correspond to gesture state. A diagnostic overlay should correspond to
+diagnostic state. If the overlay creates meaning only as pixels, tests and
+assistive technologies cannot see it. If the overlay creates meaning only as
+component state, the user may not see it. A robust overlay keeps semantic state,
+visual state, input policy, and lifecycle in one reviewable story.
+
+This story is often easiest to write as a sentence. "The form validation layer
+observes the form problem set, paints nonblocking marks over fields in the form
+subtree, updates tooltips and accessible descriptions through behaviors, and
+closes with the form scope." "The table busy layer observes the current load
+task, blocks table input, leaves Cancel and Help reachable, and disappears only
+when the current generation completes." "The guided-help glass pane observes a
+guide step, points to a component key in root coordinates, lets the user press
+Escape, and closes when the guide scope ends." If the sentence is hard to write,
+the overlay is probably owning too many things.
+
+A sixth, more pragmatic question is "how will this fail?" The target component
+may be hidden. The user may scroll while the overlay is visible. A popup may
+open above or below the overlay depending on weight. The Look-and-Feel may
+change border metrics. A task may finish after the screen closes. A validation
+target may refer to a table row that was filtered out. A drag release may be
+lost when the pointer leaves the window. Overlay code should be written with
+these failures in mind because overlays sit at the boundary between several
+subsystems.
+
+The best overlay code is therefore often less clever than the screenshot
+suggests. It observes named state. It converts coordinates through Swing
+utilities. It repaints bounded areas when local effects change. It clears event
+masks and listeners through a scope. It exposes status through ordinary
+components or accessible text. It treats popups and focus as real workflow
+objects. The drawing may be translucent, animated, or visually refined, but the
+architecture should be ordinary.
+
+\section{JLayer and Local Decoration}
+
+\api{JLayer} wraps a view component and delegates painting and input event processing to a \api{LayerUI}. It is a decorator with event awareness. The layer can paint before or after the view, receive selected AWT event types within the layer's bounds, respond to property changes, and travel with the component subtree it wraps. This makes it the usual first choice for local cross-cutting behavior.
+
+The most important design choice is whether the \api{LayerUI} is stateful. The API permits a \api{LayerUI} to be shared by multiple layers if it is stateless or carefully written. If it holds per-view state, either create one instance per \api{JLayer} or store state in the \api{JLayer} or view through well-defined properties. Accidental sharing is a subtle source of cross-screen bugs.
+
+\begin{detailbox}{LayerUI sharing}
+A \api{LayerUI} subclass can be shareable, but only if all mutable state is externalized or keyed by the layer. If a \api{LayerUI} stores \api{busy}, \api{pressPoint}, animation phase, or validation cache as plain fields, assume one instance per layer unless the code proves otherwise.
+\end{detailbox}
+
+A useful convention is to make the sharing decision visible in the class name or
+factory. A \api{BusyLayerUI} constructed with a busy value and status text is
+probably per-view. A \api{ValidationMarksLayerUI} that receives immutable mark
+snapshots may be shareable. A \api{GestureLayerUI} with press and drag state is
+almost certainly per-layer. Hidden sharing creates strange bugs: a drag in one
+tab affects another tab, validation marks from a closed dialog appear on a new
+dialog, or an animation phase continues after the view has gone away.
+
+The \api{LayerUI} should also make its contract with the wrapped view narrow.
+If it requires every child to set a particular client property, document that as
+an adapter policy, not as a private trick. If it observes a model, keep the
+subscription outside painting and close it with the layer. If it intercepts
+events, make the event mask match the current behavior. A layer that always
+receives all mouse and key events because it sometimes needs them is harder to
+review and more likely to perturb ordinary components.
+
+Installation and uninstallation are part of the API, not cleanup details. A
+\api{LayerUI} that installs event masks, listeners, timers, cursors, or client
+properties must remove them. The wrapped view may be reused or the layer may be
+removed while the application continues. Treat \api{installUI} and
+\api{uninstallUI} as lifecycle boundaries. In Corusco code, a behavior scope can
+own the layer and guarantee uninstallation when the screen closes.
+
+A busy shield is a good first \api{JLayer} example because it combines painting and event interception. The view underneath can remain a normal table, form, or panel. The layer observes a busy flag. When busy is true, it dims the view, displays status, and consumes input that should not reach the protected subtree.
+
+\begin{lstlisting}[caption={A LayerUI that dims a subtree and consumes input while busy.}]
+public final class BusyLayerUI extends LayerUI<JComponent> {
+    private boolean busy;
+
+    public void setBusy(boolean busy, JLayer<? extends JComponent> layer) {
+        if (this.busy == busy) {
+            return;
+        }
+        this.busy = busy;
+        layer.setLayerEventMask(busy
+                ? AWTEvent.MOUSE_EVENT_MASK
+                | AWTEvent.MOUSE_MOTION_EVENT_MASK
+                | AWTEvent.KEY_EVENT_MASK
+                : 0L);
+        layer.repaint();
+    }
+
+    @Override
+    public void eventDispatched(AWTEvent e, JLayer<? extends JComponent> layer) {
+        if (busy && e instanceof InputEvent input) {
+            input.consume();
+        }
+    }
+
+    @Override
+    public void paint(Graphics g, JComponent c) {
+        super.paint(g, c);
+        if (!busy) {
+            return;
+        }
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            g2.setComposite(AlphaComposite.SrcOver.derive(0.35f));
+            g2.setColor(c.getBackground());
+            g2.fillRect(0, 0, c.getWidth(), c.getHeight());
+            g2.setComposite(AlphaComposite.SrcOver);
+            g2.setColor(c.getForeground());
+            g2.drawString("Loading...", 20, 30);
+        } finally {
+            g2.dispose();
+        }
+    }
+}
+\end{lstlisting}
+
+This example consumes input, but it does not solve focus semantics fully. If a text field inside the layer already has focus, key events may be consumed while focus remains visually inside the disabled region. Depending on the application, this may be acceptable. For a modal busy state, the screen may instead move focus to a Cancel button, a status strip, or a root-level command surface.
+
+Busy focus policy should be explicit. A local table refresh may leave focus in
+the table while consuming table input and exposing progress in a status strip.
+A save operation that blocks the whole form may move focus to a Cancel button or
+progress panel. A noncancelable operation may keep focus where it is but disable
+commands and expose a clear busy message. Each choice has consequences for
+keyboard users, screen readers, and tests. A dimming layer that consumes events
+without a focus story can make a screen feel frozen even when the task is
+healthy.
+
+Busy state should also be generation-aware. Suppose the user starts Refresh,
+then changes filters and starts another Refresh. The first result may complete
+after the second starts. The busy layer should not disappear because an old task
+finished. It should observe the current task generation or current busy token.
+This policy belongs to the task model or behavior, not to the paint method. The
+layer merely reflects the current truth.
+
+Cancellation is another owner test. If the layer shows Cancel, the cancel
+command must have a real cancellation token or task handle. If the operation
+cannot be canceled, the overlay should not promise cancellation. If cancellation
+is requested but the worker has not stopped yet, the overlay can change status
+to "Canceling..." while input remains blocked. Users tolerate waiting better
+when the screen tells the truth about the current state.
+
+Clearing event masks matters. A \api{LayerUI} that enables event masks during installation or busy state should disable them during uninstallation or when the behavior ends. Otherwise the layer may continue to receive events longer than intended. Treat event masks like subscriptions: install them when needed, and close them when the owner closes.
+
+Validation decoration is a different \api{JLayer} example. The layer should usually be visual and non-invasive. Components or form models expose validation state. The layer paints badges, outlines, or callouts. The user can still move focus, inspect other fields, open Help, and fix errors in any order. This is much friendlier than making every invalid field trap focus.
+
+\begin{lstlisting}[caption={Painting validation marks for descendants with a client property.}]
+public final class ValidationLayerUI extends LayerUI<JComponent> {
+    @Override
+    public void paint(Graphics g, JComponent c) {
+        super.paint(g, c);
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            paintValidationMarks(g2, c, c);
+        } finally {
+            g2.dispose();
+        }
+    }
+
+    private void paintValidationMarks(Graphics2D g2,
+                                      JComponent root,
+                                      Component current) {
+        if (current instanceof JComponent jc
+                && jc.getClientProperty("validation.error") != null) {
+            Rectangle r = SwingUtilities.convertRectangle(
+                    jc.getParent(), jc.getBounds(), root);
+            g2.drawRoundRect(r.x - 2, r.y - 2, r.width + 3, r.height + 3, 6, 6);
+        }
+        if (current instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                paintValidationMarks(g2, root, child);
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+The code is intentionally simple, and it shows the key risk. Walking a component tree on every paint can be acceptable for a small form and wasteful for a large screen. A mature implementation may compute an immutable list of decoration targets when validation changes and let painting consume that list. Painting should be simple; state derivation should be explicit.
+
+The target list should include enough geometry invalidation information to
+repaint correctly. When a validation problem appears, repaint the new mark
+bounds. When it disappears, repaint the old mark bounds. When severity changes,
+repaint the mark. When layout changes, recompute target bounds. When the target
+is inside a scroll pane, treat scrolling as geometry change. Repainting the
+entire form is acceptable in a small dialog; in a dense workspace it can become
+noticeable. Dirty-region discipline from the painting chapter applies to
+overlays too.
+
+Validation overlays should keep decoration and validation separate. A parse
+failure belongs to a field model. A business rule failure belongs to validation
+logic. A problem target binds that fact to a component or table cell. The layer
+chooses an outline, icon, or callout. This separation lets the application
+change visual style, high-contrast policy, tooltip composition, or summary
+behavior without rewriting validation rules. It also keeps tests from needing
+pixel assertions to prove business logic.
+
+Client properties are convenient but not a complete validation model. A client property can bridge a single component to a decorator. A serious form usually needs a problem model with severity, target, message, origin, dirty state, touched state, and maybe asynchronous validation. The overlay should present that model. It should not become the model merely because it draws the mark.
+
+\api{JLayer} can also recognize local gestures. A diagram view may use a layer for rubber-band selection. A form may use a layer for tutorial highlights inside one panel. A table may use a layer for hover instrumentation. These uses are appropriate when the behavior belongs to one subtree and should move with that subtree through layout, scrolling, and screen lifecycle.
+
+\begin{lstlisting}[caption={Recognizing a mouse gesture at the layer boundary.}]
+public final class GestureLayerUI extends LayerUI<JComponent> {
+    private Point press;
+
+    @Override
+    public void installUI(JComponent c) {
+        super.installUI(c);
+        ((JLayer<?>) c).setLayerEventMask(
+                AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK);
+    }
+
+    @Override
+    public void uninstallUI(JComponent c) {
+        ((JLayer<?>) c).setLayerEventMask(0);
+        super.uninstallUI(c);
+    }
+
+    @Override
+    public void eventDispatched(AWTEvent e, JLayer<? extends JComponent> layer) {
+        if (e instanceof MouseEvent m) {
+            if (m.getID() == MouseEvent.MOUSE_PRESSED) press = m.getPoint();
+            if (m.getID() == MouseEvent.MOUSE_RELEASED && press != null) {
+                recognizeGesture(press, m.getPoint());
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+Event interception should be honest. Use it for cross-cutting behavior such as gesture recognition, input shielding, tutorial routing, or instrumentation. Do not use it to secretly change ordinary controls in ways users cannot predict. Interception should be visible in architecture and ideally in diagnostics. A layer that consumes clicks should be easy to identify.
+
+Gesture layers need the same lifecycle rigor as busy layers. A press point,
+current drag rectangle, autoscroll timer, hover target, or gesture mode should
+belong to the gesture owner. Escape, focus loss, mouse release outside the
+component, or disposal should clear that state. If the layer keeps stale gesture
+state, the next paint may show a rectangle for an interaction that no longer
+exists. If the layer forgets to clear event masks, it may continue to intercept
+ordinary mouse motion after the gesture has ended.
+
+Instrumentation layers are useful during development and support, but they
+should have bounded cost. A layer that paints dirty regions, focus owners,
+component bounds, or event masks can make layout and repaint bugs obvious. It
+can also leak internal names, repaint too often, or change timing if left on in
+production. Diagnostic overlays should be controlled by explicit diagnostic
+state, should redact sensitive information, and should be easy to disable.
+
+\section{Glass Panes, Layered Panes, and Popups}
+
+Every \api{JRootPane} has a glass pane above the layered pane. It is useful for root-wide effects: drag feedback, global wait cursors, guided-flow arrows, screen dimming, diagnostic overlays, or input shields that intentionally cover the whole window. A glass pane is often simpler than \api{JLayer} when the overlay crosses component subtree boundaries.
+
+A glass pane is also easy to overuse. Installing a window-wide overlay because one field needs a validation badge is usually a scope error. The glass pane affects the whole root. It can receive mouse events when visible. It can interfere with focus. It can conflict with popups. Use it when the whole root pane is truly involved or when the visual effect must cross unrelated subtrees.
+
+\begin{lstlisting}[caption={Installing a simple root-pane glass overlay.}]
+public final class DragGlassPane extends JComponent {
+    private Rectangle dragRect;
+
+    public void setDragRect(Rectangle dragRect) {
+        Rectangle old = this.dragRect;
+        this.dragRect = dragRect == null ? null : new Rectangle(dragRect);
+        if (old != null) repaint(old);
+        if (this.dragRect != null) repaint(this.dragRect);
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        if (dragRect == null) {
+            return;
+        }
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            g2.draw(dragRect);
+        } finally {
+            g2.dispose();
+        }
+    }
+}
+\end{lstlisting}
+
+Install the glass pane through the root pane:
+
+\begin{lstlisting}
+DragGlassPane glass = new DragGlassPane();
+frame.getRootPane().setGlassPane(glass);
+glass.setVisible(true);
+\end{lstlisting}
+
+The glass pane's coordinate system is the root pane's glass coordinate system, not any child component's coordinate system. Use \api{SwingUtilities.convertPoint} and \api{convertRectangle} aggressively. A rectangle around a text field inside a scroll pane must be converted from the field's parent into the glass pane. When the user scrolls, resizes, changes Look-and-Feel, or moves between monitors, the overlay should recompute rather than trust stale magic numbers.
+
+Glass-pane coordinates also make hidden state visible. If a target component is
+not showing, conversion may still produce a rectangle that should not be
+painted. If the component is inside a collapsed optional section, the guide
+controller should expand the section, skip the step, or show an explanatory
+message. If the component is outside the visible rectangle of a scroll pane, the
+controller may scroll it into view first. Coordinate conversion gives positions;
+workflow policy decides whether those positions are meaningful.
+
+A glass pane that tracks a moving target should listen to the right invalidation
+sources. Component movement, parent layout, scroll position, Look-and-Feel
+changes, font changes, and target visibility can all alter the rectangle. A
+simple implementation can recompute on every paint for a few targets. A larger
+implementation may cache bounds and invalidate them when relevant events occur.
+The cache key must include the facts that change geometry, not merely the target
+component reference.
+
+Root-wide overlays should be careful with modality. A frame and a modal dialog
+have different root panes. A glass pane on the frame does not automatically
+cover the dialog, and usually should not. If a busy operation belongs to the
+parent frame while a child dialog is open, decide whether the dialog is blocked,
+closed, updated, or allowed to continue. If a guide belongs to a dialog, install
+the guide on the dialog root pane. Treat each top-level window as a separate
+overlay scope unless the product explicitly defines a global modal state.
+
+\begin{lstlisting}[caption={Converting a child rectangle to glass-pane coordinates.}]
+static Rectangle toGlass(JRootPane root, JComponent child, Rectangle r) {
+    Point p = SwingUtilities.convertPoint(
+            child, r.getLocation(), root.getGlassPane());
+    return new Rectangle(p.x, p.y, r.width, r.height);
+}
+\end{lstlisting}
+
+\api{JLayeredPane} manages child components at different integer layers. Root panes use layered panes internally for content panes, menu bars, and popup-like elements. You can use a layered pane when the overlay is itself a live component that should persist above content: a floating inspector, inline completion panel, docking hint, or resize handle.
+
+Layered panes are powerful but often under-laid out. Developers add components at absolute positions, forget to update bounds on resize, and then blame Swing. If a layered child should track another component, install layout logic or listeners that keep it aligned. A floating child with no layout policy is a bug waiting for the first resize.
+
+\begin{lstlisting}[caption={Keeping an overlay component aligned with a target.}]
+static void alignOverlay(JComponent overlay, JComponent target,
+                         JLayeredPane layeredPane) {
+    Rectangle r = SwingUtilities.convertRectangle(
+            target.getParent(), target.getBounds(), layeredPane);
+    overlay.setBounds(r);
+}
+\end{lstlisting}
+
+For one-off decoration, \api{JLayer} is often easier. For independent floating children with their own components and focus behavior, a layered pane can be appropriate. The distinction is ownership: a \api{LayerUI} decorates a view; a layered-pane child is a real component in a z-ordered container.
+
+A layered-pane child should have a layout story. It may track a target component
+through converted bounds. It may dock to a corner of a viewport. It may be
+managed by a custom layout manager. What it should not do is set bounds once at
+construction and hope the window never changes. Layered panes are not an escape
+from layout; they are containers whose layout responsibility is often more
+explicit because z-order removes some ordinary layout-manager help.
+
+Focus inside layered-pane children should be deliberate. A floating search box,
+completion panel, or inspector may need to receive focus. A decorative badge
+should not. A live floating component should have traversal behavior, Escape
+handling, accessible name, and disposal. A non-focusable decoration should not
+steal focus merely because it is implemented as a component. The z-order choice
+does not answer input policy by itself.
+
+Swing popups complicate overlay design. Popups may be lightweight, medium-weight, or heavyweight depending on content, platform, and configuration. Lightweight popups are drawn within the window. Heavyweight popups are native windows. A heavyweight popup can appear above a glass pane that was expected to cover everything. A lightweight popup may be covered by a glass pane and become unusable.
+
+Avoid building critical overlay behavior that depends on unspecified popup weight. Test with combo boxes, menus, context menus, tooltips, completion popups, and multiple monitors. For guided overlays, it may be correct to suspend the guide while popups are open. For critical modal shields, it may be better to use a real dialog or disabled command policy rather than a glass pane that cannot cover all native windows.
+
+Z-order bugs often come from ownership confusion. A popup, tooltip, drag image, validation mark, and busy veil may all want to be above ordinary content. The screen should decide which one wins. Swing provides layered panes, glass panes, popup factories, and painting hooks. Corusco can provide state and behaviors that install the chosen relationship consistently. Neither toolkit can decide priority without application policy.
+
+Completion popups are a useful example. A text field may show a completion list
+while a validation overlay is active. The list should likely remain usable
+because it helps repair the field. A busy overlay over the same field may
+suppress completions because input is blocked. A guided-help overlay may either
+pause while the completion popup is open or treat the popup as part of the
+current step. These choices are product policy. The implementation should not
+depend on whichever popup weight happens to appear on the current platform.
+
+Tooltips are similar. A validation overlay may draw a marker and a tooltip may
+explain it. A glass-pane tutorial may draw a callout that should suppress
+ordinary tooltips to reduce noise. A diagnostic overlay may want to show tooltip
+text as part of inspection. Each overlay should define whether it coexists with,
+suppresses, or replaces tooltip behavior. Otherwise the user sees overlapping
+floating text and the developer chases z-order instead of policy.
+
+Multiple monitors and HiDPI scaling add one more reason to avoid manual
+coordinate arithmetic. Swing's conversion utilities operate in component
+coordinate systems and usually do the right thing for ordinary overlays. Cached
+images, hand-positioned popup windows, or native interop may need more care.
+If an overlay crosses top-level windows or native surfaces, test on the actual
+deployment configurations. The chapter's advice is conservative because overlay
+bugs are often platform-sensitive and hard to diagnose from source alone.
+
+\section{Input, Focus, Accessibility, and Repaint Cost}
+
+An overlay that blocks input is not merely a paint effect. It is part of command and focus architecture. A translucent busy overlay that lets the user click disabled controls is misleading. An overlay that consumes every event without exposing cancellation may feel like a hung application. If an overlay blocks input, decide which keys still work, whether Escape cancels, whether focus moves, and what assistive technologies should know.
+
+Blocking input is not the same as discarding all events. A busy overlay may consume mouse clicks and keystrokes directed at the protected subtree, but it may still allow a Cancel command, Help, accessibility queries, repaint, and focus restoration. A validation overlay should usually not consume input at all. A tutorial overlay may consume only clicks outside the highlighted target. Define event policy in product terms before implementing masks.
+
+Focus should not be an accident. If a screen becomes busy while a field has focus, the focus owner may remain inside a now-blocked subtree. That can be fine if the state is brief and decorative. For longer operations, the screen may move focus to a cancel button, progress component, or safe root-level control. Keyboard users need a place to go. Screen readers need a state to report.
+
+Overlays can confuse assistive technologies if they imply state not represented semantically. A red outline around a field is not enough. The field should have an accessible description, a tooltip, a problem summary, or an associated error relation. A spinner drawn with Java 2D but no accessible text is decorative. A busy state that disables a form and exposes a status label is usable.
+
+Decorative overlays can remain purely visual when they do not carry meaning. A subtle hover glow or diagnostic clip mark may not need a semantic channel. Semantic overlays do. The dividing line is whether the user must understand the overlay to complete the task. If yes, the meaning belongs in a model and in accessible text, not only in pixels.
+
+Overlay repaint cost can be large. A window-wide translucent overlay may repaint the whole root pane. If it animates, it may repaint the whole window on every tick. Sometimes that cost is acceptable. Often it is not. Prefer local overlays when the state is local. Animate at a controlled cadence. Respect clip bounds in overlay painting just as in ordinary components.
+
+For validation marks, repaint old and new mark bounds. For drag rectangles, repaint the union of old and new rectangles. For a tutorial callout, repaint the callout and old callout. For full-window dimming, accept that the root may need repainting, but do not combine it with expensive child invalidation. The painting chapter's dirty-region discipline applies to overlays too.
+
+Animations in overlays should have a modest contract. A spinner angle, shimmer phase, or fade alpha is a paint variable. It should not rebuild the component tree, change preferred sizes, or reorder layers on every tick. The timer that drives the animation should stop when the overlay is hidden and close when the owning scope closes. A decorative effect should not become a background leak.
+
+Overlay geometry should be derived from components or models, not copied from magic numbers. A validation marker should ask the target component for bounds in the correct coordinate system. A busy layer should cover the viewport or root pane it actually protects. A tutorial highlight should recompute when layout changes. If cached bounds survive resize, the overlay will look correct only in the screenshot size used during development.
+
+Scroll panes are a common overlay test. A field inside a scrolling form may move relative to the glass pane without changing its own bounds. A validation mark attached to a row may need to move when the viewport scrolls. A drag rectangle over a scrollable canvas may be in view coordinates while the glass pane paints in root coordinates. If an overlay works before scrolling and drifts afterward, coordinate conversion was incomplete.
+
+Component orientation and localization are another test. A callout anchored to the "right edge" of a field may be wrong in right-to-left orientation. A fixed text label may not fit after translation. A focus ring may need to align with baseline and insets supplied by the Look-and-Feel. Overlays that are polished in one locale can feel crude in another if they ignore ordinary Swing layout facts.
+
+It is useful to describe input policy as a small table before writing event
+code. The table does not need to be part of the implementation; it is a review
+tool. It forces the author to say which interactions are unchanged, which are
+blocked, which are redirected, and which are newly created by the overlay.
+Without this table, code tends to grow by accident: one listener consumes mouse
+pressed events, another listener lets mouse released events through, Escape is
+handled by a key binding in a parent, and a popup remains open because nobody
+decided whether the overlay owns it.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.20\linewidth}X X}
+\toprule
+Overlay state & Input policy & Focus and accessibility policy\\
+\midrule
+Validation mark & No input is blocked; the user can fix fields in any order. & Problem text is exposed through tooltip, summary, or accessible description.\\
+Local busy & Protected subtree rejects editing and selection; Cancel and Help may remain active outside it. & Focus moves only if the previous owner is misleading or unusable.\\
+Guided step & Target action may be allowed; unrelated clicks may advance, explain, or be blocked. & Instruction text exists as a resource and an accessible message, not only as paint.\\
+Drag feedback & Gesture events belong to the gesture owner until commit or cancel. & Escape, focus loss, and disposal have explicit cleanup behavior.\\
+Diagnostics & Ordinary input should usually pass through. & Diagnostic labels should not become the only explanation of product state.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The table also reveals whether an overlay is trying to do too many jobs. A busy
+layer that blocks input, performs validation, opens help, and owns a drag
+gesture is not a layer; it is a hidden controller. A validation layer that also
+changes command enablement and moves focus is not merely decoration. There are
+valid workflows in which several policies are active at once, but they should
+remain separate policies joined by named state. Otherwise the overlay becomes a
+place where unrelated behavior hides because it happens to be visually above
+the screen.
+
+Active editors are a frequent source of overlay defects. If a table cell editor
+is open when a busy layer appears, the screen must decide whether the edit is
+committed, canceled, allowed to finish, or frozen. A \api{JLayer} can consume
+mouse events, but it cannot make an editor state meaningful by itself. If a
+dialog enters a validation state while a formatted text field contains invalid
+intermediate input, a nonblocking validation overlay is usually better than a
+focus trap. If a background refresh invalidates the row being edited, the
+editor policy belongs to the table workflow before the overlay paints anything.
+
+Keyboard routing deserves the same precision. Consuming all key events may
+seem to protect the screen, but it can also block Escape, Help, mnemonics,
+screen-reader shortcuts, and platform navigation. Conversely, leaving all key
+events active while painting a disabled veil is a lie. The review question is
+not "did we install a key listener?" It is "which commands remain meaningful in
+this state?" In Swing, the answer is often best expressed through actions and
+input maps rather than through low-level key listeners on the overlay itself.
+
+Pointer routing has its own traps. A mouse press consumed by an overlay may be
+followed by a release delivered elsewhere if the gesture crosses components or
+windows. A drag overlay may need to capture motion through a glass pane, while
+the semantic gesture remains owned by the canvas. A right-click may open a
+context menu unless the overlay suppresses popup triggers on the relevant
+platform event. A double-click may be split across two overlay states if the
+first click changes busy or guide state. Production overlay code should treat
+press, drag, release, click count, popup trigger, and cancellation as one
+gesture story rather than as independent event callbacks.
+
+Accessibility is not only a moral requirement; it is also a design diagnostic.
+If the overlay state cannot be described without pointing to pixels, the model
+is probably incomplete. "This field has an error," "this region is busy,"
+"this step wants the user to press Add," and "this drop target rejects the
+current data" are semantic statements. A red outline, a spinner, an arrow, and
+a translucent rejection mark are visual presentations of those statements. When
+the semantic statement exists, tests can assert it, help text can reference it,
+and assistive technologies can expose it. When it does not exist, the overlay
+is carrying application meaning alone.
+
+Repaint budgets should be stated with comparable specificity. A root-wide busy
+veil may legitimately repaint the root when it appears and disappears. A
+spinner inside that veil does not automatically justify repainting the whole
+root thirty times per second. A validation mark should not repaint every field
+in a thousand-row form. A tutorial arrow that follows a moving target should
+repaint the old arrow bounds and the new arrow bounds. A diagnostic overlay may
+choose broad repainting during a debug session, but it should be disabled in
+normal operation. These budgets are not premature optimization; they are the
+painting equivalent of saying which input events are expected.
+
+The combination of input policy, focus policy, semantic channel, and repaint
+budget gives an overlay a shape that can be reviewed before it is implemented.
+This is especially helpful in teams. A designer can say whether the target
+should remain clickable, a tester can write cases for Escape and popups, an
+accessibility reviewer can ask for status text, and an engineer can decide
+whether \api{JLayer}, glass pane, layered pane, or popup is the proper
+mechanism. The overlay API is then chosen after the behavior is understood.
+
+\section{Corusco Behaviors and Overlay State}
+
+Corusco should not make overlays magical. It should make overlay state explicit, lifecycle-owned, and connected to models. The model says whether the screen is busy or which problems exist. A behavior chooses how that state becomes overlay paint, tooltip text, border changes, accessible descriptions, command enablement, or input policy. The overlay stays small because it does not need to discover why the state exists.
+
+\begin{coruscobox}{overlay behavior}
+Corusco helps overlays by separating semantic state from visual layering. Busy values, problem sets, help topics, command state, and lifecycle scopes are model facts. \api{JLayer}, glass panes, and layered panes are Swing mechanisms that present those facts.
+\end{coruscobox}
+
+Busy state is a typical example. A \api{ReadableValue<Boolean>} can drive a busy overlay, a Refresh command's enabled state, a Cancel command's enabled state, and a status message. The overlay does not ask a worker thread whether it is alive. It observes presentation state that has already been delivered to the EDT. That makes stale-result suppression and cancellation easier to reason about.
+
+Validation is another example. A \api{ProblemSet} can identify a field, row, cell, or section. A validation behavior can attach decoration targets to components, set accessible descriptions, update tooltips, and repaint only affected marks. The \api{LayerUI} can then paint a list of decoration rectangles. Validation rules do not live inside painting code.
+
+Help and guided flows also benefit from explicit state. A guided-flow controller can expose the current step, target component key, message resource, and allowed interactions. A glass-pane behavior can resolve the target component, convert bounds, paint the callout, and route events according to the step policy. If the target disappears, the controller can decide whether to skip, wait, or fail the step.
+
+Lifecycle is especially important for overlays because they often hold references to large component trees. A \api{LayerUI} installed on a \api{JLayer}, a glass pane with mouse listeners, a timer-driven animation, or a popup window can keep a screen alive after it disappears. Treat overlay installation as a subscription: create it, register it in a scope, and close it when the owning view closes.
+
+\begin{migrationbox}{from visual flags to scoped overlay state}
+Plain Swing overlay code often toggles booleans directly on a glass pane or layer UI. A Corusco-style screen promotes durable overlay state to values, problem sets, task state, or guided-flow models, then installs disposable behaviors that connect those facts to Swing layers.
+\end{migrationbox}
+
+Scoped busy tokens are a useful pattern. Acquiring a token marks a region busy. Closing the token releases it. If several operations overlap, the region remains busy until all relevant tokens close. Leaked tokens can be logged with their owner. This is more robust than a global method pair such as \api{showGlassPane} and \api{hideGlassPane} that every feature must balance manually.
+
+Overlay diagnostics should be possible. A support command or developer panel can list active overlays, owners, target components, event masks, busy tokens, animation timers, and current decoration counts. The glass pane that "ate the application" becomes much easier to diagnose if the program can say which overlay is active and who activated it.
+
+Generated behavior can help, but only if it remains inspectable. If an annotation declares that a form should have validation decoration, generated code can install the layer, subscribe to problem state, repaint affected bounds, and close subscriptions. The developer should still be able to find the generated behavior plan and understand which layer was installed.
+
+Corusco table and form descriptors can provide stable targets for overlays. A validation problem for \api{customer.creditLimit} can map to a field, table cell, summary item, or help topic. A screenshot harness can render the same problem state consistently. Without stable targets, overlays must search by localized labels or component order, which is brittle.
+
+Overlay behavior also intersects commands. A busy overlay may block local input but leave Cancel enabled. A tutorial overlay may allow only the highlighted command. A validation overlay may explain why Save is disabled. These are command policies, not painting policies. The command chapter and overlay chapter meet whenever a layer changes what the user can invoke.
+
+A Corusco behavior plan should make that intersection visible. A validation
+plan might install a form-layer decorator, bind problem targets to decoration
+rectangles, update tooltips, update accessible descriptions, and derive Save
+enablement. A busy plan might acquire a scoped busy token, install a table
+layer, bind status text, disable Refresh, enable Cancel, and suppress stale
+results by generation. A guide plan might resolve a component key, install a
+glass-pane callout, route Escape, and detach when the step changes. The
+generated or handwritten code can still use ordinary Swing objects; the plan
+names the relationships so they do not look like unrelated listeners.
+
+This matters most during maintenance. Suppose a developer replaces a plain text
+field with a formatted text field. The validation overlay should not discover
+the new class by traversing children and guessing. The field behavior should
+still expose a target, a problem relation, and an accessible description. Or
+suppose a table column is moved, hidden, or generated from a descriptor. A cell
+problem target should still resolve by table identity, row identity, and column
+identity rather than by view column number. Overlay behavior becomes robust
+when it consumes stable identities instead of the current accident of the
+component tree.
+
+Target resolution is therefore a first-class operation. A problem target may
+resolve to a component, a table cell rectangle, a row header, a section title,
+or a summary entry. A help target may resolve to a command button that is
+currently hidden behind an overflow menu. A busy target may resolve to a
+scroll-pane viewport rather than to the whole panel. Resolution can fail, and
+failure should be explicit. A missing component key should produce a useful
+diagnostic and a graceful presentation, not a null pointer inside paint.
+
+The behavior should also define when resolution is refreshed. Layout changes,
+scroll movement, table sorting, column movement, Look-and-Feel changes,
+component orientation changes, and font changes can all move target geometry.
+A simple behavior may recompute on every paint for a short form. A large table
+or visual editor may keep prepared decoration targets and invalidate them on
+specific model and view events. Corusco does not remove this engineering
+choice; it gives the choice a place to live outside the painting routine.
+
+Observable state helps distinguish "what happened" from "how it is shown."
+The task service may publish a task status. A command model may publish
+whether Cancel is enabled. A form model may publish problems. A guide model may
+publish the current step. Overlay behavior subscribes to these facts and maps
+them to Swing. If the behavior closes, the subscriptions close. If the screen
+is disposed, late task results cannot repaint a dead glass pane. This is the
+same lifecycle discipline used for ordinary bindings, applied to a part of
+Swing that is otherwise easy to leave behind.
+
+Conflict detection is valuable because overlays compete for scarce surfaces.
+Two behaviors may try to install a glass pane on the same root. A busy behavior
+may want to consume input while a guide behavior wants to allow one target
+click. A validation behavior may want tooltips while a guide behavior wants to
+suppress tooltips. A drag behavior may require root-wide mouse motion while a
+popup is open. These conflicts should be detected as behavior-plan conflicts or
+explicit priority rules, not by whichever listener receives an event first.
+
+Priority rules should be semantic. A modal error dialog may outrank a guide.
+A cancellation prompt may outrank a busy veil. A validation tooltip may
+coexist with a field-focused guide if the guide step is about fixing that
+field. A diagnostic overlay may sit above everything in a development profile
+and be absent in production. Naming priorities makes the z-order and input
+rules auditable. Hiding them in layer numbers and event consumption order makes
+regressions difficult to explain.
+
+Testing follows naturally from these owners. A core test can assert that a
+credit-limit problem has target \api{customer.creditLimit}. An EDT test can
+assert that the target resolves to a particular component key after the view is
+created. A table test can assert that the same target resolves to the correct
+view rectangle after sorting. A behavior test can assert that the busy token
+keeps Refresh disabled and Cancel enabled. A screenshot test can then review
+the final overlay. Each test operates at the lowest level that can see the fact
+being tested.
+
+The generated-code story should remain modest. Generation can remove routine
+wiring: component keys, descriptor targets, problem-to-tooltip bindings,
+default validation decoration, command enablement, and cleanup registration.
+It should not make the overlay policy invisible. The book's preference is for
+generated companions that can be inspected, named behavior plans that can be
+logged, and handwritten screen code that still owns layout and product
+decisions. Automation is useful when it removes repetition; it is harmful when
+it hides why a screen blocks input.
+
+Migration from legacy Swing often starts with client properties. A field may
+already set \api{validation.error}; a table renderer may already paint warning
+icons; a glass pane may already show a busy veil. A practical migration need
+not replace everything at once. First name the semantic state beside the
+existing code. Then let the overlay consume that state. Then move decoration
+targets from ad hoc properties to component keys or descriptors. Finally move
+cleanup into a scope. The visual result can remain familiar while the ownership
+becomes explicit.
+
+The same migration should retire global overlay flags. A method named
+\api{showBusyGlass} is harmless in a demo and dangerous in a real application
+because it hides scope, owner, cancellation, and generation. A scoped token or
+task-bound busy value can answer who opened the overlay, which region it
+protects, whether it is cancelable, and why it is still visible. Those answers
+are exactly what support engineers need when a screen appears stuck.
+
+\section{Worked Workflow and Review Rules}
+
+Consider a customer editor screen with a table on the left, a form on the right, a toolbar, a status strip, and background refresh. It needs a busy overlay during refresh, validation marks on fields, a drag rectangle for selecting table rows, and a guided help step that points from the toolbar to the credit-limit field. Four overlays are possible; they should not be one object.
+
+Begin with the busy overlay. The screen starts a refresh command. The command creates or activates a task state object with a generation number, status text, progress if known, and cancellation token. The table-region busy behavior observes that task state. It does not start the task. It does not poll a worker. It receives a modeled fact on the EDT: this region is busy for this operation.
+
+The behavior then chooses scope. If the old table data remains readable while refresh runs, the overlay may dim only the table and block table editing. If the refresh changes the whole screen's identity, the overlay may cover the entire root pane. If the user can still cancel or inspect details, the Cancel command and status area must remain reachable. The scope is a product answer expressed in Swing geometry.
+
+The busy overlay also chooses input policy. Mouse clicks on protected table cells are consumed. Keyboard navigation inside the protected table may be consumed. A global Help command may remain available. Escape may route to Cancel if cancellation is supported. If cancellation is not supported, Escape should not pretend to work. These choices should be written in command terms before they are encoded as event masks.
+
+Focus policy is next. If focus was in a table cell editor when refresh began, the screen should either stop or cancel editing before the overlay activates. Leaving focus inside a blocked editor produces a confusing state: the caret remains visible, keys do nothing, and the user may think the application has failed. Moving focus to a status or cancel surface is often clearer for long operations.
+
+Status text should be a real component or accessible value, not only a string painted by the overlay. Painting "Loading..." is useful for sighted users. A status label or accessible description is useful for assistive technologies and tests. If the overlay consumes input because the region is busy, the screen should also communicate why the input is blocked.
+
+When the task finishes, the generation number matters. If a second refresh began after the first, the first result is stale. The overlay should disappear only when the current operation completes or is canceled. A stale completion from an older task should not hide a busy overlay for the newer task. This is task lifecycle, not painting.
+
+Cancellation should close through the same owner that opened the busy state. If the user cancels, the token is signaled, the status changes to cancellation requested, and input policy may remain blocked until the task actually acknowledges cancellation. If a task cannot be canceled, the command should not offer a fake Cancel surface. The overlay should reflect real workflow, not hopeful UI.
+
+Now consider validation marks. A user edits credit limit and creates a parse problem. The field's document or field model updates raw text. The form model records a parse problem for the credit-limit target. The validation overlay observes the problem set, resolves the target to a component, computes decoration bounds, and repaints the old and new mark regions. The overlay did not parse the number.
+
+If the problem severity changes from warning to error, the same target may receive a different color, icon, or tooltip. The decoration policy should live near validation behavior or resources, not inside every field. This makes visual redesign possible. It also allows high-contrast mode or theme changes to update validation decoration without rewriting validation rules.
+
+If the field is inside a scroll pane and currently off-screen, the overlay may not need to paint anything. It may still update an error summary. When the user scrolls the field into view, the overlay computes current bounds and paints the mark. This is another reason overlay state should be semantic first and geometric second. Geometry changes with viewport position; the problem target remains stable.
+
+If a validation target maps to a table cell, the overlay policy changes again. A cell decoration may be painted by the table renderer, a row overlay, or a \api{JLayer} around the table. The correct choice depends on whether the mark scrolls with the cell, whether it affects row height, whether it needs tooltips, and whether it should appear during editing. The problem target is stable; the presentation mechanism is a screen decision.
+
+Validation overlays should cooperate with command enablement. A blocking problem disables Save. A warning problem may leave Save enabled. A tooltip explains the field problem. A summary lists all problems. These are several presentations of one problem set. If the overlay is the only place that knows the problem exists, Save and accessibility will drift from the visual state.
+
+Next consider the guided help overlay. The user presses F1 or starts a tutorial step. The guide controller identifies a target by component key, command id, field id, or descriptor target. The overlay resolves the current component. If the target is hidden inside a collapsed section, the controller may expand the section, skip the step, or show a message. Painting an arrow to nowhere is not an acceptable fallback.
+
+If the target is inside a scroll pane, the controller may scroll it into view before painting. After scrolling, it must recompute coordinates. If layout changes because the scroll bar appears, it must recompute again. A guided overlay that assumes one fixed rectangle is really a static screenshot, not an interactive guide. The guide must follow the actual component tree.
+
+Guided help often needs event routing. It may allow clicks on the highlighted target and block clicks elsewhere. It may let the user press Escape to leave the guide. It may allow Help to open full documentation. This is not ordinary busy shielding, because some input is intentionally allowed. The event policy should be step-specific and testable.
+
+Instruction text in a guide should not be painted as anonymous pixels if it carries meaning. A live label or accessible text surface is preferable. A callout can be rendered visually, but the message should also exist as a resource string tied to the guide step. This supports localization, tests, and accessibility.
+
+Now consider the drag rectangle. The user presses in a canvas, drags outside one child panel, and releases. If the gesture stays inside one component, a \api{JLayer} around that component may be enough. If it crosses multiple regions, a glass pane may be simpler. The decision depends on gesture geometry, not on which API is more familiar.
+
+During drag, repaint precision still matters. Each mouse-drag event computes the old rectangle and new rectangle, inflates for stroke width, and repaints their union. Repainting the whole root pane on every mouse move may be acceptable in a tiny example and painful in a real dashboard. Overlay code should honor the same dirty-region discipline as ordinary painting.
+
+Autoscroll is a common drag complication. If the user drags near a scroll pane edge, the view may scroll while the glass pane still paints in root coordinates. The drag logic must update model coordinates, view coordinates, and overlay coordinates coherently. A rectangle that lags behind the scrolled content is a sign that the gesture state and overlay geometry are not sharing one transform.
+
+The drag overlay also has cancellation policy. Escape may cancel the gesture. Losing focus may cancel. Releasing the mouse outside the window may cancel or finish depending on the interaction. The overlay should not remain because a release event was missed. Gesture ownership should have a cleanup path that runs even when the happy path does not.
+
+Popup interaction deserves a planned test. Open a combo box while a validation overlay is visible. Open a context menu while a busy overlay covers a table. Show a tooltip inside a guided help step. On some platforms, popup weight changes the z-order relationship. The screen should have a policy: allow popups, suppress overlay, suppress popup, or use a different overlay mechanism.
+
+Modal dialogs are another boundary. A glass pane belongs to one root pane. A modal dialog has its own root pane. If an operation opens a dialog while a parent overlay is visible, the overlay may not cover the dialog, and it probably should not. Parent and child windows need separate overlay state. A global overlay that pretends to cover every window is rarely as simple as it sounds.
+
+Multiple monitors and HiDPI scaling are less dramatic but still relevant. Coordinate conversion through Swing utilities handles most ordinary cases, but cached overlay images and manually aligned pixel effects may depend on scale. If an overlay caches raster shadows or callout shapes, its cache key should include scale, theme, font, and geometry inputs. The Java 2D chapter's cache rules apply here.
+
+Look-and-Feel changes can invalidate overlay metrics. Focus rings, component insets, field heights, border thickness, and colors may change. A validation outline that was aligned under one Look-and-Feel may drift under another if it cached offsets. A busy overlay that uses hard-coded colors may fail contrast in a dark theme. Use UI defaults and resources where possible.
+
+The screenshot harness should capture more than idle overlays. Capture a busy table, a validation form, and if useful a guided highlight or drag state. Each screenshot should be produced from modeled state, not from manual timing. If a screenshot requires a race between task start and capture, the example is not deterministic enough for a book.
+
+Overlay tests can be layered. A model test verifies that a problem target exists. A behavior test verifies that the target resolves to a component key. An EDT test verifies that decoration bounds are recomputed after layout. A screenshot test verifies the final visual mark. This avoids making every overlay test depend on pixel comparison.
+
+Diagnostics should be visible during development. A debug overlay mode can draw target rectangles, coordinate origins, glass-pane bounds, layer scopes, event masks, and current overlay owners. This sounds like extra work until the first time a mark is three pixels off only after scrolling. Debug paint often saves hours of coordinate guessing.
+
+Overlay policies should be documented near the behavior, not buried in paint code. "Busy blocks table input but leaves Cancel and Help active" is a policy. "Validation marks never block focus" is a policy. "Tutorial step allows only the target click" is a policy. Paint code should implement policy, not be the only place where the policy can be inferred.
+
+Failure handling should close overlays predictably. If validation target resolution fails, log the missing component key and show the problem in the summary. If a guided target disappears, transition the guide. If a busy task fails, show failure state and release the busy token. If a timer throws, stop the timer. Overlay failure should not strand the screen under a permanent veil.
+
+Performance should be measured with overlays active. A screen may be fast until a translucent root overlay forces full-window repaint at animation cadence. A validation overlay may be cheap with ten fields and expensive with a thousand table cells. A tutorial layer may be fine until it recomputes layout on every mouse move. Measure the state users actually see.
+
+Threading rules remain the same. Overlay state that touches Swing components must be updated on the EDT. Background tasks can produce progress values away from the EDT, but the behavior that changes a layer, glass pane, component bounds, or repaint request belongs on the EDT. An overlay that "mostly works" from a worker thread is still wrong.
+
+The design should also say what happens during disposal. If the user closes the screen while refresh is busy, the busy behavior closes. It may cancel the task or detach from it depending on product policy. It removes event masks, stops timers, hides popups, releases references, and ignores late results. This is lifecycle work, not visual cleanup.
+
+This long path is the reason overlays deserve their own chapter. A small screenshot can make an overlay look like a simple decoration. Production overlays are a junction of painting, input, focus, accessibility, geometry, task state, and lifecycle. The code can still be small if each responsibility has a named owner.
+
+The decision table for the worked screen can be written in plain language. Busy is local to the table unless the whole editor is replacing its customer. Validation is local to the form and never blocks focus. Guided help is root-wide only while a guide step is active. Drag feedback is local to the component unless the gesture leaves it. These four sentences prevent the implementation from collapsing four policies into one glass pane.
+
+Those sentences should survive code review. If a later developer broadens the busy overlay to cover the form, the review asks whether the product policy changed or whether the code merely became easier to write. If validation starts consuming clicks, the review asks why a visual problem mark became an input policy. If a drag overlay remains after cancellation, the review asks which owner failed to close it. Clear policy makes overlay regressions visible.
+
+The policies also shape examples. A book screenshot of the busy table should show whether commands outside the table remain reachable. A screenshot of validation should show field state and problem text, not only a red outline. A guided-help example should show target identity and message text. Visual examples are more useful when they reveal policy, not only appearance.
+
+The same policy vocabulary helps with Corusco generation. A generated behavior can install a \api{JLayer} for form validation because the scope is a form subtree. It can install a root-pane glass pane for a guide because the scope crosses subtrees. It can bind busy to a table layer because the task protects that region. The generator is not guessing; it is applying declared scope and lifecycle.
+
+When the policy cannot be stated simply, the screen probably needs another model. "Sometimes this overlay blocks some things unless a popup is open, except during validation" is not impossible, but it should not live inside \api{paint}. It may require a guided-flow state machine, command context, task model, or separate overlay owners. Complex behavior deserves explicit state.
+
+The busy overlay belongs to the table region during refresh. It observes task state, paints a local veil over the table, blocks table input, leaves the Cancel command reachable, and exposes status text. It does not cover the detail form if the user can still read or edit already loaded details. If the entire screen becomes unusable, the scope can be widened to the root pane deliberately.
+
+The validation overlay belongs to the form subtree. It observes problem targets and paints marks near fields. It does not block input. It updates accessible descriptions and tooltips. It repaints old and new mark bounds when problems change. It does not own parsing or validation rules. It can be replaced by a different visual design without changing field classes.
+
+The drag rectangle belongs to the interaction that creates it. It may use a glass pane if the rectangle crosses a scroll pane and toolbar, or it may use a \api{JLayer} if it stays inside one table or canvas. Its owner is the gesture. When the gesture ends or cancels, the rectangle disappears and event masks close. The rectangle should repaint old and new bounds, not the whole frame.
+
+The guided help step belongs to a controller. The controller names the current target by component key or descriptor target. The overlay resolves the target to current bounds and paints a callout. If the user changes layout, scrolls, or opens a popup, the controller and overlay decide whether to update, pause, or close. A help arrow with hard-coded coordinates is not a guide; it is a screenshot accident.
+
+The validation badge epidemic is the standard failure. A form starts with one custom field painting its own validation badge. Another field copies the logic. Then tables need badges, combo boxes need badges, and disabled sections need badges. Soon validation painting is scattered across subclasses and renderers. Changing badge appearance becomes a search-and-replace exercise. A validation overlay reverses the dependency: fields expose validation state; the overlay paints policy.
+
+The glass pane that ate the application is another standard failure. A busy glass pane becomes visible and consumes mouse events. An exception occurs before it is hidden. The application appears dead. A \api{finally} block is necessary, but the deeper fix is scoped ownership, diagnostics, and cancellation policy. A support tool should be able to report which overlay is active and who activated it.
+
+Popup interference is the z-order case study. A tutorial overlay works until a combo box opens. On one platform the combo popup appears above the overlay; on another it appears below; on a third it becomes heavyweight and ignores the expected z-order. The lesson is that popup weight is an implementation detail. Critical overlays must be tested with menus, tooltips, combo boxes, and context popups.
+
+The coordinate conversion drill is small and useful. Pick a target component nested five containers deep inside a scroll pane. Paint a rectangle around it from a glass pane. Then scroll, resize, change Look-and-Feel, and move the window between monitors. If the rectangle drifts, coordinate conversion or invalidation is wrong. This exercise exposes most overlay mistakes.
+
+The accessibility drill asks what a non-visual user learns. A dimmed form with a spinner should expose busy state. A validation outline should correspond to problem text. A tutorial arrow should not be the only instruction. A blocked region should say why it is blocked and whether cancellation is possible. A decorative overlay can stay decorative; a semantic overlay needs semantic channels.
+
+The repaint drill asks how much area changes. A local validation mark should repaint local bounds. A drag rectangle should repaint old union new bounds. A full-screen dimming layer may repaint broadly, but it should not trigger layout invalidation. An animated overlay should report its repaint cadence and stop when hidden. If the overlay repaints the world for a local mark, the scope is wrong.
+
+The lifecycle drill asks who closes the overlay. If a screen closes while a background task is running, does the busy token close? Does the timer stop? Does the glass pane release listeners? Does a popup dispose? Does a generated behavior scope close subscriptions? If the answer is "the next paint will handle it," the design is wrong. Painting does not own lifecycle.
+
+The Corusco migration drill starts with a screen that sets client properties and directly repaints a glass pane. Move the problem state into a \api{ProblemSet}. Move busy state into a task value. Install validation and busy behaviors in a scope. Let the overlay consume prepared decoration state. The visual result may look the same, but the ownership becomes reviewable.
+
+A companion example for this chapter should therefore contain at least three
+states, not merely three pictures. One state shows the ordinary screen with no
+overlay active, so the reader can see what the overlay is modifying. One state
+shows local busy work, including status text and the commands that remain
+available. One state shows validation, including a visible problem mark and
+the corresponding problem text. A fourth state, when present, can show the
+coordinate-scope diagram or a guided target. The important rule is that each
+state is produced by changing model facts, not by manually drawing a screenshot
+that bypasses the screen architecture.
+
+The screenshot should also reveal the overlay boundary. If the busy state is
+local to the table, the figure should leave the form outside the dimmed region.
+If validation is nonblocking, the figure should keep the field editable rather
+than painting a modal error. If a guide step points to a component, the figure
+should show enough surrounding UI to prove that the arrow is anchored to a real
+target and not to a fixed page coordinate. Screenshots are most valuable when
+they show policy, not merely styling.
+
+For runnable examples, use deterministic state. A busy overlay can be captured
+by setting a task value to a synthetic running state; it does not need a sleeping
+thread. A validation overlay can be captured by loading a known invalid value;
+it does not need a human to type. A guided overlay can be captured by selecting
+a known guide step; it does not need a timer. Determinism makes the figure
+useful for the book and makes the example useful as a smoke test.
+
+The same example should exercise cleanup. Open the screen, activate busy,
+activate validation, deactivate both, and close the scope. A small diagnostic
+assertion can check that timers have stopped, event masks are cleared, popups
+are hidden, and subscriptions are closed. Overlay bugs often look visual, but
+many of them are lifecycle bugs. A screenshot catches alignment; a cleanup test
+catches the overlay that remains in memory after the window is gone.
+
+Finally, review overlays under both normal and adverse geometry. Capture the
+table with several rows, with an empty result, after a column move, and while a
+scroll pane is not at its origin. Capture the form under a larger font and a
+dark theme if the book example supports it. Move popup-producing controls
+through the same states during manual testing. These variations prevent the
+chapter from teaching a single pretty layout that fails as soon as Swing behaves
+like Swing.
+
+\textbf{Review questions.} What state does the overlay present? What is the smallest scope that truthfully covers that state? Does it paint only, intercept input, change focus, or expose accessibility state? Which coordinate system does it paint in? What invalidates its geometry? What repaints when state changes? Who owns its timer, listeners, event masks, and lifecycle? How does it interact with popups, scroll panes, and active editors?
+
+\textbf{Corusco review questions.} Is overlay state modeled as busy values, problem sets, help topics, command state, or guided-flow state? Are subscriptions scoped? Are decoration targets stable component keys or descriptors rather than localized text? Can tests assert the model state without showing the overlay? Can screenshot tests render busy, validation, and ordinary states deterministically?
+
+\textbf{Checklist for overlays.} Choose the smallest overlay scope that solves the problem. Keep coordinate conversions explicit. Do not put per-layer mutable state in a shared \api{LayerUI} accidentally. Clear layer event masks during uninstall. Make visual validation accessible through semantic state. Test popups, tooltips, menus, and combo boxes with overlays active. Test keyboard focus while an input-blocking overlay is visible. Repaint precise overlay damage when the effect is local. Avoid starting background work from overlay painting. Document whether the overlay is decorative, intercepting, or modal.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Wrap a form in \api{JLayer} and paint validation outlines based on a \api{validation.error} client property.
+\item Build a busy layer that blocks mouse and key input, then add focus behavior that moves focus to a Cancel button.
+\item Create a glass-pane tutorial arrow that points from a toolbar button to a field. Handle scrolling and resizing.
+\item Add a repaint logger to an animated overlay and reduce dirty area.
+\item Test combo box popups and tooltips under a visible glass pane on your target platforms.
+\item Write a shareable stateless \api{LayerUI}; then intentionally add mutable state and observe cross-layer interference.
+\item Implement a drag rectangle on the glass pane using old/new rectangle repaint precision.
+\item Expose validation errors through accessible descriptions as well as visual marks.
+\item Replace a global busy glass-pane flag with scoped busy tokens and leak diagnostics.
+\item Convert a client-property validation overlay to consume a structured problem model.
+\end{enumerate}
+\end{exercisebox}

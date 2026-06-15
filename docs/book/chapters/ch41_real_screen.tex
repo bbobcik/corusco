@@ -1,0 +1,1403 @@
+\chapter{Building a Real Screen}
+\label{ch:real-screen}
+\chapterquote{The value of a framework is not visible in the first field; it is visible when the tenth concern arrives and the screen remains legible.}{The screen-building rule}
+
+\begin{chaptermap}
+Core question & How do the book's pieces combine into one maintainable Swing workspace that a developer can inspect, test, extend, and screenshot?\\
+Ingredients & Records, generated forms, generated table descriptors, commands, MigLayout, FlatLaf, validation, table state, background loading, busy UI, lifecycle scopes, resources, help, and tests.\\
+Plain Swing baseline & A handwritten screen can work, but row data, selection, validation, command state, table state, task state, and cleanup need explicit owners.\\
+Corusco connection & Corusco supplies stable facts, observable state, generated companions, binding scopes, command descriptors, table descriptors, problem models, and task boundaries while layout and workflow remain readable application code.\\
+Companion example & \bookAppExample.\\
+\end{chaptermap}
+
+\section{The target screen}
+
+The running screen in this chapter is a customer workspace. It has a searchable
+customer table, a detail form, commands, status text, validation feedback,
+saved table layout, background refresh, busy indication, and tests. This is
+not a large application, but it is large enough to expose the important
+interactions. A user will search, sort, select, edit, save, cancel, refresh,
+and wait. A developer will add a column, rename a label, change a validation
+rule, persist table state, route F1 help, and write a screenshot test. The
+screen is deliberately ordinary because ordinary business screens are where
+most Swing maintainability is won or lost.
+
+The companion \bookAppExample{} is a compact executable shell for screenshots:
+FlatLaf-oriented construction, MigLayout geometry, a customer table, a detail
+panel, deterministic sample data, and a busy-detail variant. The full chapter
+describes the production shape that this shell is meant to grow into. That
+distinction matters. A book example should be small enough to read. The
+architecture should be strong enough for the tenth concern.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\bookAppFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\bookAppBusyFigure}
+\end{minipage}
+\caption{The real-screen companion appears in normal and busy-detail states. The screenshots keep the chapter grounded in an actual FlatLaf and MigLayout Swing surface.}
+\label{fig:bookapp-workspace-screens}
+\end{figure}
+
+Figure~\ref{fig:bookapp-workspace-screens} is a visual contract. The table is
+not a placeholder for a future web grid. The detail form is not a mockup. The
+screen is a real Swing surface whose layout, components, and state can be
+constructed on the EDT, tested, and captured into the PDF. The chapter will
+speak about generated form models, command descriptors, task services, and
+table-state controllers, but the reader should keep the visible workspace in
+mind. The abstractions are justified only if this kind of screen remains
+clearer after they are added.
+
+The screen is also intentionally modest in style. It is not a marketing page
+and not a visual-effects demo. A user must scan rows, compare fields, type
+edits, and read validation. MigLayout gives the main regions their proportions.
+FlatLaf gives modern widgets and density. Corusco gives stable identities and
+behavioral contracts. The application still decides what the user is trying to
+do and how the workflow should feel.
+
+\termdef{Workspace}{in this chapter} means a Swing view that contains several
+cooperating areas rather than a single modal form. A workspace often has a
+table or tree on one side, detail editors on another side, commands around the
+edges, status text, background activity, and local navigation. It may live in a
+frame, internal frame, tab, or larger shell. The exact container is less
+important than the fact that several concerns meet on one screen.
+
+\termdef{Concern ownership}{in this chapter} means that each durable fact has
+a named owner. Rows belong to a row source. Selection belongs to a selected-row
+value or selection model. Editable detail belongs to a form model. Commands
+belong to command objects. Long-running work belongs to task handles and
+lifecycles. Table layout belongs to table state. Visible text belongs to
+resources. A listener may translate an event, but it should rarely be the only
+place where a durable fact exists.
+
+The chapter's main question is not "which helper class should I import?" It is
+"where does this fact live after the screen becomes real?" If the answer is
+"in the current text of a button", "in column index two", "in the last
+listener that ran", or "in a background callback that may arrive later", the
+screen will become difficult to maintain. If the answer is an observable
+value, generated key, descriptor, command, scope, table-state store, resource
+key, or task handle, the screen has a structure that can be reviewed.
+
+This question should be asked while the screen is still small. A three-field
+form can survive a listener per field. A five-row table can survive an array
+model. A single Refresh button can survive a direct service call. The danger
+is that working code becomes trusted structure. The next feature then attaches
+itself to the nearest listener because that seems cheaper than naming the
+missing owner. The customer workspace is built as if it will grow, because
+most successful desktop screens do grow.
+
+There is also a reading contract. A future maintainer should be able to open
+the workspace and find the main facts quickly. The row type should be visible.
+The generated table descriptor should be visible. The form model should be
+visible. The command set should be visible. The task boundary should be
+visible. The view layout should be visible. The screenshot harness should be
+visible. If understanding the screen requires following anonymous listeners
+through component construction order, the code may work but the chapter's
+standard has not been met.
+
+\section{Stable facts before components}
+
+Begin with the facts that should survive layout and localization: customer row
+identity, table id, column ids, form field ids, command ids, resource ids, help
+topics, validation problem codes, and component keys for tests. These facts
+should not be discovered from button text, table headers, or current component
+positions. They belong in records, annotations, generated companions, or
+handwritten descriptors. The component tree comes later.
+
+Stable facts are cheap to define early and expensive to recover late. Once a
+table is full of localized headers and integer indexes, it is hard to recover
+a durable column identity. Once tests locate a Save button by text, changing
+the resource bundle becomes risky. Once a validation message is the only thing
+that names a problem, translations and wording improvements become test
+changes. The customer workspace begins with identities because identities are
+the anchors that let presentation change safely.
+
+\begin{lstlisting}[caption={The committed edit value.}]
+@SwingForm(id = "customer/edit")
+public record CustomerEdit(
+        @TextField
+        @Required
+        @Length(max = 80)
+        String name,
+
+        @TextField
+        @DecimalRange(min = "0.00")
+        BigDecimal creditLimit,
+
+        @CheckBox
+        boolean active) {
+}
+\end{lstlisting}
+
+The record is not the live Swing form. It is the committed value shape. It is
+the object that can be saved, compared, audited, and passed to domain code
+after editing succeeds. The generated form model will own editing state: raw
+text, parsed values, parse errors, validation problems, dirty state, touched
+state, and guarded result creation. This distinction keeps the record small
+and immutable while giving the UI a proper place for unfinished input.
+
+Records are pleasant enough that developers may be tempted to use them as live
+state. Resist that in an editor. A partially typed decimal is not a
+\api{BigDecimal}. A text field that has been touched but not changed is not a
+new committed value. A validation problem is not a property of the record; it
+is a property of the current edit attempt. The form model is the transaction
+boundary between widgets and records.
+
+\begin{lstlisting}[caption={The table row value.}]
+@SwingTable(id = "customer/table")
+public record CustomerRow(
+        @Column(width = 80)
+        CustomerId id,
+
+        @Column(width = 220)
+        String displayName,
+
+        @Column(width = 100)
+        CustomerStatus status,
+
+        @Column(width = 120)
+        LocalDate lastOrderDate) {
+}
+\end{lstlisting}
+
+Define the row as a value before constructing the table. A row record should
+contain the values the table displays and the identity needed for selection
+and refresh. Generated table companions can then expose table keys, column
+keys, descriptors, resource keys, and Swing model helpers. The \api{JTable}
+comes later, after the row contract exists.
+
+This order prevents the table from becoming the schema. A \api{JTable} has
+view indexes, model indexes, sorters, renderers, localized headers, column
+models, and selection models. Those details are necessary at runtime, but they
+are poor places to store meaning. The generated or handwritten descriptor
+names the row type and columns before Swing displays them. When the user moves
+a column, the descriptor identity does not move. When a locale changes the
+header, the persistence id does not change. When a test asserts selection by
+row value, it need not know the current view row.
+
+\begin{lstlisting}[caption={Actions are declared before buttons.}]
+final class CustomerWorkspacePresenter {
+    @UiAction(
+            id = "customer/refresh",
+            text = "customer/refresh/text",
+            tooltip = "customer/refresh/tooltip")
+    void refresh() {
+        loadCustomers();
+    }
+
+    @UiAction(
+            id = "customer/save",
+            text = "customer/save/text",
+            tooltip = "customer/save/tooltip",
+            acceleratorKey = KeyEvent.VK_S,
+            acceleratorModifiers = InputEvent.CTRL_DOWN_MASK)
+    void save() {
+        saveCurrentCustomer();
+    }
+}
+\end{lstlisting}
+
+Commands should be declared before buttons, menu items, and shortcuts. The
+workspace has operations such as Refresh, Save, Reset, Delete, and Help. Each
+operation has one command identity and one enabled-state policy. Generated
+action companions can create descriptors and command factories. The view
+adapts commands to buttons and key bindings. It does not own Save logic.
+
+The same identity rule applies to resources and help. A label resource key
+names visible text for a field. A help topic names a documentation target. A
+component key names a view contract for tests and focus. These keys should be
+near generated companions or handwritten descriptors, not sprinkled through
+component construction. A generated form descriptor can carry label, tooltip,
+problem, and help metadata for a field. A generated table descriptor can carry
+column headers, tooltips, help topics, widths, and persistence ids. A generated
+action descriptor can carry command text, tooltip, mnemonic, accelerator, and
+selectable state.
+
+\begin{principlebox}{facts first}
+Declare stable facts before constructing visible components. A screen that
+starts with keys, descriptors, models, and commands can change layout and text
+without losing meaning.
+\end{principlebox}
+
+This does not mean every screen begins with an annotation. A one-off custom
+visual editor may declare handwritten keys and descriptors. A mature legacy
+table may be migrated one column at a time. The rule is broader than
+generation: do not let Swing component instances be the only source of truth
+for application facts. Corusco generation is a convenient way to make that
+rule cheap for common forms, tables, and actions.
+
+The stable facts should also be grouped by owner. Form field keys belong with
+the form source or form companion. Table column keys belong with the table row
+source or table companion. Action keys belong with the presenter or action
+companion. Component keys may belong with the view because they name view
+contracts rather than domain facts. Resource keys may be generated from the
+same source declarations but resolved by the application resource service.
+Help topics may be generated for fields and columns or declared in a feature
+help companion. A key used everywhere but owned nowhere becomes difficult to
+rename and difficult to review.
+
+A useful early design exercise is to write the screen's vocabulary before the
+screen's component tree. Which rows exist? Which columns are durable? Which
+fields are editable? Which operations can the user perform? Which help topics
+are meaningful? Which resources must be localized? Which facts are persisted
+between sessions? This vocabulary need not be perfect. It will change during
+implementation. But it gives the screen a semantic skeleton before Swing
+components, listeners, and layout constraints multiply.
+
+\section{Presenter state and command vocabulary}
+
+The presenter owns screen state that is not purely visual: observable row
+source, selected row or selected customer id, form model for the detail side,
+command set, busy state, task service, status text, problem sets, and lifecycle
+scopes. This does not mean the presenter should become a god object. It means
+state needs a non-widget owner. Split services and models when they become
+concepts of their own.
+
+The presenter is the place where screen facts become workflow. It knows that a
+selected row should load detail, that Save depends on dirty state and
+validation, that Refresh starts a background task, and that a closed view
+should cancel view-owned work. It should not know how MigLayout aligns a
+label, and it should not paint a table cell. If a service call, permission
+rule, or validation rule becomes large, move it into a service or model. The
+presenter coordinates; it should not absorb the whole application.
+
+\begin{lstlisting}[caption={Presenter state sketch.}]
+final class CustomerWorkspacePresenter implements AutoCloseable {
+    private final ObservableArrayList<CustomerRow> rows =
+            ObservableArrayList.empty();
+    private final SimpleValue<CustomerRow> selectedRow =
+            SimpleValue.empty();
+    private final SimpleValue<String> statusText =
+            SimpleValue.of("Ready");
+    private final SimpleValue<Boolean> refreshBusy =
+            SimpleValue.of(false);
+    private final TaskService tasks =
+            SwingTaskServices.virtualThreads();
+    private final SubscriptionScope scope =
+            new SubscriptionScope();
+
+    ObservableList<CustomerRow> rows() {
+        return rows;
+    }
+}
+\end{lstlisting}
+
+The class sketch is incomplete by design. The important part is ownership. If
+rows change, inspect the row source. If selection behaves oddly, inspect the
+selected-row value and the selection binding. If Save is enabled at the wrong
+time, inspect the derived command state. If a background result arrives too
+late, inspect the generation counter and task callback. Without these named
+owners, the reviewer must search through listeners and component state hoping
+to find the one place where a fact is currently stored.
+
+Commands are part of presenter state because they express operations in terms
+of screen state. The Save command is enabled when the form is dirty, valid,
+editable, and not saving. The Delete command is enabled when a durable
+selection exists and permission allows deletion. The Refresh command may stay
+enabled even while the form is invalid because it does not depend on form
+validity. These are not button rules. They are operation rules.
+
+\begin{lstlisting}[caption={Command state derived from screen facts.}]
+DerivedValue<Boolean> canSave = DerivedValue.of(
+        () -> formDirty.value()
+                && !formProblems.value().hasErrors()
+                && !saveBusy.value(),
+        formDirty, formProblems, saveBusy);
+
+scope.add(canSave.subscribe(event ->
+        saveCommand.setEnabled(Boolean.TRUE.equals(event.newValue()),
+                event.origin())));
+\end{lstlisting}
+
+The generated action descriptor supplies identity and presentation metadata.
+The presenter supplies runtime availability. This distinction lets a toolbar
+button, menu item, popup item, key binding, and command palette observe the
+same command. If the keyboard shortcut works while the Save button is disabled,
+there are probably two operation paths. The fix is not another boolean; the
+fix is one command.
+
+Status text deserves a model too. A status label that is set directly by every
+listener becomes a race between concerns. Refresh may set "Loading". Save may
+set "Saved". Validation may set "Fix validation errors". A background failure
+may set "Network unavailable". Decide whether the screen has one status value,
+a prioritized status model, or several status regions. Then bind labels to
+that state. Do not leave status policy as a collection of calls to
+\api{setText}.
+
+The same applies to disabled reasons. Save disabled because the form is clean
+is different from Save disabled because validation failed, permission is
+missing, or a save is already running. A boolean command enabled state is
+necessary for Swing, but it may not be sufficient for users. A neighboring
+reason value can feed a tooltip, status line, command palette, or accessible
+description. The presenter is the place to derive that reason from form,
+permission, and task state.
+
+Presenter state should be testable without Swing where possible. A core test
+can construct the presenter with fake services, load deterministic rows,
+select a row, edit the form model, and assert command state. EDT tests should
+cover bindings and component behavior. This separation keeps the expensive
+Swing tests focused and lets workflow rules run quickly.
+
+Permissions belong in this layer too. A Delete command may be disabled because
+there is no selection, because the selected customer is archived, because a
+delete task is already running, or because the current user lacks permission.
+Those reasons have different user-facing consequences. A permission failure
+may need a help link or audit message. A missing selection may need no
+explanation. A busy task may need a progress indicator. Modeling only one
+boolean forces the view to invent text it cannot justify. Presenter state can
+derive both enabled booleans and explanatory values from the same facts.
+
+Undo and reset are a useful test of command vocabulary. Reset detail form
+should restore the current form model to the loaded customer. Undo may be a
+broader application command that reverses the last edit. Cancel may close a
+dialog or discard workspace changes depending on container. These operations
+sound related, but they are not the same command. Naming them precisely in the
+presenter prevents the view from turning every "go back" gesture into a local
+button listener.
+
+\section{View assembly with MigLayout}
+
+The view is an ordinary Swing panel. Use MigLayout for the main geometry. Use
+FlatLaf for modern styling. Use a split between the table/search area and the
+detail form. Keep layout visible and reviewable. Do not bury the main screen
+in decorative cards. This is an operational desktop screen. Density and
+predictable scanning matter more than a marketing layout.
+
+\begin{lstlisting}[caption={Workspace layout shape.}]
+JPanel panel = new JPanel(new MigLayout(
+        "fill, insets 18, gap 12",
+        "[grow, fill][320!, fill]",
+        "[][grow, fill][]"));
+
+panel.add(searchBar, "span 2, growx, wrap");
+panel.add(new JScrollPane(customerTable), "grow");
+panel.add(detailPanel, "growy, wrap");
+panel.add(statusLabel, "span 2, growx");
+\end{lstlisting}
+
+The layout should support repeated work. The search area belongs where the
+user begins. The table should receive enough space to compare rows. The detail
+panel should keep labels and fields aligned. The status line should be visible
+without competing with the form. MigLayout lets the source describe these
+priorities directly: which region grows, which width is fixed, where wrapping
+occurs, and which gaps express related or unrelated content.
+
+The detail panel implements the generated view contract. The application still
+constructs fields and arranges them. The generated behavior plan installs text
+bindings, selected-state bindings, validation tooltips, validation borders,
+help topics, and accessibility metadata. The view contract is a narrow bridge,
+not a replacement for the panel.
+
+\begin{lstlisting}[caption={A handwritten panel implements a generated view contract.}]
+final class CustomerDetailPanel extends JPanel
+        implements CustomerEditView {
+    private final JTextField name = new JTextField();
+    private final JTextField creditLimit = new JTextField();
+    private final JCheckBox active = new JCheckBox();
+
+    CustomerDetailPanel() {
+        super(new MigLayout(
+                "fillx, insets 12, gap 10",
+                "[][grow, fill]",
+                "[][][]push[]"));
+        add(new JLabel("Name"));
+        add(name, "wrap");
+        add(new JLabel("Credit limit"));
+        add(creditLimit, "wrap");
+        add(new JLabel("Active"));
+        add(active, "wrap");
+    }
+
+    @Override
+    public JTextField nameField() {
+        return name;
+    }
+}
+\end{lstlisting}
+
+The source listing is intentionally mundane. The panel is allowed to be
+ordinary. It arranges labels and editors in a way a Swing developer can
+inspect. It implements the generated contract so generated bindings can find
+the components they need. If the design changes, change the MigLayout source.
+If a generated binding changes, inspect the generated behavior plan. The two
+concerns meet at the contract methods.
+
+Generated plans should be read, not merely trusted. They are ordinary Java
+source produced at compile time. A developer can open the generated view
+contract, see which components are expected, and inspect which bindings or
+behaviors are installed. This inspectability is one reason compile-time
+generation fits a Swing codebase better than a hidden runtime scanner. When
+the screen misbehaves, the generated source becomes documentation for the
+agreement between annotated model and handwritten view.
+
+\begin{lstlisting}[caption={Generated plan installed into a handwritten view.}]
+BehaviorScope behaviors = new BehaviorScope(helpService);
+
+CustomerEditBehaviorPlan.install(
+        detailPanel,
+        presenter.formModel(),
+        behaviors);
+\end{lstlisting}
+
+The exact generated facade names depend on the source type. The pattern is the
+same: handwritten view, generated synchronization plan, lifecycle-owned scope.
+Installing bindings creates listener relationships. Closing the scope must
+detach them. A real screen will be opened, closed, replaced, and perhaps
+embedded in different containers. Binding lifecycle is not optional.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\bindingFormFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\behaviorPlanFigure}
+\end{minipage}
+\caption{The handwritten view owns geometry, while generated form metadata and behavior plans own routine synchronization, validation presentation, help, and cleanup.}
+\label{fig:bookapp-form-behaviors}
+\end{figure}
+
+Figure~\ref{fig:bookapp-form-behaviors} is the key compromise. Swing
+components remain visible in the code. MigLayout remains the geometry
+language. Corusco supplies field models, descriptors, and binding plans.
+Neither side pretends to be the other. This is why the screen can be both
+generated enough to avoid repetition and handwritten enough to remain designed.
+
+FlatLaf belongs at the application boundary. The example code may call a
+support helper that installs a FlatLaf theme before screenshots. Production
+applications usually set the Look-and-Feel at startup. Individual panels
+should not repeatedly install the LAF. They should use standard Swing
+components, client properties only where needed, and layout constraints that
+work under light and dark themes. Screenshots should verify both density and
+readability.
+
+Focus order should be reviewed with the same seriousness as layout. A user
+will tab through the search field, table, detail fields, and command row. The
+order should follow the workflow, not construction accidents. Generated view
+contracts and component keys help tests find components; they do not decide
+focus traversal by themselves. Swing's default focus traversal is often good
+when components are added in logical order. When the visual layout and add
+order diverge, review focus explicitly.
+
+Resize behavior is part of the design. The table should normally absorb most
+extra horizontal and vertical space. The detail panel may have a fixed
+comfortable width. The status line should grow horizontally but not vertically.
+The command row should keep natural button sizes. A screenshot at one size is
+not enough. The layout should be inspected at a narrower width, a taller
+workspace, and a high-DPI scale. MigLayout makes these policies visible in
+constraints, but it cannot choose them for the application.
+
+\section{Tables and master-detail selection}
+
+The customer table uses the generated descriptor and an observable row source.
+The table model is installed on the EDT. Selection binding writes selected row
+state. A table-state controller restores column layout and sort state. This is
+more code than \api{new JTable(data, headers)}, but it has stable identity,
+selection policy, table persistence, and lifecycle cleanup.
+
+\begin{lstlisting}[caption={Table assembly shape.}]
+EdtObservableList<CustomerRow> swingRows =
+        EdtObservableList.of(presenter.rows());
+
+ObservableTableModel<CustomerRow> model =
+        ObservableTableModel.of(swingRows,
+                CustomerRowTableDescriptor.DESCRIPTOR);
+
+customerTable.setModel(model);
+
+scope.add(TableSelectionBinding.bind(
+        customerTable, model,
+        presenter.selectedModelRow(),
+        presenter.selectedRow()));
+
+scope.add(TableStateController.install(
+        customerTable, model, tableStateStore));
+\end{lstlisting}
+
+The extra code is where table meaning becomes explicit. The row list is
+observable. The table descriptor supplies columns. The selection binding states
+which presenter values receive selected coordinates and row values. The
+table-state controller states where column layout is restored and saved. In a
+plain \api{new JTable(data, headers)} table, these facts still exist; they are
+merely implicit, often as indexes and listeners that will be harder to find
+later.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\coruscoTableDescriptorFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\coruscoTableStateFigure}
+\end{minipage}
+\caption{The table descriptor names columns before Swing displays them; table state then persists user layout against stable ids rather than localized headers or view indexes.}
+\label{fig:bookapp-table-state}
+\end{figure}
+
+Figure~\ref{fig:bookapp-table-state} explains why descriptor-backed tables
+matter in a complete screen. The row record and descriptor define meaning. The
+\api{JTable} displays it. The column model lets the user rearrange it. The
+state controller persists the arrangement. If meaning lives only in column
+indexes, these steps become tangled. If meaning lives in column keys and
+descriptors, view order can change without changing identity.
+
+When the selected row changes, the detail form should load or display the
+corresponding customer. This is a master-detail relationship. Avoid putting
+the whole workflow in a table selection listener. Selection binding writes
+selected state. Presenter logic reacts to selected state. Detail loading uses
+tasks or master-detail values as appropriate.
+
+\begin{lstlisting}[caption={Selection reaction in presenter state.}]
+scope.add(selectedRow.subscribe(event -> {
+    CustomerRow row = event.newValue();
+    if (row == null) {
+        clearDetail();
+    } else {
+        loadDetail(row.id());
+    }
+}));
+\end{lstlisting}
+
+A production screen usually has at least two selection speeds. Selecting a row
+should feel immediate: the visible selection, command state, and perhaps a
+small amount of cached detail can update at once. Loading expensive detail may
+take longer and must be treated as asynchronous. The selected row value is
+therefore not the same as the loaded detail value. Keeping them separate lets
+the UI show "loading" for the current selection while preventing an older load
+from overwriting the current detail panel.
+
+Selection preservation during refresh deserves policy. If the refreshed row
+set still contains the selected customer id, the screen may preserve
+selection. If the selected customer disappeared, the screen may clear detail,
+show a message, or select the nearest row. Do not let the table sorter decide
+this accidentally. The presenter should compare durable row ids, not view
+indexes. Generated row identities and column descriptors make that comparison
+straightforward.
+
+Filtering and sorting add another coordinate boundary. A selected view row is
+not a selected model row. A selected model row is not necessarily a selected
+domain id. A table descriptor does not remove this distinction; it makes it
+safer to cross. Use table selection bindings that explicitly convert
+coordinates and write selected state. Avoid reading \api{getSelectedRow} in
+every command handler.
+
+Renderers remain explicit Swing code. A generated descriptor can supply value
+type and column identity, but a status badge, risk color, date format, or
+validation marker needs renderer policy. Keep renderers small, stateless, and
+aware of performance. Let the descriptor identify the column; let the renderer
+present the cell. Do not put presenter state into renderer components.
+
+Large-data behavior should be considered even when the example data is small.
+The customer table may eventually show tens of thousands of rows or a virtual
+slice of a larger result. The descriptor-backed model helps avoid column
+switch statements, but row loading, filtering, sorting, and update precision
+still matter. Use observable list updates that describe what changed. Avoid
+replacing the entire table model for a small row edit. Preserve selection by
+durable id where possible. Repaint the rows that changed, not the whole table,
+unless the whole table truly changed.
+
+Export and copy actions should use the same column identities. If the user
+exports selected customers, the export should not scrape visible table headers
+and view indexes as its only schema. The table descriptor can name columns,
+value extractors, resource keys, and visibility policy. The export command can
+decide whether to use all columns, visible columns, or a separate export
+descriptor. This is another example of stable facts becoming useful after the
+first visible table works.
+
+\section{Forms, validation, resources, and help}
+
+The detail form edits the selected customer. Its generated form model owns raw
+text, parsed values, validation, dirty state, and committed result creation.
+The view owns components and layout. The presenter owns when a form is loaded,
+saved, reset, or discarded. This separation prevents the common Swing mistake
+where the current text field values are both the user interface and the
+application state.
+
+Validation problems from the form model appear in field borders, tooltips,
+summary labels, command enablement, and tests. The same \api{ProblemSet}
+supports all of these. Do not recalculate validation separately for each
+surface. A field with invalid input should not tell the tooltip one thing, the
+Save command another thing, and the problem summary a third thing.
+
+\begin{lstlisting}[caption={Save enablement from form state.}]
+DerivedValue<Boolean> canSave = DerivedValue.of(
+        () -> formDirty.value()
+                && !formProblems.value().hasErrors()
+                && !saveBusy.value(),
+        formDirty, formProblems, saveBusy);
+\end{lstlisting}
+
+The generated or handwritten command state observes this value. The button,
+menu item, shortcut, and command palette observe the command. This indirection
+is not ceremony. It is how a screen prevents a keyboard shortcut from saving
+invalid data while the visible Save button is disabled.
+
+Validation presentation should be staged. A newly loaded form may contain
+empty optional fields without screaming at the user. A field being edited may
+show parse feedback before full validation. A Save attempt may reveal all
+blocking errors. The form model supplies problems and field identities; the
+presentation policy decides when to show them. Do not confuse the existence of
+a problem with the decision to draw it loudly.
+
+Resources and help should be generated or keyed before they are painted.
+Button text, labels, tooltips, table headers, validation messages, and help
+indicators come from resources and generated keys. F1 help uses generated help
+topics or handwritten topics attached to descriptors. The screen should not
+contain visible strings as stable ids. This matters for the book as well:
+screenshots should remain visually stable, but source should still demonstrate
+resource separation.
+
+Resource separation also keeps examples from teaching bad habits accidentally.
+It is acceptable for a compact book example to use a small in-memory resource
+map, but components should still be driven by resource keys where the real
+application would be. This gives the reader the habit of treating visible text
+as presentation, not identity. The same principle applies to help topics and
+tooltips. A tooltip may contain static help, validation feedback, and disabled
+reason text; a structured tooltip policy is easier to test and compose than a
+sequence of calls that overwrite \api{setToolTipText}.
+
+Help routing is part of the screen, not an afterthought. F1 on the name field
+should open help for the name field, not a generic application page. F1 on a
+table column should open column help if the descriptor supplies it. F1 on a
+disabled Save button may open help for the Save operation and explain the
+disabled reason. Generated help topics and descriptors make this possible
+without a brittle map from English text to help pages.
+
+Accessibility follows the same metadata. A label resource can contribute to an
+accessible name. A tooltip or help resource can contribute to an accessible
+description. A disabled reason can explain why a command is unavailable. A
+component key can help tests and focus resolvers find the correct component.
+Do not bolt accessibility onto the finished screen by copying visible text into
+random properties. Let the same descriptors and resources feed visual and
+accessible presentation where appropriate.
+
+Save and cancel workflows deserve special attention. A form edit should commit
+the active editor before validation is judged. If the user is typing in a text
+field and presses Ctrl+S, the document value and form model should agree.
+Generated text bindings help, but custom editors and formatted fields may need
+explicit commit behavior. Cancel should distinguish a clean form from a dirty
+form. Dirty cancel confirmation belongs to workflow policy, not to the text
+field that happened to change first.
+
+Problem summaries are optional but often useful. A dense detail form may show
+field-level markers and tooltips, but a summary gives keyboard and screen
+reader users a stable place to review all blocking issues. The summary should
+read from the same \api{ProblemSet} as field decoration and command
+enablement. It should not run a second validation pass with different wording.
+If selecting a problem in the summary focuses the field, use field keys and
+component keys to route focus rather than comparing label text.
+
+\section{Background work and busy state}
+
+Refresh is a command that starts background work. The task body loads rows.
+The success callback applies rows to the observable list. Busy state disables
+incompatible commands and drives an overlay or status text. The task handle is
+owned by a lifecycle scope so closing the screen can cancel work or detach
+callbacks.
+
+\begin{lstlisting}[caption={Refresh as task-owned workflow.}]
+void loadCustomers() {
+    GenerationCounter.Generation generation =
+            refreshGenerations.advance();
+    TaskHandle<List<CustomerRow>> handle = tasks.submit(
+            cancellation -> customerService.loadRows(cancellation),
+            TaskCallbacks.onSuccess(loaded ->
+                    refreshGenerations.tryAccept(generation, loaded, rows -> {
+                        this.rows.batch(list -> {
+                            list.clear();
+                            rows.forEach(list::add);
+                        });
+                        statusText.setValue(
+                                "Loaded " + rows.size() + " customers");
+                    })));
+    scope.add(handle);
+}
+\end{lstlisting}
+
+The example assumes callbacks are delivered on the EDT through
+\api{SwingTaskServices}. If a different service is used, the EDT boundary must
+be explicit. A background thread may load rows. It must not mutate Swing
+components directly. A callback that updates an observable list adapted to
+Swing should do so on the intended thread. The lifecycle chapter explains the
+mechanics; the screen-building rule is to make the boundary visible.
+
+Refresh has more policy than its name suggests. Duplicate refreshes may be
+blocked, queued, or allowed to cancel previous work. Old rows may remain
+visible while new rows load, or the table may clear immediately. Failures may
+show a status message, problem banner, retry command, or modal dialog.
+Selection may be preserved by customer id, cleared, or moved to the nearest
+row. Corusco does not answer these business questions. It provides values,
+lists, task handles, generation guards, and scopes so the application can
+answer them in readable code.
+
+Busy state affects more than one component. The Refresh command disables. The
+Save command may disable during save. The status line changes. The table area
+may show a busy overlay. Because busy is modeled, these presentations are
+bindings, not duplicate booleans.
+
+\begin{lstlisting}[caption={Busy overlay in the workspace view.}]
+JLayer<JComponent> tableLayer = new JLayer<>(tablePanel);
+scope.add(BusyOverlayBinding.install(
+        tableLayer, presenter.refreshBusy()));
+\end{lstlisting}
+
+Use the overlay when input should be blocked. Do not use it as decoration when
+the user should continue interacting. A busy veil that visually blocks a table
+while the table still accepts selection is misleading. A busy overlay that
+steals focus from a field during save may be worse than no overlay. Busy
+presentation is workflow policy, not just painting.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\busyTaskFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\backgroundStatusFigure}
+\end{minipage}
+\caption{Background work must surface through command state, busy overlays, status/progress values, cancellation, and stale-result suppression rather than direct component mutation from worker code.}
+\label{fig:bookapp-background}
+\end{figure}
+
+Figure~\ref{fig:bookapp-background} shows why background work belongs in the
+screen architecture, not in one button listener. A task affects commands,
+status, progress, cancellation, and stale-result policy. If those facts are
+modeled, the UI can present them consistently. If they live in a worker's
+anonymous callback, every new busy presentation will copy a little more state.
+
+Virtual threads are useful for blocking service calls, but they do not remove
+the Swing rule. The task may run on a virtual thread. The Swing mutation must
+return to the EDT. Structured concurrency may help organize service-side work.
+It does not make a \api{JTable} thread-safe. The modern Java chapter explains
+the boundary; the workspace applies it.
+
+Failure handling should be modeled before it is painted. A refresh failure may
+leave old rows visible with a stale warning. A save failure may keep the form
+dirty and show a retryable error. A permission failure may disable a command
+and route to help. A validation failure is not a task failure at all. If all
+failures are caught by one callback that shows a modal error dialog, the user
+will receive poor guidance and tests will have little to assert. Treat failure
+as data first, then decide how the view presents it.
+
+Cancellation should have a user story. Closing the workspace should cancel
+view-owned loads or at least detach callbacks. Pressing Refresh again may
+cancel the previous refresh or let it finish but suppress its stale result.
+Saving may be noncancelable after the server accepted the request. These
+policies differ. A task handle and cancellation token let the screen express
+them. A raw worker thread hidden in a listener does not.
+
+\section{Lifecycle and cleanup}
+
+A real screen closes. It may also be hidden, re-opened, embedded in another
+shell, or replaced after navigation. Every listener, binding, table-state
+controller, task handle, generated behavior plan, and adapter needs an owner
+that closes with the screen. Corusco gives several lifecycle handles:
+\api{Disposable}, \api{SubscriptionScope}, \api{DetachableScope},
+\api{BehaviorScope}, and task handles. Use them intentionally.
+
+There are at least three lifecycles in the workspace. The application
+lifecycle owns services and long-lived stores. The workspace lifecycle owns
+the presenter, row source, command set, and screen-level tasks. The view
+lifecycle owns Swing bindings, table controllers, generated behavior plans,
+and adapters installed into components. Mixing these lifecycles is a common
+leak source. A command may outlive a dialog; a Swing action adapter installed
+in that dialog should not.
+
+\begin{lstlisting}[caption={View lifecycle owns Swing installations.}]
+final class CustomerWorkspaceView implements Disposable {
+    private final BehaviorScope behaviors = new BehaviorScope();
+    private final BindingScope bindings = new BindingScope();
+
+    void install(CustomerWorkspacePresenter presenter) {
+        CustomerEditBehaviorPlan.install(
+                detailPanel, presenter.formModel(), behaviors);
+        bindings.add(TableStateController.install(
+                table, presenter.tableModel(), tableStateStore));
+    }
+
+    @Override
+    public void close() {
+        bindings.close();
+        behaviors.close();
+    }
+}
+\end{lstlisting}
+
+The code shape is more important than the exact class names. The view that
+installs Swing relationships closes them. The presenter that starts
+presenter-owned subscriptions closes them. The task service that owns
+background execution has application or screen lifetime according to policy.
+No listener should have to guess who will remove it.
+
+Lifecycle also affects generated code. Generated behavior plans install
+bindings and behaviors into a provided scope. They should not hide global
+singletons or static listener registries. Generated command adapters should be
+closed with the view surface that installed them. Generated table models
+adapted to Swing should be detached when the table no longer needs them. A
+generated companion that makes cleanup harder is not removing wiring; it is
+relocating it.
+
+Closing policy should be tested. Create a view, install bindings, close the
+scope, change the model, and assert that disposed components no longer update.
+Start a task, close the presenter, and assert that callbacks do not mutate the
+closed view. Install a key binding, close the behavior scope, and assert that
+the previous input-map entry is restored. These are not glamorous tests, but
+they prevent the slow accumulation of leaks and stale callbacks.
+
+\section{Testing and screenshots}
+
+Use layered tests. Core tests cover form models, validation, commands, values,
+and lists. Generated-source tests cover annotations and companions. EDT tests
+cover bindings, table selection, and table state. Task tests cover cancellation
+and stale results. Screenshot smoke tests cover the companion visual shell.
+One large end-to-end test cannot replace these layers because it cannot tell
+the reader which boundary failed.
+
+\begin{lstlisting}[caption={Smoke-test the companion window.}]
+SwingUtilities.invokeAndWait(() -> {
+    JInternalFrame frame = BookWorkspaceExample.createWindow();
+    assertThat(frame.getTitle()).isEqualTo("Book workspace");
+    assertThat(frame.getContentPane().getComponentCount())
+            .isGreaterThan(0);
+});
+\end{lstlisting}
+
+The current companion test exercises construction. Deeper tests should target
+the richer generated examples and core models. As the screen grows, tests
+should grow sideways rather than only upward. Add a core test for a validation
+rule. Add a command test for enablement. Add an EDT test for a binding. Add a
+table-state test for persisted columns. Add a task test for cancellation and
+stale results. Keep one or two screenshot smoke tests as visual anchors. This
+gives a reader, reviewer, and future maintainer several small proofs instead
+of one large performance.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\testingKeysFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\testingHarnessFigure}
+\end{minipage}
+\caption{A complete screen should be tested through stable component and command identities, while screenshots verify the rendered FlatLaf/MigLayout result.}
+\label{fig:bookapp-testing}
+\end{figure}
+
+Figure~\ref{fig:bookapp-testing} shows the testing compromise. Stable keys
+and generated contracts make tests robust. Screenshots make visual regressions
+visible. The harness should locate components through keys or contracts, not
+through the text whose visual rendering it is trying to inspect. If a label is
+copyedited, the screenshot diff should show the text change; the test harness
+should not fail to find the field.
+
+Screenshot source should be deterministic: fixed size, FlatLaf, seeded data,
+stable content, and a known state. The compact \bookAppExample{} exists partly
+for this reason. It gives the book a visual anchor without forcing every
+architectural feature into one unreadable listing. As the example grows, keep
+screenshot code and model tests aligned. A screenshot program that is not
+exercised by any test drifts quickly.
+
+The screenshot should show the reader what the prose is discussing. It should
+not be a glamour image detached from the actual example. The table should be
+populated by the same deterministic data used by tests where practical. The
+selected row, validation state, and busy indication should be chosen because
+they teach a concept in the surrounding text. If the screenshot requires many
+special setup calls that no application would use, the example is probably
+serving the figure more than the reader.
+
+For book work, screenshot acceptance is part of documentation acceptance. A
+chapter that discusses visual behavior should include enough figures to let
+the reader see the state. The real-screen chapter includes the normal
+workspace, busy-detail state, generated form behavior, table state,
+background-progress state, and testing harness context. The figures should be
+generated from companion examples or shared figure harnesses so they can be
+refreshed when the code changes.
+
+\section{Construction order}
+
+A practical construction order keeps the system from starting as a component
+tree full of hidden state. First define records and stable ids. Then add
+annotations for form, table, actions, validation, and help. Build core
+presenter state. Generate and inspect companions. Create the MigLayout view.
+Install table model, selection binding, and table state. Install form bindings
+and behaviors. Add commands and keyboard shortcuts. Add task service, busy
+state, overlays, and stale-result suppression. Add layered tests and
+screenshot harness output.
+
+This order is forgiving. After records and stable ids exist, generation can be
+inspected before the view is finished. After presenter state exists, command
+and validation tests can be written before the final layout. After the
+MigLayout view exists, screenshots can guide visual refinement while core
+tests continue to protect behavior. Building in this order gives the developer
+frequent checkpoints and prevents the late discovery that important facts were
+embedded only in component positions or localized strings.
+
+The order also helps migration. A legacy screen may already have a working
+view. Do not throw it away. Introduce stable row and field identities. Replace
+index-based table code with descriptors. Introduce commands behind existing
+buttons. Move validation into a form model. Add table state by stable ids.
+Wrap background work in task services. Add lifecycle scopes around listeners.
+Each step should reduce one class of hidden coupling while keeping the screen
+recognizable to users.
+
+\begin{migrationbox}{screen migration}
+Migrate by ownership, not by visual region. A row descriptor, command model,
+form model, or task boundary can improve a legacy screen without redesigning
+the whole view at once.
+\end{migrationbox}
+
+Some work should remain handwritten from the beginning: layout, service calls,
+navigation, permission checks, custom renderers, business workflows, unusual
+validation rules, error presentation policy, and domain-specific status text.
+Corusco removes repeated wiring. It does not remove design. That sentence is
+the best defense against both overuse and underuse. Use the library where
+repetition hides a stable concept. Keep application code where the domain
+decision is genuinely specific.
+
+\begin{examplebox}{book application}
+\bookAppExample{} assembles the book's preferred screen shell with MigLayout,
+FlatLaf-oriented construction, deterministic table rows, and a detail form. It
+is the screenshot-oriented seed for the larger customer workspace described in
+this chapter.
+\end{examplebox}
+
+\section{A user story through the architecture}
+
+Follow one ordinary user story through the screen. The workspace opens. The
+view constructs components on the EDT, sets up MigLayout, creates the table,
+creates the detail panel, and installs generated form behavior into a
+lifecycle scope. The presenter constructs row state, selected-row state,
+commands, task handles, and status values. The table model is installed from
+the generated descriptor. Table state is restored by stable ids. No service
+call has happened yet, but the screen already has owners for layout, rows,
+selection, commands, bindings, and cleanup.
+
+The user presses Refresh. The toolbar button, menu item, and shortcut all
+invoke the same Refresh command. The command calls the presenter method. The
+presenter advances a generation counter, sets refresh-busy state, starts a
+task, and records the task handle in a scope. The view observes busy state and
+shows the busy presentation selected for this screen. The Refresh command may
+disable or remain enabled according to policy. The status value changes to
+"Loading customers" through a model value, not by reaching into a label from
+the task body.
+
+The service call runs away from the EDT. It may use a virtual thread, a pooled
+thread, or a test fake. It receives a cancellation token. It does not mutate
+Swing components. If the user closes the workspace while the call is running,
+the workspace lifecycle closes the task handle or at least detaches the
+callback. If the user presses Refresh again, policy decides whether the older
+task is cancelled or merely made stale. The generation counter makes that
+policy explicit.
+
+Rows arrive. The success callback returns to the EDT boundary promised by the
+task service. The presenter checks whether the generation is still current. If
+it is stale, the result is ignored. If it is current, the row list is updated
+with precise observable-list changes. The table model observes the row list
+and fires table events. The table repaint is a consequence of model update,
+not a direct call from the worker. The status value changes to "Loaded 125
+customers" or equivalent text derived from the result.
+
+The user selects a row. Swing selection changes first, but selection binding
+translates the view coordinate to model coordinate and writes selected state
+into presenter values. Commands that depend on selection update. The detail
+load workflow sees the selected customer id and starts a detail load or uses
+cached detail. If the table is sorted, the selection binding crosses the
+coordinate boundary in one place. Command handlers do not ask the table for
+the selected view row.
+
+The detail arrives. The presenter creates or replaces the generated form model
+for the selected customer. The view binding scope connects the generated form
+model to the existing detail components. The name field shows committed text.
+The credit limit field shows formatted raw text. The active check box shows
+the boolean value. The form is clean. Save is disabled because there are no
+changes. The disabled reason may be empty or "No changes" depending on product
+policy.
+
+The user edits the credit limit and types an invalid decimal. The document
+binding updates the text-field model. The converter records parse failure.
+The form problem set changes. The field decoration updates through validation
+behavior. The tooltip policy composes the parse or validation message with
+static help. The Save command remains disabled because the form has errors.
+The problem summary, if present, reads the same problem set. No component
+needs to run its own validation rule.
+
+The user fixes the value. Parse state becomes valid. The form remains dirty.
+The problem set clears. The Save command becomes enabled because dirty,
+valid, editable, and not busy are all true. If the command is visible in a
+button, menu item, and keyboard shortcut, all surfaces receive the same state.
+The view did not enable the button directly. The command did.
+
+The user presses Ctrl+S. The key binding invokes the Save command. Before the
+command judges validity, active-editor commit policy ensures that the current
+editor value has reached the model. The presenter starts a save task or calls
+a service according to policy. Save busy state disables incompatible commands.
+The status line changes. If saving is asynchronous, stale-result policy
+protects against a late response for a customer that is no longer selected.
+If saving succeeds, the committed record becomes the new dirty baseline and
+the command disables because the form is clean. If saving fails, failure state
+is recorded and presented without losing the user's edits.
+
+The user asks for help. F1 on a field uses generated field help metadata. F1
+on a table column uses generated column help metadata plus current column
+context. F1 on Save uses command help or action identity. The help service
+receives a structured request. It may open an embedded help panel, browser, or
+test recorder. It does not infer the help topic from visible English text.
+
+The user closes the workspace. The view scope closes generated behavior
+bindings, table controllers, key bindings, tooltips, adapters, and selection
+bindings. The presenter scope closes subscriptions and task handles it owns.
+Long-lived services remain alive if they belong to the application. The
+screen's closure is therefore not a best-effort disposal hidden in a window
+listener. It is the inverse of installation.
+
+This story may sound verbose, but each step is small in code when the owners
+exist. It becomes verbose only when the architecture is absent. Then Refresh
+has a worker, selection has a listener, detail has another listener, Save has
+a button callback, Ctrl+S has a root-pane action, validation has document
+listeners, help has component names, and close has a window listener that
+knows none of the above. The purpose of Corusco in a real screen is to keep
+the ordinary story ordinary.
+
+\section{File and package shape}
+
+A maintainable screen should be easy to browse in the project tree. The exact
+package names depend on the application, but the file roles should be visible.
+A small feature package might contain \api{CustomerRow}, \api{CustomerEdit},
+\api{CustomerWorkspacePresenter}, \api{CustomerWorkspacePanel},
+\api{CustomerWorkspaceResources}, and \api{CustomerWorkspaceTest}. Generated
+companions appear beside annotated sources or under the generated-source root.
+Screenshot fixtures live with book or visual-test support. Avoid a package
+named \api{ui} that contains every panel, renderer, presenter, resource map,
+and test helper for the whole application.
+
+The model-facing files should be boring. \api{CustomerRow} describes table
+rows. \api{CustomerEdit} describes committed form values.
+\api{CustomerStatus} describes status choices. If the screen has a durable
+customer id, it should have a small type or at least a clearly named value.
+These files should not import Swing. They may import Corusco annotations if
+they are generation inputs. They may import validation annotations if the
+constraints are part of the UI contract. They should not know about buttons,
+tables, or layout.
+
+The presenter-facing files should read like workflow. A presenter constructor
+receives services, resources, task services, or stores it needs. Presenter
+methods load rows, select customers, start saves, reset forms, and close
+scopes. Commands are created there or by generated action companions consumed
+there. The presenter should not build MigLayout panels. It should not subclass
+\api{JPanel}. It may expose observable values, command sets, form models, and
+row sources that the view binds.
+
+The view-facing files should read like Swing. A panel creates components,
+sets names or component keys, arranges them with MigLayout, installs generated
+behavior plans, adapts commands to controls, and closes view-owned scopes. It
+should not call repositories directly. It should not parse decimal text to
+decide whether Save is enabled. It should not persist table state by itself
+except through a controller whose store is supplied by the application. The
+view's job is to present and bind.
+
+Resource files should be reviewable by people who are not reading the Swing
+code. Generated resource keys make this easier, but only if naming is
+systematic. A resource map for the workspace can group command text, form
+labels, table headers, tooltips, disabled reasons, validation messages, and
+help hints. Tests can require the keys that must exist. Screenshot fixtures can
+use the same resource map so the PDF shows the text that the example actually
+resolves.
+
+Tests should follow the same ownership. A form-model test belongs near the
+form model or generated source example. A presenter test belongs near the
+presenter and uses fake services. A view-binding test runs on the EDT and
+constructs the panel. A table-state test focuses on the descriptor, model,
+table, and store. A screenshot test uses the screenshot harness and asserts
+only enough structure to prove construction. One \api{CustomerWorkspaceTest}
+file may contain several of these slices in a small example, but a large
+application should let test files name the boundary they protect.
+
+Screenshot generation should not be hidden in a manual recipe. The book uses
+figure files under the TeX tree, but their source should remain in companion
+examples or figure generators. A developer should be able to find the Java
+source for a figure, run the harness, and understand which screen state is
+being captured. The caption and surrounding text should then mention the short
+example name, not a long filesystem path that wraps in the PDF.
+
+Avoid utility packages as dumping grounds. A helper that creates command
+buttons from descriptors may belong in a Swing support package. A helper that
+creates seeded customer rows may belong in test or example data. A helper that
+loads resources may belong to application infrastructure. A file named
+\api{SwingUtils} with every missing abstraction in it is a warning sign. The
+same ownership rules apply to helpers: if the helper owns a durable fact,
+name the fact; if it merely translates a boundary, keep it small.
+
+The package shape should make generated code feel local rather than magical.
+When \api{CustomerEdit} changes, the developer should know where to inspect
+\api{CustomerEditFields}, \api{CustomerEditFormModel}, and
+\api{CustomerEditBehaviorPlan}. When \api{CustomerRow} changes, the developer
+should know where to inspect \api{CustomerRowColumns} and
+\api{CustomerRowTableDescriptor}. When a presenter action changes, the
+developer should know where to inspect the generated actions companion. The
+build may place generated files under a generated-source directory, but the
+conceptual ownership remains next to the annotated source.
+
+\section{Review notes}
+
+Review the screen by ownership. Which object owns row data? Which object owns
+selection? Which object owns the form model? Which object owns commands? Which
+object owns background tasks? Which object owns each binding and behavior?
+Which object owns table state? Which object owns native dialog or window
+disposal? If an answer is "the listener", look again. A listener should
+translate an event; it should rarely own a durable fact.
+
+This review habit is especially valuable when adding the eleventh feature. The
+first ten features may each have seemed small enough for a local listener. The
+eleventh exposes whether the screen has a structure. If adding validation
+requires editing every text-field listener, the form model is missing. If
+adding a menu item requires copying a toolbar listener, the command is
+missing. If adding saved table state requires reverse-engineering column
+indexes, the descriptor is missing. If closing the screen leaves a background
+callback alive, the lifecycle owner is missing. The screen is maintainable
+when these missing owners are easy to name and then easy to add.
+
+Review the view by reading the layout constraints. Which region grows? Which
+region has fixed width? Which row contains commands? Which area scrolls? Which
+fields align by baseline? If the layout answer is hidden in nested panels and
+magic preferred sizes, the screen will be hard to adapt. MigLayout makes the
+answer compact, but the developer must still write the answer intentionally.
+
+Review the command vocabulary. Are all user-visible operations represented by
+commands or deliberate command-like models? Do keyboard shortcuts invoke the
+same commands as buttons and menus? Do disabled reasons exist when users need
+them? Are toggle states owned once? Does the command set expose the operations
+tests and command palettes need? A screen with five ways to invoke Save should
+have one Save command.
+
+Review table identity. Are persisted column states keyed by stable ids? Are
+view indexes converted at the boundary? Are renderers stateless? Is selection
+preserved by domain identity rather than row number? Are generated or
+handwritten descriptors the source of column metadata? The table is usually
+the densest widget on a business screen, so table shortcuts taken early become
+expensive later.
+
+Review task boundaries. Which work can block? Where is cancellation recorded?
+Where are stale results suppressed? Which values represent busy state,
+progress, and failure? Which code returns to the EDT? Which lifecycle closes
+the task handle? If a service callback directly mutates a component, the
+screen has hidden threading policy.
+
+Review screenshots last, but take them seriously. A screenshot can show
+spacing, density, state presentation, tooltip text, busy overlays, and table
+headers in a way prose cannot. It can also reveal that example references wrap,
+captions look like body text, labels overflow, or a figure does not correspond
+to the text. The screenshot is not decoration. It is a test artifact for the
+book and a visual proof for the reader.
+
+A final review pass should read the screen in the same order as a user. Start
+at the top-left or first workflow entry point. Search or refresh. Select a row.
+Move to detail. Edit a value. Observe validation. Save. Trigger help. Resize
+the screen. Close it. At each step, ask which owner changes state and which
+binding presents that state. This is more effective than reviewing files in
+alphabetical order because it exposes missing links between otherwise correct
+classes. A table descriptor can be perfect while selection still fails to load
+detail. A form model can be correct while Ctrl+S bypasses active-editor
+commit. A task service can be correct while the close path forgets to cancel
+the current handle.
+
+Then read the same screen in maintenance order. Rename a label. Add a column.
+Add a command. Add a validation rule. Add a help topic. Add a screenshot state.
+Change a service failure from modal dialog to inline banner. If each change
+has an obvious owner, the architecture is healthy. If each change requires a
+global search through listeners, the screen needs another named fact or
+boundary. This maintenance-order review is particularly good for book
+examples, because it asks whether the example teaches extensibility rather
+than only initial construction.
+
+Finally, check whether the screen can be explained in a few sentences without
+lying. "Rows come from an observable list. The generated table descriptor
+defines columns. Selection binding writes selected row state. A generated form
+model edits the selected customer. Commands observe form, selection, and busy
+state. Tasks deliver results to the EDT and stale results are suppressed.
+Scopes close bindings and tasks. Screenshots render deterministic states."
+If this explanation matches the code, the screen has earned its structure. If
+one sentence requires an exception, go find the hidden owner before adding the
+next feature.
+
+The same explanation should survive visual polish. A designer may change
+spacing, group fields differently, move commands into a toolbar, or choose a
+more compact table header. Those changes should mostly touch the view and
+resources. They should not require rewriting presenter workflow, table
+identity, validation, or background-task policy. This is the practical test of
+separation: visual improvement remains visual, workflow improvement remains
+workflow, and stable identities keep the two from tearing each other apart.
+
+It should also survive example growth. The compact book screen may later gain
+filter chips, a column chooser, inline validation marks, a help pane, or a
+second detail tab. Each addition should attach to an existing owner or justify
+a new one. Filter chips attach to filter state and table descriptors. A column
+chooser attaches to table state. Inline validation marks attach to problems.
+A help pane attaches to help topics. A second detail tab attaches to a view
+contract and form model boundary. Growth is healthy when new features make the
+ownership map richer instead of bypassing it.
+
+When that rule is followed, the example can stay small without being naive.
+The book may show a compact workspace, while the reader can see where a larger
+application would extend it. That is the right kind of simplification for a
+technical example: fewer rows and services, not fewer owners.
+The example remains honest because every omitted production feature has a
+visible and reviewable place to attach when it becomes necessary.
+
+\section{Failure patterns and recovery}
+
+The first failure pattern is the listener-owned screen. It usually begins
+innocently: a text field listener enables Save, a table selection listener
+loads detail, a button listener starts Refresh, and a window listener cancels a
+worker. Each listener is short. The screen works. Then validation must appear
+in tooltips, command enablement, a problem summary, and tests. Selection must
+survive refresh. Save must be available from a menu. The listener-owned screen
+has no central facts to reuse. Recovery starts by naming facts, not by moving
+listeners around. Introduce a form model, selected-row value, command, task
+handle, and scope. Then let listeners translate Swing events into those facts.
+
+The second failure pattern is string-owned identity. A table persists column
+widths under visible headers. A test finds a button by English text. A help
+router opens pages by tooltip text. A validation problem is known only by its
+message. The screen looks clean until localization, copyediting, or
+accessibility review begins. Recovery starts with stable keys. Add column
+keys and table persistence ids. Add action keys and resource keys. Add problem
+codes. Add help topics. Then migrate tests and persistence to those identities
+before changing visible text.
+
+The third failure pattern is table-as-application-state. A presenter reads
+data from \api{JTable.getValueAt}, stores selection as view row number, and
+updates cells by column indexes. This may be acceptable for a throwaway
+prototype. It is fragile in a sorted, filtered, persistent, descriptor-backed
+business screen. Recovery starts by defining a row type and row source. Then
+install a table model from a descriptor, bind selection into presenter values,
+and move command logic to row identity or selected row state. The table then
+returns to its proper role: a presentation of row data.
+
+The fourth failure pattern is command duplication. Save appears in a toolbar,
+menu, keyboard shortcut, popup menu, and test helper. Each path calls a
+slightly different method or checks a slightly different enabled condition.
+Soon one path saves invalid data or ignores busy state. Recovery starts by
+declaring one command identity and one command state. Existing buttons and
+menu items can be adapted gradually. The shortcut can be rewired last. The
+goal is not to use a command class for its own sake; the goal is that every
+operation path observes the same operation model.
+
+The fifth failure pattern is background work hidden in a component callback.
+A button creates a worker. The worker captures the table. On success it
+mutates rows directly. On failure it shows a dialog. On close it may or may
+not be cancelled. This code is easy to write and hard to reason about.
+Recovery starts by moving work into presenter/task state. The command starts
+the task. The task reports through callbacks with an explicit EDT boundary.
+Busy, progress, failure, and stale-result policy become observable facts. The
+view binds to those facts. The worker no longer owns the screen.
+
+The sixth failure pattern is overgeneration. A team sees generated form
+companions and asks the processor to generate every panel, layout, service
+call, permission check, renderer, and task. The result may remove some code,
+but it also removes local judgment. Recovery starts by restoring the boundary.
+Generate stable identity, descriptors, routine models, and routine bindings.
+Keep layout, workflow, permissions, rendering, dynamic options, and failure
+policy in handwritten code. The generated code should make the screen easier
+to inspect, not harder to question.
+
+The seventh failure pattern is screenshot drift. The book or application has a
+figure, but the figure is no longer generated from the example. The screen in
+the PDF shows different labels, spacing, or state from the current code. The
+reader sees a polished image and learns an obsolete screen. Recovery starts by
+making screenshot generation part of the example workflow. Use deterministic
+data, fixed sizes, FlatLaf setup, and a generated figure path. Add at least a
+smoke test that constructs the screenshot window. When the code changes, the
+figure can be regenerated and reviewed instead of guessed.
+
+The eighth failure pattern is cleanup by hope. A dialog closes, but document
+listeners remain. A table-state controller still observes a table. A key
+binding remains installed. A task callback holds the old view. The leak may
+not appear in a short demo. It appears after repeated navigation or long
+sessions. Recovery starts by listing installed relationships and assigning
+them to scopes. Close scopes in the reverse direction of installation.
+Generated behavior plans should participate in this ownership rather than
+hide it.
+
+The ninth failure pattern is premature performance folklore. A developer
+avoids observable lists because "events are slow", replaces descriptors with
+indexes because "objects are slow", or bypasses validation models because
+"listeners are simpler". Sometimes performance work is needed. But in most
+business screens, unclear ownership causes more slowness than named objects:
+full table refreshes instead of precise events, repeated validation passes,
+renderer state leaks, blocking EDT calls, and unnecessary repaint. Recovery
+starts by measuring the actual slow path. Then optimize the owner that
+controls it. Do not remove identity and lifecycle structure without evidence.
+
+The tenth failure pattern is a screen that cannot be explained. Ask a
+developer how Save becomes enabled, how a row selection loads detail, how a
+stale refresh result is suppressed, how a field problem reaches the tooltip,
+or how F1 chooses a topic. If the answer requires "let me search for the
+listener", the screen may work but is not yet a teaching-quality screen.
+Recovery is to write the explanation into the code through owners. This
+chapter's architecture is not the only possible architecture, but any good
+Swing workspace should be explainable in similarly concrete terms.
+
+These patterns are not signs that Swing is obsolete. They are signs that the
+screen has outgrown incidental code. Swing is quite capable of durable
+business applications when meaning is not hidden in components. Corusco helps
+by giving names and lifecycles to facts that otherwise become listener
+fragments. The recovery technique is consistent: name the fact, choose the
+owner, bind the presentation, test the boundary, and take a screenshot when
+the result is visual.
+
+\section{Exercises and checklist}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Extend \bookAppExample{} with a generated-style component key for the
+customer table and assert it in a test.
+\item Replace the static table data with an \api{ObservableArrayList} and an
+\api{ObservableTableModel}.
+\item Add a selected-row value and bind table selection to it.
+\item Add a Save command whose enabled state depends on dirty state,
+validation, and busy state.
+\item Add a simulated refresh task with stale-result suppression.
+\item Add a generated or handwritten resource key for every visible label.
+\item Add an F1 help topic for the name field and test the structured help
+request.
+\item Persist table column widths by stable ids, then change the visible
+header text and verify that state restoration still works.
+\item Close the view scope and assert that a later model change does not update
+disposed components.
+\item Generate a screenshot and include it in a local PDF build.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{center}
+\textbf{Real-screen checklist.}
+\end{center}
+
+\begin{itemize}
+\item Declare stable screen facts once.
+\item Keep layout visible and reviewable.
+\item Use MigLayout for ordinary production layout.
+\item Use FlatLaf consistently for screenshots and examples.
+\item Bind models to components through scopes.
+\item Route buttons, menus, toolbars, and shortcuts through commands.
+\item Convert table coordinates at explicit boundaries.
+\item Persist table state by stable ids.
+\item Model validation problems once and present them in several places.
+\item Route background results through explicit EDT boundaries.
+\item Suppress stale task results by generation or equivalent policy.
+\item Close every binding, behavior, adapter, table controller, and task handle
+with the lifecycle that installed it.
+\item Test core, generation, Swing wiring, task behavior, and screenshot
+construction separately.
+\item Include screenshots for normal, busy, validation, table-state, or other
+visual states that the chapter discusses.
+\end{itemize}
+
+A real screen is not made maintainable by one large abstraction. It is made
+maintainable by many facts having the right owners. Records own committed
+values. Form models own editing state. Descriptors own metadata. Commands own
+operation state. Presenters own workflow. Views own components and layout.
+Scopes own listener lifetimes. Tasks own background work. Resources own visible
+text. Screenshots own visual evidence. Once those owners are visible, a Swing
+workspace can grow without becoming a maze of incidental listeners.

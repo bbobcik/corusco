@@ -1,0 +1,493 @@
+\chapter{Modern Java with Swing on JDK 25 and Later}
+\label{ch:modern-java-swing}
+\chapterquote{Modern Java does not make Swing new; it makes some old Swing architecture easier to write honestly.}{A modernization rule}
+
+\begin{chaptermap}
+Core question & Which modern Java features help Swing, and where do they stop?\\
+Primary topics & Records, sealed hierarchies, pattern matching, virtual threads, structured task boundaries, modules, annotation processing, resources, runtime images, and packaging.\\
+Plain Swing baseline & Use modern Java to clarify values, states, and background work while preserving Swing's component, painting, model, and EDT contracts.\\
+Corusco connection & Corusco generated forms, rows, commands, descriptors, values, and task boundaries fit naturally with modern Java source.\\
+Companion example & \modernJavaExample.\\
+\end{chaptermap}
+
+\section{Modern Java Is Not a New UI Toolkit}
+
+\termdef{Modern Java}{in this chapter} means the language, runtime, and tool chain available on a current JDK in the JDK 25 era: records, sealed types, pattern matching, virtual threads, structured task APIs, modules, annotation processors, \api{jlink}, \api{jpackage}, and stricter build discipline. The phrase does not mean "replace Swing with a different mental model." Swing is still Swing. It still lives in \api{java.desktop}; it still has components, models, renderers, editors, painting, layout, focus, input maps, action maps, and the Event Dispatch Thread.
+
+That observation is not a disappointment. It is the source of the chapter's usefulness. Modern Java helps precisely because Swing's old boundaries are still visible. A table row can become an immutable record. A loading state can become a sealed hierarchy instead of five booleans. A service call can run on a virtual thread while the result returns to the EDT. A module declaration can state that the desktop UI needs \api{java.desktop} while the domain module does not. An annotation processor can generate boring typed companions instead of relying on runtime reflection or stringly-typed component discovery.
+
+\begin{principlebox}{The old rule survives}
+Swing components are owned by the Event Dispatch Thread. A feature that makes background work cheaper does not make component mutation thread-safe. A feature that makes data concise does not turn a component into a value object.
+\end{principlebox}
+
+The most common modernization mistake is to begin with syntax. Lambdas, records, switch expressions, and virtual threads are pleasant, and pleasant syntax invites indiscriminate use. But a listener written as a lambda can still own the wrong state. A record can still contain a mutable list and a misleading equality contract. A virtual thread can still call \api{JTextField.setText} from the wrong thread. A module declaration can still export every package and express no real boundary. Modern Java clarifies design only when the design is already asking the right question.
+
+A Swing program has several layers. The component layer contains \api{JPanel}, \api{JTable}, \api{JTextField}, \api{Action}, renderers, editors, layout managers, and custom painting. The presentation layer contains selected rows, dirty state, validation problems, busy state, command enablement, screen modes, and task progress. The domain and service layers contain application facts that are not Swing facts at all. Modern Java usually helps most in the presentation and domain layers. It helps the component layer mainly through adapters that are smaller, safer, and easier to review.
+
+\begin{migrationbox}{modernization order}
+First make ownership explicit with models, values, commands, descriptors, and task boundaries. Then use modern Java syntax to make those objects concise. Reversing the order usually creates shorter code with the same hidden ownership.
+\end{migrationbox}
+
+This chapter therefore uses a conservative definition of progress. A modernization is useful if it removes impossible states, names ownership, makes threading boundaries testable, reduces resource or packaging surprises, or makes generated code inspectable. A modernization is cosmetic if it changes the shape of the source while leaving the same state in anonymous callbacks, the same broad table events, the same hidden lifecycle, or the same source-tree resource paths.
+
+The companion example is intentionally small. It uses a sealed load state and a pattern switch to render a tiny Swing panel. The point is not visual sophistication; the point is that the model has one state rather than a pile of booleans. Figure~\ref{fig:modern-java-state-screens} shows two states from that example. The labels are ordinary Swing labels. The modern part is the explicit state before it becomes component properties.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.45\linewidth}
+\includegraphics[width=\linewidth]{\modernLoadingFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.45\linewidth}
+\includegraphics[width=\linewidth]{\modernLoadedFigure}
+\end{minipage}
+\caption{A small sealed load state rendered as Swing labels. Modern Java helps when finite states become explicit before they are mapped to component properties.}
+\label{fig:modern-java-state-screens}
+\end{figure}
+
+\begin{examplebox}{modern Java figures}
+\modernJavaExample{} supplies the small sealed-state screen for Figure~\ref{fig:modern-java-state-screens}. The task-boundary figure later in the chapter is generated by \api{BookVisualFigures} through \api{BookFigureGenerator}. The chapter cites compact class and figure names rather than source-tree paths.
+\end{examplebox}
+
+Returning Swing programmers may also need reassurance about what should not be replaced. A \api{DocumentListener} is still the way a document reports edits. A \api{TableModelEvent} is still the way a table hears about model changes. A \api{TransferHandler} is still the Swing boundary for drag and drop. A \api{RepaintManager} is still the repaint scheduler. Modern Java can make the code around these APIs clearer, but a wrapper that hides them completely can make diagnostics worse.
+
+The book's larger theme remains "plain Swing first, Corusco second." Plain Swing can use records, sealed states, virtual threads, and modules directly. Corusco adds reusable vocabulary where serious Swing applications repeat themselves: observable values, generated descriptors, typed keys, binding scopes, task services, table descriptors, form models, problem sets, command metadata, and resource keys. Modern Java makes those objects less verbose and more precise.
+
+Modernization should also preserve the reader's debugging map. If a returning Swing developer knows that table repaint follows table-model events, a modernization should not hide that fact behind a mysterious stream of callbacks. If a support engineer knows that a button invokes an \api{Action}, a command abstraction should preserve action identity rather than replace it with an anonymous lambda. New code is better when old diagnostic landmarks remain visible.
+
+The safest modernization path is incremental. Convert value objects to records where their equality contract is already value-like. Replace flag clusters with sealed states where the impossible combinations are already causing bugs. Move blocking service calls away from the EDT before adopting a broader task service. Add module declarations before building runtime images. Each step should make one boundary clearer, not merely make the code look newer.
+
+\section{Records, Sealed Types, and Pattern Matching}
+
+\termdef{Record}{in Java} is a nominal class declaration for shallowly immutable data. A record has a fixed list of components, a canonical constructor, component accessors, equality, hash code, and a string representation generated by the compiler. A record is not an anonymous tuple and not merely a shortcut for getters. It has a name, a type, and a place in the design.
+
+Records are excellent for many Swing-adjacent facts: table rows, combo-box choices, immutable form results, command descriptors, generated field metadata, table column state, sort state, validation problem descriptions, help topics, resource keys, and service results. They are poor for long-lived mutable component state. A \api{JTextField} is not a record. A row displayed in a \api{JTable} often should be.
+
+\begin{lstlisting}[caption={A row value that is honest about immutability.}]
+public record CustomerRow(
+        CustomerId id,
+        String displayName,
+        CustomerStatus status,
+        LocalDate lastOrderDate,
+        Money lifetimeValue) {
+
+    public CustomerRow {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(displayName, "displayName");
+        Objects.requireNonNull(status, "status");
+    }
+
+    public boolean stale(LocalDate today) {
+        return lastOrderDate != null
+                && lastOrderDate.isBefore(today.minusYears(1));
+    }
+}
+\end{lstlisting}
+
+The table can render this row without pretending that table cells are the row's storage location. If editing changes the status, the model may replace one \api{CustomerRow} with another. Replacement is not always the fastest possible mutation, but it is clear and testable. For large tables, the important performance question is not whether rows are records; it is whether the observable list and table model fire precise events when a row is replaced.
+
+Records are especially useful when identity is separate from display. A \api{CustomerRow} can contain a \api{CustomerId} and a display name. Selection can be stored by id, while the table displays the name. Sorting can use one component and tooltips can use another. This prevents a common Swing mistake: treating the current view row, localized cell text, and domain identity as if they were the same fact.
+
+Editing immutable row records requires an update path. A generated table column can read \api{displayName()} and, when editable, construct a replacement row with a new display name and the old id, status, date, and value. Hand-written code can do the same, but it tends to scatter constructor calls through editors and listeners. A descriptor-backed column gives the update a name and keeps the row replacement close to column metadata.
+
+Records work best when constructor invariants are cheap and deterministic. A record constructor may reject a blank id or normalize a display name. It should not perform service calls, resource lookups, database validation, or EDT work. Table models may construct records in bulk. Generated updaters may construct records during editing. Expensive constructors turn a pleasant value feature into a hidden performance and threading hazard.
+
+Forms often need two shapes of data. The live editing model contains raw text, parse state, validation problems, touched state, dirty state, and perhaps asynchronous validation progress. The committed value is different. A record is ideal for the committed value and usually wrong for the live editing model. The user may type an incomplete date, temporarily blank a required field, or enter a number with a locale-specific decimal separator. Those intermediate states are real editing facts even though the final record cannot be constructed yet.
+
+\begin{lstlisting}[caption={A committed form value, not the live text-field state.}]
+public record CustomerDraft(
+        String name,
+        String email,
+        CreditLimit creditLimit,
+        boolean active) {
+
+    public CustomerDraft {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("name");
+        }
+        Objects.requireNonNull(email, "email");
+        Objects.requireNonNull(creditLimit, "creditLimit");
+    }
+}
+\end{lstlisting}
+
+The constructor enforces invariants that should never be violated by a committed value. It should not be called on every keystroke while the user is halfway through typing an email address. This distinction is central to form design and later Corusco chapters: intermediate input may be invalid; committed values should not be.
+
+\begin{coruscobox}{records and generated companions}
+Corusco generation can treat records as strong declarations of screen facts. A record component can become a field key, column descriptor, resource-key base, problem target, or binding target. The generated code does not need to discover intent by reading localized labels or component names.
+\end{coruscobox}
+
+Records are not JavaBeans. Many older Swing helper libraries expected mutable objects with \api{getName}, \api{setName}, and property-change support. A record has no setters, and its accessor is \api{name()}, not \api{getName()}. This difference is not an accident to hide everywhere. It is a design signal. When integrating records with bean-shaped APIs, adapt at the boundary, keep a mutable form model during editing, or keep a bean when the object truly is long-lived mutable state with property-change semantics.
+
+\begin{pitfallbox}{record envy}
+Do not turn a mutable screen controller into a record by storing mutable lists, services, and components inside record components. The result looks modern but has the same mutability, plus a misleading equality contract.
+\end{pitfallbox}
+
+Record equality is another reason to be careful. A record's generated equality compares its components. That is useful for values and descriptors. It is dangerous for objects that contain live services, components, caches, or mutable collections. If equality is not a meaningful part of the object's contract, the object may not be a good record.
+
+Binary compatibility also matters. Adding a component to a record changes its constructor and serialized shape. For internal application values this is often fine. For persisted table state, exported files, plugin APIs, or inter-module contracts, the change may need migration. Modern Java makes values concise; it does not remove versioning responsibilities.
+
+A record component can still refer to a mutable object. Shallow immutability means the record's component references cannot be reassigned after construction; it does not mean the object behind each reference is immutable. Prefer immutable component types for rows and descriptors. If a record must contain a list or map, copy it in the canonical constructor and expose an unmodifiable view or an immutable collection.
+
+\termdef{Sealed type}{in Java} restricts which classes may implement an interface or extend a class. A sealed hierarchy is useful when the program has a closed set of alternatives. Swing applications have many such alternatives: loading states, validation outcomes, dialog results, selection modes, permission states, transfer outcomes, parse states, and background task states.
+
+\begin{lstlisting}[caption={A finite set of load states.}]
+public sealed interface LoadState<T>
+        permits LoadState.Idle, LoadState.Loading,
+                LoadState.Ready, LoadState.Failed {
+
+    record Idle<T>() implements LoadState<T> {}
+    record Loading<T>(String message) implements LoadState<T> {}
+    record Ready<T>(T value) implements LoadState<T> {}
+    record Failed<T>(String message, Throwable cause) implements LoadState<T> {}
+}
+\end{lstlisting}
+
+This hierarchy removes ambiguous flag combinations. The screen no longer needs \api{busy}, \api{loaded}, \api{failed}, \api{message}, and \api{data} variables whose combinations may contradict one another. It has one state. Some states carry data. A failed state can carry an exception for diagnostics while the user-visible text remains a resource-backed message.
+
+Sealed states should model real alternatives, not merely wrap every value for fashion. If a boolean is genuinely independent, keep it a boolean. If the application can be loading, loaded, empty, failed, cancelled, or offline, use a state hierarchy. The test is whether some combinations are impossible or meaningless. If impossible combinations exist, model them out.
+
+Think carefully about where the sealed hierarchy lives. A domain module may have domain states such as paid, overdue, or cancelled. A presentation module may have screen states such as loading, ready, editing, saving, and failed. The names may sound similar, but they answer different questions. Do not force domain states to carry progress messages, and do not force presentation states into persistence merely because they are convenient for the view.
+
+Pattern matching is the companion to sealed state. It makes interpretation local and complete. The state belongs in the model or presenter; the conversion to labels, busy overlays, table enablement, and command state belongs at the presentation boundary. A switch that maps every state to a status text is easier to review than five listeners that rewrite the same label.
+
+\begin{lstlisting}[caption={Rendering state without contradictory booleans.}]
+static String statusText(LoadState<?> state) {
+    return switch (state) {
+        case LoadState.Idle<?> ignored -> "Ready";
+        case LoadState.Loading<?> loading -> loading.message();
+        case LoadState.Ready<?> ready -> "Loaded";
+        case LoadState.Failed<?> failed -> failed.message();
+    };
+}
+
+static boolean refreshEnabled(LoadState<?> state) {
+    return !(state instanceof LoadState.Loading<?>);
+}
+\end{lstlisting}
+
+Completeness is the gift. If a new state is added, the switch must be reconsidered. This is valuable in large Swing code bases where states otherwise hide in flags scattered across listeners. It is also valuable for generated behavior: a binding that maps a finite state to component properties can be tested without opening a window.
+
+Pattern matching should not become business logic hidden inside paint or renderer code. A renderer may switch on a row state to choose colors or icons, but expensive interpretation belongs before rendering. Compute the row state in the model or presenter, then let the renderer apply cheap visual policy. Modern switch syntax does not change the renderer discipline described in the table and painting chapters.
+
+\begin{migrationbox}{from flags to states}
+Replace clusters of related booleans with a named state object when impossible combinations matter. Keep simple booleans for genuinely independent facts. The goal is not fewer variables; the goal is fewer invalid states.
+\end{migrationbox}
+
+Corusco already uses this style in several core ideas. Parse states distinguish successful parsing from failed parsing. Dialog results distinguish accepted values from cancellation. Problem targets distinguish form, field, row, cell, and component targets. List changes distinguish inserted, removed, replaced, moved, and cleared changes. Modern Java makes those distinctions cheap enough to use as ordinary vocabulary.
+
+These small sealed hierarchies make examples easier to read because they reduce explanation debt. A reader can see that \api{ParseState.Failed} carries raw text, previous value, and a problem. There is no need to describe which boolean combination means a parse failure. The type carries the story, and the switch at the boundary tells how the story becomes UI.
+
+\section{Virtual Threads, Structured Tasks, and the EDT}
+
+\termdef{Virtual thread}{in Java} is a lightweight thread managed by the JDK rather than mapped one-to-one to an operating-system thread. Virtual threads are well suited to blocking operations that wait for I/O. They are not a replacement for the EDT, and they do not make Swing components thread-safe. The local JDK 25 runtime provides \api{Executors.newVirtualThreadPerTaskExecutor}, which is the ordinary executor shape used in the plain-Swing baseline below.
+
+A modern Swing screen still moves work across three regions: user gesture on the EDT, blocking or long-running work away from the EDT, and final component or model update back on the EDT. The following baseline uses JDK APIs only. It is intentionally plain because the handoff is the lesson.
+
+\begin{lstlisting}[caption={Plain Swing with a virtual-thread executor and explicit EDT return.}]
+final class CustomerLoader implements AutoCloseable {
+    private final ExecutorService executor =
+            Executors.newVirtualThreadPerTaskExecutor();
+    private final AtomicLong generation = new AtomicLong();
+    private final JTable table;
+    private final CustomerTableModel model;
+    private final JLabel status;
+
+    CustomerLoader(JTable table, CustomerTableModel model, JLabel status) {
+        this.table = table;
+        this.model = model;
+        this.status = status;
+    }
+
+    void refresh(CustomerService service) {
+        long request = generation.incrementAndGet();
+        status.setText("Loading customers...");
+        table.setEnabled(false);
+
+        executor.submit(() -> {
+            try {
+                List<CustomerRow> rows = service.loadCustomers();
+                EventQueue.invokeLater(() -> {
+                    if (request == generation.get()) {
+                        model.setRows(rows);
+                        table.setEnabled(true);
+                        status.setText("Loaded " + rows.size() + " customers");
+                    }
+                });
+            } catch (Exception ex) {
+                EventQueue.invokeLater(() -> {
+                    if (request == generation.get()) {
+                        table.setEnabled(true);
+                        status.setText("Load failed: " + ex.getMessage());
+                    }
+                });
+            }
+        });
+    }
+
+    @Override
+    public void close() {
+        generation.incrementAndGet();
+        executor.close();
+    }
+}
+\end{lstlisting}
+
+The virtual thread is useful because \api{service.loadCustomers()} may block. The generation counter is useful because an older result may arrive after a newer refresh or after the screen is closing. The explicit \api{EventQueue.invokeLater} is necessary because the table and label belong to Swing. None of these facts is optional merely because threads became cheaper.
+
+Virtual threads change the cost model for background work. A desktop application can often create one virtual thread per request instead of maintaining a large custom pool. That simplifies code and makes direct style attractive. The code can read as "load, then publish" rather than as a chain of callbacks. Direct style is often easier to review in screen code because the service call, error handling, and result publication remain near one another.
+
+Virtual threads help when a screen starts independent service calls that mostly block: database operations through blocking drivers, remote service calls, file reads, report generation that waits for external data, or slow metadata loading. They are less useful for CPU-bound image processing, expensive sorting, or layout calculations. CPU-bound work still competes for processors, and renderer work still happens under Swing's painting rules.
+
+\begin{pitfallbox}{virtual-thread optimism}
+A virtual thread that calls \api{JTextField.setText} is still wrong. Cheap background threads are not component ownership. They reduce the cost of waiting; they do not change Swing confinement.
+\end{pitfallbox}
+
+Virtual threads also do not remove back-pressure. A user can type quickly, resize repeatedly, or press Refresh several times. Starting unbounded tasks for every gesture can overload a service or produce a queue of stale work. A good screen still coalesces requests, cancels obsolete work, disables commands when appropriate, or keeps only the latest generation. Cheap threads make waiting cheaper; they do not make unbounded demand wise.
+
+Virtual threads also do not repair imprecise model events. If a background task loads one changed row and the EDT delivery fires \api{fireTableDataChanged}, the table still loses precision. If the delivery updates a renderer cache that should have been immutable, the renderer is still suspicious. Modern Java solves the waiting problem, not every presentation problem.
+
+The old \api{SwingWorker} remains useful to understand because it teaches the same separation: work happens away from the EDT, and completion returns to Swing. Virtual threads make it easier to write direct blocking code without a custom worker class. They do not make \api{SwingWorker} knowledge obsolete; they explain why the same boundary was always present. When maintaining older code, improve ownership before replacing every worker.
+
+\termdef{Structured task boundary}{a parent-child relationship among related tasks, with explicit joining, cancellation, and lifetime} is the concurrency idea Swing screens need. The JDK 25 runtime exposes \api{StructuredTaskScope}; the exact API should be read from the target JDK and release policy, but the design lesson is stable. Related subtasks should have a parent scope. Cancellation should flow through that scope. Completion should be joined at an explicit point. Results should cross back to Swing through one named EDT boundary.
+
+Swing screens already have natural task owners. A dialog owns validation calls while it is open. A search panel owns the current search generation. A workspace tab owns its refresh and detail loads. Closing the screen cancels or ignores outstanding work. Starting a newer load makes older results stale. A modern task design simply makes this ownership explicit rather than scattering it among listeners and futures.
+
+Structured task design is most useful when subtasks belong to one screen decision. A dashboard refresh may load summary totals, recent orders, and warnings. If one required part fails, the whole refresh may fail. If the user closes the dashboard, all three subtasks should be cancelled or ignored together. This is easier to reason about when a parent scope owns the subtasks and produces one result for the EDT boundary.
+
+Figure~\ref{fig:modern-task-boundary} shows the rule in a small diagram. The user gesture begins on the EDT. Blocking service work can run on a virtual thread. The result returns through a publish step. The EDT delivery mutates models and components only after a generation token, cancellation handle, or scope says the result still belongs to the screen.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\modernTaskBoundaryFigure}
+\caption{Virtual threads are useful inside the task boundary. They do not erase the EDT delivery boundary, generation checks, cancellation policy, or screen scope.}
+\label{fig:modern-task-boundary}
+\end{figure}
+
+A cancelled task and a stale task are different. A cancelled task is asked to stop. A stale task may finish normally, but its result no longer belongs to the current screen state. A search field demonstrates the distinction. The user types \api{ma}, then \api{mar}, then \api{maria}. The request for \api{ma} may finish last. If the program updates the table with the most recent completion, the screen shows the wrong results. A generation counter or request token prevents this.
+
+\begin{lstlisting}[caption={A small request token for stale-result suppression.}]
+record SearchRequest(long generation, String text) {
+    boolean current(AtomicLong ownerGeneration) {
+        return generation == ownerGeneration.get();
+    }
+}
+\end{lstlisting}
+
+The token is not a Swing object. It can be tested without a window. The final mutation still happens on the EDT. This is the pattern to prefer: model the decision outside the component tree, then adapt the accepted result into Swing.
+
+Progress deserves the same discipline. A background task may publish exact byte counts, page counts, row counts, or phase names. The UI may choose to display a simplified message. The task model should not be a progress bar; the progress bar is one view of task state. This distinction becomes important when progress drives status text, accessibility descriptions, cancellation enablement, support diagnostics, and busy overlays.
+
+Error handling should not collapse into a modal message box. A failed task may need user-visible text, a retry command, a diagnostic record, a problem target, and an exception retained for support. Modern Java makes it easy to carry failure as a record or sealed state. Swing then maps that state into components. Corusco's problem and task models provide this mapping vocabulary directly.
+
+Exceptions from background work should cross the boundary as data. Catch them where the task outcome is formed, record diagnostic detail, and map the user-facing message through resources. Throwing an exception on a virtual thread and hoping the user sees something is not a UI error policy. A desktop application must decide how failure changes state, commands, focus, and support evidence.
+
+\begin{coruscobox}{Corusco task boundaries}
+Corusco task services give this pattern a library shape: task identity, generation counters, cancellation tokens, progress state, busy values, and EDT delivery are modeled explicitly. Virtual threads can be the execution mechanism behind the service, but not the UI ownership rule.
+\end{coruscobox}
+
+There is also a shutdown rule. If a screen owns an executor, closing the screen must close or cancel the work. If the application owns a task service, closing a screen must detach its callbacks and cancel screen-owned work. A virtual-thread executor is cheap to use, but it is still a resource. A task that outlives its view can become a leak or a stale update.
+
+Testing the boundary is straightforward. A model-level test can start generation one, start generation two, finish generation one last, and assert that only generation two is accepted. An EDT Swing test can verify that accepted delivery updates the model and rejected delivery leaves the table unchanged. These tests are more valuable than asserting that a particular thread was virtual; they verify the user-visible contract.
+
+\section{Modules, Resources, and Runtime Boundaries}
+
+\termdef{Module}{in Java} is a named set of packages with explicit dependencies and exports. A modular Swing application normally requires \api{java.desktop}. It may also require modules for logging, SQL, XML, HTTP, preferences, application services, and third-party libraries. Modules do not make the UI better by themselves; they make dependencies and public boundaries more visible.
+
+\begin{lstlisting}[caption={A small module declaration for a Swing application.}]
+module cz.auderis.corusco.bookapp {
+    requires java.desktop;
+    requires java.logging;
+    requires cz.auderis.corusco.core;
+    requires cz.auderis.corusco.swing;
+
+    exports cz.auderis.corusco.examples.bookapp;
+}
+\end{lstlisting}
+
+The module declaration forces packaging questions earlier. Which packages are public? Which libraries use reflection? Which resources are loaded from which module? Which annotation processors run at compile time, and which generated classes become part of the application? These questions are easier before the installer build than after it.
+
+A domain module should not require \api{java.desktop}. If it does, a presentation type has crossed the boundary: \api{JTable}, \api{Action}, \api{Icon}, \api{Color}, \api{TableModel}, or some UI exception. Keeping desktop dependencies out of domain code makes tests faster, services more reusable, and runtime images easier to explain.
+
+A presentation module may still export a small API. For example, a plugin module may need a view factory interface or a command contribution interface. That exported API should avoid exposing arbitrary Swing internals unless plugin authors are meant to manipulate Swing directly. A narrow desktop API makes plugins easier to test and keeps the main application free to change its panel layout.
+
+\begin{pitfallbox}{module late fees}
+Adding modules only at packaging time is expensive. The failures appear as resource-loading bugs, inaccessible generated classes, missing service providers, or reflective access errors far from the code that caused them.
+\end{pitfallbox}
+
+Exports and opens are separate decisions. Exporting a package makes its public types available to other modules. Opening a package permits deep reflection at runtime. A desktop application may need opens for a testing, serialization, or dependency-injection library, but such openings should be recorded. An open module that exposes everything because one library complained is not a design; it is a postponement.
+
+Swing applications load icons, resource bundles, help files, fonts, sample data, generated metadata, and sometimes templates. Old code often used a classpath-relative string and hoped the file remained nearby. In a modular or packaged application, the owner module matters. Prefer loading resources relative to a class in the owning feature or through a resource service that knows the module boundary.
+
+\begin{lstlisting}[caption={Resource loading relative to the owning class.}]
+final class Icons {
+    private Icons() {
+    }
+
+    static Icon load(String name) {
+        URL url = Icons.class.getResource(
+                "/cz/auderis/corusco/book/icons/" + name);
+        if (url == null) {
+            throw new IllegalArgumentException("Missing icon: " + name);
+        }
+        return new ImageIcon(url);
+    }
+}
+\end{lstlisting}
+
+Avoid file-system paths for packaged resources. A resource that works from the IDE because the working directory is the project root may fail from a runtime image or native launcher. User data is different. Preferences, logs, table state, local databases, and caches belong in platform-appropriate user locations, not inside the application image.
+
+Corusco resource keys add another distinction: stable identity is not the same as visible resource text or icon path. A command may have key \api{customer.refresh}; the current resource bundle decides its label, tooltip, mnemonic, help text, and icon. This makes localization, tests, support diagnostics, and generated companions cooperate. It also means packaging must include the bundles that generated keys expect.
+
+A resource key is also a useful review handle. If a screen has a button with visible text but no command key, no help topic, and no stable resource id, then localization and support will both suffer. Modern Java does not provide this key by itself. Corusco does by giving typed identities to resources, fields, commands, components, and help topics.
+
+Modern Java packaging tools belong in this chapter because they reveal module and resource mistakes. \api{jlink} creates a runtime image from modules. \api{jpackage} creates an application image or native package. These tools do not change Swing programming, but they make hidden dependencies visible. A resource path that only works from a source checkout is no longer a harmless shortcut once the app ships as an image.
+
+The packaging chapter gives the full release treatment. Here the modernization point is narrower: modules and resources should be considered during source design, not as an afterthought. A generated descriptor, resource key, or module export is source-level information that affects the runtime image. Modern Java lets the build see more of the architecture.
+
+\begin{detailbox}{Modern source affects release shape}
+Records, generated descriptors, resource keys, module declarations, and task services are source constructs. They also decide what must be compiled, packaged, linked, and diagnosed. Treat modernization and packaging as one pipeline, not separate hobbies.
+\end{detailbox}
+
+Service loading needs special attention. A JDBC driver, image plugin, logging backend, or application plugin may be found through \api{ServiceLoader}. Static dependency analysis may not see every provider the user will need. The runtime image and application image should be smoke-tested with representative service use, not merely launched.
+
+The same applies to annotation processors. Processors run at build time; their generated classes run at application time. A packaged application should not need the processor merely to start. It should contain the generated companions and the runtime libraries those companions use. This separation keeps startup predictable and avoids runtime reflection as a substitute for build discipline.
+
+A modular migration can be staged. First keep the existing classpath application but fix resource loading and user-data paths. Then add modules around stable boundaries. Then create a runtime image. Then create native packages. This order gives the team evidence at each step. A one-shot migration often hides too many failures behind the same packaging error.
+
+\section{Annotation Processing, Generated Companions, and Corusco}
+
+\termdef{Annotation processor}{in Java} is compile-time code that observes declarations and emits diagnostics or generated files. It is not runtime reflection. This distinction matters for desktop applications because startup time, packaging, diagnostics, and IDE review all matter. A generated source file can be inspected, compiled, tested, packaged, and linked like other source output.
+
+Corusco generation should be understood as ordinary source generation. Annotated records, methods, and view contracts produce typed companions: field keys, table columns, command descriptors, resource keys, binding helpers, behavior plans, and tests. When behavior is surprising, inspect the generated source. The generated code should be boring enough that inspection is possible.
+
+\begin{lstlisting}[caption={The kind of source declaration generation can consume.}]
+@SwingTable(resourcePrefix = "customer.table")
+public record CustomerRow(
+        @Column(width = 80) CustomerId id,
+        @Column(grow = true) String displayName,
+        @Column(renderer = StatusRenderer.class) CustomerStatus status,
+        @Column(format = "date.short") LocalDate lastOrderDate) {
+}
+\end{lstlisting}
+
+The annotation does not make the row magical. It states metadata that would otherwise be scattered among table column setup, resource lookup, renderer installation, tests, persistence, and documentation. The source declaration becomes the place where the row says how it participates in a table.
+
+Generated source can fail in two ways. It can be wrong, or it can be correct but surprising. Both cases require inspection. A build that hides generated source too well makes debugging harder. Keep the generated-source directory easy to find. Configure the IDE to mark it as generated source. Treat annotation-processor diagnostics as part of the authoring experience, not as mysterious compiler noise.
+
+Generated source should also be deterministic. The same annotated input should produce the same generated names, resource keys, descriptor ids, and diagnostics. Determinism makes code review possible and keeps screenshots, tests, and documentation stable. A generated class whose name changes because processing order changed is a maintenance problem even if compilation succeeds.
+
+\begin{principlebox}{Generated does not mean invisible}
+Generated code is allowed to be boring. It is not allowed to be unknowable. A developer should be able to find the generated companion and understand why a binding, descriptor, resource key, or behavior exists.
+\end{principlebox}
+
+Processor diagnostics should point at the source declaration that caused the problem. If \api{@SwingForm} supports only records, the diagnostic should point at the non-record type. If a column width is invalid, the diagnostic should point at the annotated component. If a resource prefix is blank, the diagnostic should say so. Good compile-time diagnostics are part of the UI library's developer experience.
+
+Generated code should be boring in another sense: it should avoid surprising side effects during class initialization. Descriptors, keys, and metadata constants are fine. Starting tasks, opening windows, loading user data, or touching Swing components during generated class initialization would make packaging and tests brittle. Generation should create declarations and adapters, not hidden application startup.
+
+Plain Swing and Corusco can be read side by side. The plain Swing version of a modern screen usually has component construction, state ownership, and synchronization. The Corusco version should not eliminate component construction. It should remove repeated synchronization and typed metadata wiring.
+
+\begin{lstlisting}[caption={Plain Swing command state.}]
+Action refresh = new AbstractAction("Refresh") {
+    @Override
+    public void actionPerformed(ActionEvent event) {
+        refreshCustomers();
+    }
+};
+
+loadState.addChangeListener(state -> {
+    refresh.setEnabled(!(state instanceof LoadState.Loading<?>));
+    statusLabel.setText(statusText(state));
+});
+\end{lstlisting}
+
+\begin{lstlisting}[caption={The same ownership expressed through values and command metadata.}]
+ReadableValue<LoadState<List<CustomerRow>>> loadState = presenter.loadState();
+CommandDescriptor refresh = CustomerCommands.refresh();
+
+bindings.bindText(statusLabel, loadState.map(ModernCustomerScreen::statusText));
+bindings.bindEnabled(refresh, loadState.map(ModernCustomerScreen::canRefresh));
+bindings.bindAction(refreshButton, refresh, presenter::refreshCustomers);
+\end{lstlisting}
+
+The second listing is not valuable because it is shorter. It is valuable because the command has identity, the state has identity, and cleanup belongs to the binding scope. Support diagnostics can name the command. Tests can read the state. The binding can be closed. The visible label is not the only place where the relationship exists.
+
+Modern Java makes generated companions more natural. Records provide source declarations for forms and table rows. Sealed types provide finite states for generated behavior to interpret. Pattern matching makes mapping code readable. Modules make generated packages and exports deliberate. Virtual threads can sit behind task services without changing their public ownership model.
+
+There is a temptation to use annotation processing to generate entire screens. Resist it unless the generated screen is genuinely the product's design language. Swing layout is visual design. MigLayout constraints, density, alignment, focus order, and command placement require human judgement. Generation is better at producing descriptors, keys, bindings, tests, and repetitive adapters than at deciding the final visual arrangement of a serious screen.
+
+The distinction is important for this book. Generated code can provide a \api{CustomerEditFormModel}, field descriptors, resource keys, problem codes, and behavior bindings. The chapter author still designs the dialog body with MigLayout, decides where validation summary belongs, and chooses how dense the screen should be. The result is both generated and designed.
+
+\begin{coruscobox}{generation where it pays}
+Corusco generation is strongest where the source already declares a fact: a record component, table column, field key, resource prefix, command method, validation annotation, or help topic. The generated code should preserve that identity across Swing, tests, resources, and diagnostics.
+\end{coruscobox}
+
+The build should prove that generated examples compile through the real processor. A book example that hand-writes what generated code would do is useful for explanation, but it is not evidence that generation works. A generated example should compile in the normal Gradle task and fail if processor diagnostics change unexpectedly.
+
+When generated code participates in packaging, keep build-time and runtime classpaths separate. Annotation processor jars belong on the processor path. Generated application classes and Corusco runtime libraries belong in the application. Resource bundles referenced by generated keys belong in the packaged image. This division prevents the packaged app from carrying unnecessary build machinery and prevents the build from hiding missing runtime resources.
+
+Generated companions also help tests choose the right level. A descriptor test can run without Swing. A binding test can use a small component tree. A screenshot test can verify the visual result. The generated names connect these layers. Without generated identity, tests often fall back to localized text, component order, or brittle traversal through panel internals.
+
+For maintainers, the best generated code has a predictable naming map. If the source record is \api{CustomerEdit}, the field descriptors, resource keys, form model, and binding companion should have names that can be guessed. A naming map is not cosmetic; it is a navigation aid. The appendix should eventually collect these naming rules so generated source feels like part of the codebase.
+
+\section{Review Drills and Modernization Checklist}
+
+Modernization review begins with ownership. Ask where state lives, who changes it, which thread owns it, which lifecycle closes it, and how support would name it. Only then ask whether records, sealed types, pattern switches, virtual threads, modules, or generation make the answer clearer. This order prevents fashion-driven rewrites.
+
+The first drill is a record drill. Find a table row class in an existing Swing application. Decide whether it should be a record, a mutable bean, or a generated descriptor-backed row. If the row has stable identity and immutable display values, try a record. If the object fires property changes during editing, keep or introduce a mutable model. Write down the reason.
+
+The second drill is a finite-state drill. Replace three related booleans in a screen model with a sealed state. Add one switch expression that maps the state to status text and another that maps it to command enablement. Then add a new state and observe where the compiler asks for reconsideration. The point is not clever syntax; it is visible completeness.
+
+The third drill is a task-boundary drill. Take a blocking refresh listener and rewrite it with a virtual-thread executor. Keep the final model and component mutation on the EDT. Add cancellation or stale-result suppression. Then close the screen while the load is running and prove the result cannot update the closed view.
+
+The fourth drill is a resource drill. Move one icon, one resource bundle string, one help topic, and one generated descriptor into a packaged test application. Launch it from outside the IDE and verify that all resources resolve. This drill catches working-directory assumptions that are invisible in ordinary runs.
+
+The fifth drill is a generation drill. Annotate a small record for a generated form or table. Inspect the generated companion, identify the field keys or column keys, and trace one key into a binding or test. Then intentionally break an annotation and read the processor diagnostic. A processor is part of the authoring experience, so its failure mode should be humane.
+
+The sixth drill is a module drill. Write a module declaration for a small Swing application. Keep \api{java.desktop} in the UI module and out of the domain module. Run dependency analysis and inspect any unexpected desktop dependency. Then package or launch from a runtime image to confirm that resources still load.
+
+The seventh drill is a review-language drill. Take one pull request that claims to "modernize" a Swing screen. Rewrite the review description in ownership terms: which state became explicit, which EDT handoff changed, which lifecycle owner was added, which descriptor or key became stable, and which tests now cover the boundary. If the description cannot name such facts, the change may be cosmetic.
+
+The eighth drill is a rollback drill. Pick one modernization, such as converting a row bean to a record or replacing a worker with virtual-thread task service. Decide what evidence would tell you the change should be reverted or adjusted: lost table precision, bad equality, packaging failure, service overload, or harder debugging. Good modernization includes a way to recognize when it was the wrong move.
+
+Use the following checklist during modernization review.
+
+\begin{itemize}
+\item Records represent values, descriptors, immutable rows, or committed form snapshots.
+\item Mutable editing state remains in form models, observable values, or presenters.
+\item Record equality is meaningful for the type and does not include live components or services.
+\item Sealed hierarchies model finite states with meaningful alternatives.
+\item Pattern matching is used at interpretation boundaries, not as decoration.
+\item Virtual threads never mutate Swing components directly.
+\item Background work has cancellation, stale-result, progress, and lifecycle policy.
+\item Every background result crosses a named EDT delivery boundary.
+\item Modules keep \api{java.desktop} out of domain code.
+\item Resource loading works from an application image, not only from a source checkout.
+\item Generated source is discoverable in the IDE and build output.
+\item Processor diagnostics point to useful source declarations.
+\item Corusco descriptors and keys preserve stable identity across Swing, tests, resources, and diagnostics.
+\end{itemize}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Convert a simple immutable table row to a record and update the table model to replace one row precisely.
+\item Build a sealed load-state hierarchy with idle, loading, ready, empty, failed, and cancelled states.
+\item Map that hierarchy to status text, refresh enablement, busy overlay visibility, and accessible description.
+\item Rewrite a blocking search action with \api{Executors.newVirtualThreadPerTaskExecutor} and explicit EDT delivery.
+\item Add a generation token so an older search result cannot overwrite a newer result.
+\item Add a support diagnostic that reports active task generation and current load state.
+\item Annotate a record with \api{@SwingTable}, inspect the generated columns, and find one generated resource key.
+\item Write a module declaration for the example and verify that bundled resources load after packaging.
+\item Review a lambda-heavy screen and identify which lambdas still hide ownership or lifecycle.
+\item Explain one modernization you chose not to do because it would hide a Swing contract.
+\end{enumerate}
+\end{exercisebox}
+
+The central modernization rule is conservative: use new Java features where they make old Swing boundaries clearer. A record row is useful because table data becomes an immutable value. A sealed load state is useful because loading, loaded, empty, failed, and cancelled are no longer a pile of booleans. A virtual thread is useful because blocking work no longer monopolizes a scarce worker thread. A module is useful because runtime dependencies become visible. Generated code is useful when it preserves source identity in a form that tests, resources, and diagnostics can share.
+
+This rule also prevents fashion-driven rewrites. A listener expressed as a lambda may be shorter than an anonymous class, but it still may own the wrong state. A stream pipeline may be elegant, but if it runs over ten thousand rows on the EDT during typing, it is still a UI freeze. A module declaration may look modern, but exporting every package and opening everything to reflection does not improve architecture. Modern Java should make constraints visible, not decorate old shortcuts.
+
+Corusco and modern Java fit best at the presentation boundary. Records describe committed form results, table rows, descriptors, and generated metadata. Sealed types describe finite UI states that commands and views can interpret. Virtual threads carry service work away from Swing. Structured task ownership and generation counters keep late results from corrupting current state. The view still constructs Swing components and MigLayout panels because that is the right tool for the desktop surface.
+
+When teaching this material to a returning Swing developer, begin with the problem the syntax solves. Records reduce accidental mutation in row values. Sealed states prevent impossible UI states. Pattern matching keeps interpretation local. Virtual threads let blocking code leave the EDT without elaborate executor plumbing. Modules make runtime dependencies visible. The features matter because they serve the old contracts, not because they are new.
+
+The final test is whether the code became easier to explain under stress. During a freeze, can we name the task and the EDT boundary? During a table bug, can we name the row identity and event precision? During a validation problem, can we name the parse state and problem target? During packaging, can we name the module and resource key? If modernization improves those answers, it belongs in a Swing program.

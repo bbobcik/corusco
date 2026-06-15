@@ -1,0 +1,1250 @@
+\chapter{Background Work and Busy UI}
+\label{ch:background-busy}
+\chapterquote{The user should see that work is happening; the EDT should not be the place where it happens.}{The busy rule}
+
+\begin{chaptermap}
+Core question & How do background operations interact with Swing screens safely?\\
+Primary APIs & \api{SwingTaskServices}, \api{BusyOverlayBinding}, \api{BusyOverlayLayerUI}, \api{TaskService}, \api{TaskHandle}, \api{TaskCallbacks}, \api{CancellationToken}, and \api{GenerationCounter}.\\
+Modern Java topic & Virtual-thread workers with explicit EDT completion.\\
+Swing connection & Busy overlays, disabled commands, progress text, status binding, cancellation, and stale-result suppression.\\
+Companion example & \modernJavaExample.\\
+\end{chaptermap}
+
+\section{Busy is state}
+
+Busy state is not a paint trick. It is a presentation fact. It disables
+commands, blocks incompatible input, shows overlays, changes cursor policy,
+updates status text, controls cancellation, and prevents duplicate requests. If
+busy state lives only as a local boolean inside a button listener, every other
+part of the screen must guess.
+
+\termdef{Busy state}{in Corusco} is normally a \api{ReadableValue<Boolean>}
+exposed by a task service, task handle, presenter, or derived value. It can be
+bound to buttons, commands, overlays, status labels, and tests.
+
+\begin{lstlisting}[caption={Service-level busy state.}]
+TaskService tasks = SwingTaskServices.virtualThreads();
+
+ReadableValue<Boolean> busy = tasks.busy();
+Binding overlay = BusyOverlayBinding.install(layer, busy);
+\end{lstlisting}
+
+The task service owns the worker execution. The overlay binding owns the visual
+relationship. The screen scope owns both lifetimes.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\busyTaskFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\backgroundStatusFigure}
+\end{minipage}
+\caption{Busy work is seen in several places at once: overlays, disabled commands, cancellation, progress, and status text all observe modeled task state.}
+\label{fig:background-busy-screens}
+\end{figure}
+
+This ownership sentence is more important than the particular classes. Swing
+programs often fail here because "loading" is treated as a temporary detail of
+one listener. The listener disables its button, starts a worker, and re-enables
+the button later. Then a status line is added and receives its own flag. Then a
+busy cursor is added around a different call. Then a cancel button appears and
+must discover which operation is running. The screen has acquired a real piece
+of state, but the code still treats it as scattered bookkeeping. Corusco pushes
+that fact into a readable value, so the rest of the screen can observe it in a
+uniform way.
+
+The Swing module connects this model to concrete components; it does not make
+background work magically safe. Core task contracts describe cancellation,
+callbacks, handles, and generation counters without knowing about Swing. The
+Swing task helpers add the worker-to-EDT delivery boundary, and busy overlay
+bindings adapt the resulting state to visible input policy. This layered shape
+is the same pattern used throughout Corusco: a stable model first, Swing
+adaptation second, lifecycle ownership around both.
+
+Busy state is therefore part of the screen's contract with the user. It says
+that some operation is running and that certain other operations are either
+temporarily unavailable, still available, or now have different meaning. A
+Refresh button may be disabled while refresh is running. A Cancel button may be
+enabled only while the matching task handle is busy. A detail form may remain
+editable while the table refreshes, but a Save command may be disabled while a
+save task is running. The same word "busy" hides several policies unless the
+screen models them explicitly.
+
+This is where many Swing applications become inconsistent. One listener sets a
+wait cursor. Another disables a button. A third starts a \api{SwingWorker}. A
+fourth writes a status label. A later feature adds an overlay. Each addition is
+reasonable in isolation, but the screen no longer has one answer to the
+question "what is running?" The user can sometimes click the same command
+twice, sometimes edit hidden fields under an overlay, and sometimes watch an
+old result overwrite new state. Corusco's task and busy APIs are small because
+the hard part is not a large scheduler. The hard part is making the operation a
+named, observable fact.
+
+The first distinction is between operation state and presentation policy. A
+\api{TaskService} can expose service-level busy state. A \api{TaskHandle} can
+expose task-level busy state. A presenter can derive a screen-blocked value
+from several task handles. A command can derive enabled state from dirty,
+valid, and busy values. A busy overlay can observe one of those values and
+block input. These are related facts, not synonyms. If the application uses one
+global Boolean for all of them, it will eventually disable too much or too
+little.
+
+For example, consider a customer screen with a table on the left and an editor
+on the right. Loading the table should probably block table interaction and
+disable Refresh. It need not block editing the currently selected customer's
+notes, if those notes are already loaded and save uses a separate task.
+Saving the notes should disable Save and perhaps the notes editor, but it need
+not block scrolling the table. Loading details for a newly selected customer
+should suppress stale detail results, but it need not cancel a background table
+refresh. A single \api{busy} flag cannot express this. Several named busy facts
+can.
+
+The second distinction is between "work is running" and "input is incompatible."
+A screen may show that validation is running while still allowing the user to
+continue typing. A search field may remain editable while a previous query is
+running, with generation counters suppressing stale results. A destructive
+Delete command may be disabled while any save task is running. The overlay is
+only one presentation of one policy: this region should not accept input while
+this busy value is true. Do not use an overlay as a substitute for deciding
+which input is incompatible.
+
+The third distinction is between visible busy and lifecycle busy. A task
+started by a dialog may still be running when the dialog closes. The user may
+not need a cancellation message, because the screen is gone. But the task
+still needs cancellation or stale-result suppression; otherwise it may publish
+into a model whose view no longer exists. A task started by an application-wide
+sync service may outlive a single window and should not be cancelled merely
+because one view closed. The owner of the task decides the lifecycle. The view
+decides which part of that lifecycle is visible.
+
+The fourth distinction is between responsiveness and speed. Moving work off
+the EDT does not make the work faster. It keeps the UI event queue available
+for painting, input, cancellation, and status updates while work proceeds. A
+slow database query may still take two seconds. The user's experience changes
+because the screen can show progress, accept cancellation, and avoid "not
+responding" behavior. If the callback then performs another two-second query
+on the EDT, the benefit is lost. The boundary must stay clean all the way to
+result application.
+
+\begin{principlebox}{busy is not a spinner}
+Treat busy as modeled interaction policy: which operation is running, who owns
+it, what can be cancelled, what input is incompatible, what result is current,
+and how success, failure, and cancellation are shown.
+\end{principlebox}
+
+A useful design exercise is to write the busy policy before writing the task
+code. What starts the operation? Can it be started twice? What becomes disabled?
+What remains usable? Does the operation block a component subtree, a command
+family, one table row, or the whole screen? Is cancellation visible? What
+happens to old data while new data loads? What happens if a newer request
+finishes before an older request? What happens if the owner closes? These
+questions turn "run it in the background" into a real UI contract.
+
+The answer should appear in model state. A task handle belongs to one submitted
+operation. A task service belongs to a presenter, dialog, or application
+lifecycle. A generation counter belongs to a request stream whose old results
+must be ignored. A progress model belongs to an operation that needs more than
+a Boolean. Commands derive enabled state from these facts. Overlays observe
+these facts. Tests assert these facts. Once the model exists, Swing becomes
+the adapter again rather than the storage location for concurrency truth.
+
+\textbf{Task execution and EDT delivery.}
+
+Background work may use platform threads, virtual threads, executors, task
+services, or legacy \api{SwingWorker}. The Swing rule is unchanged: component
+mutation belongs on the EDT. A virtual thread can load data; it must not call
+\api{JTable.setModel} directly. A callback can update Swing only when the task
+service promises EDT delivery.
+
+\api{SwingTaskServices.virtualThreads} creates a virtual-thread-backed
+\api{TaskService} whose terminal callbacks and final busy-state updates are
+delivered through \api{SwingEdt.executor}. Task bodies run away from the UI.
+Callbacks return to Swing.
+
+Virtual threads make this style more attractive on modern Java, but they do not
+relax Swing's rule. A virtual thread is cheap to block while a repository waits
+for I/O; it is not a license to mutate a component from outside the EDT. Treat
+the task body as a computation that produces data and the callback as the
+short, EDT-confined handoff that applies data to presentation models. The more
+clearly this line is drawn, the less the program depends on timing accidents.
+
+Structured concurrency, where available in the surrounding application, can
+help organize related non-UI subtasks. The boundary to Swing remains explicit.
+Gather data concurrently away from the EDT, combine it into a result value, and
+then deliver that result through a Swing-aware callback. Do not pass live Swing
+components into a structured task scope. The object crossing the boundary should
+be data, not a widget.
+
+\begin{lstlisting}[caption={Virtual-thread work with Swing callback delivery.}]
+TaskService tasks = SwingTaskServices.virtualThreads();
+
+tasks.submit(
+        cancellation -> {
+            cancellation.throwIfCancellationRequested();
+            return repository.loadCustomers(cancellation);
+        },
+        TaskCallbacks.onSuccess(rows -> {
+            tableRows.batch(list -> {
+                list.clear();
+                rows.forEach(list::add);
+            });
+        }));
+\end{lstlisting}
+
+The success callback is short. It applies the already-produced result. It does
+not perform another slow query on the EDT.
+
+\textbf{What belongs in the task body.}
+
+Put unpredictable work in the task body: I/O, database calls, service calls,
+file reads, parsing, report generation, and other operations whose latency is
+not bounded by a tiny constant. The task body receives a
+\api{CancellationToken}. Check it at useful boundaries.
+
+\begin{lstlisting}[caption={Task body with cancellation boundaries.}]
+UiTask<CustomerReport> task = cancellation -> {
+    cancellation.throwIfCancellationRequested();
+    Customer customer = repository.loadCustomer(id);
+    cancellation.throwIfCancellationRequested();
+    List<Order> orders = repository.loadOrders(id);
+    cancellation.throwIfCancellationRequested();
+    return reportFactory.create(customer, orders);
+};
+\end{lstlisting}
+
+Do not update components inside this body. Return data.
+
+This advice includes indirect component updates. A task body should not mutate
+an observable list that is already bound to a \api{JTable} unless that list has
+an explicit EDT adaptation that makes the operation safe. It should not write
+to a form field model if the form is immediately bound to Swing and the binding
+expects synchronous EDT notifications. A background task can build a new list,
+read a file, parse a document, or call a service. The callback can then replace
+the observable state on the EDT in one clear step.
+
+\textbf{What belongs in callbacks.}
+
+Callbacks should be short and deterministic. They update model values, row
+sources, status text, or command state. They may show a small error message if
+the application policy says so. They should not block.
+
+\api{TaskCallbacks} has terminal paths for success, failure, and cancellation.
+Only one path should run. Cooperative cancellation should suppress success.
+Failure should be visible enough for diagnostics and humane enough for users.
+
+A good callback is easy to read because it has no hidden second job. It does
+not start a new slow query, wait for a lock, or perform an export. If the
+success path receives a thousand rows, it should apply them with a batched list
+mutation. If it receives a domain object, it should set a value or refresh a
+form. If it receives a failure, it should translate that failure into the
+screen's problem, status, or error policy. The callback is not the task; it is
+the delivery receipt.
+
+\textbf{Task handles.}
+
+\api{TaskHandle<T>} observes one submitted task. It exposes task-level busy
+state, cancellation, and completion. Closing the handle requests cancellation.
+Register handles with the view or dialog lifecycle when the task should stop
+when the screen closes.
+
+\begin{lstlisting}[caption={A view scope owns task handles.}]
+TaskHandle<CustomerReport> handle = tasks.submit(task, callbacks);
+viewScope.add(handle);
+
+cancelButton.addActionListener(event -> handle.cancel());
+\end{lstlisting}
+
+The service may outlive one task. The handle belongs to the operation.
+
+\textbf{Service busy versus task busy.}
+
+Service-level busy means at least one task owned by the service is running.
+Task-level busy means one particular operation is running. Use the right one.
+
+A whole-screen overlay often observes service busy. A progress line beside a
+single row should observe a task handle. A Refresh command may be disabled while
+the refresh handle is busy but remain independent of a background validation
+task. When commands become too entangled, derive specific busy values rather
+than using one global flag for everything.
+
+\textbf{Local busy scopes.}
+
+Some screens need several busy regions. A left table may refresh while a right
+detail form remains editable. A background validation task may mark one field
+busy without blocking the entire dialog. A report export may disable only export
+commands. Model these scopes explicitly.
+
+\begin{lstlisting}[caption={Separate busy facts for separate policies.}]
+ReadableValue<Boolean> tableBusy = refreshTask.busy();
+ReadableValue<Boolean> saveBusy = saveTask.busy();
+
+DerivedValue<Boolean> formBlocked = DerivedValue.of(
+        () -> Boolean.TRUE.equals(saveBusy.value()),
+        saveBusy);
+\end{lstlisting}
+
+Avoid the single global busy flag unless the whole screen truly has one
+blocking state.
+
+This is a common source of awkward user experience. A screen that disables
+everything for every operation feels simpler to implement, but it teaches users
+that the program is less capable than it is. Conversely, a screen that leaves
+everything enabled during every operation invites duplicate requests and stale
+state. The correct answer is usually neither global blocking nor complete
+freedom. Name the region or command family that is affected, model that busy
+fact, and bind only the incompatible interactions to it.
+
+\section{Task lifecycle and worker-to-EDT handoff}
+
+A \api{TaskService} has two responsibilities that should not be confused. It
+runs task bodies on a worker executor, and it delivers terminal callbacks
+through a configured callback executor. The core task API does not say "EDT";
+it says "callback executor." The Swing factory chooses \api{SwingEdt.executor}
+for that callback executor. This is the small seam where toolkit-neutral tasks
+become Swing-safe task delivery. It is also the line a reviewer should trace
+when a background result mutates the UI.
+
+The default virtual-thread service owns its worker executor. Closing the
+service cancels outstanding handles and shuts down the worker executor it owns.
+A service created over caller-owned executors cancels outstanding handles but
+does not close the caller's executor service. This is not a minor implementation
+detail. It decides who is responsible for resource cleanup. A dialog-local
+virtual-thread service can be closed with the dialog. An application-wide
+executor belongs to the application and should not be shut down by a single
+panel.
+
+Service-level busy is implemented as an aggregate count of active tasks. The
+first active task sets busy true. The last completed, failed, or cancelled task
+sets busy false through the callback executor. In a Swing service, the final
+busy false event therefore arrives on the EDT. A screen-level overlay that
+observes service busy will remain active while any service task is active. If
+two unrelated operations use the same service and one should not block the
+other's screen region, that is a design smell: use separate services, separate
+task handles, or derived busy values.
+
+A \api{TaskHandle} is the operation-level object. It has its own busy value,
+cancellation token, completion future, cancel method, and \api{close} method
+that delegates to cancellation. This is the object a Cancel button usually
+needs. It is also the object a view scope should own when the operation should
+stop with the view. The service may outlive the view; the handle usually does
+not. Keeping this distinction sharp prevents both leaks and over-cancellation.
+
+Cancellation is cooperative even when the underlying future is cancelled. The
+service signals the token and attempts to cancel the worker future, but task
+code must still check the token at useful boundaries. A blocking library call
+may not notice cancellation immediately. A CPU loop will not stop unless it
+checks. A parser may need to check between records. A repository method that
+accepts a cancellation token should pass it into lower layers or at least check
+between expensive calls. The UI can request cancellation; task code must make
+that request effective.
+
+\begin{lstlisting}[caption={A task service registered with a view lifecycle.}]
+final class CustomerPresenter implements AutoCloseable {
+    private final TaskService tasks = SwingTaskServices.virtualThreads();
+    private TaskHandle<List<CustomerRow>> refresh;
+
+    void refresh() {
+        if (refresh != null && !refresh.isDone()) {
+            return;                         // Policy: one refresh at a time.
+        }
+        refresh = tasks.submit(
+                cancellation -> repository.loadRows(cancellation),
+                TaskCallbacks.onSuccess(rows -> tableRows.replaceAll(rows)));
+    }
+
+    void cancelRefresh() {
+        if (refresh != null) {
+            refresh.cancel();
+        }
+    }
+
+    @Override
+    public void close() {
+        tasks.close();
+    }
+}
+\end{lstlisting}
+
+The listing shows a conservative policy: one refresh at a time. Another screen
+might allow overlapping searches and use a generation counter to accept only
+the newest result. The task API supports both policies because the policy is
+not hidden inside the executor. The presenter decides what should happen when
+the user asks for another operation before the first one finishes.
+
+Terminal callbacks are exclusive. A successful task calls success. An
+unexpected exception calls failure. A cooperative cancellation calls
+cancellation and suppresses success/failure. This exclusivity is what lets UI
+code reason about final state. A task should not both succeed and then be
+treated as cancelled because a button was pressed late. A cancelled task should
+not publish a success result merely because the repository returned after the
+token was requested. The service checks cancellation before and after the task
+body, and task code should check inside the body at longer boundaries.
+
+Completion futures are useful in tests and in non-UI orchestration, but they
+should not tempt UI code into blocking. Calling \api{completion().get()} on the
+EDT defeats the entire task model. Tests can wait with timeouts because they
+control the scenario. Production Swing callbacks should be expressed as
+callbacks, value updates, command state, and model changes. If another task
+must begin after one completes, start it from the callback or model transition,
+not by blocking the event queue.
+
+Failure handling should preserve diagnostic evidence. A failure callback can
+translate the exception into a problem set, status message, error dialog, or
+support log. It should not merely print a stack trace from a worker thread.
+Silent background failure is worse than a foreground exception because the
+user sees stale or missing data with no explanation. At minimum, the screen
+should move from busy to a visible failed state and the exception should remain
+available for diagnostics.
+
+Virtual threads are a good fit for UI-initiated I/O because they make blocking
+task bodies cheap. They do not make Swing components thread-safe, do not remove
+the need for cancellation checks, and do not decide result ordering. A virtual
+thread can call a blocking repository method. It should return data. The EDT
+callback should apply data. If a virtual thread holds a lock needed by the EDT
+or calls back into Swing indirectly, the program can still freeze. Modern Java
+reduces thread-management friction; it does not cancel the Swing contract.
+
+Structured concurrency has a similar boundary. A task body may use structured
+subtasks to load customer, orders, and preferences concurrently, then combine
+them into one immutable result. That structured scope should live away from
+Swing. The result crossing into the callback should be data. If the structured
+scope receives a \api{JTable}, \api{JTextField}, or mutable Swing model, the
+boundary has been breached. Keep Swing mutation in the callback and keep the
+callback short.
+
+Close paths deserve tests. Closing a task service should reject later
+submissions. Closing a task handle should request cancellation. Closing a view
+scope should close overlay bindings and task handles. Closing while a callback
+is queued should not reinstall visual state. These are race-prone paths that
+manual testing rarely exercises because the timing window is small. Automated
+tests can make the timing window explicit with latches, controlled executors,
+and EDT drains.
+
+\section{Modern Java boundaries for Swing tasks}
+
+Modern Java gives Swing programmers better background tools, but it does not
+change Swing's event-thread rule. Virtual threads make it cheap to write a task
+body that blocks while waiting for a database, file system, or remote service.
+Records make task results easier to name and pass across the boundary. Pattern
+matching makes result handling and error classification clearer. Structured
+concurrency can organize related subtasks inside a task body. None of these
+features should move component mutation away from the EDT.
+
+The safest modern-Java shape is data-in, data-out. A command captures the
+current model snapshot on the EDT. The task body receives immutable input and
+returns an immutable result, often a record. The callback applies the result on
+the EDT. If the task fails, the callback translates the failure into modeled
+screen state. If cancellation is requested, the task body stops cooperatively
+and the cancellation callback applies the screen's cancellation policy. This
+shape works with virtual threads, platform executors, or test executors because
+the Swing boundary is explicit.
+
+\begin{lstlisting}[caption={Records make task input and output explicit.}]
+record ExportRequest(Path file, List<CustomerRow> rows) {
+}
+
+record ExportResult(Path file, int rowCount, Duration elapsed) {
+}
+
+ExportRequest request = new ExportRequest(targetFile, List.copyOf(tableRows));
+TaskHandle<ExportResult> handle = tasks.submit(
+        cancellation -> exporter.export(request, cancellation),
+        TaskCallbacks.onSuccess(result ->
+                status.setValue("Exported " + result.rowCount() + " rows")));
+\end{lstlisting}
+
+The request is a snapshot. It does not contain a \api{JTable}. It does not
+contain a live row sorter. It does not read from Swing while the worker runs.
+The result is also data. The callback can safely translate it into status text,
+problem state, command state, or a support event. Records are not required, but
+they make the boundary visible in code review.
+
+Virtual threads should be used for the kind of work they are good at: many
+blocking operations whose cost is mostly waiting. They are not magic for CPU
+bound rendering, geometry simplification, image processing, compression, or
+encryption. CPU-heavy work still competes for cores. A virtual thread running a
+large CPU loop can starve other work just as a platform thread can. For CPU
+heavy operations, use bounded executors, chunk work, check cancellation, and
+avoid flooding the EDT with progress. The task abstraction remains the same,
+but executor choice is a performance policy.
+
+Structured concurrency is useful inside a task body when several subtasks
+belong to one result. A detail load may need customer, orders, and permissions.
+A report export may need data, template, and resource bundle. A map layer may
+need several tiles. A structured scope can start those subtasks together and
+cancel siblings if one fails. The callback should still receive one combined
+result or failure. Do not let several subtasks race independently to update
+Swing components. That would recreate stale-result bugs under a newer syntax.
+
+Pattern matching can make failure policy clearer when the application defines
+failure types. A repository exception, validation exception, cancellation, and
+authorization failure should not all become the same dialog. A failure callback
+can classify the exception and update the right model. Keep this classification
+short on the EDT. If classification requires slow I/O, it belongs in the task
+body or in a follow-up task, not in the callback.
+
+Modern Java also makes it easier to accidentally capture too much. A lambda
+task body can close over \api{this}, a presenter, a component, or a mutable
+list without any ceremony. Review task bodies for captured Swing state. If a
+lambda references \api{nameField}, \api{table}, \api{panel}, or a mutable
+observable model that is bound to Swing, ask whether it should instead capture
+a snapshot. Concise syntax is useful only when the captured boundary is still
+honest.
+
+Modules and packaged runtimes add another operational detail. Background tasks
+that load resources, templates, fonts, or service providers must work inside
+the packaged image, not only in the IDE. A task that exports a report should
+load resources through module-aware resource APIs. A task that writes a file
+should handle permissions and user-selected paths. Busy UI is not a substitute
+for packaging correctness; it merely gives the user a coherent experience while
+the packaged operation runs.
+
+The rule for this chapter is therefore conservative and modern at the same
+time. Use virtual threads where they simplify blocking work. Use records to
+make inputs and outputs explicit. Use structured concurrency inside task
+bodies when subtasks belong to one operation. Use pattern matching to classify
+results and failures clearly. Keep Swing mutation on the EDT. Keep callbacks
+short. Keep stale-result and cancellation policy explicit. Modern Java should
+make the old Swing rules easier to obey, not easier to forget.
+
+\section{Busy presentation}
+
+\api{BusyOverlayBinding} connects an observable busy value to a \api{JLayer}
+overlay. It installs a \api{BusyOverlayLayerUI}, forwards initial and later busy
+values, schedules visual updates onto the EDT when needed, and restores the
+previous layer UI when closed.
+
+\begin{lstlisting}[caption={Wrapping a form in a busy layer.}]
+JLayer<JComponent> layer = new JLayer<>(formPanel);
+
+Binding busyOverlay = BusyOverlayBinding.install(layer, presenter.busy());
+scope.add(busyOverlay);
+\end{lstlisting}
+
+The overlay is more than a translucent rectangle. While busy,
+\api{BusyOverlayLayerUI} consumes mouse, mouse-motion, mouse-wheel, key, and
+focus input events before they reach the wrapped view. It also switches the
+cursor to a wait cursor and repaints. This is input policy.
+
+Readers who have written only web applications may think of an overlay as
+purely visual. In Swing, a \api{JLayer} overlay can be a disciplined input
+boundary. It sits around the component tree and can decide whether events pass
+through to the wrapped view. That is why a busy overlay belongs in the same
+conversation as command enablement. Both are policies about what the user may
+do while work is in progress. One policy acts through actions and buttons; the
+other acts through the event stream reaching the component subtree.
+
+\begin{pitfallbox}{overlay without policy}
+A decorative overlay that does not block incompatible input may make the screen
+look busy while still allowing duplicate edits. Decide whether the operation
+should block input, and implement that policy explicitly.
+\end{pitfallbox}
+
+The \api{JLayer} choice is important. It lets the overlay sit around an
+existing component subtree without replacing the subtree's components. The
+wrapped form still has its fields, layout, validation, and focus state. The
+layer UI paints after the wrapped view and can intercept events before they
+reach it. This is very different from disabling every child component. Disabled
+children may change appearance, lose focus behavior, and require a traversal of
+the component tree. A layer can express "the region is temporarily blocked"
+without rewriting every child state.
+
+That does not mean a layer is always the right policy. If a save operation
+should disable only the Save command while the rest of the form remains
+editable, an overlay is too broad. If a destructive import should prevent all
+interaction with a table while leaving a Cancel command active outside the
+layer, wrapping only the table is appropriate. If a global database migration
+blocks the entire application window, a root-level glass pane or top-level
+layer may be appropriate. Choose the overlay boundary from the interaction
+policy, not from where it is easiest to put a panel.
+
+\api{BusyOverlayBinding} installs the layer UI immediately and restores the
+previous UI on close. This matters in real applications because a \api{JLayer}
+may already have a UI for validation marks, debugging, or another visual
+effect. A binding that simply overwrote the UI and never restored it would
+destroy the earlier behavior. The busy binding snapshots the previous UI,
+installs the busy UI, forwards current and future busy values, and restores the
+previous UI on close. It owns the temporary relationship, not the layer itself.
+
+Busy value delivery may come from outside the EDT. The binding therefore
+schedules visual updates onto the EDT and ignores queued updates after close.
+This is a small but essential contract. Without it, a background value change
+could call \api{setBusy} on a Swing UI delegate from a worker thread, or a late
+queued update could reactivate an overlay after the view closed. The binding is
+not just a convenience call; it is the dispatcher and lifecycle adapter between
+observable busy state and Swing component state.
+
+The layer UI itself is deterministic. It paints a translucent cover with
+\api{AlphaComposite.SrcOver}, uses a wait cursor while busy, and consumes mouse,
+mouse-motion, mouse-wheel, key, and focus input events while busy. It avoids
+animation. This is a deliberate documentation and testing choice. A deterministic
+overlay can be captured in book screenshots, tested with a small offscreen
+image, and reasoned about from state alone. Applications can add animated
+progress elsewhere when product design requires it.
+
+Input consumption by an overlay should be coordinated with command enablement.
+If the overlay consumes input over the form but a toolbar Save command remains
+enabled outside the layer, the user may still trigger an incompatible operation.
+If command enablement disables Save but a field inside the layer still accepts
+typing because there is no overlay or component disablement, state may change
+under a running operation. Visual blocking and command blocking should observe
+the same modeled policy even though they act through different Swing
+mechanisms.
+
+Cursor policy is also state. A wait cursor says "this region is busy." If the
+operation does not block that region, a wait cursor over it may be misleading.
+If a task is running in the background but the user can continue editing, a
+status message or small progress indicator may be better than a wait cursor.
+If a region is blocked, the wait cursor should be restored when the binding
+closes, even if the busy value changes later. This is the same restoration
+discipline used for borders and tooltips.
+
+Accessibility should not be forgotten. A visual overlay alone may not explain
+why keyboard input is blocked or what operation is running. A busy screen can
+update status text, accessible descriptions, or command disabled reasons from
+the same busy model. If cancellation is available, the Cancel command should be
+reachable by keyboard and described as such. The overlay may consume input in
+one subtree, but it should not make the whole application inaccessible without
+another path to cancellation or status.
+
+\textbf{Deterministic overlay rendering.}
+
+The standard overlay is intentionally animation-free. Animations can be useful,
+but deterministic overlays are easier to test and screenshot. A book example or
+generated screenshot should not fail because an animation frame landed at a
+different moment.
+
+If an application wants animated progress, add it deliberately and keep tests
+aware of it. The default busy overlay should communicate blocking state without
+becoming a miniature rendering engine.
+
+\textbf{Disabled commands.}
+
+Busy state often disables commands. But "busy" is rarely the only reason a
+command is disabled. Save may be disabled because the form is clean, because
+there are validation errors, or because a save is in progress. Refresh may be
+disabled because a refresh is in progress but still allowed while async
+validation is running.
+
+Use derived values to state the policy:
+
+\begin{lstlisting}[caption={Command enablement derived from busy and form state.}]
+DerivedValue<Boolean> canSave = DerivedValue.of(
+        () -> dirty.value()
+                && !problems.value().hasErrors()
+                && !saveBusy.value(),
+        dirty, problems, saveBusy);
+
+canSave.subscribe(event ->
+        saveCommand.setEnabled(Boolean.TRUE.equals(event.newValue()),
+                event.origin()));
+\end{lstlisting}
+
+The command observes policy. The button observes the command.
+
+\textbf{Progress and status.}
+
+The current task service exposes busy state, not a full progress model. For
+operations that need progress, model progress explicitly: current step, maximum,
+message, cancellable flag, and perhaps estimated remaining time. Do not squeeze
+all of this into a status label string.
+
+Status text should be derived from task state. "Loading customers..." belongs to
+the load task. "Loaded 240 customers" belongs to success. "Load cancelled"
+belongs to cancellation. "Load failed" belongs to failure. This makes tests and
+translation easier.
+
+\textbf{Long-running streams.}
+
+Some work is not a single request with one result. A log tail, event stream,
+large import, or live calculation may deliver many intermediate updates. The
+same principles apply, but the model should expose an observable list, progress
+value, or event stream rather than pretending there is one final result.
+
+Batch intermediate row updates. Avoid publishing thousands of single-row events
+when the UI only needs periodic refresh. Use cancellation to stop the stream and
+lifecycle scopes to close subscriptions. If the stream can outlive the view,
+the view must detach cleanly.
+
+\textbf{Back-pressure and coalescing.}
+
+Desktop applications often receive background updates faster than humans can
+see them. A table that receives one event for every imported row may spend more
+time repainting than helping the user. Coalesce updates where possible. Batch
+list mutations. Debounce status messages. Persist table state with a scheduler
+rather than writing preferences during every resize pixel.
+
+Coalescing is not lying about state. It is choosing a truthful update boundary
+that the UI can handle.
+
+The same principle applies to progress reporting. A progress bar that moves ten
+thousand times per second is not more accurate for a human user than one that
+moves at visible milestones. A status label that displays every imported file
+name may be less useful than one that displays the current batch and a count.
+Choose update boundaries that preserve semantic truth while giving Swing enough
+time to lay out, repaint, and process input.
+
+Progress deserves its own model when it affects more than one string. A useful
+progress model may include a phase name, current count, maximum count,
+indeterminate flag, message, cancellable flag, and severity. A simple task can
+publish only busy true/false. A file import probably needs more. A report
+export may need "preparing", "rendering", "writing", and "done" phases. A
+background validation sweep may need a field count and a current problem
+summary. Once progress has structure, a label, progress bar, tooltip, status
+line, and support log can all derive from the same state.
+
+Do not confuse progress precision with progress usefulness. A repository may
+know exact record counts. A remote service may not. A task may have phases
+where the maximum is known and phases where it is not. A progress bar should
+not lie by showing precise percentages for indeterminate work. Use an
+indeterminate state when the maximum is unknown; switch to determinate when it
+becomes known. The state transition is part of the task model, not a random
+choice made by the progress bar.
+
+Streams and imports need batching rules before they need fancy rendering. If an
+import reads 100,000 rows and publishes each row to an observable list on the
+EDT, the table may become the bottleneck even though file reading is off the
+EDT. Better designs accumulate a batch away from the EDT and publish a bounded
+batch on the EDT, or publish into a staging model and let the table refresh at
+human cadence. This is not merely performance tuning; it protects input
+latency and repaint stability.
+
+The batch size is a policy. A small batch makes progress feel immediate but
+causes more UI events. A large batch reduces event overhead but may make the UI
+feel frozen between updates. A time-based policy can work well: publish at most
+every 50 or 100 milliseconds while keeping a final flush at completion. Tests
+can verify that the importer eventually publishes all rows and that cancellation
+stops publication. Performance tests can tune the cadence for real data.
+
+Coalescing should happen near the boundary where high-frequency events become
+UI state. A parser can report exact internal progress to a task-local counter.
+The presenter can coalesce that into a readable progress value. The binding can
+update the progress bar. If coalescing is hidden inside the progress bar, other
+surfaces such as status labels and support diagnostics may still receive too
+many updates. Model first; Swing adapter second.
+
+Stale-result suppression and cancellation solve different problems. Cancellation
+asks old work to stop. Generation counters prevent old work from publishing if
+it finishes anyway. A well-behaved repository may stop promptly when cancelled,
+but a remote call may complete despite cancellation. A generation check in the
+callback is still useful. Conversely, a generation check does not reduce load
+on the remote service or local CPU; cancellation is still useful. Mature
+screens often use both.
+
+The generation should be advanced when the user action makes older results
+obsolete, not when the old task happens to finish. In a search field, advance
+when a new search request is scheduled. In a master-detail screen, advance
+when selection changes and a new detail load starts. In a reset path, call
+\api{invalidate} so queued callbacks cannot repopulate cleared state. The
+token is captured with the task and checked in the callback before applying
+the result. The result consumer still has to run on the appropriate executor.
+
+\begin{lstlisting}[caption={Search result suppression with cancellation and generation.}]
+void search(String text) {
+    if (currentSearch != null) {
+        currentSearch.cancel();
+    }
+    GenerationCounter.Generation generation = generations.advance();
+    currentSearch = tasks.submit(
+            cancellation -> repository.search(text, cancellation),
+            TaskCallbacks.onSuccess(rows ->
+                    generations.tryAccept(generation, rows,
+                            resultRows::replaceAll)));
+}
+\end{lstlisting}
+
+This example intentionally cancels the old task and still checks the generation
+in the success callback. The cancellation request is a resource policy. The
+generation check is a state policy. If the old task ignores cancellation and
+finishes, its result is stale. If the old task stops promptly, the generation
+check is cheap. The screen is correct in both cases.
+
+Failure policy should be proportional to the operation. A failed background
+refresh may leave old data visible with a status message. A failed save may
+need a dialog, a problem set, and preserved dirty state. A failed optional
+preview may only mark that preview unavailable. A failed export may need a
+file-path-specific message and a support log entry. Do not build one generic
+"background task failed" dialog and use it everywhere. The task service reports
+failure; the presenter decides what failure means in the workflow.
+
+Cancellation policy is equally contextual. Cancelling a search usually means
+"ignore that search and let me continue typing." Cancelling an import may mean
+"keep imported rows so far" or "rollback the import"; the product must decide.
+Cancelling a save may not be possible once the server has committed the change.
+Cancelling because a dialog closed may need no visible message. The
+\api{cancelled} callback is a terminal path, but the user-facing state after
+that path is a workflow decision.
+
+Close paths combine cancellation and generation. When a view closes, cancel
+task handles owned by the view and invalidate generation counters whose results
+would update that view. Close overlay bindings so late busy values do not
+reinstall the layer UI. Close subscriptions so progress values no longer update
+dead labels. A close path that only hides the window but leaves tasks and
+bindings alive is a delayed bug; it may appear as a leak, a stale update, or an
+exception in a component that is no longer displayed.
+
+\textbf{Stale results, failure, and cancellation.}
+
+The most dangerous task bug is not failure. It is an old success result that
+arrives after the user selected a different record and silently overwrites newer
+state. Cancellation helps, but it is not sufficient. Use generation counters for
+request streams.
+
+\begin{lstlisting}[caption={Generation-gated detail loading.}]
+GenerationCounter generations = new GenerationCounter();
+
+void loadDetails(CustomerId id) {
+    GenerationCounter.Generation generation = generations.advance();
+    tasks.submit(
+            cancellation -> repository.loadDetails(id, cancellation),
+            TaskCallbacks.onSuccess(details ->
+                    generations.tryAccept(generation, details,
+                            selectedDetails::setValue)));
+}
+\end{lstlisting}
+
+If the user selects another customer before the first load finishes, the older
+generation becomes stale. Its result is ignored.
+
+\textbf{Failure policy.}
+
+Failure should be modeled, not merely printed. Some failures belong in status
+text. Some belong in a dialog. Some belong in a problem set. Some should be
+logged and retried. The task callback should translate a technical failure into
+the screen's presentation policy.
+
+Avoid swallowing failures in background threads. A task service that hides
+exceptions creates silent data loss. At minimum, the failure callback should
+record the exception in diagnostics and set user-visible state.
+
+\textbf{Cancellation policy.}
+
+Cancellation should leave the screen in a coherent state. If a user cancels a
+load, do old rows remain visible? Is the table cleared? Does status say
+"Cancelled" or return to "Ready"? Is the command re-enabled? These are workflow
+choices, not implementation accidents.
+
+Cancellation is also not always user-visible. Closing a dialog may cancel a task
+silently because the result no longer has an owner. In that case, stale-result
+suppression and lifecycle cleanup are more important than a message.
+
+\section{Worked screen: search, detail load, save, and export}
+
+Consider a customer workspace with four asynchronous operations. A search field
+loads table rows. Selecting a row loads detail. Editing the detail enables
+Save. A toolbar command exports the current filtered table. This screen is
+ordinary business Swing, but it contains most background-work problems. Search
+results can arrive out of order. Detail loads can arrive after selection
+changed. Save should block conflicting edits but not necessarily block search.
+Export can run for seconds and should have cancellation and progress. A single
+busy flag cannot describe this screen honestly.
+
+The search operation is a request stream. Each new query supersedes older
+queries. The presenter should keep a \api{GenerationCounter} for search, cancel
+the previous search handle when possible, and accept only the newest result.
+The table area may show a small busy mark, but the search field itself should
+usually remain editable. The user should be able to type a better query while
+the older query is still running. Disabling the search field for every request
+would make the application feel slower than the service actually is.
+
+The table rows should be replaced on the EDT in one batched operation. The task
+body may call a repository, parse data, and create row objects. The callback
+should check the generation and then update the observable list or table model
+with a concise event. If the search result is stale, the callback should do
+nothing except perhaps record a diagnostic count of ignored stale results. The
+status line can say "Searching..." while the current handle is busy and "240
+customers" after the accepted result. It should not display "0 customers" from
+a stale empty result after a newer non-empty query has already won.
+
+The detail load is another request stream, but its owner is the current
+selection. Selecting customer A starts generation 1. Selecting customer B starts
+generation 2. If A finishes after B, A must not replace the detail panel. If
+the user clears selection, the detail generation should be invalidated so
+queued callbacks cannot repopulate the panel. The detail busy value may block
+only the detail form while leaving the table usable. Alternatively, the form may
+show old detail until new detail arrives, with a small "loading selected
+customer" mark. The product should decide; the task code should implement that
+decision explicitly.
+
+The save operation is not a request stream in the same way. A save usually
+represents the current edit snapshot and should prevent conflicting edits until
+the result is known. The detail form may be blocked by a \api{JLayer} overlay.
+The Save command should be disabled while save is busy, while the form is clean,
+or while validation has errors. The Cancel Edit command may or may not remain
+available during save depending on transaction policy. The task body should
+send a stable snapshot to the repository, not read live Swing fields while the
+worker runs. The success callback should update dirty state and perhaps replace
+the model with the saved version.
+
+The export operation has a third shape. It may not change the table model at
+all, but it may need progress and cancellation. Export busy should disable the
+Export command and perhaps enable Cancel Export. It should not block typing in
+the search field unless the export reads a live model that must stay frozen.
+A safer design is to snapshot the export input on the EDT, then run export from
+that snapshot in the task body. The user can continue working while export
+uses the snapshot. The status text can say "Exporting 240 customers..." and
+then "Export written" or "Export cancelled." The old table remains visible.
+
+\begin{lstlisting}[caption={Four operations, four busy policies.}]
+record WorkspaceBusy(
+        ReadableValue<Boolean> searchBusy,
+        ReadableValue<Boolean> detailBusy,
+        ReadableValue<Boolean> saveBusy,
+        ReadableValue<Boolean> exportBusy) {
+
+    ReadableValue<Boolean> detailBlocked() {
+        return saveBusy;          // Policy: save blocks detail editing.
+    }
+
+    ReadableValue<Boolean> tableBlocked() {
+        return searchBusy;        // Policy: search blocks only table input.
+    }
+}
+\end{lstlisting}
+
+The record is illustrative rather than a required API. The point is that the
+screen names separate busy facts. The table overlay observes search busy. The
+detail overlay observes save busy or detail busy according to product policy.
+The Save command observes dirty, valid, and save busy. The Export command
+observes export busy and whether there are rows to export. A global application
+status bar may observe a derived "any workspace task is busy" value while still
+displaying the specific operation message.
+
+The command derivations should be visible. A save command that is disabled
+because the form is clean should have a different disabled reason from a save
+command disabled because a save task is running. That difference can appear in
+a composed tooltip or status message. It also matters for tests. A test that
+sets dirty true, problems empty, and save busy false should see Save enabled.
+A test that sets save busy true should see Save disabled with the busy reason.
+Without structured state, these distinctions are often flattened into
+\api{button.setEnabled(false)} with no explanation.
+
+The overlay boundaries should match screen regions. The search overlay wraps
+the table scroll pane, not the whole frame. The detail overlay wraps the form
+body, not the toolbar. The export progress may live in the status area or a
+small modeless progress panel. If every operation uses one root overlay, the
+user loses useful parallelism. If no operation uses an overlay, incompatible
+input may slip through. Region-level busy values are the practical middle
+ground.
+
+Progress messages should be operation-specific and stable. Search may not need
+a progress bar because remote search has unknown duration. Detail load may need
+only a short "Loading details" message. Save may need a blocking state and an
+error path. Export may need determinate progress because the row count is known.
+The screen should not force every task into the same visual component. A
+Boolean busy overlay, a status label, and a structured progress model are
+different tools.
+
+Failures should preserve old state unless the workflow says otherwise. If
+search fails, old rows may remain with a status message "Search failed; showing
+previous results." If detail load fails, the detail panel may show a problem
+state for the selected customer rather than old detail from another customer.
+If save fails, dirty state remains and the user can retry. If export fails, the
+table is unchanged and the export status reports the failure. Treating every
+failure as "clear everything and show error" is rarely humane.
+
+Cancellation policy differs by operation. Cancelling search simply means the
+current query will not publish results. Cancelling detail load may leave the
+detail panel empty or retain old detail depending on selection policy.
+Cancelling save may not be offered after the request has reached a point of no
+return. Cancelling export is often straightforward because export writes a file
+or stream under local control. The UI should expose cancellation only where the
+operation can honor it coherently. A Cancel button that cannot change the
+outcome teaches users not to trust the screen.
+
+The view lifecycle closes local operations. If the workspace tab closes, search
+and detail handles should be cancelled or generation-invalidated. Save may need
+a confirmation before closing if a write is in progress. Export might continue
+as an application-level task if the product promises background export, or it
+might be cancelled with the tab. The correct owner is a product decision, but
+the implementation should make the owner visible: tab scope, dialog scope,
+presenter scope, or application service.
+
+Testing this workspace should not require a real database. Fake repositories
+can expose latches or futures for search, detail, save, and export. A test can
+start search A, start search B, complete B, then complete A and assert only B
+is visible. Another test can start save, assert the detail overlay is busy and
+Save disabled, then complete failure and assert dirty state remains. Another
+can start export and assert search remains usable. These tests prove the busy
+policy, not the repository.
+
+The same scenario also explains why examples should use FlatLaf and MigLayout
+without becoming decorative. The table, detail form, toolbar, and status area
+are ordinary Swing surfaces. MigLayout gives dense, predictable arrangement.
+FlatLaf gives modern component metrics and disabled-state rendering. Corusco
+adds the state and lifecycle relationships. The book screenshots should show
+the combined result: not just a spinner, but a screen whose busy state is
+visibly and behaviorally coherent.
+
+The important lesson is that background work is not one feature. It is a set of
+contracts around each operation. Search uses generation and partial blocking.
+Detail load uses generation and selection ownership. Save uses a stable edit
+snapshot and stronger blocking. Export uses progress and perhaps application
+scope. The programmer's job is to name these contracts before the first worker
+thread is started. Once they are named, Corusco provides small tools to express
+them without turning the screen into listener bookkeeping.
+
+\section{Plain Swing baseline}
+
+Plain Swing has workable tools:
+
+\begin{lstlisting}[caption={SwingWorker baseline.}]
+SwingWorker<List<CustomerRow>, Void> worker =
+        new SwingWorker<>() {
+            @Override
+            protected List<CustomerRow> doInBackground() {
+                return repository.loadCustomers();
+            }
+
+            @Override
+            protected void done() {
+                if (!isCancelled()) {
+                    List<CustomerRow> loaded = get();
+                    tableRows.batch(list -> {
+                        list.clear();
+                        loaded.forEach(list::add);
+                    });
+                }
+            }
+        };
+worker.execute();
+\end{lstlisting}
+
+The missing pieces are usually not the worker itself. They are task ownership,
+busy state, cancellation policy, stale results, command enablement, overlay
+binding, and cleanup. Corusco names those pieces.
+
+This is why a plain Swing baseline remains worth teaching. \api{SwingWorker}
+is not foolish; it captures the important idea that slow work should leave the
+EDT. The problem is that many applications stop there. The worker becomes an
+anonymous object inside a listener, and the rest of the screen has no stable
+way to observe the operation. A task handle, a busy value, a cancellation token,
+and a generation counter are not replacements for doing work. They are the
+vocabulary around the work that lets the rest of the screen stay coherent.
+
+\textbf{From plain Swing to Corusco.}
+
+The Corusco shape for a busy screen is:
+
+\begin{itemize}
+\item Create a lifecycle-owned \api{TaskService}.
+\item Submit tasks through the service.
+\item Register task handles or the service with the view scope.
+\item Bind busy state to commands, status, progress, and overlays.
+\item Check cancellation in task bodies.
+\item Use generation counters for request streams.
+\item Keep callbacks short and EDT-safe.
+\end{itemize}
+
+This pattern works with virtual threads because virtual threads are an execution
+choice, not a UI ownership model.
+
+Migration from old code usually begins by extracting the slow call into a task
+body that returns data. The next step is to move the successful UI update into
+a callback that is known to run on the EDT. Then name the busy fact and bind it
+to the button or command that started the operation. Only after that should the
+screen grow a cancel button, progress display, busy overlay, or generation
+guard. Trying to add every concern at once often recreates the original
+listener tangle under different class names.
+
+For a master-detail screen, generation counters should be added early. They are
+small and prevent the worst class of asynchronous bug: an old result replacing
+newer state without any exception. For a dialog, lifecycle cancellation should
+be added early. A result that arrives after its dialog has closed no longer has
+a legitimate owner. In both cases Corusco's task support makes the policy
+explicit; it does not guess the policy for the application.
+
+\begin{center}
+\textbf{Busy review table.}
+\end{center}
+
+\noindent\begin{tabularx}{\linewidth}{@{}p{0.31\linewidth}X@{}}
+\toprule
+Observation & Review question\\
+\midrule
+Button can be clicked twice & Which busy or command state should block it?\\
+Overlay shows but input still edits fields & Is overlay meant as input policy or decoration?\\
+Old detail overwrites new selection & Where is stale-result suppression?\\
+Cancel button does nothing visible & Does the task body check its cancellation token?\\
+Status flickers rapidly & Should updates be coalesced or modeled as progress?\\
+Failure disappears in logs only & Which user-visible failure state should be set?\\
+\bottomrule
+\end{tabularx}
+
+\textbf{Worked example.}
+
+\begin{examplebox}{background work}
+\modernJavaExample{} demonstrates virtual-thread background work with explicit
+EDT handoff. The Swing task examples in \api{corusco-examples} show busy overlay
+binding and service-level busy state.
+\end{examplebox}
+
+\textbf{Review notes.}
+
+When reviewing background work, trace the result path. Where is work started?
+Where can it be cancelled? Where is busy state set? Which executor delivers
+callbacks? Which line mutates Swing? What prevents an old result from winning?
+If any answer is vague, the code is not done.
+
+The review should also trace the user's perception. What becomes disabled? What
+remains usable? What message appears during a long wait? What is shown after
+success, cancellation, and failure? Does the screen make a second click
+impossible, harmless, or meaningful? These questions are not cosmetic. They are
+part of the concurrency design, because the user's next action is one of the
+events racing with the background result.
+
+A background chapter should also teach restraint. Not every computation belongs
+in a task service. A small local calculation that always completes within a few
+milliseconds can remain on the EDT, especially if moving it would complicate
+state ownership. The boundary is unpredictability: I/O, remote calls, large
+parsing, unbounded loops, and data sizes controlled by users. Put those outside
+the EDT and make their results explicit.
+
+Progress reporting should be designed at human scale. A worker may observe ten
+thousand internal steps, but the user does not need ten thousand label updates.
+Coalesce, throttle, or summarize progress before it reaches Swing. The model can
+retain exact progress for diagnostics while the view displays a stable message
+or a progress bar that changes at a readable cadence.
+
+\section{Testing and operational review}
+
+Background work is easy to test badly. A test that sleeps for a fixed time and
+then looks at a label is neither fast nor reliable. A better test controls the
+task boundary. Use latches or controlled executors to prove that the task body
+runs off the EDT, the callback runs on the EDT, busy becomes false on the EDT,
+and completion arrives after callback delivery. The existing Swing task tests
+do exactly this: record whether the task body and callback are on the EDT, then
+wait on the handle completion with a timeout. The timeout belongs to the test,
+not to production UI code.
+
+EDT delivery tests should be explicit because it is easy to accidentally create
+a core task service with a non-Swing callback executor and then mutate Swing in
+the callback. The test should submit a trivial task through
+\api{SwingTaskServices.virtualThreads}, record
+\api{SwingUtilities.isEventDispatchThread} in the task body and success
+callback, and assert false then true. This is a small test with a large value:
+it proves the factory used by presenters really supplies the Swing boundary.
+
+Busy overlay tests should avoid manual screenshots as the first line of proof.
+Construct a \api{JLayer}, install a \api{BusyOverlayLayerUI}, set busy true,
+send a synthetic mouse or key event through \api{eventDispatched}, and assert
+that the event is consumed. Paint into a small \api{BufferedImage} with an
+opaque overlay color and assert a pixel. Install through
+\api{BusyOverlayBinding}, close it, and assert the previous UI and cursor are
+restored. These tests are mechanical, but they prove the visual/input policy
+before a screenshot test ever runs.
+
+Off-EDT busy updates deserve their own test. A busy value may be changed by a
+worker. The binding should schedule the layer update onto the EDT and ignore
+updates after close. A test can install the binding on the EDT, change the
+value from a worker thread, drain the EDT, and assert the overlay state. Then
+close on the EDT. This test protects the exact boundary that is most likely to
+be broken by an enthusiastic optimization.
+
+Cancellation tests should control the task body. Start a task that waits on a
+latch, cancel the handle, release the latch, and assert that success does not
+publish. For cooperative cancellation inside a loop, use a task body that
+checks the token and records how far it ran. For repository-like code, mock or
+fake a repository method that receives the token and verifies it was checked or
+passed down. A Cancel button is only meaningful if cancellation reaches the
+operation doing the work.
+
+Stale-result tests should intentionally finish tasks out of order. Start a
+first load and capture its generation. Start a second load and capture its
+generation. Complete the second result first and assert it is accepted. Complete
+the first result later and assert it is ignored. This test is more important
+than a success-path test for master-detail screens because success order is the
+bug. Without this test, a screen can pass every ordinary load test and still
+overwrite current detail with old data in production.
+
+Failure tests should assert both the callback path and the presentation state.
+A task body throws. The failure callback runs on the EDT. Busy becomes false.
+The command is re-enabled or remains disabled according to policy. The status
+or problem state contains a useful message. The exception is available to
+diagnostics. Do not assert only that an exception was thrown somewhere; the
+user does not see a worker-thread stack trace. The user sees the screen state
+after failure.
+
+Close-path tests are the ones most likely to reveal leaks. Open a view, install
+a busy overlay, submit a task, close the view, change the busy value, and drain
+the EDT. The overlay should not reappear. The layer UI should be restored.
+Model changes should not reach closed components. Outstanding handles should
+be cancelled or generation-invalidated according to ownership. A test that
+opens and closes the same screen several times should not accumulate listeners,
+threads, overlays, or task callbacks.
+
+Operational diagnostics should record task facts at the level that helps
+support. A support dump for a busy screen can include current busy values,
+active task names, generation number, last completion state, last failure class
+and message, cancellation availability, and recent task durations. It should
+not need to include thread dumps for ordinary "screen stayed busy" reports,
+though thread dumps remain useful for deadlocks. The more task state is modeled,
+the easier this dump becomes.
+
+Logging should be restrained. Logging every progress update can become its own
+performance problem. Log task start, terminal outcome, duration, cancellation,
+and failure details. Sample or aggregate high-frequency progress. Include a
+stable operation name or command id. If task code crosses a remote service or
+database boundary, include enough correlation data to connect UI symptoms to
+backend traces without leaking sensitive data into the UI log.
+
+Reviewers should look for thread ownership by reading from left to right. The
+command handler submits work. The task body uses no Swing components. The
+callback updates models or components on the EDT. Busy values are derived from
+service or handle state. Overlays and commands observe those values. Close
+paths cancel or detach. If a component reference appears inside the task body,
+pause. If a callback performs I/O, pause. If a worker thread mutates an
+observable model already bound to Swing without an EDT boundary, pause.
+
+The test pyramid for this chapter is therefore practical. Core task tests prove
+service busy, cancellation, callback exclusivity, and generation counters
+without Swing. Swing task tests prove EDT delivery and overlay binding.
+Presenter tests prove command enablement, cancellation policy, and stale-result
+suppression. Screenshot tests prove visible overlay and status composition.
+Manual testing then checks feel: whether the chosen overlay boundary is too
+broad, whether cancellation feels prompt, and whether progress text is useful.
+
+This chapter also has a performance review. Count how many tasks can run at
+once. Count how many UI updates each task can publish. Count how large each
+published batch can be. Count whether each update can repaint a whole table,
+whole form, or small region. The concurrency design is not complete until the
+update cadence and repaint consequences are understood. Otherwise the program
+merely moves the bottleneck from "work on EDT" to "too many callbacks on EDT."
+
+The human review is shorter. When the user starts work, does the screen say
+what is happening? Can the user cancel if cancellation is promised? Does the
+screen prevent incompatible edits? Does it leave compatible work available? If
+work fails, does the user know what happened and what state remains? If work is
+cancelled, is the result coherent? If the answer to any of these is "it depends
+on timing," the model is not explicit enough.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Convert a blocking refresh listener into a \api{TaskService} submission
+with an EDT callback.
+\item Bind service busy state to a \api{BusyOverlayBinding} and command
+enablement.
+\item Add a cancel button that cancels only the current task handle.
+\item Add a generation counter to a master-detail load path.
+\item Write a test that closes an overlay binding and verifies late busy updates
+do not reinstall the overlay.
+\item Decide cancellation policy for a load operation: keep old data, clear old
+data, or show cancelled state.
+\end{enumerate}
+\end{exercisebox}
+
+\textbf{Checklist.}
+
+\begin{itemize}
+\item Model busy state explicitly.
+\item Disable or guard commands during incompatible work.
+\item Deliver UI mutations on the EDT.
+\item Keep task callbacks short.
+\item Cancel or suppress stale completions.
+\item Close task handles and services when their owner closes.
+\item Use busy overlays as input policy, not merely decoration.
+\item Test stale success, cancellation, and close paths.
+\end{itemize}

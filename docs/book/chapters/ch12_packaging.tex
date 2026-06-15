@@ -1,0 +1,540 @@
+\chapter{Packaging Modern Swing Applications with jlink and jpackage}
+\label{ch:packaging}
+\chapterquote{A desktop application is not delivered when the classes compile; it is delivered when users can install, launch, update, diagnose, and remove it on their platform.}{A release-engineering rule}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How should a JDK 25 Swing application be modularized, packaged, bundled with a runtime, and prepared for native desktop distribution?\\
+Primary tools & \api{module-info.java}, \api{jdeps}, \api{jlink}, \api{jpackage}, launchers, runtime images, resource bundles, signing tools, and smoke tests.\\
+Hidden difficulty & Native packages are platform-specific; custom runtimes must be maintained; desktop integration requires icons, file associations, user-data policy, signing, updates, and support diagnostics.\\
+Corusco contribution & Generated sources, resource keys, command descriptors, table state, screenshot harnesses, and support diagnostics become explicit build and packaging inputs.\\
+Payoff & Reproducible installers, fewer global-Java problems, traceable releases, cleaner support conversations, and desktop delivery that respects the user's machine.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{The Delivery Boundary}
+
+\termdef{Packaging}{the work that turns compiled application code into an installed, launchable, supportable desktop product} is larger than creating a jar. A jar may contain correct classes and still fail as delivery: the user may not have the right Java installed, the icon may be missing, resources may be loaded from source-tree paths, logs may go nowhere useful, a double-clicked file may not open, and support may not know which runtime image was shipped. Packaging is where architecture meets the user's operating system.
+
+Classic Swing applications were often distributed as jars with instructions such as "install Java first" or "run this command." That can still be acceptable for developer tools, internal prototypes, and environments where Java is centrally managed. It is a poor default for many desktop audiences. A modern Swing application can ship with a tailored runtime image and a native launcher, so the user does not need to know which JDK is globally installed, whether \api{JAVA\_HOME} is set, or how a module path differs from a classpath.
+
+The delivery boundary has several layers. The application is compiled into modules or classpath artifacts. A runtime image supplies the JDK modules needed to run it. An application image contains the launcher, runtime, application code, and resources in an installable layout. A native package or installer integrates that image with the operating system. Signing, notarization, updates, uninstall, diagnostics, and release notes surround the package. A failure in any layer can look like an application failure to the user.
+
+\termdef{Runtime image}{a directory containing a Java runtime and selected modules} is the artifact created by \api{jlink}. It is not a full JDK unless you make it one. It contains the modules needed by the application and any additional modules you choose to include. \termdef{Application image}{the directory layout created by \api{jpackage} for a launchable app} usually contains the launcher, application files, and a runtime image. \termdef{Native package}{a platform installer or package format such as an MSI, EXE, DMG, PKG, DEB, or RPM} adds operating-system installation behavior.
+
+A useful packaging conversation names the audience. A developer tool used by a team that already controls JDK installations may accept a zip file and a launch script. An enterprise desktop app may need MSI deployment, managed updates, signed installers, per-user data directories, and no internet access. A public macOS app may need app bundle polish, signing, notarization, and a different update story. The same Swing code can sit behind very different delivery contracts.
+
+The audience determines what "works" means. For a developer tool, launching from a terminal with a visible console may be acceptable. For an accounting desktop application, users may never see a terminal and may not have permission to edit installation files. For a field-service application, offline startup may be mandatory. For a regulated enterprise application, install logs, signed binaries, and support evidence may matter as much as the first screen. Packaging is not only a build concern; it is product design at the operating-system boundary.
+
+Packaging also names what is not part of the product. Source directories, generated intermediate files, local Gradle caches, IDE settings, test reports, and screenshot scratch directories are build artifacts or development artifacts unless the product deliberately ships them. Accidental inclusion is a maintenance risk. Accidental exclusion of a real resource is also a risk. The release script should make these decisions explicit.
+
+Release channels should be explicit as well. A nightly build, internal QA build, signed release candidate, enterprise pilot, and public release may use different update endpoints, diagnostic defaults, signing identities, and warning labels. The application should be able to report its channel. Support should not have to infer whether a user is running a debug build from a filename.
+
+Channel identity also protects users. A test build may enable verbose diagnostics, experimental resources, or unsigned update metadata. A public release should not accidentally point to a staging update service. An enterprise pilot may need a different publisher string or configuration endpoint. The installed app should report channel in the support dialog and release manifest so support can tell whether a behavior belongs to a release line or to a test channel.
+
+The \api{java.desktop} module is the essential runtime module for Swing. A Swing UI module must require it. Other modules may be needed for logging, preferences, SQL, XML, HTTP, printing, scripting, or libraries. Do not assume that everything available in a developer JDK is available in a custom runtime image. If the runtime image omits a module, the packaged application cannot use it merely because the build machine had it installed.
+
+\begin{principlebox}{The installed app is the truth}
+The IDE, Gradle run task, source tree, and unpacked jar are useful development views. The installed launcher is the user's view. Test the launcher, runtime image, resources, working directory, permissions, logs, support diagnostics, and uninstall path as product behavior.
+\end{principlebox}
+
+Modules are not mandatory for every Swing application, but they make packaging more explicit. A modular Swing application declares \api{requires java.desktop;} in \api{module-info.java}. It may also declare modules for logging, SQL, preferences, HTTP clients, service APIs, and UI libraries. Strong modules help define boundaries: domain code, application services, desktop UI, persistence, plugin contracts, and generated companions.
+
+\begin{lstlisting}[caption={A small module declaration for a Swing desktop application.}]
+module com.acme.orders.desktop {
+    requires java.desktop;
+    requires java.logging;
+    requires java.sql;
+
+    requires com.formdev.flatlaf;
+    requires net.miginfocom.swing;
+
+    exports com.acme.orders.api;
+}
+\end{lstlisting}
+
+Avoid exporting UI implementation packages unless other modules truly need them. The package containing a \api{JFrame}, generated binding companion, or Swing presenter is usually not an API package. A clean module graph keeps \api{java.desktop} out of domain modules, which makes headless tests faster and prevents table, icon, color, and action types from leaking into business code.
+
+Classpath applications can still be packaged. \api{jpackage} can package a non-modular application with an input directory, main jar, and main class. That path is often useful during migration. The cost is that dependency analysis and runtime image construction are less precise. If a large legacy application cannot become modular immediately, begin by making resource loading, user-data policy, launch options, and smoke tests packaging-safe; module boundaries can follow.
+
+The classpath-to-module migration should be driven by boundaries, not by the desire to make \api{module-info.java} compile at any cost. First identify the desktop UI boundary, the service boundary, the domain boundary, and the integration boundary. Then decide what each boundary exports. A module declaration that exports every package has recorded the old structure without improving it. A module declaration that reveals the intended API can make packaging smaller and tests cleaner.
+
+Automatic modules are a bridge, not a home. Third-party jars that lack module descriptors can appear on the module path with automatic names. This can help a migration, but the names may depend on jar filenames and can change when dependencies change. Release scripts should avoid relying on accidental automatic names where a stable dependency or classpath placement is more appropriate.
+
+The package boundary should be rehearsed before modularization is perfect. A classpath application can still be packaged with a runtime image selected by dependency analysis, and the rehearsal will still find resource-path bugs, working-directory bugs, icon mistakes, missing native files, and support gaps. Waiting until the module graph is beautiful often postpones the discovery of ordinary desktop delivery defects. The two migrations can proceed together: make runtime behavior package-safe while gradually making module boundaries honest.
+
+Resource loading is the first place packaging exposes accidental source-tree assumptions. Code that loads \api{src/main/resources/icons/save.png} may work from an IDE checkout and fail from an application image. Bundled resources should be loaded through class or module resource APIs. External user data should be found through an application data policy. The same string should not sometimes mean "inside the jar" and sometimes mean "beside the executable."
+
+\begin{lstlisting}[caption={Classpath/module-safe icon loading.}]
+public static ImageIcon icon(String name) {
+    URL url = AppResources.class.getResource(
+            "/com/acme/orders/icons/" + name + ".png");
+    if (url == null) {
+        throw new IllegalArgumentException("Missing icon: " + name);
+    }
+    return new ImageIcon(url);
+}
+\end{lstlisting}
+
+Separate bundled resources from user configuration. Bundled resources include icons, localized labels, help topics, default templates, generated metadata, and example data intentionally shipped with the app. User configuration includes preferences, recent files, table state, window layout, local caches, logs, and application documents. Installed locations may be read-only and may be replaced during update. User data must survive both.
+
+Corusco adds useful pressure here because resource keys and generated descriptors make missing resources visible. A generated command descriptor may expect a label, tooltip, icon, help topic, and shortcut resource. If packaging omits the bundle, the failure belongs to the build and resource layout, not to Swing. The release build should verify that generated resource keys resolve in the packaged runtime.
+
+This is where generated code and packaging should cooperate. The processor can report missing declarations at compile time, but only the release build can prove that runtime resources were copied into the image and remain reachable after packaging. A resource smoke test should run against the packaged app or at least against the same runtime classpath and module path that the app image uses.
+
+For book examples, the same discipline prevents typographic embarrassments. A figure reference should be short and stable. A screenshot should be generated by a known class. The PDF should not contain a long absolute path that happens to wrap badly because one developer's checkout was deep. The artifact should speak in product names, class names, and generated figure names.
+
+This is a small but telling packaging principle. A path that reveals a developer profile, temporary directory, or checkout depth is not part of the reader's contract. Likewise, an application error dialog that reports a developer build path instead of an installed resource id is a packaging leak. Paths are sometimes necessary for support, but user-facing documentation and ordinary UI should name product concepts first and raw filesystem locations only when they are actionable.
+
+Figure~\ref{fig:packaging-pipeline} shows the chapter's release shape. It is deliberately ordinary: compile, analyze, build a runtime, package, sign, and smoke-test. The important point is that documentation figures, generated sources, resource bundles, runtime images, and support facts all become part of one repeatable release story.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\packagingPipelineFigure}
+\caption{Packaging is a pipeline, not a final command typed from memory. The shipped artifact should be traceable to source, generated code, dependency analysis, runtime-image construction, package options, signing, and installed smoke tests.}
+\label{fig:packaging-pipeline}
+\end{figure}
+
+\begin{examplebox}{packaging figures}
+The packaging screenshots are generated by \api{BookVisualFigures} through \api{BookFigureGenerator}. The figures are \packagingPipelineFigure{}, \packagingLayoutFigure{}, and \packagingSupportFigure. They are documentation artifacts, not hand-copied screenshots from a developer machine.
+\end{examplebox}
+
+The book itself follows the same delivery rule. The PDF is compiled by a declared TeX container, examples compile before their figures are trusted, and screenshots come from deterministic Swing panels using FlatLaf and MigLayout. A book that cites runnable examples but cannot regenerate them would be operationally weaker than the applications it describes.
+
+The delivery boundary is therefore a design boundary. It asks which facts belong to users, which facts belong to support, which facts belong to release engineering, and which facts are merely convenient for developers. Swing does not answer those questions for us. Neither do \api{jlink} and \api{jpackage}. They provide tools; the product still needs policy.
+
+That policy should be written close to the build. A README in the packaging directory, release manifest template, or Gradle task description is more durable than a chat message from the last release. The packaging policy should say which platforms are supported, which artifacts are produced, which runtime is bundled, where user data lives, how updates happen, and how support evidence is collected.
+
+The policy should also say what is not yet supported. If the product does not support runtime theme switching after packaging, say so. If file associations are Windows-only for the current release, say so. If unsigned QA builds are not valid release candidates, say so. Written exclusions prevent accidental promises. A packaging chapter should teach constraints as first-class facts, because desktop users experience broken promises more sharply than missing features.
+
+\section{Modules, Resources, and Runtime Images}
+
+\api{jdeps} is the first tool to run before designing a custom runtime image. It analyzes class and module dependencies and can print the JDK module set that \api{jlink} needs. On JDK 25, \api{--print-module-deps} produces a comma-separated list suitable for \api{jlink --add-modules}. This output is useful, but it is not a substitute for understanding optional dependencies, service loading, reflection, native libraries, external processes, and platform-specific features.
+
+\begin{lstlisting}[language=sh,caption={Analyzing dependencies before creating a runtime image.}]
+jdeps --multi-release 25 --print-module-deps --ignore-missing-deps \
+      --class-path "lib/*" build/libs/orders-desktop.jar
+\end{lstlisting}
+
+Treat the result as evidence, not as magic. If a library uses reflection to load a JDBC driver, \api{jdeps} may not discover the runtime dependency from static bytecode alone. If a service provider is loaded through \api{ServiceLoader}, the runtime image may need provider modules and \api{jlink --bind-services}. If the application invokes external tools, those tools are outside the Java module graph. The release script must record deliberate additions.
+
+Run \api{jdeps} at more than one level during a migration. A summary can show that the desktop module depends on \api{java.desktop}, \api{java.sql}, and a logging module. A package-level report can reveal that a domain package imports Swing types. A module check can identify unused qualified exports. The tool is most valuable when it is used to ask architectural questions, not only to feed \api{jlink}.
+
+When a dependency is missing, resist the impulse to add \api{ALL-MODULE-PATH} and move on. That may create a runtime image that works while hiding the reason. It can also pull in service providers and modules that were never intended to ship. A release image should be broad enough to run the product and narrow enough that the team can explain it.
+
+Dependency analysis should be part of dependency review. Adding a PDF library, browser component, database driver, scripting engine, or native tray helper can change the runtime image, packaging layout, licenses, native files, security posture, and support diagnostics. The code may compile with one Gradle dependency line, but the package may now carry new obligations. A good release process makes those obligations visible before the last week of a release.
+
+\api{jlink} creates a custom runtime image. The local JDK 25 tool accepts compression names such as \api{zip-0} through \api{zip-9}, with \api{zip-6} as the default. Common release options remove debug symbols, header files, and man pages. The output directory should be treated as generated product artifact, not as a cache of unknown origin.
+
+\begin{lstlisting}[language=sh,caption={Creating a JDK 25 runtime image for a modular Swing app.}]
+jlink \
+  --module-path "$JAVA_HOME/jmods:build/modules" \
+  --add-modules com.acme.orders.desktop \
+  --strip-debug \
+  --no-header-files \
+  --no-man-pages \
+  --compress zip-6 \
+  --output build/runtime-orders
+\end{lstlisting}
+
+A custom runtime image is not self-maintaining. When the JDK receives security fixes, rendering fixes, font changes, accessibility fixes, or platform integration changes, the runtime image must be rebuilt and redistributed. Users are not running "Java 25" in the abstract; they are running the exact vendor, version, build, module set, and image options you shipped.
+
+This is especially important for desktop programs because runtime changes can affect visible behavior. Font rendering, image scaling, input methods, accessibility, printing, TLS roots, native file dialogs, and window integration can all depend on the runtime and platform. If support cannot tell which runtime image a user has, it cannot separate application regression from runtime difference.
+
+The release notes should therefore record the runtime image. Include JDK vendor, JDK version, build number, target operating system and architecture, module list, \api{jlink} options, creation date, and the build system or container that produced it. This sounds bureaucratic until a user reports a printing, font, TLS, or HiDPI problem six months later. Then the runtime image is the first fact support needs.
+
+Runtime-image size should be optimized only after correctness. Removing modules can reduce footprint, but a missing module produces failures that may appear far from startup. Removing man pages and headers is usually harmless for an end-user runtime. Removing charsets, service providers, or tools requires more review. A desktop application that imports files from many locales, uses printing, opens help in browsers, or talks to databases may need modules that a trivial smoke test does not exercise.
+
+\begin{detailbox}{The runtime image is part of your product}
+When you ship a custom runtime, users run that exact runtime. Track vendor, version, build, modules, creation command, date, target OS, and architecture. Updating application jars without refreshing an outdated runtime can leave users with old fixes missing.
+\end{detailbox}
+
+Module boundaries should be reviewed before linking. A domain module should not require \api{java.desktop}. If it does, some Swing type has crossed the presentation boundary: \api{Color}, \api{Icon}, \api{Action}, \api{TableModel}, or a UI-specific exception. Moving that dependency back to the desktop adapter improves tests and makes the runtime image easier to reason about.
+
+This is another place where Corusco's model-first style helps. Domain modules should expose domain values, problems, commands, and tasks without depending on Swing classes. Desktop modules adapt those facts to \api{Action}, \api{JTable}, renderers, dialogs, and resources. Generated companions that live in desktop packages can require \api{java.desktop}; generated model companions that belong to core packages should not. Packaging makes this architectural leak visible because \api{java.desktop} is a large and meaningful dependency.
+
+Exports and opens deserve separate thought. Exporting a package makes its public types available to other modules at compile time. Opening a package allows deep reflection at runtime. A UI package may need to be opened to a serialization, dependency-injection, or testing framework, but that should be recorded as a compatibility decision. Do not use an open module merely because one reflective library complained during development.
+
+Annotation processors belong to the build, not to the runtime, unless a separate runtime feature actually needs them. Corusco generated forms, tables, actions, resources, and companions should be generated and compiled before packaging. The packaged application should include generated classes and required runtime libraries; it should not require the annotation processor to run when the user starts the app.
+
+Generated source directories must be part of the release build graph. A local IDE may compile generated sources automatically, while a packaging script may forget them. That failure should be impossible in the main build. Use Gradle tasks and source sets so that generation, compilation, testing, and packaging are one dependency graph rather than separate manual rituals.
+
+Resource bundles need the same treatment. A generated resource key is a contract with the packaged resources. Verify that labels, tooltips, help topics, command text, icons, validation messages, and table headers resolve under the installed runtime. Also verify locale fallback. A resource lookup that silently falls back to a developer language can pass tests and fail users.
+
+Help files and documentation resources are often forgotten because they are not needed by the first launch. A command may open help only after the user presses F1. A release smoke test should exercise at least one help topic, one icon, one localized string, one validation message, and one generated descriptor. Otherwise a package can look correct until the first user asks for help.
+
+Native libraries and platform-specific resources are outside ordinary Java module reasoning. A look-and-feel library, database driver, tray integration library, browser integration, or embedded native helper may have files that must be packaged beside jars or inside the application image. If the app loads native code, test a clean machine with no developer PATH entries. The installed launcher should find everything without relying on the shell that built it.
+
+Service providers should be deliberately tested. A logging provider, JDBC driver, file-system provider, image I/O plugin, scripting engine, or application plugin may be loaded by service lookup rather than direct references. If the runtime image omits provider modules or the package omits provider jars, the application can fail only when a particular feature is used. A service-loading smoke test is cheap compared with a field report.
+
+The module path and classpath should not be assembled by string folklore. Release scripts should define where application modules, third-party modular jars, automatic modules, and classpath libraries live. If automatic modules are unavoidable, name the risk. An automatic module name derived from a jar filename can change when a dependency is renamed. That can break launchers and runtime images.
+
+\begin{pitfallbox}{jdeps output pasted without review}
+\api{jdeps --print-module-deps} is helpful, but it cannot know every runtime path in an application that uses reflection, services, native code, optional drivers, or external processes. Use it as a starting report, then add intentional modules and record why they are present.
+\end{pitfallbox}
+
+Documentation builds also have resources. Figures, example data, generated screenshots, and LaTeX source are not part of the production application, but they are part of the book release. Keep screenshot output and documentation-only helpers out of production launchers. Conversely, do not let documentation depend on resources that only exist in an IDE checkout. The build should make the boundary visible.
+
+The companion examples should therefore be packaged as examples, not smuggled into a product runtime. They need FlatLaf, MigLayout, deterministic data, and screenshot harnesses. Production applications may need FlatLaf and MigLayout too, but they do not need book-only figure generators unless the product intentionally exposes them. Separating these artifacts keeps the book reproducible and the product lean.
+
+If the application supports plugins, packaging must decide what "installed" means for them. Some plugins may ship inside the application image. Some may be downloaded or installed into a user extension directory. Some may be enterprise-managed. Each choice affects module paths, security policy, updates, diagnostics, and support. A plugin mechanism without packaging policy is only half a mechanism.
+
+The same is true for local databases. An embedded H2 database, SQLite file, Lucene index, or local cache may be created on first run, migrated on update, and backed up by support. It should not be hidden beside jars. The runtime image contains code; application data belongs in the data policy.
+
+The safest rule is to rehearse packaging early. Create a runtime image and application image while the application is still small. Fix resource loading, module declarations, and launch options before hundreds of screens depend on accidental behavior. Packaging late turns every hidden assumption into a release-day defect.
+
+Early packaging also disciplines dependencies. It reveals whether a new library brings extra modules, native files, resource bundles, service providers, or license obligations. A dependency that looks harmless in a Gradle run can be expensive in a signed native package. The packaging rehearsal is therefore a dependency review, not merely a launcher test.
+
+\section{Application Images, Installers, and Desktop Integration}
+
+\api{jpackage} creates application images and platform-specific packages. On the current Windows JDK 25 installation, the reported package types are \api{app-image}, \api{exe}, and \api{msi}; other platforms expose their own formats. Build packages on the target operating system. Cross-platform Java does not mean one native packaging command produces correct installers for every platform.
+
+\begin{lstlisting}[language=sh,caption={Creating an application image from a modular app.}]
+jpackage \
+  --type app-image \
+  --name Orders \
+  --module-path build/modules \
+  --module com.acme.orders.desktop/com.acme.orders.Main \
+  --runtime-image build/runtime-orders \
+  --icon packaging/windows/orders.ico \
+  --dest build/package
+\end{lstlisting}
+
+The application image is a useful intermediate artifact. It lets you inspect the launcher, runtime image, application files, resources, and generated layout before involving installer behavior. It is not the whole product. Installers add shortcuts, package metadata, registry or package-manager entries, file associations, install directories, permissions, and uninstall behavior. Test both.
+
+Use application images as inspectable evidence. After creating one, list its runtime modules, verify the launcher configuration, check that jars and resources are where expected, and launch from a clean shell. A developer should be able to answer what is inside the image without opening the installer. The image is a laboratory for the native package.
+
+Inspection should be scripted. A release task can print the application image tree at a useful depth, record launcher properties, run the bundled \api{java --list-modules}, verify resource existence, and compute checksums. These checks are cheap and catch embarrassing defects: missing icons, old jars, stale generated classes, wrong runtime image, and resources copied to the wrong directory. Manual inspection teaches the first version of the script; the script should then do it every time.
+
+Launch options belong to the packaged launcher, not to a wiki page. A desktop app may need memory settings, logging configuration, diagnostic switches, system properties, or carefully justified module opens. The launcher's options should be stored under version control and reviewed. A developer's IDE VM options are not part of delivery unless the package reproduces them.
+
+Additional launchers are sometimes useful. A support launcher might enable console output or diagnostic flags. A migration launcher might repair settings. A command-line companion might import data without opening the full UI. If such launchers exist, package them intentionally and label them clearly. Hidden launch modes can become support traps if nobody knows which one a user ran.
+
+\begin{lstlisting}[caption={A small additional-launcher properties file.}]
+description=Orders support launcher
+module=com.acme.orders.desktop/com.acme.orders.Main
+java-options=-Dorders.diagnostics=true
+win-console=true
+\end{lstlisting}
+
+Be conservative with rendering flags and module opens. Rendering pipelines, font behavior, native integration, and encapsulation rules change across JDK releases. A flag that was useful for one platform and JDK can become irrelevant or harmful later. Add such options because a measured problem requires them, record the reason, and keep a rollback path.
+
+Memory options deserve the same restraint. A desktop application with large tables, images, or embedded databases may need heap guidance, but a fixed heap copied from a developer stress test can be wrong for ordinary users. Record why a memory option exists, which workload justified it, and how support can see it. If the application can report memory settings in diagnostics, support conversations become less speculative.
+
+Icon packaging is more complicated than a single image file. The installer icon, application launcher icon, taskbar or dock icon, window icon, toolbar icons, and document icons may have different sizes and formats. Swing also has HiDPI resource concerns at runtime. Prepare an inventory rather than hoping the operating system scales one small icon acceptably.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.22\linewidth}X X}
+\toprule
+Icon role & Typical owner & Notes\\
+\midrule
+Installer/package & Packaging script & Platform-specific format and size requirements.\\
+Launcher/app & Native package metadata & Used in Start menu, dock, desktop, or application folder.\\
+Window & Swing top-level windows & Provide multiple sizes where supported.\\
+Taskbar/dock & \api{Taskbar} or platform integration & Behavior varies by operating system.\\
+Toolbar/content & Swing resources & Use multi-resolution images or size-specific assets.\\
+Document type & File association metadata & Often distinct from the app icon.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+File associations should converge into one application command. A user may open a document by double-clicking a file, dragging it onto the app, using a command-line argument, choosing File/Open, or receiving a platform-specific open-file event. The command should validate the file, update recent-file state, report problems, and integrate with diagnostics. Do not create five unrelated file-opening paths because the platform presented five entry points.
+
+\begin{lstlisting}[caption={A jpackage file-association properties file.}]
+extension=orders
+mime-type=application/vnd.acme.orders
+description=Orders workspace
+icon=orders-document.ico
+\end{lstlisting}
+
+Desktop integration is partly package metadata and partly runtime behavior. \api{jpackage} can describe file associations and package metadata. \api{Desktop} and \api{Taskbar} can integrate with the platform at runtime where supported. Both layers must be tested on the target platform. A feature may exist in the Java API and still be unavailable or behave differently under a particular desktop environment.
+
+Command-line arguments are part of desktop integration. A file association may pass a path with spaces. A shortcut may pass no arguments. A user may drag multiple files. A shell may use a different encoding than the UI expects. Treat launch arguments as input to a command model, not as incidental strings read in \api{main} and forgotten.
+
+Startup should convert launch input into the same commands the running UI uses. Opening a file passed by the operating system should use the File/Open workflow. Importing command-line data should use the import workflow. A second-instance handoff should use a documented interprocess policy if the product supports it. A special path in \api{main} that bypasses validation, recent-file state, diagnostics, or command enablement will eventually diverge from the UI path.
+
+User-data policy is a packaging feature. The installation directory contains replaceable application files. User configuration stores preferences, recent files, table state, shortcuts, and window layout. User data stores documents or local databases. Cache stores reproducible data that can be deleted. Logs store support diagnostics and should rotate. These locations must be documented, tested, and migrated across versions.
+
+Figure~\ref{fig:packaging-installed-layout} shows the practical separation. The launcher, application files, and runtime image are product files. They may be replaced by an update and may live in a directory the user cannot write. Preferences, table state, documents, caches, logs, and support bundles are user or operational state. They need writable locations, retention policy, privacy rules, and migration.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\packagingLayoutFigure}
+\caption{A packaged Swing application has two important file worlds: replaceable installed product files and durable user/support state. Conflating them causes update, permission, and support failures.}
+\label{fig:packaging-installed-layout}
+\end{figure}
+
+Do not store user data beside the executable. It may work in a developer checkout and fail immediately in a managed installation directory, a macOS app bundle, a Linux package location, or a read-only deployment. The app should know its writable data directories without relying on the current working directory. A double-clicked launcher may start with a different working directory than a terminal run.
+
+User data should be subdivided deliberately. Preferences and window state are small and user-specific. Table-state files may be reset without losing documents, but should not be casually deleted during update. Caches can usually be rebuilt and should have size or age limits. Logs are operational evidence and should rotate. Documents and local databases may be user assets and require backup policy. Treating all of these as one "app folder" makes uninstall, support, and privacy decisions harder than they need to be.
+
+Directory discovery should be tested under real launch conditions. The working directory may be the installation directory, the user's home directory, a system folder, or something chosen by the shell. Environment variables may differ between terminal and double-click launch. Paths may contain spaces, accents, non-Latin characters, long components, redirected profile directories, or network shares. A package that stores paths as ASCII strings or assumes a developer working directory is not ready for desktop deployment.
+
+Signing is not a decorative final step. Windows, macOS, and Linux distributions have different trust systems, and those systems affect installation warnings, reputation, notarization, package repositories, enterprise deployment, and user confidence. Signing credentials are release infrastructure. Do not store secrets in source control. Script the signing path so it is repeatable without making credentials casual.
+
+Unsigned internal builds still need a policy. They may be acceptable for developers and automated tests, but they are not equivalent to release candidates. Some behavior appears only after signing or notarization. Some warnings appear only without it. A release process should distinguish developer packages, unsigned QA packages, signed candidates, and public releases.
+
+Signing should be represented in release evidence without exposing secrets. The manifest can record whether the artifact was signed, which identity or certificate fingerprint was used, which timestamping service was used, and where signing logs live. The build should fail if a release channel requires signing and signing was skipped. A package named "release" but signed like a developer build is a process bug.
+
+\begin{pitfallbox}{Testing only the application image}
+An application image is not the same as an installer. Installers create shortcuts, file associations, registry entries or package metadata, permissions, and uninstall behavior. Test the installer and uninstall path, not just the executable inside the image.
+\end{pitfallbox}
+
+Uninstall behavior deserves attention. Removing the application should remove installed files and package metadata. It usually should not delete user documents without explicit user consent. It may or may not remove preferences, caches, or logs depending on product policy. Whatever the policy is, document it. An uninstaller that leaves services, shortcuts, or stale file associations behind damages trust.
+
+Upgrade behavior deserves the same attention. An installer may replace files while the old application is still running, refuse to proceed, or ask the user to close the app. A custom runtime image may be locked by the running process. A migration may need to run after first launch rather than during installation. The update policy should say what happens to running instances, user settings, local databases, table-state files, caches, and support logs.
+
+Accessibility and internationalization do not end at the UI. Installer text, file association descriptions, Start menu names, application categories, support dialogs, and error messages are part of the user experience. The packaged application should launch with the right locale resources and should not assume ASCII-only installation or data paths. Test paths with spaces and non-ASCII characters.
+
+Enterprise deployment adds another layer. The user who installs may not be the user who runs. Policies may redirect application data directories. Network drives may be slow or unavailable. Users may lack write permission to ordinary locations. Proxies may affect update checks. A package that works on a developer workstation may still be unacceptable in managed environments unless these constraints are considered.
+
+Enterprise support may also need silent install, install logs, machine-wide configuration, proxy configuration, disabled auto-update, managed certificate stores, and a clear publisher identity. These are not glamorous Swing topics, but they determine whether a desktop application can be deployed at scale. A packaging chapter that stops at "jpackage produced an installer" leaves these requirements invisible until procurement or IT rejects the artifact.
+
+Installer build machines should be treated as product infrastructure. Their operating system version, JDK version, packaging tools, signing tools, and environment variables can affect artifacts. A release built on one laptop and a release built on another may differ in ways nobody can explain. Use CI, controlled build images, or documented release machines. Record the build environment in release metadata.
+
+Build reproducibility also helps support compare artifacts. If two installers have the same application version but different runtime builds, signing identities, resources, or generated companions, support needs a way to see that. Version strings alone are not enough. The package manifest and support dialog should make the artifact's identity precise enough that two installations can be compared.
+
+\section{Support Diagnostics and Operational Readiness}
+
+A packaged application should be able to tell support what it is. Include application version, source revision, build time, Java runtime vendor and version, runtime image identity, operating system, architecture, Look-and-Feel, locale, scaling hints, user-data directory, log directory, module path or module summary, enabled diagnostic flags, and relevant Corusco metadata. This information belongs in an About or Support dialog, not only in hidden logs.
+
+Figure~\ref{fig:packaging-support-dialog} shows a compact support dialog. It is not meant as a final UI design; it is the diagnostic vocabulary a packaged app should expose. The installed app can report runtime image, Look-and-Feel, user-data location, active tasks, scope counts, locale, and resource status before a support engineer asks for a screenshot.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\packagingSupportFigure}
+\caption{A support dialog is part of packaging. It connects the installed launcher to runtime identity, resource state, user-data policy, diagnostics, and logs.}
+\label{fig:packaging-support-dialog}
+\end{figure}
+
+\begin{lstlisting}[caption={Collecting a small support snapshot.}]
+Map<String, String> diagnostics = new LinkedHashMap<>();
+diagnostics.put("app.version", AppVersion.VERSION);
+diagnostics.put("app.revision", AppVersion.REVISION);
+diagnostics.put("java.version", System.getProperty("java.version"));
+diagnostics.put("java.vendor", System.getProperty("java.vendor"));
+diagnostics.put("os.name", System.getProperty("os.name"));
+diagnostics.put("os.version", System.getProperty("os.version"));
+diagnostics.put("laf", UIManager.getLookAndFeel().getName());
+diagnostics.put("user.data", appDirectories.userData().toString());
+\end{lstlisting}
+
+The support dialog should have a "copy diagnostics" command. That command should redact or omit sensitive values where appropriate. It should not copy passwords, document contents, secret tokens, or arbitrary environment variables. Paths can be sensitive too, but they are often necessary for support; decide what to include and document it.
+
+The copy command should be usable when the application is unhealthy. If background tasks are blocked, resource bundles are partly missing, or a model fails to load, the support action should still copy the basic runtime and package facts. Avoid making diagnostics depend on the same failing service that the user is trying to report.
+
+Logs should have a directory policy and rotation. A desktop application that writes indefinitely to one log file will eventually create its own support incident. A packaged app should write logs where the user account has permission, should keep a bounded history, and should expose the location in the support dialog. If support builds enable extra diagnostics, the app should say so.
+
+Logging should start early enough to capture startup failures. If the main window never appears because resources are missing or a native library cannot load, the log path and visible failure message are the user's only bridge to support. A launcher-level or early-main logging setup can record runtime identity, arguments, working directory, user-data directory, and first failure before Swing initialization proceeds too far.
+
+Thread dumps and component dumps should be easy to collect from the installed app. A support command can write them into the support bundle. It can also include a small manifest explaining which files are present and which facts were redacted. The manifest is more than politeness; it lets support tools consume bundles without guessing.
+
+Crash and failure reporting should be humane. A startup failure may occur before the main window appears. Resource bundle failures, missing native libraries, incompatible settings migrations, corrupted caches, and runtime-image mistakes should produce a visible message and a log path. A silent failure after double-clicking the launcher is one of the worst packaging outcomes because it gives users no next action.
+
+Corusco-specific support facts should be included when useful. Generated metadata version, resource-bundle locale, active task count, open scope count, command registry version, table-state storage path, and validation problem summary can shorten an investigation. Do not dump every model value. Report the structural facts that identify the failing layer.
+
+Problem reports should keep stable ids. A validation problem target, command id, table id, and resource key can be copied into support output without depending on localized text. This is useful when support and the user speak different languages or when a screenshot shows translated labels. Stable ids make localization compatible with diagnosis.
+
+Support bundles should be generated by a command, not by a sequence of instructions a user must follow from memory. A bundle may include the support snapshot, recent logs, thread dump, EDT latency summary, repaint statistics, component tree dump, table-state summary, and a manifest. It should be small, timestamped, and privacy-aware. The bundle format should be stable enough for tooling.
+
+Support bundles should also have a retention policy. They may contain paths, machine names, document names, locale information, and operational history. If the application writes bundles to disk, it should not keep them forever. If the bundle is uploaded, the user or administrator should understand what is sent. Desktop diagnostics earn trust by being explicit.
+
+Privacy review belongs here. A support bundle that includes a component tree may include user-entered labels. A log may include file names. A thread dump may include task names containing domain ids. A table-state dump may reveal column names and workflows. The goal is not to remove all useful information; it is to choose useful structural facts and redact sensitive content deliberately.
+
+Release notes are also diagnostics. They should name user-visible changes and engineering changes that affect support: new runtime image, changed signing identity, migrated settings directory, updated FlatLaf theme, regenerated Corusco companions, changed table-state format, new file associations, and known platform limitations. When a user reports a problem after update, release notes give support a timeline.
+
+Updates require strategy. \api{jpackage} creates packages; it does not define a full product update system. Updates may be manual downloads, enterprise software deployment, package-manager updates, or in-app checks. If the app ships a custom runtime, an update may need to replace that runtime. If the app uses signed packages, the update path must preserve trust. If the app stores settings, migrations must be versioned and reversible where practical.
+
+In-app update checks should be optional in environments that forbid outbound network access. They should also avoid blocking startup on the EDT. An update notification is a background task with user-visible state, cancellation or timeout, diagnostics, and privacy implications. The same task discipline used for data loading applies to update checks.
+
+Rollback is not always possible, but the product should decide. A settings migration can record a backup. A cache can be rebuilt. A local database may need schema migrations with careful downgrade policy. An installer can fail midway. A running application can hold locked files. These are not Swing concerns, but Swing users experience them as desktop reliability.
+
+Settings migrations should be logged in a way support can read. "Migrated table state from version 3 to version 4" is useful. "Preferences failed" is not. If Corusco table state or command settings change format, the migration should preserve old user intent where practical and explain any reset. User trust is lost quickly when an update silently forgets carefully arranged desktop state.
+
+The support story should be rehearsed with the packaged artifact. Launch the installed application, open the support dialog, trigger a known validation problem, run a background task, write a log entry, export a support bundle, close the application, and find every artifact a support engineer would request. If this path is awkward on a clean machine, the release is not operationally ready even if the screens are correct.
+
+\begin{coruscobox}{packaged diagnostics}
+Corusco turns many support facts into inspectable state: commands, resources, problem targets, table descriptors, task handles, scopes, and generated keys. Packaging should carry those facts into the installed support surface rather than hiding them inside development-only tests.
+\end{coruscobox}
+
+Command ids are especially useful in support bundles. A user may report that "the button is disabled," but the localized button text may differ by language and the button may appear in several surfaces. A command id can identify the action, the disabled reason, the resource key, and the owning screen. The support bundle should not dump every command in a large application by default, but it can include active screen commands and recently invoked commands when diagnosing workflow problems.
+
+Table descriptors are similarly useful. A table-state issue is easier to diagnose when support can see table id, column ids, persisted widths, sort keys, visible columns, descriptor version, and unknown persisted keys. This is not user data in the same sense as table cell contents. It is structural state. Corusco can make the structure available without copying domain rows into a support file.
+
+Problem targets and resource keys shorten localization issues. If a validation message is missing in one locale, the support output can include the key and locale. If a problem appears on the wrong field, the target id can be compared with the generated descriptor. A screenshot alone may not reveal whether the error is a translation issue, binding issue, or model issue. Stable ids give support a vocabulary beneath the pixels.
+
+Documentation diagnostics follow the same rule. The PDF build should record the TeX container, examples should compile before screenshots are trusted, and generated figures should have deterministic output paths. The book is a packaged artifact too: readers deserve references that can be rebuilt rather than screenshots that only existed on one workstation.
+
+Operational readiness is not achieved by adding a dialog at the end. The dialog is merely the visible part of decisions already made: versioning, logging, resource policy, task diagnostics, scope ownership, and release manifests. If those facts are not present in the application, the dialog can only display guesses.
+
+\section{Reproducible Release Scripts and Smoke Tests}
+
+Do not package manually from memory. Script the release path: clean checkout, dependency verification, generated sources, compilation, tests, example checks where relevant, \api{jdeps}, runtime image, application image, native package, signing, install, smoke test, uninstall, and artifact publication. Each step should write a log or manifest entry. If a manual step remains, record it as a deliberate release action.
+
+A release script should be boring to run and strict when facts are missing. It should fail if tests fail, generated sources are stale, required resources are absent, the runtime image was built with the wrong JDK, package metadata is missing, or the installer cannot be created. Soft warnings are appropriate for advisory checks; product invariants should fail the build.
+
+The script should also define its inputs. Source revision, dependency lock files, generated source tasks, resource directories, packaging assets, signing configuration, target platform, JDK path, and output directory should be explicit. If the script reads some fact from the ambient environment, that fact should be printed into the release log. Hidden environment inputs are why two release machines produce different artifacts with the same version number.
+
+\begin{lstlisting}[language=sh,caption={A packaging asset layout with explicit platform directories.}]
+packaging/
+  windows/
+    build-msi.ps1
+    orders.ico
+    file-associations.properties
+  macos/
+    build-dmg.sh
+    Orders.icns
+    entitlements.plist
+  linux/
+    build-deb.sh
+    orders.png
+  common/
+    launcher.properties
+    support-bundle.properties
+\end{lstlisting}
+
+Keep platform scripts explicit. Platform differences are product requirements, not noise. A Windows package may need Start menu integration and Authenticode signing. A macOS package may need app bundle metadata, entitlements, signing, and notarization. A Linux package may need desktop files, categories, maintainer metadata, dependencies, and package-manager conventions. A tarball may be valid for some audiences and inappropriate for others.
+
+Use option files when command lines become unreadable. Both \api{jlink} and \api{jpackage} can read options from files. This makes review easier and avoids fragile shell quoting. It also lets the release manifest copy the exact options used. Long command lines pasted into CI configuration tend to become invisible code.
+
+Release scripts should fail early when assets are missing. Missing icons, missing resource bundles, missing generated companions, missing license files, and missing signing configuration should not become half-built packages. A script that produces an installer with default placeholder assets is worse than a script that fails, because it lets a bad artifact escape.
+
+The script should clean generated packaging directories carefully. A stale runtime image or old application image can make a build appear to succeed while using previous artifacts. Clean only the intended output directories, and record their paths. The release process should never rely on a directory already containing yesterday's correct file.
+
+Cleaning is worth saying twice because it is a common source of false success. A missing resource may still appear because yesterday's package directory was not removed. A changed runtime option may not apply because the old runtime image remains. A renamed jar may coexist with the old jar. The release task should create a fresh output area or prove that it removed stale product artifacts before copying new ones.
+
+Smoke tests should launch the installed entry point the way users launch it. That means double-click equivalent, Start menu shortcut, command-line launcher, file association, or package-manager launch command as appropriate. Running \api{main} through Gradle is a development test. It does not verify working directory, runtime image, launcher options, installed resources, permissions, or native metadata.
+
+Automated desktop smoke tests can be modest. They do not need to click every button. They need to prove that the packaged launcher starts, the main window appears, resources load, diagnostics can be copied or exported, and the app exits. More detailed behavior should already be covered by model, presenter, and Swing tests. The packaging smoke test verifies the delivery shell.
+
+A minimal smoke test opens the application, verifies the Look-and-Feel and main window, checks that icons and localized resources load, opens a representative screen, writes a log entry, exports support diagnostics, and exits. A stronger smoke test opens a file association, exercises a background task, stores preferences, restarts, and verifies that state is read from the user-data directory rather than the installation directory.
+
+Test absence. Run the installed application on a machine or container without a separate JDK installation. That is the point of bundling a runtime image. Also test a user account with ordinary permissions, paths with spaces, non-ASCII usernames, restricted installation directories, multiple monitors, and the display scale factors your users actually use.
+
+Test damaged inputs too. Remove or corrupt a user preference file, make the cache unwritable, remove a localized optional help file from a test package, pass an unsupported file association, and simulate a locked log file. The application should fail gracefully, repair when safe, or report a clear diagnostic. A package smoke test that only proves the happy path can miss the failures users actually report.
+
+Test upgrade, not only fresh install. Install the previous release, create user state, install the new release, launch, verify migration, export diagnostics, and uninstall. Many packaging defects occur at version boundaries: stale shortcuts, changed install paths, old caches, migrated settings, and runtime replacement.
+
+Upgrade tests should include Corusco table state and generated metadata. If a descriptor id changes, the migration should preserve or intentionally reset column widths and order. If a generated command id changes, shortcuts or preferences may need migration. If a resource key changes, missing-resource checks should catch it. Generated code makes these facts more regular, but regular facts still need release policy.
+
+The release manifest should be machine-readable. It can include application version, source revision, dependency lock state, generated source version, resource bundle checksum, JDK vendor and version, runtime image modules, \api{jlink} options, \api{jpackage} options, target OS, signing identity, build host or image, test log paths, and artifact checksums. A manifest lets support compare two packages without guessing.
+
+Artifact checksums matter because installers move through file shares, package repositories, CI systems, and customer portals. A checksum lets support verify that the file being installed is the file that was released. A signed package adds trust, but checksums still help diagnose distribution mistakes.
+
+The manifest should be easy for the application to reference. The packaged app can include a copy or summary of the release manifest and display selected fields in the support dialog. That does not mean every build secret or internal path is shipped. It means the installed app can report source revision, build time, runtime image, package channel, and resource version from the same data the release process recorded.
+
+Reproducibility does not require that every byte is identical across every environment, although that is a worthy goal for some products. At minimum, the release process should be repeatable and explainable. Given the source revision and release instructions, the team should know which commands produce which artifacts and which logs prove they passed. "It worked on a laptop" is not repeatable.
+
+Byte-for-byte reproducibility can be made harder by timestamps, signing, platform packagers, filesystem metadata, compression, and vendor tools. Do not let that difficulty excuse an unrepeatable process. A release can still record inputs, normalize what can be normalized, isolate build machines, keep logs, and compare manifests. The practical target is that differences are explainable, not mysterious.
+
+The book's companion examples should participate in this discipline. Examples used for screenshots must compile. Generated examples should compile through the annotation processor. Figure generation should be deterministic. The PDF build should cite compact class names and figure paths, not absolute developer paths. A broken example is a documentation release failure.
+
+When packaging Corusco applications, verify generated and runtime boundaries together. Annotation processors run during compilation. Generated classes are packaged. Corusco runtime libraries are included. Resource bundles are copied. Table-state and preferences directories are writable. Support diagnostics can report resource and generated-metadata versions. Screenshot harnesses stay in documentation or examples unless the product intentionally ships them.
+
+Generated examples should have the same standard as hand-written examples. If a chapter cites a generated form or table, the example should compile through the processor used by the project. If the package relies on generated names, tests should fail when generation is stale. This protects the book from describing an API that the build no longer exercises.
+
+Generated-source packaging has a subtle failure mode: the IDE and local tests may see generated classes from a previous run. A clean release build must start without relying on stale generated directories. The source set should declare generated output, the compile task should depend on generation, and the package task should depend on compilation. If generated files are checked in, the build should still verify that checked-in files match the processor output or that the project intentionally uses checked-in generation.
+
+Resource generation has a similar failure mode. A command descriptor may generate or imply resource keys, but the resource bundle may be incomplete in a non-default locale. The packaging check should exercise resource resolution for generated commands, forms, table headers, validation messages, and help topics. It should do this with the packaged classpath or module path, not only with IDE resources.
+
+\begin{migrationbox}{from runnable jar to desktop product}
+Move in stages. First make resource loading package-safe. Then define user-data and log directories. Then script generated sources and tests. Then create a runtime image. Then create an application image. Then add native installers, signing, update policy, support bundles, and installed smoke tests.
+\end{migrationbox}
+
+Release rehearsals are valuable. Before the real release, run the entire process on a clean machine: checkout, build, test, generate examples if the book is part of the release, create the runtime image, package, sign or use a signing placeholder, install, launch, smoke-test, export diagnostics, uninstall, and inspect remaining files. Record every manual step. Each manual step is either an accepted release action or a candidate for automation.
+
+Keep the rehearsal close to release reality. A rehearsal that skips signing, installer creation, file associations, support bundle export, or uninstall may be useful for build speed, but it should not be confused with the final release rehearsal. Name the difference: build rehearsal, packaging rehearsal, signed release candidate, and final release can have different purposes.
+
+Archive release evidence with the artifact. Logs, manifests, checksums, runtime module lists, test reports, and signing records should be retrievable after the build machine has moved on. Six months later, the question will not be "did the command print success on release day?" It will be "what did we ship, how was it produced, and which checks proved it?"
+
+The release archive should include failure evidence from rehearsals when it changed the release. If a packaging rehearsal found a missing resource and the team fixed it, the final release notes or internal release record should mention the check. This is not bureaucracy for its own sake. It builds institutional memory about which packaging defects the process is designed to catch.
+
+\section{Review Drills and Packaging Checklist}
+
+The first drill is the IDE-only resource drill. Write a small application that loads an icon from a source-tree path. Package it and observe the failure. Replace the code with class or module resource loading, package again, and verify the icon from the installed launcher. The drill teaches why resource bugs are packaging bugs, not last-minute file-copy bugs.
+
+The second drill is the runtime-image drill. Run \api{jdeps}, create a \api{jlink} image, launch the app from that image, then remove a needed module and observe the failure. Add the module intentionally and record why it is present. This exercise turns the runtime image from a black box into a product artifact.
+
+The third drill is the user-data drill. Make the app write preferences, table state, logs, and a cache. Package it, install into a protected directory, run as a normal user, restart, update or reinstall, and confirm that user state survives while installed files remain replaceable. This drill catches the common mistake of treating the installation directory as a workspace.
+
+The fourth drill is the support drill. From an installed app, copy diagnostics, open logs, export a support bundle, and identify the runtime image and source revision. Then simulate a missing resource or stale generated metadata and make sure the support output points toward the build layer. The goal is to shorten the first support conversation.
+
+The fifth drill is the documentation-release drill. Generate book figures, build the PDF in the declared TeX container, and verify that cited examples exist. Delete a generated screenshot and confirm the build or review process notices before the PDF is trusted. Documentation artifacts should have the same intolerance for stale outputs as packaged applications.
+
+The sixth drill is the update drill. Install an older package, create table state and preferences, install a newer package, and verify that state migrates or resets with a clear explanation. Then uninstall and inspect what remains. This drill teaches that a desktop release has a memory; users experience the sequence of versions, not only the current one.
+
+The seventh drill is the platform-contract drill. On each target operating system, list the package metadata users see before launch: installer name, publisher, icon, application category, file association description, uninstall entry, and security warnings. Compare that list with the product identity used inside the app. Mismatches make the product look unfinished even when the Swing UI is excellent.
+
+The eighth drill is the clean-profile drill. Create a new operating-system user with no developer tools, no existing configuration, no source checkout, and ordinary permissions. Install the package, launch it, create user state, export diagnostics, and uninstall. Then inspect the user profile. This drill catches hidden dependencies on developer paths, global Java installs, writable installation directories, and stale settings.
+
+The ninth drill is the stale-generated-artifact drill. Delete generated sources and generated screenshots, then run the release or documentation build from a clean checkout. The build should regenerate what it owns or fail with a clear diagnostic. If it silently succeeds because stale generated files were left elsewhere, the process is not clean enough for a book that teaches generation and screenshots.
+
+The source-tree resource case study is the classic packaging failure. A developer loads an icon from a relative path, the IDE working directory happens to make it work, and the installed app launches without icons. The fix is not to copy that directory beside the executable by hand. The fix is to decide whether the icon is a bundled resource or external data, load it through the corresponding API, and make the release smoke test prove it from the installed launcher.
+
+The missing-runtime-module case study is quieter. The application launches, most screens work, and then printing, SQL, XML parsing, preferences, or a service provider fails because the custom runtime image omitted a module. The defect may not appear until a rarely used feature runs. The answer is not to abandon \api{jlink}; it is to pair dependency analysis with feature smoke tests and deliberate module additions. A runtime image is a product artifact, not merely a smaller JRE.
+
+The unwritable-install-directory case study appears in managed environments. The app works from a developer checkout because it writes logs, caches, and table state beside the jar. After installation under Program Files or an app bundle, logging fails, preferences reset, or updates cannot replace files. Figure~\ref{fig:packaging-installed-layout} is the antidote: installed files are replaceable product files, while user state lives in user-writable locations with migration and retention policy.
+
+The unsigned-release case study is a process failure. A package intended for external users is built through a QA path, lacks the proper signature or notarization, and produces warnings or deployment rejection. The code may be identical to the intended release, but the product artifact is not. Signing status, channel, publisher, and artifact checksum belong in the manifest so that release identity is not guessed from filenames.
+
+The stale-generated-source case study is specific to modern Corusco work. A developer's machine contains generated companions from yesterday. The IDE compiles, the screenshot harness runs, and the package works locally. A clean CI build fails or, worse, packages stale generated classes. The release graph must make generation an input to compilation and packaging. Documentation builds must do the same for figures. Generated artifacts are useful only when the build owns their freshness.
+
+The support-blind package case study is the saddest because it often happens after a successful install. A user reports a startup problem, but the app cannot show version, runtime image, log path, resource status, or build revision. Support asks for screenshots and guesses. A support dialog and support bundle are not luxuries; they are the way a desktop product speaks when something goes wrong. The installed artifact should carry enough identity that the first support question can be specific.
+
+Use the following checklist before treating a Swing package as releasable.
+
+\begin{itemize}
+\item Swing UI modules declare \api{requires java.desktop}; domain modules do not.
+\item Resource loading uses class or module resource APIs for bundled assets.
+\item User data, logs, preferences, caches, and installation files have separate policies.
+\item \api{jdeps} output has been reviewed and intentional runtime modules are recorded.
+\item A custom runtime image records JDK vendor, version, build, modules, target OS, and \api{jlink} options.
+\item \api{jpackage} commands are scripted per platform and stored with packaging assets.
+\item Launch options are version-controlled and not copied from an IDE by memory.
+\item Icons, file associations, package metadata, signing, and uninstall behavior are tested on target platforms.
+\item Generated sources, generated resources, Corusco runtime libraries, and resource bundles are included in the package.
+\item The installed application exposes support diagnostics, log location, runtime identity, and user-data location.
+\item Smoke tests run through the installed launcher on a clean machine without relying on a separate JDK.
+\item Release notes and manifests record source revision, dependency state, runtime image, packaging options, signing identity, and test evidence.
+\item Upgrade and uninstall behavior have been tested with existing user preferences, table state, logs, and caches.
+\item Generated Corusco descriptors, resources, screenshots, and support metadata are verified from clean outputs.
+\end{itemize}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Add \api{module-info.java} to a small Swing application and keep \api{java.desktop} out of the domain module.
+\item Run \api{jdeps --print-module-deps} and compare the reported modules with the modules you expected.
+\item Create a \api{jlink} runtime image containing the application and \api{java.desktop}; record the image options.
+\item Package the app with \api{jpackage --type app-image} and launch it without using Gradle.
+\item Replace all file-relative bundled-resource loading with class or module resource loading.
+\item Add a support dialog that reports app version, source revision, Java version, OS, Look-and-Feel, user-data directory, and log directory.
+\item Define a user-data directory policy and migrate settings out of the installation directory.
+\item Add a package smoke test that opens a screen, writes logs, exports diagnostics, and exits.
+\item Verify generated Corusco companions and resource bundles are present in the packaged runtime.
+\item Build the book PDF from a declared TeX container and regenerate its screenshots before release.
+\end{enumerate}
+\end{exercisebox}
+
+A packaging review should read like an evidence review, not a command transcript. The reviewer should be able to point to the source revision, dependency lock, generated-source step, test log, runtime module list, package options, signing evidence, installed smoke test, support snapshot, and artifact checksum. If one of those facts exists only in a terminal scrollback, it is not release evidence. If it exists in a manifest, log, or archived artifact, it can be compared later.
+
+The review should also separate build success from product readiness. A \api{jpackage} command can succeed while the installer icon is wrong, the app writes logs to the install directory, help resources are missing, table state cannot be migrated, and support diagnostics cannot be copied. Build success says a tool produced an artifact. Product readiness says the artifact behaves correctly in the user's environment and can be supported after it leaves the build machine.
+
+For Corusco applications, product readiness includes generated consistency. Generated forms, tables, actions, resources, and help topics should be represented in package checks. The installed app should not be a different universe from the examples and tests. If a generated table descriptor drives a screenshot in the book, the release process should know how generated descriptors are compiled, packaged, diagnosed, and migrated. Otherwise generation is an implementation convenience rather than a delivery contract.
+
+The final packaging habit is to rehearse failure. A release process that only tests perfect installs on a developer machine is optimistic documentation, not evidence. Test missing resources, unwritable logs, stale preferences, unsupported file associations, cancelled installs, upgrade from the previous release, and uninstall after user state exists. Each rehearsal either confirms a policy or forces the team to write one.
+
+Installed smoke-test evidence should be small enough to keep and clear enough to read. A log line that says "main window opened" is weaker than a record that names launcher path, runtime image, Look-and-Feel, locale, resource check, support snapshot export, and exit status. The point is not to make smoke tests huge. The point is to make the evidence prove that the packaged shell, not merely the application classes, was exercised.
+
+The book build follows the same rule in miniature. A generated screenshot, a Docker TeX log, a compact test log, and a LaTeX warning scan are release evidence for the documentation artifact. They do not make the prose true by themselves, but they prove that cited examples, figures, and PDF construction are not imaginary. That is the standard the companion examples should maintain.
+
+A reader should be able to rebuild the artifact and see the same figure names, the same compact example references, and the same generated screenshots.
+
+That repeatability is part of the book's promise, and it should remain visible in the release logs.
+
+When the evidence is visible, stale screenshots and stale generated classes have fewer places to hide during review, audit, and release candidate work long after the build machine has moved on.
+
+That evidence is part of the artifact.
+
+The packaging lesson is simple and demanding. Delivery is not an afterthought performed after the interesting Swing work is done. The installed artifact is where modules, resources, Look-and-Feel, generated code, diagnostics, examples, updates, and user trust meet. A professional Swing application should be as deliberate about that boundary as it is about painting, layout, models, and the EDT.

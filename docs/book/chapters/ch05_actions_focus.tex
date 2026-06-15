@@ -1,0 +1,856 @@
+\chapter{Actions, Key Bindings, Focus, and Command Architecture}
+\chapterquote{A button listener performs a gesture; an Action represents a command. Mature Swing applications are built from commands.}{A user-interface design distinction}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How should commands, shortcuts, focus traversal, validation, shared enablement, undo, and command context be organized?\\
+Primary APIs & \api{Action}, \api{AbstractAction}, \api{InputMap}, \api{ActionMap}, \api{KeyboardFocusManager}, \api{FocusTraversalPolicy}, \api{InputVerifier}, \api{UndoableEdit}.\\
+Hidden difficulty & Key bindings are resolved through focus-dependent maps; a command may appear in many visual places but must have one semantic state.\\
+Payoff & Coherent menus, toolbars, popups, shortcuts, validation, accessibility, undo, help, and testable command routing.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Commands Before Presenters}
+
+\termdef{Command}{a user intention with identity, state, and behavior} is the idea behind Swing's \api{Action}. A command is not the same thing as a button click. "Save document" may be invoked by a toolbar button, menu item, popup item, key binding, command palette entry, default button, test harness, or accessibility action. If these surfaces are implemented as unrelated listeners, the application has several almost-identical operations waiting to drift apart.
+
+An \api{Action} is both behavior and state. It has a name, enabled flag, optional icon, accelerator, mnemonic, selected state, short description, and arbitrary properties. A \api{JButton}, \api{JMenuItem}, toolbar button, popup item, or key binding can point at the same \api{Action}. When the action becomes disabled, all presenters can update. When the selected state changes, toggle presenters can agree.
+
+\begin{principlebox}{One command, many presenters}
+If the same user intention can be invoked by a menu item, toolbar button, popup menu, keyboard shortcut, or test command, it should normally be one \api{Action} instance or one command object adapted to \api{Action}.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\actionsSurfaceFigure}
+\caption{One semantic command can be presented by a toolbar button, menu item, popup item, and key binding. The surfaces differ; the command identity and enablement should not.}
+\label{fig:actions-command-surfaces}
+\end{figure}
+
+Figure~\ref{fig:actions-command-surfaces} shows the basic economy. A toolbar wants icon-first presentation. A menu wants text, mnemonic, accelerator, and perhaps a check mark. A key binding wants no visible component at all. These are presenter choices. The operation underneath should still have one identity, one enablement rule, one help topic, one permission policy, and one testable execution path.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\actionsFocusFigure}
+\caption{Focus traversal is command architecture too. A screen's keyboard order should express the workflow a keyboard user actually follows, not merely the order in which widgets were added.}
+\label{fig:actions-focus-traversal}
+\end{figure}
+
+Figure~\ref{fig:actions-focus-traversal} shows the companion problem. A command can be reachable only if focus and key binding policy make it reachable. Users who operate by keyboard, screen readers, menu navigation, and default buttons all depend on focus. Command architecture and focus architecture therefore belong in the same chapter.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\actionsRoutingFigure}
+\caption{A routed command resolves the active context before execution, then publishes command state back to every presenter. Focus owner, semantic owner, command id, and visual surface are related but distinct facts.}
+\label{fig:actions-command-routing}
+\end{figure}
+
+Figure~\ref{fig:actions-command-routing} gives the rest of the chapter its
+map. A key stroke, button press, menu item, or accessibility action does not
+magically know which object should receive the operation. The screen must
+resolve the active context, find the stable command, check the command model,
+execute the handler if appropriate, and update all presenters from the same
+state. When a program skips this route, commands begin to depend on whichever
+widget happened to hear the event first.
+
+\begin{examplebox}{actions}
+\api{BookVisualFigures} contains the command-surface, focus-traversal, and command-routing figures used in this chapter. The screenshots are produced by \api{BookFigureGenerator} through \screenshotHarnessExample{}, keeping keyboard and command examples tied to executable Swing panels.
+\end{examplebox}
+
+\textbf{Action properties describe the command.} Standard properties include \api{Name}, \api{SMALL\_ICON}, \api{SHORT\_DESCRIPTION}, \api{ACCELERATOR\_KEY}, \api{MNEMONIC\_KEY}, and \api{SELECTED\_KEY}. Presenters listen to property changes and update themselves. Custom properties can be useful, but they should be documented because only presenters that know the property will honor it.
+
+A subtle rule follows: changing an action's name or icon changes it for all presenters sharing the action. If a toolbar needs icon-only presentation and a menu needs text, configure the presenter. Do not mutate the shared action to satisfy one surface. The action's properties should describe the command; the presenter decides how much of that description to show.
+
+\begin{lstlisting}[caption={A domain-aware action with centralized enablement.}]
+public final class DeleteCustomerAction extends AbstractAction {
+    private final CustomerSelection selection;
+    private final CustomerService service;
+
+    public DeleteCustomerAction(CustomerSelection selection,
+                                CustomerService service) {
+        super("Delete Customer");
+        putValue(SHORT_DESCRIPTION, "Delete the selected customer");
+        putValue(MNEMONIC_KEY, KeyEvent.VK_D);
+        putValue(ACCELERATOR_KEY,
+                 KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0));
+        this.selection = selection;
+        this.service = service;
+        selection.addPropertyChangeListener(event -> updateEnabled());
+        updateEnabled();
+    }
+
+    private void updateEnabled() {
+        setEnabled(selection.singleCustomerSelected()
+                && service.canDelete(selection.selectedCustomerId()));
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        service.delete(selection.selectedCustomerId());
+    }
+}
+\end{lstlisting}
+
+The example hides confirmation, error handling, lifecycle cleanup, and asynchronous service calls. The important point is that enablement derives from domain state, not from which widget happened to be clicked. The same action can appear in a menu and on a toolbar without duplicating selection logic.
+
+The example also shows a common lifetime problem. The action registers a listener on selection. Who removes it? In a small application, this may not matter. In a screen that opens and closes many times, it matters. A command object that listens to models needs a lifecycle owner. Later Corusco chapters turn this into scoped subscriptions, but plain Swing developers should already ask the question.
+
+\termdef{Presenter}{a visual or input surface that invokes a command} includes buttons, menu items, popup items, toolbar buttons, key bindings, default buttons, and sometimes accessibility actions. Presenters may be created and destroyed with views. Commands may live for the screen, document, application, or focused context. Mixing these lifetimes is a common source of stale enabled state and memory leaks.
+
+A command should have a stable identity separate from localized text. The key \api{customer.delete} or \api{deleteCustomer} can survive translation, icon redesign, and menu reorganization. This matters for preferences, shortcuts, help links, logging, tests, generated metadata, and documentation. The visible label is a resource. The command key is a contract.
+
+The identity also gives the team a vocabulary for review. A reviewer can ask
+"what enables \api{customer.delete}?" rather than "why is this button gray?"
+The first question points to selection, permissions, busy state, validation,
+and active context. The second question points to one presenter. The same
+difference appears in tests. A robust test changes the model and asserts that
+\api{customer.delete} is disabled with a reason. A fragile test finds a button
+whose label happens to be "Delete" and reads its enabled flag.
+
+It is helpful to classify commands by lifetime before writing code. Application
+commands such as About, Preferences, and Exit may live for the whole process.
+Window commands such as Save, Refresh, and Help live while a screen or
+workspace is active. Document commands live while a document is selected.
+Context commands such as Copy, Paste, Delete, Rename, Expand, or Collapse may
+be provided by the focused editor, table, tree, or canvas. Gesture commands
+live for a short interaction such as a drag or resize. These lifetimes should
+not all be forced into one global map.
+
+Presenters have their own lifetimes and density rules. A toolbar may be rebuilt
+when the Look-and-Feel changes or when a perspective changes. A popup menu may
+be built on demand and discarded immediately. A key binding may remain in a
+root pane until the window closes. A command palette may filter descriptors
+without creating buttons at all. If the command is stored inside one presenter,
+all other presenters become second-class copies. If the command exists apart
+from presenters, each surface can be created and destroyed without losing the
+operation's state.
+
+There is also a difference between command state and invocation state. Enabled,
+selected, visible, name, icon, shortcut, and disabled reason are command state.
+A pressed toolbar button, an open menu item, a hover tooltip, or a focused
+default button is presenter state. A long-running Save operation may introduce
+task state that several commands observe. Mixing these states produces subtle
+bugs: a toolbar button stays visually pressed because the task failed, a menu
+item remains checked because a button model owned the selected flag, or a
+shortcut still invokes a command after its presenter disappeared.
+
+Command metadata should be precise but not ornamental. A name resource tells
+the user what the command does. A tooltip resource adds short help. A help topic
+leads to longer help. An icon resource gives a visual symbol. A shortcut
+declares a keyboard route. A mnemonic declares a menu route. A group gives menu
+and palette organization. An enabled expression gives policy. A disabled reason
+explains policy. Each field has a job. Metadata becomes noise only when it is
+filled in because a framework demands it rather than because a user or
+maintainer consumes it.
+
+The ordinary Swing \api{Action} can carry some of this metadata directly, but
+its property bag is untyped and partly conventional. That is adequate for many
+small programs and still better than scattered listeners. Larger applications
+usually benefit from an additional command descriptor that owns stable id,
+resources, help topic, shortcut scope, and derived state, with a Swing
+\api{Action} as an adapter. This is the boundary Corusco later formalizes.
+
+The adapter boundary should be boring. A toolbar button should not know how to
+compute Save enablement. A menu item should not know how to stop a table editor.
+A key binding should not know whether the operation is allowed by permissions.
+They should invoke the command and reflect its state. Boring adapters are a
+sign that the command boundary is doing real work.
+
+\section{InputMap and ActionMap as Routing Tables}
+
+\api{JComponent} has three input maps because key bindings depend on focus scope. \api{WHEN\_FOCUSED} applies only when the component itself owns focus. \api{WHEN\_ANCESTOR\_OF\_FOCUSED\_COMPONENT} applies when focus is inside the component's subtree. \api{WHEN\_IN\_FOCUSED\_WINDOW} applies when the containing window is focused. The three scopes are useful precisely because commands have different reach.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.47\linewidth}X}
+\toprule
+Condition & Meaning and typical use\\
+\midrule
+\api{WHEN\_FOCUSED} & Active only when the component itself owns focus. Good for text-field-specific shortcuts or custom canvas editing gestures.\\
+\api{WHEN\_ANCESTOR\_OF\_FOCUSED\_COMPONENT} & Active when focus is inside the component's subtree. Good for panels, tables with editors, and composite widgets.\\
+\api{WHEN\_IN\_FOCUSED\_WINDOW} & Active when the containing window is focused. Good for application-level commands, but dangerous when overused.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+A keystroke maps to an action key through an \api{InputMap}; the action key maps to an \api{Action} through an \api{ActionMap}. This two-step design allows inheritance, replacement, and delegation. It also means that replacing maps carelessly can disable Look-and-Feel behavior. The map is not just your code; it is part of the component's installed keyboard contract.
+
+\begin{lstlisting}[caption={Installing an action through input and action maps.}]
+static void bind(JComponent c, int condition,
+                 KeyStroke keyStroke, String actionKey, Action action) {
+    c.getInputMap(condition).put(keyStroke, actionKey);
+    c.getActionMap().put(actionKey, action);
+}
+
+bind(rootPane,
+     JComponent.WHEN_IN_FOCUSED_WINDOW,
+     KeyStroke.getKeyStroke(KeyEvent.VK_S,
+             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()),
+     "saveDocument",
+     saveAction);
+\end{lstlisting}
+
+Use the platform menu shortcut mask for command accelerators. Hard-coding Control feels familiar on Windows and Linux but wrong on macOS. A modern Swing application should not make users pay for the developer's operating system. The shortcut belongs to the command, but the platform convention shapes the keystroke.
+
+Key binding lookup begins with the focused component and moves through the relevant maps. Disabled actions, parent maps, ancestor maps, and window maps may participate. The result can surprise you when multiple components bind the same keystroke under \api{WHEN\_IN\_FOCUSED\_WINDOW}. A binding that appears harmless in one panel may steal a text component shortcut in another.
+
+\begin{detailbox}{Do not replace text component maps blindly}
+Text components have rich existing key maps. Replacing their input maps wholesale can break navigation, selection, input methods, platform conventions, and accessibility. Add or override specific bindings instead.
+\end{detailbox}
+
+The most useful classification question is simple: is this keystroke a local editing gesture, a component-subtree command, or a window command? A custom diagram canvas might own Delete while it has focus. A table panel might own Refresh while focus is inside the table and filter controls. A window might own Save. The scope should express that answer, not the nearest convenient component.
+
+Global key binding sprawl is a real architectural smell. If every panel installs \api{WHEN\_IN\_FOCUSED\_WINDOW} bindings independently, conflicts become accidental and order-dependent. Prefer a command registry at the window or application level. Register window-level shortcuts in one place. Component-specific gestures should live with the component that understands them.
+
+A useful diagnostic tool lists bindings by component, condition, keystroke, action key, and action class. It can reveal two window-level commands bound to the same accelerator, a text component binding accidentally overridden by a parent, or a disabled action that makes a key appear dead. This tool is often cheaper than guessing why a shortcut works in one field and fails in another.
+
+Default buttons and cancel actions are key bindings too. The root pane owns the default button, and Escape-to-cancel is normally installed through root-pane maps, not by adding a key listener to every child. A dialog that treats OK, Apply, Cancel, and Help as commands can make Enter and Escape behavior visible and testable. A dialog that treats them as button listeners tends to grow exceptions.
+
+Popup menus introduce another scope question. A popup command may act on the row under the mouse, on the current selection, or on the focused component. The popup should resolve semantic context at the moment it opens or at execution time by identity, not by storing fragile view coordinates. The table chapter's row-identity lessons apply to commands too.
+
+The key binding search is often easier to understand if we describe it as
+routing rather than as a shortcut table. A keystroke starts at the focus owner,
+then participates in maps whose scopes match the focus situation. The binding
+does not merely answer "which key was pressed?" It answers "which component or
+window currently has the authority to interpret this key?" That authority is
+why \api{Ctrl+A} selects all text in a text field, selects all rows in a table,
+and may select all shapes in a diagram, even though the physical keys are the
+same.
+
+The routing answer should respect editing before application commands. A text
+component has a rich set of local editing gestures. A table cell editor may
+temporarily turn table keys into text keys. A combo box popup may own arrow keys
+while open. An input method may be composing text and must not be interrupted by
+a broad window shortcut. A program that installs window-level shortcuts without
+considering these local routes will feel arbitrary even when every shortcut has
+an \api{Action}.
+
+Shortcut conflicts are not all equal. Two window-level commands with the same
+accelerator in the same root pane are usually an error. A text-field local
+binding and a window-level binding may be correct if local editing wins. A
+table-level Delete and a text-field Delete inside the table editor are both
+correct if the active editor route is respected. A command palette shortcut may
+be global only when no modal interaction is active. A conflict detector must
+therefore know scope, not only keystroke text.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.22\linewidth}X X}
+\toprule
+Binding scope & Good question & Typical mistake\\
+\midrule
+Focused component & What does this key mean inside this editor or canvas? & Treating a local editing key as an application command.\\
+Focused subtree & What does this key mean while the user is inside this panel? & Installing the same subtree shortcut in many sibling panels.\\
+Focused window & What command should be reachable anywhere in this window? & Stealing keys from text components, editors, or popups.\\
+Application/global & What command remains valid across windows? & Forgetting that each top-level window has its own focus and modality.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Input maps are inherited, so absence is sometimes meaningful. A Look-and-Feel
+may install parent maps that provide platform behavior. Replacing an input map
+with a new empty map can remove behavior that the application did not know it
+was relying on. Adding one binding is usually safer than replacing the map.
+When a component is a reusable custom component, document which bindings are
+part of its public keyboard contract and which are installed by the surrounding
+screen.
+
+Action maps have a related trap: action keys are strings. A string such as
+\api{"delete"} may collide with an installed component action or with another
+piece of application code. Use local constants or descriptor ids, and keep the
+scope clear. The action key in an input map is not necessarily the same as the
+stable command id, but it should be traceable to it. Debugging becomes easier
+when a key dump can say that \api{Ctrl+S} maps to \api{customer.save} rather
+than to anonymous action key \api{"save"} from an unknown component.
+
+Root panes are convenient owners for dialog commands because they already
+mediate default button, cancel behavior, and window-level accelerators. They
+are also easy places to leave stale bindings. If a screen replaces its content
+inside the same frame, root-pane actions from the old content may remain unless
+the owner removes them. Treat key bindings as installed resources with
+lifecycle, just like listeners and overlays.
+
+Key listeners should be rare in ordinary command code. A key listener receives
+low-level events and competes with focus traversal, input methods, text editing,
+and key binding processing. It is appropriate for specialized components that
+need raw key events, such as games, terminal emulators, or custom editors. For
+ordinary commands, \api{InputMap} and \api{ActionMap} are the Swing contract.
+Using key listeners for Save, Delete, OK, or Help is usually a sign that the
+command architecture was not made explicit.
+
+Diagnostics should show both the route and the result. A useful report says:
+focus owner, permanent focus owner, active popup or editor, matching input maps,
+chosen action key, action enabled state, disabled reason, and final handler.
+When a shortcut fails, the report can distinguish "no binding," "binding found
+but action disabled," "local editor consumed the key," and "window binding
+shadowed by component binding." These are different bugs, and they need
+different repairs.
+
+\section{Focus, Traversal, and Validation}
+
+\termdef{Focus owner}{the component that currently receives key events} is only the beginning of Swing focus. There is also a permanent focus owner, temporary focus transfers, focus traversal cycle roots, default components, default buttons, and component-specific input maps. Focus determines where keyboard input goes, which key bindings apply, what accessibility technologies report, and which command should operate on the current context.
+
+Focus problems often look like key binding problems. Before changing bindings, log focus events. You may find that a popup, editor, glass pane, combo box, or table cell editor owns focus when you expected the table or root pane. You may find that the component is not focusable, disabled, invisible, or outside the traversal cycle. Guessing at key maps before understanding focus usually creates a second bug.
+
+\begin{lstlisting}[caption={A simple ordered focus traversal policy.}]
+public final class OrderedTraversalPolicy extends FocusTraversalPolicy {
+    private final List<Component> order;
+
+    public OrderedTraversalPolicy(List<Component> order) {
+        this.order = List.copyOf(order);
+    }
+
+    @Override
+    public Component getComponentAfter(Container root, Component c) {
+        return step(c, 1);
+    }
+
+    @Override
+    public Component getComponentBefore(Container root, Component c) {
+        return step(c, -1);
+    }
+
+    @Override public Component getFirstComponent(Container root) { return order.get(0); }
+    @Override public Component getLastComponent(Container root) { return order.get(order.size() - 1); }
+    @Override public Component getDefaultComponent(Container root) { return getFirstComponent(root); }
+
+    private Component step(Component c, int delta) {
+        int i = order.indexOf(c);
+        int n = order.size();
+        return order.get(Math.floorMod(i + delta, n));
+    }
+}
+\end{lstlisting}
+
+The listing is deliberately small. A production policy must skip disabled, invisible, and non-focusable components. It must adapt when dynamic sections appear or disappear. It must cooperate with nested traversal roots. It should follow the visual and task order of the screen, not merely construction order. Focus traversal is part of screen design.
+
+Do not repair focus by scattering \api{requestFocus} calls. A focus request is a specific interaction, not a layout policy. Use traversal policy to describe order, input maps to describe keyboard commands, dialog root panes for default and cancel behavior, and validation focus only as part of a clear recovery path. Random focus requests make keyboard behavior feel haunted.
+
+\api{InputVerifier} can prevent focus from leaving a component. It is useful for fast local syntactic validation, but it can become hostile if overused. A verifier that blocks navigation because a required field is temporarily empty can trap users. A verifier that performs network validation can freeze the UI. A verifier that shows modal dialogs during traversal can create reentrancy trouble.
+
+\begin{lstlisting}[caption={A local verifier that avoids expensive work.}]
+public final class IntegerVerifier extends InputVerifier {
+    @Override
+    public boolean verify(JComponent input) {
+        if (!(input instanceof JTextField field)) {
+            return true;
+        }
+        try {
+            Integer.parseInt(field.getText().strip());
+            field.putClientProperty("validation.error", null);
+            return true;
+        } catch (NumberFormatException ex) {
+            field.putClientProperty("validation.error", "Enter an integer");
+            return false;
+        }
+    }
+}
+\end{lstlisting}
+
+Use \api{InputVerifier} for fast local checks where leaving the field would make the next interaction structurally confusing. Use form-level validation and visible error decoration for semantic checks. Let users move around a form while errors are displayed unless the workflow truly requires immediate blocking. The forms chapter later separates parsing, validation, and problem presentation more carefully.
+
+Focus interacts with active editors. A table cell editor may contain a text field. The focus owner is the text field, but the semantic editing owner may be the table. Delete might mean delete a character while the editor is active, and delete selected rows when no editor is active. Context resolution must account for embedded editors, combo boxes, popups, and temporary focus transfers.
+
+Default buttons deserve a separate rehearsal. Enter is not a universal submit key. A multiline text area uses Enter for newlines. A table may use Enter for editing or navigation. A combo box may use Enter to accept a selection. A dialog should test OK and Apply behavior with focus in each significant editor. The root pane default button is powerful precisely because it must yield to local editing where appropriate.
+
+Cancel behavior also has policy. Escape may close a popup, cancel a cell editor, clear a search field, stop a background task, or cancel the dialog. The nearest active interaction should usually get the first chance. A root-pane Escape binding that always closes the dialog can discard active edits or interrupt text input unexpectedly. Treat cancel as a command routed through context, not as a raw key listener.
+
+Accessibility follows focus. Labels, mnemonics, traversal order, default buttons, disabled reasons, and keyboard alternatives all feed assistive tools. A command that only works by mouse is not fully part of the screen. A focus order that jumps unpredictably is not merely inconvenient. It changes the workflow for users who do not use a pointing device.
+
+Focus traversal should be designed from the user's task, not from the component
+tree. A form may be built from reusable panels, but the user experiences one
+sequence: search, choose row, inspect details, edit fields, save or cancel. If
+construction order happens to match that sequence, default traversal is fine.
+If optional sections, generated forms, split panes, tables, and toolbars enter
+the screen, construction order becomes a poor proxy. A traversal policy is the
+screen declaring that keyboard movement has product meaning.
+
+Traversal cycle roots are another point where simple examples hide complexity.
+A dialog may be one cycle root. A composite editor may contain its own cycle
+root. A table editor may temporarily place focus inside an editor component
+whose traversal behavior is local. Nested roots are not wrong, but they should
+be intentional. If Tab appears to disappear, it may have moved inside an inner
+cycle. If Shift+Tab skips a toolbar, the toolbar may not be in the cycle. The
+debugging question is "which traversal root owns this movement?"
+
+Initial focus is also part of command design. A search screen might start in
+the filter field. A confirmation dialog might start on the safest button. A
+form reopened after validation may start at the first blocking problem or at
+the field the user was editing. A background-loaded screen may delay initial
+focus until the first meaningful control is enabled. These choices should not
+be implemented as random delayed \api{requestFocusInWindow} calls scattered
+through listeners. They should be part of a focus policy attached to screen
+state.
+
+Focus repair after validation should be sparing. If Save fails because one
+field contains invalid text, moving focus to that field may help. If Save fails
+because three fields and a cross-field rule are invalid, moving focus to one
+field may hide the larger problem. If a warning does not block Save, moving
+focus may be intrusive. A problem summary, field decorations, disabled reasons,
+and explicit command feedback often give users more control than a focus jump.
+
+The verifier boundary is narrow because it runs during focus transfer. It
+should not query a server, open a long modal workflow, or update unrelated
+screen state. It can reject structurally invalid local input when leaving would
+make the next state nonsensical. For most forms, however, the better design is
+to let focus move, keep raw text in the field model, expose parse problems, and
+let the final commit command decide whether the model is committable. This is
+friendlier to copy, help, cancel, and multi-field repair.
+
+Focus and selection are related but distinct. A table may have focus and no
+selected row. A row may be selected while focus is in a detail form. A text
+field may have focus but no selected text. A diagram may have selected objects
+while a property editor owns focus. Commands must say whether they operate on
+focus, selection, active editor, or active document. The phrase "the current
+item" is not enough.
+
+Active editors are especially important before commands read data. A table cell
+editor may contain a value that has not yet been committed to the table model.
+A formatted text field may contain text that has not been parsed to its value.
+A combo box may have an open popup whose selection has not been accepted. The
+Save command should stop or commit active editors through a clear boundary
+before building a request. Reading the model while an editor contains newer
+uncommitted text is a classic command bug.
+
+Focus should be observable during diagnostics but not necessarily part of the
+domain model. A command context can expose the current focus owner or active
+provider as presentation state. Tests can install a fake provider without
+moving real focus. Diagnostic views can report focus owner and route. Domain
+services should not receive Swing components or focus events. The focus system
+belongs at the presentation boundary.
+
+Finally, focus policy should be rehearsed under overlays and dialogs. A busy
+overlay may consume input while focus remains in a protected field. A validation
+overlay may decorate a field without blocking focus. A guided help overlay may
+temporarily route clicks while leaving keyboard focus stable. A modal dialog
+creates its own focus world. These cases connect this chapter to the overlays
+chapter: focus is not a separate subsystem when an overlay changes input
+policy.
+
+\section{Command Context, Enablement, and Undo}
+
+Actions often need a context: selected document, active editor, focused table, current account, permissions, dirty state, validation state, busy state, or current selection provider. Do not make every action search the component tree. Provide a command context object that exposes observable state. The context is the command layer's view of the current screen.
+
+\begin{lstlisting}[caption={A context object for command enablement.}]
+public interface CommandContext {
+    Optional<DocumentController> activeDocument();
+    Optional<JComponent> focusOwner();
+    boolean canWrite();
+    void addPropertyChangeListener(PropertyChangeListener listener);
+}
+\end{lstlisting}
+
+Actions listen to the context and update their enabled state. This reduces widget coupling and makes command tests possible without creating the full UI. It also makes command rules readable. "Save is enabled when the form is dirty, committable, and not busy" is a model rule. "Save is enabled because three listeners happen to call \api{setEnabled}" is a debugging exercise.
+
+Disabled commands often need reasons. Sometimes the reason is validation: required fields are missing. Sometimes it is busy state: a save is already running. Sometimes it is permissions: the user cannot edit this customer. A command model can expose the reason once. The tooltip, status bar, help panel, and accessibility description can reuse it. A button should not invent its own explanation.
+
+Toggle commands need the same single-owner rule. A toolbar toggle and a check-box menu item for "show inactive customers" should share one selected state. If the toolbar owns the state, the menu drifts. If the menu owns the state, the toolbar drifts. If the command owns or observes the state, both presentations adapt.
+
+Asynchronous commands add another dimension. A command may be enabled when started, become disabled while running, expose a cancel command, report progress, and suppress stale results. The command's execution path should hand work to a task service or background boundary, then publish state on the EDT. The action itself should not block the event dispatch thread.
+
+If a command mutates application state, consider whether it should be undoable. Swing's text package already uses \api{UndoableEdit}; domain commands can do the same. The key is the transaction boundary. A drag operation that moves ten objects should usually be one undoable edit, not ten. A Rename command should undo the rename and fire the same model events normal mutation would fire.
+
+\begin{lstlisting}[caption={An undoable command expressed as an edit.}]
+public final class RenameEdit extends AbstractUndoableEdit {
+    private final CustomerModel model;
+    private final CustomerId id;
+    private final String oldName;
+    private final String newName;
+
+    public RenameEdit(CustomerModel model, CustomerId id,
+                      String oldName, String newName) {
+        this.model = model;
+        this.id = id;
+        this.oldName = oldName;
+        this.newName = newName;
+    }
+
+    @Override public void undo() {
+        super.undo();
+        model.rename(id, oldName);
+    }
+
+    @Override public void redo() {
+        super.redo();
+        model.rename(id, newName);
+    }
+}
+\end{lstlisting}
+
+The model method must fire precise events. Undo/redo is not just data mutation; it is UI invalidation replay. If a table row was renamed, the table needs a row or cell update. If a tree node was renamed, the tree model needs a node-changed event. Undo that silently changes data without notifying Swing is broken.
+
+Undo and command enablement should be connected. Undo is enabled when the \api{UndoManager} can undo. Its presentation name should change as the next edit changes. Redo follows the same rule. These are actions too: menu item, toolbar button, key binding, and command palette entry should all observe the same undo manager state.
+
+Commands should be testable without mouse automation. Create the action with fake context and service objects. Assert enabled state when context changes. Invoke \api{actionPerformed} directly. Then run smaller integration tests to verify that menus, buttons, and key bindings point at the right action. The goal is to prove command semantics without requiring a full UI path for every case.
+
+\begin{lstlisting}[caption={Testing enablement without a visible UI.}]
+@Test
+void deleteIsEnabledForSingleWritableSelection() {
+    FakeSelection selection = new FakeSelection();
+    FakeCustomerService service = new FakeCustomerService();
+    DeleteCustomerAction action = new DeleteCustomerAction(selection, service);
+
+    selection.setSelectedIds(List.of(new CustomerId(42)));
+    service.setCanDelete(true);
+
+    assertTrue(action.isEnabled());
+}
+\end{lstlisting}
+
+Focus testing should not be exhaustive click theatre. It should cover the screen's policy: initial focus, traversal order for nontrivial forms, default button behavior, cancel behavior, and key bindings whose scope matters. Tests can assert action-map entries and command invocation without simulating every possible path. The purpose is to prove the keyboard model, not to reproduce a manual QA script.
+
+The command context should be small enough to understand and rich enough to
+avoid tree scraping. A context that exposes every Swing component is merely the
+component tree with another name. A context that exposes only a boolean
+\api{canSave} may hide useful reasons. A good context names presentation facts:
+active document id, selected row ids, active editor state, dirty value,
+problem summary, busy tokens, permissions, and current command provider. The
+command layer can derive state from those facts without knowing which text
+field, button, or table column happens to present them.
+
+Disabled reasons deserve particular care because they shape user behavior. A
+disabled Save command with no explanation invites guessing. A disabled Save
+command whose tooltip says "Resolve 2 blocking problems" gives the user a path.
+A disabled Delete command whose status message says "No customer selected" is
+different from one that says "You do not have permission to delete customers."
+The command can expose one reason, several reasons, or a structured problem
+target. The presentation can decide whether to show it in a tooltip, status
+strip, problem summary, command palette, or accessible description.
+
+Enabled predicates should be pure and cheap. If checking whether Delete is
+enabled calls a remote service, the UI will stutter or lie. Permission and
+business state that affect enablement should be loaded into presentation state
+or represented as unknown. A command can be disabled while permission is
+loading, enabled after permission arrives, or enabled with a confirmation step.
+What it should not do is block the EDT every time a selection changes.
+
+Asynchronous commands need a small state machine. Idle, running, canceling,
+completed, failed, and superseded are different states. A boolean busy flag is
+often enough for a small button but not enough for diagnostics or a polished
+screen. Running may disable Save and enable Cancel. Canceling may keep input
+blocked while changing the status message. Failed may keep the form dirty and
+expose a retry command. Superseded may quietly discard an old result because a
+newer request owns the screen. These states are command policy, not incidental
+threading.
+
+Undo and redo also benefit from context. The focused text component may have
+its own undo manager. The document may have a domain undo manager. A diagram
+may have a gesture undo stack. The Edit menu can present one Undo command, but
+its handler may be supplied by the active context. The command's visible name
+can change from "Undo Rename" to "Undo Typing" when focus moves. This is a
+good example of one stable command key with context-specific provider state.
+
+Command execution should report outcomes in vocabulary that tests and logs can
+use. Invoked, rejected because disabled, rejected because editor commit failed,
+rejected because validation blocked, started async work, completed, failed,
+canceled, and superseded are useful outcomes. A raw exception log from an
+\api{actionPerformed} method is much less useful. When outcomes are explicit,
+support logs can explain what the user tried and why the screen responded as it
+did.
+
+The command context must also protect against stale context. If a table
+selection changes after a popup menu opens, should the popup command act on the
+old row under the pointer or the new selection? If a document closes while a
+background command runs, should the result be ignored or applied to the next
+document? If the active provider unregisters while a key event is queued, should
+the command be rejected? These questions are uncomfortable only when context
+ownership is implicit. Once the command owns a context snapshot or generation,
+the behavior becomes testable.
+
+Security and authorization remain outside the UI boundary. Command enablement
+can hide operations the user cannot perform, and disabled reasons can explain
+permissions. The service layer should still enforce authorization. A Swing
+command is not a security boundary; it is a presentation of current policy. This
+distinction prevents tests from confusing "the Delete button is disabled" with
+"deletion is impossible."
+
+Command tests should use the same vocabulary as the design. Test that Save is
+disabled because the form has blocking problems. Test that Save is rejected if
+an active editor cannot commit. Test that Save starts a task and disables
+itself. Test that a stale result is superseded. Test that Delete routes to the
+text editor while editing and to the table selection when editing stops. These
+tests are not UI theater. They prove the command layer's contract.
+
+\section{Corusco Command Descriptors}
+
+Corusco command descriptors make command identity, resources, help, enablement, selected state, shortcuts, and generated metadata explicit outside concrete Swing presenters. Swing's \api{Action} remains the adapter to buttons, menus, and key bindings. Corusco's value is that the command contract becomes inspectable and testable before a toolbar happens to exist.
+
+\begin{coruscobox}{commands as data}
+Corusco treats command identity, resource keys, help topics, shortcuts, enablement, selected state, and lifecycle as named model facts. The Swing \api{Action} is then a presenter adapter, not the only place where command meaning lives.
+\end{coruscobox}
+
+This distinction matters for tests. A command test can assert that Save is disabled while a form is invalid without constructing every visual surface that might invoke Save. A generated Swing adapter test can then be small and mechanical: the button, menu item, shortcut, and help surface all point at the command descriptor.
+
+Typed resource keys keep labels and tooltips from becoming identities. A command's visible name may be localized. Its icon may change. Its help text may move. The command key should remain stable. Tests, preferences, generated sources, documentation, and telemetry should use the stable key. Users see resources; code owns identity.
+
+Shortcut conflicts can be detected earlier when shortcuts belong to descriptors. Two commands in the same scope should not claim the same accelerator unless a context-routing rule explains how the conflict is resolved. A generated behavior plan can report conflicts at compile time or startup rather than leaving users to discover that one shortcut shadows another.
+
+Help topics belong with commands because users often ask for help while deciding whether to execute a command. A disabled Save command can point to form problems. A Delete command can point to permissions or selection rules. A Help surface that only knows about buttons cannot explain a shortcut, menu item, or command palette entry that invokes the same operation.
+
+Lifecycle remains important. A command descriptor may be stable, but a Swing action adapter installed into one screen must close its subscriptions when that screen closes. If enablement observes selection, dirty state, validation problems, task state, and permissions, each observation has a lifetime. Corusco scopes make that lifetime explicit.
+
+Generated actions are useful only if their generated shape remains readable. A developer should be able to inspect which command key produced which Swing \api{Action}, which resource keys fill properties, which input map scope installed a shortcut, and which behavior owns cleanup. Generation that hides command routing is not an improvement. Generation that makes routing boring is.
+
+Corusco also helps with command context. A screen can expose selected domain ids, active editor state, dirty state, problem state, busy state, and permission state as observable values. Command enablement can derive from those values. The same derivation can feed disabled reasons, presenter enabled flags, and tests. This is more maintainable than having each \api{Action} search the component tree.
+
+The command descriptor should not erase Swing knowledge. Input map scopes still matter. Text components still have their own key bindings. Root panes still own default buttons. Active editors still need to stop before commit. Corusco should reduce repetition and make conflicts visible, not pretend the Swing keyboard system disappeared.
+
+Migration can be incremental. Start by naming important commands and replacing duplicate listeners with shared actions. Next, move labels, shortcuts, and help topics into stable resource-backed descriptors. Then derive enablement from observable state. Finally, let generated adapters install presenters and bindings. Each step removes a class of drift without requiring a full rewrite.
+
+A descriptor is not merely a constants holder. It is a compact statement of the
+command contract. It can say that \api{customer.save} belongs to the customer
+editor, uses the \api{customer.save.name} resource, has a primary shortcut in
+the window scope, derives enabled state from dirty, committable, and busy
+values, exposes a disabled reason, has a help topic, and is installed into a
+toolbar, menu, root pane, and command palette. No single Swing button can carry
+that whole contract honestly.
+
+Typed keys matter because command metadata is used by many tools. A key can be
+referenced by generated code, tests, documentation, command palettes, help
+systems, preference storage, telemetry, and migration scripts. Localized text
+cannot serve that role. A menu path cannot serve that role. A Java field name
+alone is not enough if generated sources, resources, and preferences need a
+stable external id. Corusco's typed-key approach turns these ids into ordinary
+compile-time objects instead of string folklore.
+
+Resource integration changes how localization is reviewed. If command names,
+mnemonics, tooltips, disabled reasons, and help topics are resource keys, a
+localization review can inspect command surfaces systematically. It can detect
+missing mnemonics, duplicate mnemonics in a menu, overly long toolbar text, and
+tooltips that no longer match behavior. If those strings are scattered through
+constructors and button setup, the review becomes guesswork.
+
+Shortcut declarations also become data. A descriptor can distinguish default
+shortcut, platform-specific shortcut, user-customized shortcut, and scope. A
+conflict detector can ask whether two commands compete in the same scope. A
+preferences screen can list commands by group. A migration can preserve a
+user's custom shortcut after a menu is reorganized because the preference is
+stored by command id. None of this requires Swing to be replaced; it requires
+shortcuts to stop being anonymous calls to \api{getInputMap}.
+
+Enablement should be derived through observable state rather than imperative
+\api{setEnabled} gossip. A Save command observes dirty, committable, busy, and
+permission values. A Delete command observes selection and permission. A Copy
+command observes the active provider. A Show Inactive command observes and
+updates a filter value. The Swing \api{Action} adapter listens to the derived
+value and updates its property. The rule is now testable without a button.
+
+Selected state is the same idea for toggles and modes. A descriptor for
+\api{view.showInactive} can bind to a boolean value. A mode group can bind to an
+enum value representing select, pan, zoom, or edit. Menu check boxes, toolbar
+toggle buttons, and command palette indicators then observe the same state.
+There is no need for buttons to deselect one another through listener loops.
+
+Help becomes more precise when commands have stable identity. F1 on a disabled
+Save command can open a topic that explains save requirements. A command
+palette can show help for the selected command. A toolbar tooltip can include a
+short hint while the Help chapter provides the long topic. Tests can verify
+that every public command has a help topic or an intentional exemption. Help is
+therefore part of command metadata, not an afterthought attached to one button.
+
+Generated Swing adapters should be disposable because the adapters are
+presentation objects. The command descriptor may live as long as the
+application, but a button action installed in a dialog should close with the
+dialog. If the adapter subscribes to values, command providers, selection,
+permissions, or resources, those subscriptions belong to a scope. This is the
+same cleanup principle used for overlays and bindings: generated code is still
+code with lifetime.
+
+Generated diagnostics are a practical advantage. A developer should be able to
+ask a screen to list installed commands, shortcuts, presenters, enabled states,
+disabled reasons, help topics, resource keys, and owners. If a shortcut fails,
+the diagnostic should say whether no binding was installed, the action was
+disabled, the active provider rejected the command, or a local editor owned the
+key. Corusco descriptors make such a report possible because the facts have
+names.
+
+The descriptor layer should not prevent handwritten command policy. A complex
+Save command may need active-editor commit, validation, async task start,
+conflict handling, and server-error mapping. That workflow belongs near the
+screen model or presenter that owns the customer editor. The descriptor should
+make the command findable and consistent; it should not turn all commands into
+generic reflection calls. Good framework code leaves the interesting policy in
+plain sight.
+
+Annotation processing can help find mechanical mistakes early. A generated
+companion can detect duplicate command ids, missing resource keys, invalid
+shortcut declarations, missing help topics under a strict profile, or an action
+handler whose signature does not match the command descriptor. These errors are
+cheaper at compile time than during manual UI testing. The compile-time
+generation chapter returns to this point, but commands are one of the clearest
+places to see the value.
+
+Migration from plain Swing should keep the application running. First, wrap
+existing \api{Action} instances with ids and diagnostics. Next, merge duplicate
+actions that represent the same operation. Then move resource and shortcut data
+to descriptors. Then replace imperative enablement listeners with observable
+derived values. Finally, generate adapters for routine presenters. Each step is
+valuable by itself, and each step reduces command drift.
+
+The end result is not less Swing. It is Swing whose command surfaces are
+consistent. Menus still use \api{JMenuItem}. Toolbars still use buttons.
+Root panes still use input maps. Default buttons still belong to dialogs. What
+changes is ownership: the meaning of Save, Delete, Copy, Help, Undo, and Cancel
+is visible before the UI is assembled. That visibility is the maintainability
+gain.
+
+\section{Worked Workflow and Review Drills}
+
+Consider a customer editor screen with a table, a detail form, a toolbar, a menu, and a status strip. It has commands for New, Save, Apply, Delete, Refresh, Show Inactive, Copy, Paste, Help, Undo, Redo, and Cancel Load. Some commands are window-level. Some belong to the table. Some belong to the active text field. Some are disabled while background work runs. This is the point at which anonymous listeners stop being harmless.
+
+The first design step is to list commands before placing buttons. For each command, record key, visible name resource, tooltip resource, help topic, icon key, shortcut, mnemonic, enabled rule, selected rule if any, undo behavior, async behavior, and error policy. This list feels formal at first, but it prevents later arguments about why the toolbar and menu disagree.
+
+The second step is to classify scope. Save is a window command. Copy is context-sensitive because a text field, table, or custom component may own it. Delete is context-sensitive because it can delete text while editing and delete selected customers when the table owns context. Show Inactive is a toggle command tied to filter state. Help may be global but topic-sensitive. Each scope chooses an input map and context rule.
+
+The third step is to define focus traversal. Initial focus should land where the user can start the main task. Tab order should follow the visual and task order. Optional sections should be skipped when hidden. Disabled fields should not receive traversal focus. The default button should not steal Enter from editors that need Enter. Escape should cancel the nearest active interaction before closing the whole screen.
+
+The fourth step is to define validation timing. Field parsing can happen as the user types. Problem decorations can update without blocking traversal. Save and Apply check form-level validity after stopping active editors. Focus-blocking verifiers are reserved for fast local invariants. A disabled Save command can expose a reason that points to the problem summary.
+
+The fifth step is to test command state. Core tests exercise dirty, valid, busy, permission, and selection combinations. EDT tests assert key bindings and default/cancel behavior. Screenshot tests show disabled commands, active validation, focus order, and busy cancellation. The tests should prove policy, not the accidental order in which listeners happen to run.
+
+Now slow the Save command down until every boundary is visible. The user changes a field. The document model becomes dirty. The form model may be parse-valid or parse-invalid. The problem set may be empty or contain validation warnings. The busy value is false. The permission model says whether the current user may write. Save enablement is derived from these facts, not from the current enabled state of a button.
+
+If the user presses the toolbar button, selects the menu item, or uses the accelerator, the same command runs. It first asks the active editor boundary to commit. A text field may already be committed through its document model; a table cell editor may need \api{stopCellEditing}. If commit fails, the command stops and focus remains where the user can repair the value. The command has not yet touched the service.
+
+After active editors are settled, the command asks the form model whether the screen is committable. This is not the same as asking whether every widget looks normal. A field might have a warning that allows save. Another field might have a parse error that blocks save. A cross-field validation rule might fail even though every individual editor parsed. The command should consume the model's answer, not re-validate by scraping components.
+
+If the form is not committable, Save can publish a disabled or rejected reason. The reason may appear in a status strip, tooltip, problem summary, accessible description, or test assertion. This is better than a silent disabled button because the command model can explain which fact blocks execution. It is also better than a modal dialog from every invalid field because it keeps the workflow navigable.
+
+If the form is committable, the command builds a request object from model values. The request should not contain Swing components. It should contain domain values, ids, version information, and perhaps a correlation id for stale-result suppression. This makes the command boundary testable and keeps the service layer independent of Swing.
+
+The command then marks itself or the surrounding task state busy. Save disables itself, perhaps enables Cancel, and may disable conflicting commands. The toolbar, menu item, default button, and shortcut all reflect the same busy state. A status message can say "Saving customer." The UI remains responsive because the service call runs outside the EDT.
+
+When the service succeeds, the result returns to the EDT. The dirty baseline is updated. Problems from server validation are cleared or replaced. The command busy state becomes false. Save enablement is recomputed from the same rules as before. If the saved object version changed, the model updates and fires precise events. The visual result is a consequence of model changes, not hand-coded button repair.
+
+When the service fails, the command has several policies to choose from. A network failure may keep the form dirty and show a retry message. A server validation failure may populate problem targets. A permission failure may disable future saves and update the permission model. A conflict failure may open a merge workflow. These are command outcomes, not exceptions to be swallowed inside an action listener.
+
+Cancellation is a command too. If Save is running, Cancel Load or Cancel Save may request cancellation through a token. It may not be able to stop a remote operation immediately. The UI should distinguish "cancellation requested" from "operation canceled." If a stale success result later arrives, the generation check prevents it from overwriting newer screen state.
+
+The default button is just another presenter for the same Save or OK command. It should not bypass active-editor commit, validation, busy state, or cancellation policy. A dialog whose default button has a private listener often works until the toolbar or keyboard shortcut is added. Then the default path and shortcut path disagree. Commands prevent that split.
+
+The Escape key follows a similar slow path. If a popup is open, Escape may close the popup. If a table editor is active, Escape may cancel editing. If a background task is cancellable, Escape might ask whether to cancel. If the form is dirty, Escape may ask for confirmation before closing. The root-pane binding should route to the appropriate command context instead of unconditionally disposing the dialog.
+
+The Help command should also be contextual. With focus in a credit-limit field, F1 should find the credit-limit topic. With focus in the customer table, F1 should find the table topic or selected-column topic. With focus nowhere specific, it should find the screen topic. A stable help-topic key attached to fields, commands, and descriptors makes this behavior possible without searching localized text.
+
+The Copy command demonstrates why focus owner and semantic owner are different. When a table cell editor is active, focus may be inside a text field and Copy should copy selected editor text. When the table owns focus without an editor, Copy may copy selected cells. When a chart owns focus, Copy may copy selected objects. The command key is the same; the context provider changes.
+
+The Delete command is even more delicate. Delete in a text field deletes text. Delete in a table may delete selected rows. Delete in a tree may delete selected nodes. Delete while a confirmation dialog is open should probably do nothing. A single global Delete action that ignores context is dangerous. A command registry that asks the active provider is safer.
+
+Provider registration should be scoped. A table selection provider can register while the table is displayable or focused and unregister when the screen closes. A text editor provider can become active while editing and yield afterward. If providers are left in a global registry forever, commands may operate on dead screens. Command routing therefore has the same lifecycle problem as model listeners.
+
+Shortcut customization adds a persistence layer. If users can customize shortcuts, persisted shortcuts must be keyed by command id, not by menu label. The application must detect conflicts in a scope, provide defaults, and migrate renamed commands. A shortcut file that stores localized text or presenter paths will break under translation and menu reorganization.
+
+Localization adds another detail. Mnemonics are not universal. A mnemonic that works in English may conflict in Czech or German. If command descriptors contain resource keys for names and mnemonics, localization can be reviewed as a command surface. If mnemonics are hard-coded in constructors, translation becomes a hunt through Java code.
+
+Icons are also command resources, but icon size is often presenter-specific. A menu item may use a small icon or none. A toolbar may use a larger icon. A command palette may use a symbolic icon plus text. The command can name the icon resource; the presenter chooses size and layout. This keeps the command semantic and the visual surface flexible.
+
+Selected state belongs to toggle commands. A toggle command should have one boolean or enum state that presenters observe. Some toggles are binary, such as "show inactive." Others are mutually exclusive modes, such as select, pan, zoom, and edit. A group of mode commands should be backed by one mode value, not by buttons that deselect one another through listener gossip.
+
+Command groups help menus and toolbars remain coherent. File commands, edit commands, navigation commands, view commands, table commands, and help commands often have different shortcut scopes and enablement dependencies. Grouping is not only visual organization. It gives review a way to ask whether a command belongs to the window, active document, table, editor, or application.
+
+Logging and telemetry should use command ids. "customer.save invoked" is stable; "button Save clicked" is a presenter accident. If users invoke Save by shortcut, menu, or automation, the command id stays the same. Presenter-specific logging can be useful for usability research, but it should not replace semantic command logging.
+
+Security checks should not live only in enabled predicates. Enablement is a user-interface hint. The command execution path should still verify permission before mutation, especially if command state may be stale or invoked programmatically. A disabled button prevents ordinary clicks; it is not an authorization boundary. The service or domain layer remains responsible for final enforcement.
+
+Error handling belongs to command policy. Some commands can report errors inline. Some need a dialog. Some write to a status strip and keep focus. Some update problem sets. A raw action listener that catches exceptions and shows a generic dialog has no room for this policy. A command object can be tested with service failures and expected UI model outcomes.
+
+Undo policy should be documented with command policy. Save may not be undoable because it commits to a remote system. Rename may be undoable locally. Delete may be undoable if it moves items to a local trash, but not if it permanently removes server data. The command should say whether it creates an undoable edit, merges with previous edits, or is deliberately not undoable.
+
+Command ordering matters in menus. Users expect New, Open, Save, Save As, and Exit in conventional places. They expect Undo and Redo near edit commands. They expect Help at the end. A generated or descriptor-backed command system should not produce arbitrary order. Order can be data, but it is still design. Stable ordering also keeps screenshots and documentation predictable.
+
+A command palette makes missing metadata visible. Commands need searchable names, groups, shortcuts, enabled reasons, and sometimes keywords. If metadata exists only inside Swing widgets, a palette has to scrape UI text. If commands have descriptors, the palette becomes another presenter. This is a useful test for whether command identity is truly separate from presentation.
+
+Menu construction is a similar test. A menu bar should be built from command descriptors and group policy, not from a sequence of listeners that happen to create menu items. When a command is removed, disabled, localized, or given a new shortcut, every presenter should see the same command metadata. Repetition in menu construction is a warning sign.
+
+Toolbars require a density policy. A toolbar button may hide text, show only an icon, use a compact tooltip, and group toggle modes. The command should not change its name because the toolbar is compact. The toolbar presenter chooses compact rendering. The menu presenter chooses textual rendering. A command is allowed to know its semantic icon; it should not know every toolbar layout.
+
+Context menus require a target policy. A table row popup may operate on the row under the pointer even if it is not selected, or it may first select that row, or it may operate on the current selection. All three policies exist in real applications. The screen should choose one and implement it consistently. The command should receive domain ids, not raw mouse coordinates.
+
+Command tests should include conflict cases. Save is disabled while busy. Delete is disabled with no selection. Copy routes to the active text editor. Escape cancels an editor before closing the dialog. F1 resolves the focused help topic. These tests are more useful than a broad UI automation script that merely clicks every button once.
+
+Focus tests should include dynamic screens. When an optional section becomes visible, traversal order should include it. When it hides, traversal should skip it. When a validation summary appears, initial focus after failed commit may move to the first problem or remain at the current field depending on policy. The policy should be explicit enough that tests can assert it.
+
+The same workflow applies to generated Corusco actions. A generated action adapter should not hide the command state. It should expose or be traceable to descriptor id, resource keys, shortcut, enablement source, selected source, and handler. If generated code makes debugging harder, the generation boundary is wrong. If generated code removes repetitive wiring while keeping metadata visible, it is doing its job.
+
+The reader should notice the repeated shape: command facts first, Swing presenters second. Button construction, menu construction, key binding installation, focus traversal, validation, undo, help, and tests all become easier when the command is a named object with modeled state. This is the command equivalent of the table chapter's stable row identity.
+
+A command registry should be inspectable at runtime. During development, it is useful to open a small diagnostic view that lists command id, text resource, enabled state, selected state, shortcut, shortcut scope, disabled reason, help topic, and presenters. This is the command equivalent of a repaint manager log. It turns invisible routing into data that can be reviewed.
+
+Such a diagnostic view often finds surprising bugs. A toolbar button may point at a different action instance from the menu item with the same text. A shortcut may invoke an old action left in a root pane after a screen was replaced. A disabled reason may be missing even though the button is disabled. A help topic may be attached to a button but not to the command. These defects are hard to see from the surface because the UI still looks plausible.
+
+The registry should also know command lifetime. Application commands such as About, Preferences, and Exit may live for the whole process. Document commands live while a document or workspace is active. Dialog commands live while the dialog is open. Context commands live while a provider is active. If all commands are put into one global map with no owner, stale actions will eventually operate on stale context.
+
+For tests, the registry can provide a stable lookup point. A test can ask for \api{customer.save}, change the form model, and assert enabled state and disabled reason. Another test can inspect that \api{customer.save} is bound to the platform Save shortcut in the window scope. A screenshot test can then focus on visual presentation instead of proving command identity indirectly through buttons.
+
+Instrumentation should include execution outcomes. A command invocation can report started, rejected by disabled state, rejected by validation, completed, failed, canceled, or superseded. These outcomes are useful in support logs and in tests. They also make asynchronous commands less mysterious because a stale result can be reported as superseded rather than as a generic failure.
+
+The registry is not a reason to centralize all behavior in one huge class. It is an index of command facts and adapters. The handler should still live near the screen or model that owns the workflow. The registry should make the handler findable, not turn every command into a switch statement. Centralized metadata and localized behavior are compatible when command ids are stable.
+
+This is also where code generation must be careful. Generated descriptors can register keys, resources, shortcut declarations, and adapter classes, but hand-written workflow code still decides what Save means for a particular screen. Good generation removes repetitive wiring and preserves local reasoning. Bad generation hides local reasoning behind a framework ceremony that is harder to debug than the original listeners.
+
+When introducing Corusco to an existing Swing application, the registry diagnostic is a useful migration tool. First list existing actions and listeners. Then merge duplicate presenters under stable command ids. Then move resources and shortcuts into descriptors. Then derive enablement from observable state. Each migration step can be measured by the diagnostic view: fewer duplicate actions, fewer unknown shortcuts, fewer presenter-only labels.
+
+The end state is not a more abstract button. It is a screen where a user operation has one name, one modeled state, one route through focus and shortcuts, and several honest presentations. That is easier for readers to understand, easier for tests to prove, and easier for Corusco to generate without hiding the Swing contracts underneath. It also scales to larger teams.
+
+The command that lies about enablement is the standard failure. A Delete button is disabled when no row is selected, but the Delete menu item remains enabled because it has a separate listener and separate predicate. The keyboard shortcut still works because it bypasses both. This is not a button bug. It is a command architecture bug. One command should own semantic enabled state, and presenters should reflect it.
+
+The stolen Enter key is the standard focus failure. A dialog binds Enter globally to OK. Inside the dialog is a multiline text area. Users cannot insert newlines because the window-level binding wins in a context where the text component should own Enter. The fix is not to abandon key bindings. The fix is to choose the right input-map scope and respect local editing semantics.
+
+The trapped focus field is the standard validation failure. A required field blocks focus from leaving while empty. The user wants to copy a value from another field, open Help, or cancel the dialog, but focus is trapped. The verifier is technically enforcing a rule and practically preventing recovery. Most forms should show errors and block final commit, not block navigation at every incomplete field.
+
+The context-sensitive Copy command is the standard routing drill. With focus in a text field, Copy copies selected text. With focus in a table and no active editor, Copy copies selected rows or cells. With focus in a diagram, Copy copies selected objects. The command key may be stable, but the handler is supplied by the active context. Focus owner alone is not always semantic owner; active editors and providers matter.
+
+The undo boundary drill asks what one user action means. Typing one character may be one text edit or part of a coalesced word edit. Dragging ten selected objects should usually be one undo step. Changing a filter is often not undoable domain state, but changing a customer name is. The command should declare whether it creates an undoable edit and which model events replay on undo.
+
+The shortcut audit drill lists all window-level accelerators and all component-level overrides. It checks platform menu masks, text component conflicts, table and tree defaults, root-pane default/cancel behavior, and duplicate shortcuts. This audit should happen before a release, not after users report that Ctrl+A no longer selects text in one field.
+
+The accessibility audit drill asks whether each command is reachable without a mouse, has a name, has a disabled reason when useful, and appears in a logical focus order. It also asks whether mnemonics conflict in one menu or dialog. Accessibility is not an extra command surface; it is one of the reasons command identity must be stable.
+
+The companion example for this chapter should make these drills visible. It
+should show one command through a toolbar button, menu item, and key binding. It
+should show a focus order that follows the workflow rather than construction
+order. It should show a routed command whose handler changes when focus moves
+from text field to table. These states can be small, but they should be real
+Swing states. A diagram that labels "button" and "menu" is less useful than a
+panel whose action adapter, input map, and command model actually agree.
+
+A deterministic screenshot state is enough for the book, but the example should
+also have a model-level or EDT smoke test. The test can assert that the Save
+action and menu item share the same underlying command, that the root pane has
+the platform shortcut installed, and that the command is disabled with a
+disabled reason when the form is invalid. The screenshot then reviews the
+visual result: text, icon density, focus order, and disabled presentation.
+
+When the example grows, resist the temptation to demonstrate every Swing
+shortcut. A compact example with Save, Delete, Copy, Help, and Cancel can teach
+the whole pattern: stable ids, several presenters, context routing, active
+editor commit, disabled reasons, and cleanup. A large catalog of shortcuts
+usually teaches less because the reader loses the route. The point is command
+architecture, not key trivia.
+
+Finally, inspect the example after changing Look-and-Feel, font size, and
+locale. Toolbar text may need to hide. Mnemonics may conflict. Disabled colors
+may lose contrast. A focus ring may move because border metrics changed. These
+are not afterthoughts; they are exactly why the command belongs to a stable
+descriptor while each presenter remains free to render appropriately.
+
+\textbf{Review questions.} Is this operation represented once or copied across listeners? Which presenters invoke it? Which input map scope makes it reachable? What context owns it when focus is inside an editor? What model facts drive enablement? What disabled reason explains it? Does it stop active editing before reading data? Does it block the EDT? Does it produce an undoable edit? How is it tested without clicking a button?
+
+\textbf{Corusco review questions.} Does the command have a stable key, resource keys, help topic, shortcut scope, enabled value, selected value, and lifecycle owner? Can generated metadata detect missing resources or shortcut conflicts? Are Swing adapters disposable? Do tests assert command state through the descriptor rather than through one button?
+
+\textbf{Checklist for command and focus architecture.} Use \api{Action} or command descriptors for reusable operations. Share one command across menu, toolbar, popup, and key binding presenters. Separate command state from visual presenter state. Use platform menu shortcut masks. Put window-level key bindings in one place. Avoid broad replacement of built-in input maps. Log focus before debugging key bindings. Use \api{InputVerifier} only for fast local checks. Preserve labels, mnemonics, focus order, and keyboard alternatives. Test actions without requiring mouse automation.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Convert three button listeners into shared \api{Action} instances used by buttons, menu items, and key bindings.
+\item Build a window-level command registry and install all accelerators from that registry.
+\item Create a focus logger using \api{KeyboardFocusManager}. Use it to debug a missing key binding.
+\item Implement a custom traversal policy for a dynamic form that skips hidden optional sections.
+\item Add Escape-to-cancel behavior to a dialog through root-pane maps, not a key listener.
+\item Write unit tests for action enablement driven by selection and permissions.
+\item Design an \api{InputVerifier} that marks errors without performing expensive validation.
+\item Add undo/redo actions that listen to an \api{UndoManager} and update names/enabled state.
+\item Create a command descriptor table listing key, text resource, tooltip resource, shortcut, help topic, and enabled rule for one window.
+\item Audit a text-heavy dialog for shortcuts that steal ordinary text-editing behavior.
+\end{enumerate}
+\end{exercisebox}

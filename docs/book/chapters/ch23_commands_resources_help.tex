@@ -1,0 +1,1344 @@
+\chapter{Commands, Resources, Help, and Typed Keys}
+\label{ch:commands-resources-help}
+\chapterquote{A command is not a button; a resource is not a string literal; a help topic is not a tooltip accident.}{The identity rule}
+
+\begin{chaptermap}
+Core question & How should repeated screen facts keep stable identity across buttons, menus, shortcuts, labels, validation, help, resources, generated code, and tests?\\
+Primary APIs & \api{ActionKey}, \api{ResourceKey}, \api{FieldKey}, \api{TextFieldKey}, \api{ComponentKey}, \api{HelpTopic}, \api{ActionDescriptor}, \api{Command}, \api{MutableCommand}, \api{CommandSet}, \api{Resources}, \api{HelpService}, \api{TooltipContent}, and \api{TooltipPolicy}.\\
+Plain Swing baseline & \api{Action} already centralizes button/menu/key behavior, but applications often still duplicate strings, shortcuts, listeners, and enabled logic.\\
+Swing connection & \api{SwingActionAdapter}, \api{CommandBehaviors}, key bindings, menus, toolbars, toggle buttons, F1 help, component keys, accessibility names, and composed tooltips.\\
+Companion examples & \typedKeyExample, \resourcesExample, \helpServiceExample, \commandExample, \generatedActionExample, and \generationExample.\\
+\end{chaptermap}
+
+\section{Identity before presentation}
+
+A desktop screen repeats facts. The Save operation appears in a button, a menu
+item, a toolbar item, a popup menu, a key binding, a command palette, a test,
+and perhaps a help page. The customer name field appears in a label, a text
+field, validation problems, parse errors, help, generated tests, resources,
+accessibility metadata, and screenshot fixtures. The Status column appears in a
+table header, tooltip, cell renderer, validation target, column persistence
+entry, export descriptor, and documentation. A screen that treats all of these
+facts as unrelated strings will eventually drift.
+
+\termdef{Stable identity}{in this chapter} is the durable name of a concept
+inside the application. It is not the visible English text and not the current
+component instance. The identity of Save should survive localization,
+copyediting, toolbar rearrangement, menu restructuring, and a Look-and-Feel
+change. The identity of a field should survive moving the field from one panel
+row to another. The identity of a table column should survive a translated
+header. The identity of a help topic should survive moving help content from an
+HTML file to an embedded help viewer.
+
+\termdef{Presentation}{in this chapter} is the current way an identity is made
+visible or usable. A button is presentation of a command. A label is
+presentation of a field. A tooltip is presentation of help, disabled state, and
+problems. A keyboard shortcut is presentation of an operation for keyboard
+users. A screenshot is presentation of a particular state. The presentation may
+change often. The identity should change rarely and deliberately.
+
+The distinction sounds obvious until one looks at real Swing code. A button is
+constructed with \api{"Save"}. A menu item is constructed with another
+\api{"Save"}. A key binding calls \api{saveCustomer}. A test finds a button by
+text. A help page is opened by the string \api{"customer/save"}. The status
+bar says \api{"Cannot save"}. The table column persists width under the
+localized header \api{"Status"}. None of these lines is large enough to look
+dangerous, but together they hide one fact behind many representations.
+
+\termdef{Typed key}{in Corusco} is a small value whose Java type says what kind
+of identity it represents. An \api{ActionKey} names an operation. A
+\api{ResourceKey<String>} names a typed resource value. A \api{FieldKey}
+names a semantic field. A \api{ComponentKey} names a view component contract. A
+\api{HelpTopic} names help content. Most of these keys are backed by strings,
+because strings are useful at resource, diagnostic, persistence, and generated
+code boundaries. The type prevents the strings from being mixed accidentally.
+
+\begin{lstlisting}[caption={Different identities, different key types.}]
+static final ActionKey SAVE =
+        ActionKey.of("customer/save");
+
+static final ResourceKey<String> SAVE_TEXT =
+        ResourceKey.of("customer/save/text", String.class);
+
+static final HelpTopic CUSTOMER_FORM =
+        HelpTopic.of("customer/form");
+\end{lstlisting}
+
+The stable ids remain visible. They can be searched, logged, tested, and used
+at bundle boundaries. The Java type tells the compiler which family of fact the
+id belongs to. Passing a help topic where a resource key is expected should not
+compile. Passing a component key where a field key is expected should not
+compile. This is small type discipline, but small type discipline pays off
+when the same screen facts appear in generated code, runtime bindings, tests,
+and documentation.
+
+\begin{principlebox}{stable id, changing presentation}
+The identity of a command, field, column, component, resource, or help topic
+should survive localization, Look-and-Feel changes, and layout rearrangement.
+Visible text is presentation; keys are identity.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\actionsSurfaceFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\accessibilityLabelsFigure}
+\end{minipage}
+\caption{Stable identity appears through many visual surfaces. Command presenters, labels, tooltips, accessible names, and tests should refer back to typed keys rather than visible strings.}
+\label{fig:commands-resources-screens}
+\end{figure}
+
+Figure~\ref{fig:commands-resources-screens} shows the ordinary visual result:
+buttons, labels, tooltips, and accessible metadata. The important part is not
+that the user sees keys. The user should not. The important part is that the
+program has a semantic counterpart for each repeated fact. Accessibility names
+should not be invented independently from field descriptors. Tooltips should
+not overwrite validation state. Tests should not search for localized button
+text when a command key exists. Help dispatch should not guess from component
+names. Identity becomes useful precisely because it is behind the presentation.
+
+Typed identity is also the bridge between handwritten Swing and generated
+companions. Generated form metadata can expose field keys and resource keys.
+Generated table metadata can expose column keys, headers, tooltips, help
+topics, and persistence ids. Generated action metadata can expose action keys,
+resource keys, descriptors, and descriptor lists. Handwritten code can use the
+same key types when generation is not involved. The screen is then assembled
+from stable facts rather than from reflection or naming conventions.
+
+It is important not to confuse stable ids with public business identifiers.
+\api{"customer/name"} is a UI or model metadata id, not necessarily a database
+column, API field, or external contract. Some projects choose to align those
+names, but Corusco does not require it. The stable id is stable inside the
+application boundary that owns it. It should be changed deliberately because
+tests, resources, generated code, and persisted UI state may refer to it.
+
+The practical review question is simple: if this visible thing changes text,
+position, or component class, what still identifies it? If the answer is
+``nothing'' or ``the English label'', the screen has a hidden coupling. If the
+answer is an \api{ActionKey}, \api{FieldKey}, \api{ComponentKey},
+\api{ResourceKey}, \api{HelpTopic}, or column key, the screen has a durable
+handle for tests, resources, generated companions, and behavior.
+
+\section{Typed key families}
+
+\api{ActionKey} is the stable identity for an operation. Generated
+\api{@UiAction} methods create action key constants in owner-specific
+companions, and handwritten code can create equivalent keys with
+\api{ActionKey.of}. Action keys are used by command sets, command adapters,
+menus, toolbars, keyboard bindings, diagnostics, and tests. They should name
+the operation, not the visual control. A Save button and Save menu item share
+one action key because they invoke one operation.
+
+\api{ResourceKey<T>} is the typed identity for a resource value. The key
+contains a stable id and a value type. In current generated UI metadata,
+\api{ResourceKey<String>} is common for labels, headers, command text,
+tooltips, dialog titles, and accessibility descriptions. The value type is not
+decorative. A present resource with the wrong runtime type is a configuration
+failure, not a value to coerce later in Swing. Resource keys let generated code
+and tests agree on what resource should exist without embedding visible text in
+Java source.
+
+\api{FieldKey<O,T>} is the identity for a field belonging to an owner model.
+It carries the stable field id, owner type, and value type. Text-editable field
+kinds use \api{TextFieldKey}, which can be converted to a general field key
+when a problem, validator, or focus resolver does not care about text-specific
+editing. Field keys appear in problem targets, validation rules, generated
+form companions, field resource keys, and tests. The field key is semantic; it
+does not say which component currently edits the field.
+
+\api{ComponentKey<C>} is the identity for a view component contract. It is
+generic and Swing-free at the core level, so Swing code can use
+\api{ComponentKey<JTextField>} or \api{ComponentKey<JTable>} without pulling
+\api{java.desktop} into core. Component keys are useful when tests need to
+find a component, when a problem focus resolver maps a problem to a component,
+or when help behavior should be associated with a view object. Unlike a field
+key, a component key is presentation-facing: it names the component contract,
+not the semantic field.
+
+\api{HelpTopic} is the stable identity for user assistance. A help topic is not
+the tooltip text. A tooltip may be brief, local, and composed from several
+sources. A help topic may open documentation, a support workflow, an embedded
+help pane, or a browser. Generated form-field and table-column descriptors can
+carry help topics from annotations. Handwritten code can use
+\api{HelpTopic.of}. The id should be stable enough for help routing and
+analytics.
+
+The key families overlap in real screens. A name text field may have a
+\api{TextFieldKey<CustomerEdit,String>} for validation and parsing, a
+\api{ResourceKey<String>} for its label, another resource key for its tooltip,
+a \api{HelpTopic} for longer documentation, and a
+\api{ComponentKey<JTextField>} for tests and focus. These are not five
+different opinions about the same string. They are five roles attached to one
+field. Mixing them would lose information.
+
+\begin{lstlisting}[caption={A generated-style key family for one field.}]
+static final TextFieldKey<CustomerEdit, String> NAME =
+        TextFieldKey.of("customer/name", CustomerEdit.class, String.class);
+static final ResourceKey<String> NAME_LABEL =
+        ResourceKey.of("customer/name/label", String.class);
+static final HelpTopic NAME_HELP =
+        HelpTopic.of("customer/name");
+static final ComponentKey<JTextField> NAME_COMPONENT =
+        ComponentKey.of("customer/name-field", JTextField.class);
+\end{lstlisting}
+
+The ids need not be identical, but they should be systematic. A systematic id
+scheme is a maintenance tool. It lets a developer infer that
+\api{customer/name/label} belongs near \api{customer/name}. It lets generated
+code create resource keys predictably. It lets resource review find unused or
+missing entries. It lets documentation connect field help to field metadata.
+The scheme should be stable, readable, and boring.
+
+Key ownership should be explicit. A form companion may own field keys and
+field-resource keys. A presenter companion may own action keys and action
+descriptors. A table companion may own column ids and table-resource keys. A
+view may own component keys because components are presentation contracts. A
+feature module may own help topics when help pages are organized by feature
+rather than by component. The owner is not necessarily the class that first
+uses the key. The owner is the place a reviewer should open when deciding
+whether the key may be renamed, removed, or split. This simple convention
+prevents a common generated-code problem: constants appear everywhere, but no
+one knows which constant is the authoritative one.
+
+Granularity is the next design choice. Too few keys make unrelated facts share
+identity. Too many keys make the screen noisy. A useful rule is to create a
+separate key when a fact can vary independently. The label of a field, the
+tooltip of a field, the help topic of a field, and the component used to edit
+the field can vary independently, so they deserve separate identities. The
+same Save operation shown in a button and a menu item does not vary
+independently, so it should use one action key. A table column and an export
+column may start with the same business meaning, but if export ordering,
+formatting, or visibility will be configured separately, they may need
+separate ids even when they share a human label.
+
+Avoid keys that describe an implementation accident. \api{leftPanelButton3} is
+not a command. \api{mainDialogTextField2} is not a field. \api{statusColumn}
+may be acceptable inside a single table companion, but \api{customer/status}
+is better if the key may be used by validation, export, or help. Good keys
+name the domain role at the level where the UI contract lives. They are short
+enough to read in logs, long enough to avoid collisions, and plain enough that
+resource authors can understand them without reading Swing code.
+
+There is also a cost to pretending that every string is an id. A visible label
+is optimized for users. It may contain punctuation, abbreviations, spaces,
+case, or local grammar. An id is optimized for machines and maintainers. It
+should be stable, ASCII-friendly, searchable, and insensitive to copyediting.
+The two purposes conflict often enough that combining them is not economy; it
+is deferred maintenance.
+
+\begin{pitfallbox}{string-compatible is not stringly typed}
+Typed keys are backed by strings so they can cross resource, persistence, and
+diagnostic boundaries. That does not mean application code should pass raw
+strings everywhere. Cross the boundary once, then keep the typed key.
+\end{pitfallbox}
+
+The \typedKeyExample{} companion program prints the diagnostic shape of the
+baseline key families. It is intentionally simple: readers see that text field
+keys, field keys, resource keys, action keys, help topics, component keys, and
+problem targets all carry stable ids but remain different Java types. This is
+the conceptual foundation for the rest of the chapter.
+
+\section{Commands as operation models}
+
+Swing's \api{Action} is one of the better parts of Swing architecture. It lets
+a button, menu item, toolbar item, and key binding share one operation. It also
+stores presentation properties such as name, tooltip, accelerator, mnemonic,
+icon, selected state, and enabled state. A disciplined plain Swing application
+can go far by using \api{Action} well.
+
+Many Swing applications nevertheless bypass it. A button gets one listener. A
+menu item gets another listener. A toolbar button gets copied text. A key
+binding calls a helper. Enabled state is recalculated in each location. The
+screen looks consistent on day one and drifts thereafter.
+
+\begin{lstlisting}[caption={The duplicated-listener smell.}]
+saveButton.addActionListener(event -> save());
+saveMenuItem.addActionListener(event -> save());
+toolbarSaveButton.addActionListener(event -> save());
+
+saveButton.setEnabled(canSave());
+saveMenuItem.setEnabled(canSave());
+toolbarSaveButton.setEnabled(canSave());
+\end{lstlisting}
+
+The operation is singular, but the code does not say so. When validation logic
+changes, someone must update three enabled-state branches. When the shortcut
+changes, someone must remember the menu and root pane. When a test wants to
+invoke Save, it may have to find a visible button. The missing object is the
+operation model.
+
+\termdef{Command}{in Corusco} is a toolkit-neutral action model. It owns a
+stable \api{ActionKey}, an \api{ActionDescriptor}, observable enabled state,
+observable selected state for toggle commands, and an execution method.
+
+\begin{lstlisting}[caption={The command contract in miniature.}]
+public interface Command {
+    ActionKey key();
+    ActionDescriptor descriptor();
+    ReadableValue<Boolean> enabled();
+    ReadableValue<Boolean> selected();
+    boolean selectable();
+    void execute();
+}
+\end{lstlisting}
+
+Execution is synchronous and occurs on the calling thread. The core command
+does not start background work by itself and does not marshal to Swing. When a
+command is triggered by Swing, the handler normally starts on the EDT and
+should delegate slow work to a task service. This rule keeps command identity
+separate from task policy. The command may start a task; it should not perform
+slow I/O merely because it is a command.
+
+\begin{pitfallbox}{commands are not background workers}
+A command may start a background task. It should not perform slow I/O directly
+on the EDT merely because it is a command.
+\end{pitfallbox}
+
+\api{ActionDescriptor} is immutable resource-key based metadata for a command.
+It stores the action key, optional text resource key, optional tooltip resource
+key, optional accelerator descriptor, optional mnemonic key code, and whether
+the command is selectable. This is the metadata that several UI surfaces can
+share. It is not the current enabled state and not the handler.
+
+\begin{lstlisting}[caption={Command metadata without visible strings.}]
+ActionDescriptor saveDescriptor =
+        ActionDescriptor.action(CustomerActions.SAVE, CustomerResources.SAVE_TEXT)
+                .withTooltip(CustomerResources.SAVE_TOOLTIP)
+                .withAccelerator(AcceleratorDescriptor.of(
+                        KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK))
+                .withMnemonic(KeyEvent.VK_S);
+\end{lstlisting}
+
+The descriptor uses resource keys rather than visible strings. A resource
+resolver can later turn those keys into localized text at the Swing boundary.
+Generated \api{@UiAction} methods create descriptor constants in
+owner-specific companions. Handwritten presenters can build descriptors
+directly. In both cases, descriptor identity is available before Swing
+components exist.
+
+\api{CommandFactory} creates mutable command instances from descriptors and
+handlers. It fails fast when a selectable descriptor is passed to a non-toggle
+factory or a non-selectable descriptor is passed to the toggle factory. This
+failure is valuable. It prevents generated metadata and runtime behavior from
+quietly disagreeing about whether selected state is part of the command.
+
+\api{MutableCommand} is the command shape used by presenters and generated
+companions when enabled or selected state changes. Save enablement may depend
+on dirty state, validation problems, permissions, and busy state. A toggle
+command may own selected state for a filter, preview mode, or view option. UI
+controls observe the command; they should not be the authority for the command
+state.
+
+\begin{lstlisting}[caption={Enablement belongs to the command, not each button.}]
+MutableCommand save = CommandFactory.command(saveDescriptor, presenter::save);
+
+DerivedValue<Boolean> canSave = DerivedValue.of(
+        () -> dirty.value()
+                && !problems.value().hasErrors()
+                && !busy.value(),
+        dirty, problems, busy);
+
+canSave.subscribe(event ->
+        save.setEnabled(Boolean.TRUE.equals(event.newValue()), event.origin()));
+\end{lstlisting}
+
+The exact derived-value factory may vary by screen, but the ownership is the
+point. The command owns enabled state. Buttons, menu items, toolbar items, and
+key bindings observe that state. A test can inspect the command without
+constructing a button. A command palette can list available commands without
+knowing which toolbar is visible.
+
+Toggle actions are a common source of duplication. A check-box menu item, a
+toolbar toggle button, and a keyboard command may all represent the same mode.
+If each control owns selected state, they drift. A selectable command exposes
+selected state as an observable value. Swing adapters can copy user-originated
+button selection back into the command before the handler runs. Other controls
+then see the same selected state. This is the same model as ordinary command
+enablement: the operation state has one owner, and presentations mirror it.
+
+\begin{migrationbox}{one toggle owner}
+When two toggle controls must stay synchronized, do not add listeners that copy
+state between controls. Introduce one selectable command or value, then bind
+both controls to it.
+\end{migrationbox}
+
+\api{CommandSet} groups commands under stable \api{ActionKey} values. It
+preserves insertion order for deterministic menu and toolbar construction, but
+lookup is by key. It owns no command lifecycle; it retains references but does
+not close, reset, or disable them. Duplicate keys fail at construction time.
+That failure protects tests, menus, command palettes, and generated view plans
+from ambiguous operation identity.
+
+\begin{lstlisting}[caption={A deterministic command registry.}]
+CommandSet commands = CommandSet.of(save, refresh, delete);
+
+Command refreshCommand = commands.require(CustomerActions.REFRESH);
+commands.find(CustomerActions.EXPORT)
+        .ifPresent(export -> menu.add(new SwingActionAdapter(export, resources)));
+\end{lstlisting}
+
+Command sets make review concrete. If a presenter exposes a command set, the
+screen's operational vocabulary is visible. Hidden operations in random
+listeners are easier to find because they do not appear in the set. Generated
+tests can assert command state by \api{ActionKey}. Generated menu assembly can
+use descriptor order. The command set is not a framework; it is a small
+registry that keeps operation identity out of component fields.
+
+Command state should be updated from model facts, not from component events
+whenever possible. A Save command becomes enabled because the form is dirty,
+valid, editable, and not already saving. A Delete command becomes enabled
+because a durable selection exists and the current user may delete it. A
+Refresh command may remain enabled during validation errors because it does
+not depend on the form. These rules are not button rules. They are operation
+rules. Once expressed as command state, the same facts naturally drive menu
+items, toolbar buttons, shortcuts, status text, command palettes, and tests.
+
+\api{ChangeOrigin} is useful here because command state often changes for
+different reasons. User input may make Save enabled. Loading a new record may
+make Save disabled because the form is clean. A background save may disable
+Save while the request is running. A permission refresh may disable Delete.
+The command only exposes the resulting enabled value, but surrounding code can
+still propagate the origin through observable values. Tests can then
+distinguish user-originated changes from programmatic refreshes when that
+distinction matters.
+
+Commands are also the right place to decide whether an operation is
+contextual. Some operations depend on the current selection, but the operation
+identity remains stable. \api{customer/delete-selected} may delete the current
+selected row. The selected row is not part of the action key. The selection is
+state read by the command handler and by the enablement rule. Other operations
+are genuinely different. \api{customer/delete-selected} and
+\api{customer/delete-all-filtered} should not be one command with a hidden
+mode flag merely because they both use the word Delete. If a command would
+need a tooltip paragraph to explain what it currently means, it may be two
+commands.
+
+Error reporting should not be hidden in the Swing action either. A command may
+call a presenter method that returns a result, throws a domain exception, or
+starts a task whose result is delivered later. The command adapter should not
+translate all failures into modal dialogs by itself. The presenter or task
+policy knows whether the result should appear as a form problem, status-line
+message, dialog, retry prompt, or logged diagnostic. Keeping the adapter thin
+prevents every button from inventing its own error policy.
+
+Undo and redo fit the same pattern. The Undo command has stable identity,
+enabled state, text resources, shortcut metadata, and an execution method.
+The current undo presentation may need richer text, such as ``Undo Rename'',
+but the operation remains Undo. A resource policy or command-description
+value can contribute the changing phrase. The base action key should not
+become \api{undo-rename}, \api{undo-delete}, and \api{undo-edit} unless those
+are separate operations in the application command model. This distinction is
+particularly important in editors, GIS tools, and design applications where
+command vocabulary is large and shortcuts are learned by habit.
+
+\section{Swing surfaces and command adapters}
+
+\api{SwingActionAdapter} adapts one Corusco \api{Command} to a Swing
+\api{Action}. It resolves descriptor metadata once during construction,
+observes enabled and selected values until closed, updates Swing action
+properties on the EDT, copies selected state from selectable button sources for
+mutable commands, and executes the command when Swing invokes the action. The
+adapter is disposable. Closing it removes subscriptions to command state. It
+does not destroy, disable, or reset the command.
+
+\begin{lstlisting}[caption={One command adapted to several Swing surfaces.}]
+Command save = presenter.commands().require(CustomerActions.SAVE);
+Action swingSave = new SwingActionAdapter(save, commandResources);
+
+saveButton.setAction(swingSave);
+saveMenuItem.setAction(swingSave);
+toolbar.add(swingSave);
+rootPane.getActionMap().put("customer.save", swingSave);
+\end{lstlisting}
+
+The adapter resolves metadata through \api{CommandResources}, a deliberately
+small Swing-boundary interface for string resource keys. The adapter does not
+observe later resource changes. This is a reasonable default: labels and
+tooltips are normally resolved when the view is built. Applications that
+support live locale switching can close and reinstall adapters or provide a
+more dynamic binding. Command enabled and selected state, however, is observed
+while the adapter is installed.
+
+Do not share one adapter instance indiscriminately across components with
+different lifecycles. Swing permits one \api{Action} to be used by several
+components, and that is often convenient inside one view. But the adapter owns
+subscriptions to command state. If a toolbar outlives a dialog button, the
+shared adapter's lifecycle becomes unclear. A generated behavior plan can
+install one adapter per component and close it with the component's behavior
+scope. The command remains shared; the Swing adapter is a view binding.
+
+\api{CommandBehaviors} wraps this pattern for generated and handwritten
+behavior plans. \api{commandButton} installs a command action on a button-like
+component and restores the previous action on close. \api{commandMenuItem}
+names the same pattern for menus. \api{commandKeyBinding} installs a command's
+accelerator into an input map and action map, records previous entries, and
+restores them on close. These behaviors are lifecycle handles, not global
+registration magic.
+
+\begin{lstlisting}[caption={Command behavior installation is reversible.}]
+try (BehaviorScope scope = new BehaviorScope()) {
+    scope.install(saveButton,
+            List.of(CommandBehaviors.commandButton(save, resources)));
+    scope.install(rootPanel,
+            List.of(CommandBehaviors.commandKeyBinding(
+                    save, resources,
+                    JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)));
+}
+\end{lstlisting}
+
+The key binding uses the command descriptor's accelerator metadata. The
+operation identity remains the \api{ActionKey}. The Swing input-map key may be
+the \api{ActionKey} itself or a Swing-local value; it is an implementation
+detail of that view. The important rule is that keyboard invocation and button
+invocation call the same command and observe the same enabled state. A shortcut
+that works while the button is disabled is a symptom of duplicate operation
+paths.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\actionsFocusFigure}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\includegraphics[width=\linewidth]{\behaviorPlanFigure}
+\end{minipage}
+\caption{Command identity participates in keyboard workflow and generated behavior plans. The same command metadata should drive visible controls, shortcuts, and installed interaction behavior.}
+\label{fig:commands-behavior-plan}
+\end{figure}
+
+Figure~\ref{fig:commands-behavior-plan} connects commands to the surrounding
+view plan. Keyboard shortcuts are not loose conveniences. They are part of the
+user workflow and must share command state. A generated behavior plan is not a
+bag of listeners. It is an ordered installation of reversible behaviors:
+command binding, validation decoration, composed tooltip, F1 help, busy
+overlay, and accessibility metadata. Command identity is one participant in
+that plan.
+
+Disabled reasons deserve explicit modeling. Enabled state tells whether a
+command can run. A disabled reason explains why. Swing \api{Action} has no
+standard disabled-reason property. Many applications solve this by overwriting
+the tooltip whenever the command becomes disabled. That works until static
+help, validation problems, and help hints need the same tooltip. Model the
+reason as data, such as a \api{ReadableValue<String>} or a problem set. Then a
+tooltip policy, status line, command palette, or accessibility description can
+compose it with other contributors.
+
+\begin{lstlisting}[caption={Command enablement with a reason value.}]
+SimpleValue<String> saveDisabledReason = SimpleValue.of("");
+
+canSave.subscribe(event -> {
+    boolean enabled = Boolean.TRUE.equals(event.newValue());
+    save.setEnabled(enabled, event.origin());
+    saveDisabledReason.setValue(enabled ? "" : "Fix validation errors",
+            event.origin());
+});
+\end{lstlisting}
+
+The reason is not merely visual text. It is part of the command state from the
+user's point of view. Save disabled because there are validation errors is
+different from Save disabled because there are no changes, because the record
+is read-only, because a save is already running, or because permissions are
+missing. A boolean cannot express those differences. A reason value can.
+
+Swing's input maps make duplicate paths especially easy to create. A root pane
+can bind Ctrl+S to one action, a focused editor can bind Ctrl+S to another
+action, a menu item can carry an accelerator, and a toolbar button can listen
+directly to a helper. Swing will dispatch according to focus and input-map
+condition, not according to the developer's intent. Corusco does not change
+Swing's dispatch rules. It makes the installed target explicit. A command key
+binding should be installed with the intended input-map condition, and the
+action-map entry should invoke the same command object as the visible
+presentations.
+
+The input-map condition is a design decision. \api{WHEN\_FOCUSED} belongs to
+component-local editing gestures. \api{WHEN\_ANCESTOR\_OF\_FOCUSED\_COMPONENT}
+belongs to a panel or dialog workflow. \api{WHEN\_IN\_FOCUSED\_WINDOW} belongs
+to broader window commands and should be used carefully because it can shadow
+local editing behavior. A generated behavior plan can record the condition
+next to the descriptor. A code review can then ask whether the shortcut should
+belong to the field, the form, the dialog, or the whole window. Without that
+explicit question, shortcuts tend to migrate upward until they become
+surprising.
+
+Menus add another wrinkle. A \api{JMenuItem} created from a Swing
+\api{Action} reads standard action properties, but menus also participate in
+selection models, popup lifecycles, and platform menu conventions. A popup
+menu attached to a table row may need to refresh command enablement just
+before it opens because selection changed under the pointer. That refresh
+should update command state, not replace the menu item's listener. The item
+then remains a presentation of the command, and the popup merely asks the
+presenter to re-evaluate context before showing.
+
+Toolbars have density pressure. A toolbar may omit text, show only icons, or
+group commands visually. This is exactly where command descriptors help. The
+toolbar can choose an icon-only presentation while the command descriptor
+still supplies text for accessible names and tooltips. If the toolbar stores
+only an icon and a listener, accessibility and tests are forced to guess. If
+it adapts a command, the visible density can change without losing semantic
+metadata.
+
+Do not confuse adapter reuse with command reuse. The command is the shared
+operation model. Adapters are Swing objects installed into a particular view
+surface. A dialog can create a button adapter and a key-binding adapter for
+the same command, then close both when the dialog closes. A main window can
+keep its own adapter for the same command if the command itself is shared at
+the application level. This keeps lifecycle local without duplicating
+operation state.
+
+\begin{pitfallbox}{two operation paths}
+If a shortcut can run while the button is disabled, or if a menu item and
+toolbar button disagree about selected state, the screen probably has duplicate
+operation paths. Route every presentation through the same command.
+\end{pitfallbox}
+
+\section{Resources and localization boundaries}
+
+\termdef{Resource key}{in Corusco} is a typed key for a value resolved from a
+resource source. A \api{ResourceKey<String>} may name a label, tooltip, table
+header, dialog title, command text, accessibility description, or help hint.
+The \api{Resources} interface resolves keys and checks the expected value type.
+It is Swing-free and does not prescribe whether values come from a map, a
+resource bundle, a database, a generated file, or an application localization
+service.
+
+\begin{lstlisting}[caption={Typed resource lookup.}]
+Resources resources = Resources.of(Map.of(
+        "customer/save/text", "Save",
+        "customer/save/tooltip", "Save customer changes"));
+
+String text = resources.require(CustomerResources.SAVE_TEXT);
+String tooltip = resources.resolve(CustomerResources.SAVE_TOOLTIP, "");
+\end{lstlisting}
+
+The boundary is important. Inside the application, generated descriptors hold
+typed resource keys. At the resource provider boundary, a map or bundle may be
+keyed by strings. Lookup checks that a present value is assignable to the
+key's declared value type. Missing optional values are represented as
+\api{Optional.empty} or fallbacks. Required lookup throws \api{ResourceException}
+when absent or wrong-typed. This contract catches configuration mistakes close
+to the resource boundary rather than later in component construction.
+
+\api{MapResources} is intentionally small. It copies an input map, treats ids
+as stable resource ids, rejects null values, and checks runtime type during
+lookup. It is suitable for examples, tests, and small applications. A
+production application may have a localized, reloadable, cached, or layered
+resource service. That service can still implement \api{Resources}; generated
+descriptors and tests do not need to know the source.
+
+Resource failure policy has two useful modes. Required lookup fails when a
+resource must exist in a finished application. Fallback lookup supplies a
+default when missing text is acceptable. Use required lookup aggressively in
+tests for generated UI text, menus, table headers, and dialog titles. A missing
+resource is cheap to fix before release and annoying to discover in an
+installer. Use fallbacks for optional help, experimental examples, diagnostics,
+or soft metadata where absence is part of the policy.
+
+\begin{pitfallbox}{localized text is not identity}
+Do not use a visible table header, button text, or tooltip as a persistence
+key, test selector, command id, or help topic. Localization and copyediting will
+break it.
+\end{pitfallbox}
+
+Generated resource companions solve a problem that old Swing applications
+often solve poorly. One extreme hard-codes strings in component construction.
+The other extreme uses a resource bundle whose keys are unrelated to Java
+declarations. Generated companions keep identity near source declarations while
+keeping visible strings external. A generated table companion may expose header
+and tooltip keys for each column. A generated form companion may expose label,
+tooltip, and help keys for each field. A generated action companion may expose
+text and tooltip keys for each command.
+
+\begin{coruscobox}{Resource keys from declarations}
+Corusco generation makes resource identity follow the source declaration. The
+generated key is stable, typed, and available to tests, while the visible
+string remains external.
+\end{coruscobox}
+
+Localization is not only translation. It is also review, terminology,
+accessibility wording, and product tone. A label may change because the product
+team chooses clearer language. A tooltip may be shortened. A command text may
+be platform-specific. A mnemonic may differ by locale. If tests, persistence,
+or help routing depend on the visible text, ordinary copyediting becomes a
+breaking change. Resource keys keep copyediting in the presentation layer.
+
+Resource keys can also support consistency checks. A build or test can scan
+generated resource keys and assert that required values exist. It can compare
+resources across locales. It can detect duplicate visible text if that matters.
+It can ensure every visible command has tooltip text or every help-enabled
+field has a static hint. These checks are possible because the resources are
+named facts, not incidental strings.
+
+The \resourcesExample{} companion program demonstrates typed lookup with
+generated table resource keys. It resolves a header, resolves a tooltip, and
+uses a fallback for a missing optional value. That is the intended scale of the
+resource abstraction: small enough for examples, strong enough to keep
+generated metadata and runtime presentation aligned.
+
+Resource bundles remain a fine storage mechanism. The point is not to replace
+\api{ResourceBundle} with a new religion. The point is to keep the typed
+boundary at the place where application code asks for a value. A provider may
+load bundle keys, layer customer-specific overrides, cache values, and expose
+them through \api{Resources}. Generated descriptors and Swing adapters still
+see typed keys. Tests can still ask for required keys. The underlying storage
+may change from bundles to database-backed localization without rewriting
+button construction.
+
+Pseudo-localization is a useful resource test for Swing. Replace English
+strings with longer bracketed strings, accented variants, or deliberately wide
+phrases, then run the screenshot harness. MigLayout forms that use sensible
+growth constraints usually survive. Hand-positioned labels, narrow buttons,
+and table headers that assume English length do not. This kind of test belongs
+near resource infrastructure because it tests the same boundary: visible text
+may change while identity stays stable. The harness should locate controls by
+typed keys, not by the pseudo-localized text it is trying to inspect.
+
+Mnemonic policy also belongs at the resource boundary more often than early
+examples suggest. English examples often write \api{KeyEvent.VK\_S} beside the
+Save descriptor, and that is acceptable for a small fixed-language program.
+In a localized application, visible text and mnemonic choice are reviewed
+together. The descriptor may carry a default mnemonic, but a locale resource
+or platform policy may override it. The command key remains
+\api{customer/save}. The visible text and mnemonic remain presentation.
+
+Accelerators differ from mnemonics because users learn them as commands, not
+as underlined letters in localized labels. Ctrl+S for Save is often stable
+across locales. Even so, accelerator policy may vary by platform, by product
+edition, by input mode, or by user preference. A descriptor is a good place
+for the default accelerator. The behavior installation is the place to apply
+application policy and decide where the key is active. Tests should assert the
+default descriptor when generation is under test and assert installed bindings
+when a view's workflow is under test.
+
+Resource values can be richer than strings, but the first version of most UI
+metadata should resist overgeneralization. Strings, key strokes, icons, colors,
+and format patterns all have different review processes. A typed
+\api{ResourceKey<T>} can name any value type, but mixing all presentation
+assets into one unstructured map tends to hide policy. A command icon, for
+example, may need light and dark variants, high-contrast variants, and
+accessibility review. It may be better represented by an icon service keyed by
+action identity than by a raw \api{ResourceKey<Icon>}. The type system enables
+the choice; it does not remove the need for design ownership.
+
+Resource tests should be written at several levels. A unit test for
+\api{MapResources} verifies missing and wrong-typed values. A generated
+metadata test verifies that every required descriptor key exists in the sample
+resource set. A screen smoke test verifies that the resolved values reach
+buttons, labels, table headers, and tooltips. A screenshot review verifies
+that the resulting text fits. These are not redundant tests. Each one protects
+a different boundary: provider correctness, metadata completeness, Swing
+binding, and visual layout.
+
+\section{Help topics and composed tooltips}
+
+\termdef{Help topic}{in Corusco} is a stable identifier for user assistance.
+It is not the tooltip text. A tooltip may be short, local, and transient. A
+help topic may open a page, focus an embedded documentation panel, launch a
+support workflow, record analytics, or invoke a platform help system. The
+topic id is the durable bridge between screen metadata and whatever help
+infrastructure the application chooses.
+
+\api{HelpService} accepts a \api{HelpTopic} or \api{HelpRequest}. A request
+can carry the source object and optional context. The default help service is
+simple: it records the most recent request for diagnostics and delegates to a
+configured handler. A handler might open a browser, show embedded help, or
+record the request in a test. The core service owns neither the Swing
+component in the source field nor the UI opened by the handler.
+
+\begin{lstlisting}[caption={Opening typed help.}]
+HelpService help = application.helpService();
+
+help.open(CustomerHelp.CUSTOMER_FORM, formPanel, "credit-limit");
+\end{lstlisting}
+
+The common Swing help gesture is F1. But F1 should not simply open a generic
+page. It should open the topic associated with the focused component, selected
+command, table column, or screen. That requires metadata. A generated field
+descriptor can carry a help topic. A component key can identify the focused
+component. A table column descriptor can carry column help. A behavior can walk
+from component to descriptor to service request.
+
+\api{StandardBehaviors.helpOnF1} shows the Swing boundary. Installation
+requires a help service in the behavior context. The behavior installs an F1
+input/action-map entry on the component, invokes the help service from the EDT,
+and restores previous entries during cleanup. The help behavior does not know
+where help content lives. It routes a typed topic to the configured service.
+
+\begin{lstlisting}[caption={Help behavior is metadata plus reversible Swing wiring.}]
+BehaviorScope scope = new BehaviorScope(helpService);
+
+scope.install(nameField,
+        List.of(StandardBehaviors.helpOnF1(CustomerHelp.NAME_FIELD)));
+\end{lstlisting}
+
+The behavior's cleanup is part of the same lifecycle story as command key
+bindings. Installing F1 help changes Swing input and action maps. Closing the
+behavior restores previous entries. A help binding left behind after a dialog
+closes can route F1 to a dead component or stale topic. Help is user-facing,
+but the implementation is still a listener relationship with an owner.
+
+Tooltips often have several contributors: validation problems, parse problems,
+disabled reasons, static descriptor help, formatting examples, and a help
+available hint. Swing components have one tooltip slot. If each contributor
+calls \api{setToolTipText}, the last writer wins and the user loses context.
+\api{TooltipContent} keeps the contributors separate. \api{TooltipPolicy}
+composes them in deterministic order.
+
+\begin{lstlisting}[caption={Composing tooltip text from several concerns.}]
+TooltipContent content = new TooltipContent(
+        form.problems().filter(ProblemFilter.field(CustomerFields.NAME)),
+        disabledReason,
+        resources.resolve(CustomerResources.NAME_TOOLTIP, ""),
+        true);
+
+Optional<String> tooltip = TooltipPolicy.standard().compose(content);
+\end{lstlisting}
+
+The standard policy places the most severe problem first, then the disabled
+reason, then static help, then the help indicator. It returns ordered
+plain-text lines or a newline-separated string. It does not perform resource
+lookup, localization, problem filtering, or Swing HTML rendering. This is
+intentional. A renderer, binding, accessibility adapter, or test can inspect
+the same ordered content. Swing-specific formatting remains at the edge.
+
+The ordering is humane. If a field is invalid, the first thing the user needs
+is the problem. If the command is disabled, the user needs the reason. If
+nothing is wrong, static help can explain the expected input. If richer help is
+available, the final line can advertise F1. A tooltip that always starts with
+static help hides urgent feedback. A tooltip that always overwrites help with
+disabled text hides documentation. A composed tooltip lets each concern keep
+its place.
+
+Help and tooltip metadata also support accessibility. A screen reader may need
+an accessible description rather than a hover tooltip. A keyboard user may need
+F1 help because hover is irrelevant. A screenshot test may need stable text
+for a tooltip state. Keeping problem messages, disabled reasons, static help,
+and help topics separate gives the application several ways to present the
+same underlying facts. Collapsing them into one string gives only one fragile
+presentation.
+
+The \helpServiceExample{} companion program demonstrates help dispatch through
+generated descriptor metadata. It does not open a browser because the point is
+the contract: a descriptor supplies a stable topic, the service records and
+dispatches a structured request, and the test asserts topic id and context.
+The visual help system can evolve after that boundary is stable.
+
+Help context should be chosen deliberately. A field topic may need a field id,
+the current validation problem, or the current parse text. A table-column
+topic may need the row type and column id but not the selected row's private
+data. A command topic may need the action key and disabled reason. Passing no
+context is sometimes correct; passing the entire presenter is usually too
+much. A \api{HelpRequest} should contain enough information for the help
+handler to route the user, not enough information to become a hidden service
+locator.
+
+Table help is a good stress test. The focused component is only the
+\api{JTable}, while the user's question is often about a cell, row, or column.
+The help behavior therefore needs help metadata from the table descriptor and
+selection or hit-test context from Swing. A generated column descriptor can
+carry the help topic. The installed behavior can determine the current column
+and submit a request for that topic with column context. The help service does
+not need to know how \api{JTable} calculates view and model coordinates. It
+receives a structured request.
+
+Command help is similar. F1 while a toolbar button is focused may open help
+for the command, not for the button class. A disabled command can route help
+that explains the operation and perhaps the disabled reason. A command palette
+can show a help affordance for each listed command because action identity and
+help identity are explicit. Without command identity, help systems often fall
+back to page-level help, which is cheaper to wire but less useful when the
+user is stuck on a particular operation.
+
+Tooltip text has a short shelf life. It is read in a moment, often while the
+pointer is covering the screen. It should not become a dumping ground for all
+documentation. If the tooltip must contain several lines of explanation, ask
+whether the static help belongs in a help topic instead. A composed tooltip is
+valuable because it can put urgent transient facts first and leave longer
+material to F1 help. The tooltip policy is therefore also an editorial policy:
+short problem, short reason, short hint, longer help elsewhere.
+
+Problems and disabled reasons should not fight each other. A field can be
+invalid while the Save command is disabled because of that invalid field. The
+field tooltip should lead with the field problem. The Save button tooltip may
+lead with ``Fix validation errors''. A problem summary may list all invalid
+fields. These are different presentations of related facts. If every
+presentation pulls from the same problem set and command reason values, they
+can remain consistent without sharing one giant text string.
+
+Help availability must also be discoverable to keyboard users. A hover-only
+hint is insufficient. A visible Help button, F1 binding, menu item, command
+palette entry, or accessible description can expose the same topic. Corusco's
+help topic type does not prescribe which surfaces are present. It gives each
+surface a stable target. The UI design can then decide how explicit help
+should be for the screen's audience and density.
+
+\section{Generated metadata and handwritten code}
+
+Corusco generation is most valuable when it turns repeated facts into stable
+metadata without hiding the screen's design. An \api{@UiAction} method can
+produce action keys, text resource keys, descriptors, selectable flags,
+mnemonics, accelerators, and descriptor lists. A \api{@SwingForm} model can
+produce field keys, resource keys, validation metadata, and generated binding
+helpers. A \api{@SwingTable} descriptor can produce column keys, headers,
+tooltips, help topics, persistence ids, and table helpers. The generated code
+does not need runtime reflection because the facts are ordinary constants and
+methods.
+
+\begin{lstlisting}[caption={Generated action metadata is ordinary Java.}]
+@UiAction(
+        id = "generated-customer/save",
+        tooltip = "generated-customer/save/tooltip",
+        mnemonic = 83)
+void save() {
+}
+
+ActionDescriptor descriptor =
+        GeneratedActionMetadataExampleActions.SAVE;
+\end{lstlisting}
+
+Generated metadata should stop at the right boundary. A descriptor is not a
+button. A resource key is not a localized string. A help topic is not a help
+viewer. A field key is not a text field. A generated companion can provide
+these facts so handwritten or generated view assembly can use them. The screen
+author still decides layout, grouping, density, and workflow. This is the same
+theme as in the dialog and MigLayout chapters: generation should remove
+repeated wiring, not bury product design.
+
+Handwritten code should use the same types. A feature that is not generated
+can still declare an \api{ActionKey}, \api{ResourceKey}, and
+\api{ActionDescriptor}. A custom component can still have a
+\api{ComponentKey}. A one-off help topic can still be a \api{HelpTopic}. This
+keeps handwritten and generated parts interoperable. Tests do not need to know
+whether a key came from an annotation processor or a handwritten companion.
+
+\begin{coruscobox}{Generated facts, visible design}
+Corusco generation should produce stable facts and safe wiring: keys,
+descriptors, resource identities, validation metadata, and installable
+behaviors. Layout, grouping, and workflow remain reviewable application code
+unless the project explicitly chooses generated layout for a narrow purpose.
+\end{coruscobox}
+
+Generated names should be predictable. A presenter action companion might be
+named after the presenter. A table resource companion should be named after the
+row or table descriptor. A form fields companion should be named after the
+form. Predictability lets chapters, tests, and examples mention generated
+artifacts without long paths. It also lets developers navigate by intent:
+field metadata near the form, action metadata near the presenter, table
+metadata near the row descriptor.
+
+Annotation processor diagnostics should use the same identity vocabulary.
+Duplicate action ids, missing resource ids, unsupported mnemonic values,
+invalid help topics, and conflicting generated names should be reported before
+runtime. A runtime failure in a generated Swing adapter is late; a compiler
+diagnostic is early. This is one reason generated metadata is preferable to
+runtime annotation scanning for Swing screens: the build can fail while the
+source context is still present.
+
+Generated descriptor lists can assemble menus and toolbars deterministically,
+but application policy still decides which descriptors appear where. A menu may
+include every command. A toolbar may show only frequent commands. A popup menu
+may show row-specific commands. A command palette may list hidden operations.
+All of these surfaces can share one command set and descriptor identity while
+choosing different presentations.
+
+The \generatedActionExample{} companion program demonstrates generated action
+metadata from annotated methods. The \generationExample{} companion program
+shows generated customer metadata in a broader example. Read both as identity
+examples before reading them as generation examples: which ids are stable,
+which strings are resources, which descriptors are generated, and where
+runtime command state begins.
+
+\section{Testing identity and behavior}
+
+Typed keys make tests less brittle. A test can assert that the Save command is
+disabled, that it has the expected action key, that its text resource resolves,
+that its tooltip resource exists, and that F1 opens the expected help topic.
+It does not need to search for a button whose current localized text is
+\api{"Save"}. Visible text can be tested where visible text matters, but it
+should not be the only handle for a command.
+
+\begin{lstlisting}[caption={Testing command state by key.}]
+Command save = commands.require(CustomerActions.SAVE);
+
+assertThat(save.key()).isEqualTo(CustomerActions.SAVE);
+assertThat(save.isEnabled()).isFalse();
+
+form.name.setRawText("Grace", ChangeOrigin.USER);
+assertThat(save.isEnabled()).isTrue();
+\end{lstlisting}
+
+The Swing adapter deserves a narrow EDT test. Construct a command, adapt it,
+install it on a button or menu item, change command enabled state, and assert
+the Swing component updates. For selectable commands, trigger a toggle button
+and assert that the mutable command selected state receives a user-originated
+change. Then close the adapter or behavior scope and assert that later command
+changes do not update the disposed component. This tests Swing binding
+lifecycle without testing business policy through button clicks.
+
+Resource tests should assert required resources through typed keys. A generated
+form resource test can iterate generated required label keys and call
+\api{resources.require}. A generated table resource test can require every
+header key. A command resource test can require every command text key and
+optionally every tooltip key. Wrong-typed values should be tested at least once
+for the resource provider. Missing resources should fail before screenshots or
+manual testing reveal blank labels.
+
+Help tests should assert structured requests. A fake or default help service
+can record the last \api{HelpRequest}. An F1 behavior test can install help on
+a component, trigger the input/action-map entry, and assert that the request
+contains the expected \api{HelpTopic}, source component, and context. The test
+does not need a browser. It proves the boundary between Swing focus behavior
+and application help routing.
+
+Tooltip tests should inspect composed lines, not only final Swing strings. A
+policy test can pass problems, a disabled reason, static help, and help
+available, then assert the ordered lines. A Swing binding test can separately
+assert that the component's tooltip receives the composed string and is
+restored on close. This separation avoids coupling core tooltip policy to
+Swing formatting.
+
+Component-key tests should prefer typed markers over component names.
+\api{SwingComponentKeys.mark} stores a \api{ComponentKey} in a client property.
+\api{SwingMvpTester} can then find components by key, enter text, select
+tables, execute commands by \api{ActionKey}, and assert problems by
+\api{FieldKey}. Component names remain a useful compatibility fallback, but
+typed keys communicate what kind of component the test expects.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.86\linewidth]{\testingKeysFigure}
+\caption{Typed component keys make Swing tests speak about generated view contracts instead of localized text or fragile component traversal.}
+\label{fig:commands-testing-keys}
+\end{figure}
+
+Figure~\ref{fig:commands-testing-keys} belongs in this chapter even though the
+testing chapter returns to it later. Testing is one of the clearest payoffs of
+stable identity. A test that says \api{executeCommand(CustomerActions.SAVE)}
+or \api{enterText(CustomerViewKeys.NAME\_FIELD, "Grace")} is easier to read
+and less fragile than a test that searches for a button named \api{"Save"} and
+a text field at index two.
+
+Screenshot tests need both stable identity and visible text. The screenshot
+should show localized labels and real tooltips. The test harness should locate
+components and command states by typed keys. If a screenshot changes because
+the label text was improved, the screenshot diff should show the visual
+change, but the harness should not fail to find the component. Stable identity
+keeps visual review and test mechanics separate.
+
+\section{Worked review of a customer screen}
+
+Consider a customer screen with a search field, a results table, a details
+form, Save and Refresh commands, a Delete command available only for selected
+rows, a Show inactive toggle, field-level help, and generated table columns.
+The plain Swing implementation may start with button text, menu text, and
+listeners. The Corusco review starts by listing identities.
+
+The operations are \api{customer/save}, \api{customer/refresh},
+\api{customer/delete}, and \api{customer/show-inactive}. Each receives an
+\api{ActionKey}. Save, Refresh, and Delete are ordinary commands. Show inactive
+is selectable. Each has a descriptor with resource keys for text and tooltip.
+Refresh may have an accelerator. Save may have a mnemonic. Delete may have a
+disabled reason when no row is selected or permissions are missing.
+
+The fields are \api{customer/name}, \api{customer/credit-limit}, and
+\api{customer/status}. Each receives field keys through generated form
+metadata. Labels and tooltips are resource keys. Field help topics point to
+documentation. Components receive component keys for tests and focus recovery:
+name field, credit field, status combo, search field, results table. The table
+columns have column keys, header resource keys, tooltip resource keys, help
+topics, and persistence ids. None of these ids is the English text shown to the
+user.
+
+The presenter constructs commands from descriptors and handlers. Save
+enablement derives from dirty state, problem state, busy state, and permissions.
+Refresh enablement derives from screen lifecycle and refresh busy state. Delete
+enablement derives from selection and permissions. Show inactive selected
+state is a model value. The button row, menu, toolbar, popup menu, and key
+bindings all adapt the commands. There is no separate delete listener on the
+popup menu.
+
+Resources are verified before the screen is considered complete. Every command
+text key resolves. Required field labels resolve. Table headers resolve. Static
+tooltips resolve where descriptors declare them. Optional help hints use
+fallbacks only where the policy says optional. The resource test uses typed
+keys and does not assert that English text is unchanged unless the text itself
+is the product requirement.
+
+Help behavior installs F1 on fields and the results table. If focus is in the
+name field, F1 opens the name help topic. If focus is in the table header or a
+cell whose column descriptor has help, F1 opens column help. If focus is in the
+screen background, F1 opens screen help. The help service receives structured
+requests with topic, source, and context. Tooltips advertise help availability
+only when a topic exists.
+
+Tooltips are composed. The name field's tooltip may show ``Name is required''
+when invalid, then a disabled reason if the field is read-only, then static
+help, then an F1 hint. The Save button's tooltip may show why Save is disabled
+or the static save tooltip. The table column tooltip may show a column
+description and help indicator. No part of the screen should have three
+listeners racing to call \api{setToolTipText}.
+
+Tests speak in identities. A presenter test executes Save by \api{ActionKey}
+and asserts that the handler did not run while disabled. A resource test
+requires generated keys. A help behavior test triggers F1 and asserts the
+topic. A Swing view test finds the name field by \api{ComponentKey}. A table
+state test persists column width under a stable column id, not the localized
+header. The tests become a map of the screen's semantic structure.
+
+The review table is short but effective:
+
+\begin{center}
+\textbf{Command and identity review table.}
+\end{center}
+
+\noindent\begin{tabularx}{\linewidth}{@{}p{0.32\linewidth}X@{}}
+\toprule
+Symptom & Review question\\
+\midrule
+Two listeners call the same method & Should this be one command presented twice?\\
+Button and menu enabled state differ & Which object owns command enablement?\\
+Shortcut works while button is disabled & Is the key binding using the same command?\\
+Tooltip disappears when disabled & Which contributors should the tooltip compose?\\
+Test searches for button text & Can the test locate the command by \api{ActionKey}?\\
+Localized table header used as id & Which typed key or column key is stable?\\
+F1 opens a generic page & Which descriptor supplies the focused help topic?\\
+Generated metadata is hard to find & Are companion names predictable and close to declarations?\\
+\bottomrule
+\end{tabularx}
+
+The table is not meant to shame plain Swing. Plain Swing \api{Action} is good
+architecture. The Corusco question is what happens around it: typed identity,
+resource lookup, generated descriptors, help routing, composed tooltips,
+lifecycle cleanup, and tests. Corusco supplies names for those surrounding
+concerns so they do not become conventions carried only in memory.
+
+\section{Operational conventions}
+
+Identity systems fail when conventions are too clever to remember. A project
+should choose boring id shapes and keep them. Action ids might use
+\api{area/object/verb}, such as \api{customer/save} or
+\api{orders/export}. Field ids might use \api{object/field}, such as
+\api{customer/name}. Resource ids may extend the semantic id with a role:
+\api{customer/name/label}, \api{customer/name/tooltip},
+\api{customer/save/text}. Help topics may share the semantic stem when that
+helps documentation: \api{customer/name}. Component keys may include a view
+role: \api{customer/name-field} or \api{customer/results-table}. The exact
+scheme is less important than consistency, but consistency should be checked
+by code review and generation tests.
+
+Names should be stable, not overly encoded. Avoid ids that include visual
+position, English words, row numbers, or Swing class names unless those facts
+are truly part of the identity. \api{customer/edit-dialog/row-3/name} is a
+bad field id because the row may move. \api{customer/name} is better.
+\api{customer/nameTextField} may be a reasonable component key in a small
+handwritten view, but \api{customer/name-field} is less tied to the current
+component class. \api{saveButtonText} is a poor resource id because the Save
+operation may appear in menus and command palettes too.
+
+The id scheme should also leave room for sibling concepts. A field may need a
+label, tooltip, placeholder, accessible description, validation message, and
+help topic. If the first resource key is \api{customer/name}, there is no
+obvious place for siblings. If the field id is \api{customer/name} and the
+label resource is \api{customer/name/label}, the family can grow. Generated
+companions should follow the same pattern so handwritten keys and generated
+keys feel like one vocabulary.
+
+Versioning is a real concern. If a key is used only inside one screen and no
+state is persisted under it, changing the id is a refactoring. If a key is used
+for table-column persistence, saved layouts, user preferences, screenshots,
+external help routing, or analytics, changing it is a migration. The code does
+not know the difference unless the project records where keys cross durable
+boundaries. Table column ids and action ids often become durable sooner than
+developers expect. Treat them with the same respect as serialized field names.
+
+Resource audits should be automated. A generated companion can expose the
+resource keys it requires. A test can iterate them and call
+\api{resources.require}. A localization build can compare keys across locales.
+A screenshot build can run with a pseudo-locale whose strings are longer, so
+layout problems appear before real translations arrive. A resource audit can
+also detect resource values that are present but wrong-typed. These checks are
+cheap because resource identity is typed and enumerable.
+
+Missing resource policy should be different in development, tests, and
+production only when the difference is deliberate. Tests should generally fail
+fast on missing required resources. Development builds may show visible marker
+text for missing optional strings so the screen can still be inspected.
+Production builds may fail for missing required command text but quietly omit
+optional help hints. What matters is that the policy is in the resource
+boundary, not scattered across button construction and table header code.
+
+Live locale switching is possible, but it should not be accidental. The simple
+\api{SwingActionAdapter} resolves metadata once during construction. That is
+excellent for ordinary applications. If the application supports live resource
+replacement, commands and components need resource bindings rather than
+one-time resolution. The view can close and reinstall adapters, or a dynamic
+resource binding can observe resource changes. Do not assume one-time
+adapters will magically update when a resource bundle changes. The adapter
+contract should remain explicit.
+
+Permissions are another source of command-state confusion. A Save command may
+be disabled because the form is invalid, because the form is clean, because a
+save is running, or because the user lacks permission. These reasons are not
+equivalent. Permission failure may need a lock icon, a tooltip, a help link, or
+an audit message. Validation failure needs problem focus. Busy state may need a
+progress indicator. Clean state may need no explanation. Modeling only one
+boolean loses the difference. A command can expose enabled state while a
+neighboring value or richer wrapper exposes the reason.
+
+Command palettes make identity discipline visible. A command palette lists
+operations independently from their current buttons. It needs action keys,
+localized names, shortcuts, enabled state, selected state for toggles, and
+perhaps disabled reasons. It should not scrape buttons from the current view.
+A palette built from command sets and descriptors naturally includes commands
+that have no toolbar item. A palette built from Swing components can only show
+what is currently visible and risks invoking stale listeners.
+
+Menus and toolbars have different density and discovery rules. A toolbar
+should show frequent commands with concise labels or icons. A menu can expose
+more complete command vocabulary. A popup menu should be contextual. These
+differences are presentation policy. They should not create new command
+objects unless the operation is genuinely different. If Delete in the toolbar
+and Delete in the table popup have different enablement rules, ask whether
+there are two operations or one operation with a contextual disabled reason.
+
+Keyboard shortcuts should be reviewed as part of command metadata, not as
+afterthoughts. The accelerator in a descriptor is user-facing contract. It may
+vary by platform, input map condition, or application mode. A generated
+descriptor can carry the default shortcut; application policy can override it
+when installing behaviors. The key binding should still invoke the same
+command. A shortcut installed directly to a helper method is a second command
+path without command state.
+
+Mnemonics deserve a smaller but similar review. A mnemonic belongs to a
+localized presentation, not the operation identity. In English, Save may use
+\api{S}. In another language, the visible text and mnemonic may differ. A
+descriptor may carry a default mnemonic key code, but a resource or locale
+policy may override it. Tests should not assume the English mnemonic unless
+the test is specifically for the English resource set.
+
+Icons are presentation too. The current \api{ActionDescriptor} focuses on
+resource-key metadata, accelerator, mnemonic, and selectable state. An
+application may add an icon policy around descriptors or through a richer
+resource layer. The same principle holds: the icon should be associated with
+the command identity, not copied independently into each button. If a toolbar
+uses only icons, accessible name and tooltip resources become even more
+important because visible text is absent.
+
+Accessibility review should treat typed identity as source material, not final
+output. A field label resource can help set the accessible name for the
+component. A tooltip or static help resource can help form an accessible
+description. A disabled reason can explain why a control cannot be used. A help
+topic can provide a longer route. The accessibility layer may need different
+phrasing from visual labels, so do not blindly reuse every visible string. But
+do derive the relationship from the same keys and descriptors so accessible
+metadata does not drift away from the screen.
+
+Diagnostics should print typed identities. A log entry that says ``Save failed''
+is less useful in a localized application than one that says
+\api{ActionKey[customer/save]} and then includes the localized text if useful.
+A validation diagnostic should include the \api{FieldKey}. A help dispatch
+diagnostic should include the \api{HelpTopic}. A missing resource diagnostic
+should include the resource id and expected value type. Typed keys make such
+diagnostics natural because their \api{toString} output already names the
+family.
+
+Analytics should use stable ids, never visible strings. If the application
+records which commands are used, record \api{ActionKey} ids. If it records
+which help topics open, record \api{HelpTopic} ids. If it records validation
+friction, record problem codes and field keys. Visible text changes because
+the product improves. Analytics should not split a time series because
+\api{"Save customer"} was copyedited to \api{"Save changes"}.
+
+Migration from older Swing code should start with operations that already
+appear in several places. Save, Refresh, Delete, Export, Search, Apply,
+Cancel, and Help are good candidates. Introduce action keys and descriptors.
+Create commands. Adapt existing buttons and menu items. Move enablement into
+the command. Then migrate shortcuts. Only after the operation path is stable
+should you clean up resource keys and help topics. This sequence reduces risk:
+the user sees the same screen while the internal identity improves.
+
+Do not migrate only labels. Replacing string literals with resource keys is
+useful, but it is not the whole chapter. A screen can have resources and still
+have duplicated listeners, untyped help topics, tooltip races, and tests that
+search for visible text. The identity review must cover operations, fields,
+components, resources, help, and tests together. Otherwise the screen gains a
+resource bundle but remains structurally fragile.
+
+Generated metadata needs review because generated mistakes are multiplied.
+Check generated action ids for consistency. Check resource ids for predictable
+families. Check help topics for durable names. Check descriptor lists for
+expected order. Check selectable flags for toggles. Check processor diagnostics
+for duplicates. A generated companion should make the screen easier to audit,
+not merely produce more files. If generated names are hard to predict, the
+book's examples and the project's tests will both become harder to read.
+
+Handwritten metadata should not be treated as second-class. Some screens will
+never be generated because they are too specialized, too dynamic, or too small.
+They should still use the same typed key families. A handcrafted GIS toolbar,
+paint editor, or diagnostic console can declare action keys, command
+descriptors, help topics, and component keys. Then the rest of Corusco's Swing
+infrastructure can test and bind it the same way as generated screens.
+
+Finally, teach the vocabulary to the team. During review, say ``this is an
+action key'', ``this is a resource key'', ``this is a help topic'', ``this is
+a component key'', and ``this is visible text.'' The words prevent ambiguity.
+Without them, developers say ``id'' and mean five different things. Once the
+vocabulary is shared, many design decisions become mechanical: stable identity
+goes in keys, presentation goes in resources and components, behavior goes in
+commands and bindings, help goes through topics, tests use typed handles.
+
+\section{Exercises and checklist}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Find a screen with duplicated button and menu listeners. Replace them
+with one command and adapt it to both surfaces.
+\item Add an \api{ActionDescriptor} with text, tooltip, mnemonic, and
+accelerator resource metadata for one operation.
+\item Convert a check-box menu item and toolbar toggle button to share one
+selectable command or model value.
+\item Add a \api{CommandSet} to a presenter and update tests to look up
+commands by \api{ActionKey}.
+\item Replace one button-text lookup in a test with a \api{ComponentKey} or
+\api{ActionKey} lookup.
+\item Add required resource tests for generated command text, field labels, and
+table headers.
+\item Add a help topic to a field or table column and test that F1 dispatches a
+structured \api{HelpRequest}.
+\item Replace competing calls to \api{setToolTipText} with one composed
+tooltip policy.
+\item Review generated action metadata and decide which parts are descriptors,
+which parts are runtime command state, and which parts are Swing bindings.
+\item Localize or copyedit one visible string and verify that tests and
+persistence still use stable ids rather than visible text.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{center}
+\textbf{Identity checklist.}
+\end{center}
+
+\begin{itemize}
+\item Repeated operations have \api{ActionKey} values and commands.
+\item Command descriptors use resource keys, not hard-coded visible text.
+\item Buttons, menus, toolbars, popup items, and shortcuts share command state.
+\item Toggle state has one owner.
+\item Disabled reasons are modeled when users need explanation.
+\item Field, component, resource, and help identities are separate typed keys.
+\item Required resources are verified through typed keys.
+\item Help topics are stable ids, not tooltip text.
+\item Tooltips compose problems, disabled reasons, static help, and help hints.
+\item F1/help behavior is installed and cleaned up through a lifecycle scope.
+\item Tests use \api{ActionKey}, \api{FieldKey}, and \api{ComponentKey} where possible.
+\item Localized strings are presentation, not persistence or test identity.
+\item Generated companions expose stable facts without hiding screen design.
+\item Swing adapters and behaviors are closed with the view that installed them.
+\end{itemize}
+
+The purpose of all this naming is not ceremony. It is to keep a Swing
+application from forgetting what it already knows. A command is one operation
+even when it appears in five places. A resource is one typed value even when it
+is resolved through several locales. A help topic is one durable help target
+even when the help viewer changes. A field is one semantic fact even when its
+component moves. Once identity is stable, presentation can improve freely.

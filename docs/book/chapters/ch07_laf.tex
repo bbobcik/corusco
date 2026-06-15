@@ -1,0 +1,556 @@
+\chapter{Look-and-Feel Internals and ComponentUI}
+\chapterquote{A Swing component owns behavior and state; its UI delegate owns a large part of appearance. Confusing the two is how reusable widgets become local hacks.}{A Look-and-Feel boundary}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How do components, UI delegates, defaults, client properties, and Look-and-Feel updates cooperate?\\
+Primary APIs & \api{UIManager}, \api{UIDefaults}, \api{ComponentUI}, \api{BasicLookAndFeel}, \api{SynthLookAndFeel}, \api{JComponent.updateUI}.\\
+Hidden difficulty & Runtime Look-and-Feel changes, UI defaults, delegate state, accessibility, and layout metrics can invalidate assumptions hidden in component subclasses.\\
+Payoff & Components that theme cleanly, customization that survives Look-and-Feel changes, and fewer hard-coded visual hacks.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{The Delegate Boundary}
+
+\termdef{Look-and-Feel}{the Swing policy object that supplies component appearance and many component interaction details} is one of the first Swing ideas that returning programmers remember vaguely and use imprecisely. It is not merely a skin. It supplies defaults, delegates, icons, borders, colors, fonts, focus indicators, disabled rendering, table metrics, and sometimes platform-specific behavior.
+
+\termdef{UI delegate}{a \api{ComponentUI} object installed on a Swing component to implement much of its visual and interaction policy} is the other half of the idea. A \api{JButton} is not a painted rectangle that happens to fire an event. It owns a button model, text, icon, action connection, accessibility hooks, and properties; a \api{ButtonUI} delegate decides how that button is measured and drawn under the current Look-and-Feel.
+
+This division is why \api{javax.swing.plaf.basic} is so important. The Basic delegates are not only fallback implementations; they are executable documentation of the responsibilities a component family normally has. They install defaults, listeners, keyboard actions, borders, and sometimes child components. They compute preferred size, baseline, and state painting. They also uninstall what they own when the delegate is replaced.
+
+Beginners often meet Look-and-Feel through one line near application startup: call \api{UIManager.setLookAndFeel}, construct the frame, and enjoy nicer controls. That is a useful beginning but a poor stopping point. The same mechanism that makes a standard button follow a theme also explains why a custom component may look wrong, why a renderer may fight table selection colors, and why a runtime theme switch can expose leaks.
+
+The simplest rule is that a component should own what makes it a component, while appearance policy should have an explicit owner. A progress timeline owns its data, selected interval, mouse behavior, and semantic marks. It does not automatically own the product's disabled text color, focus color, table grid color, or form spacing. Those values belong to defaults, resource policy, or a documented visual vocabulary.
+
+This does not mean that every custom component must have a custom UI delegate. Many application-specific components are semantic visualizations: a plot, a process map, a miniature calendar, a waveform. Their painting is part of their meaning. A delegate becomes attractive when the same component should adapt to several themes, when many instances share a visual policy, or when you want the component class to stay mostly behavioral.
+
+\begin{principlebox}{appearance belongs to a policy}
+If a visual choice is part of the application's theme, put it in \api{UIDefaults}, a UI delegate, or a documented client property. If it is intrinsic to the component's semantic visualization, put it in the renderer or visualization. Do not let accidental subclass painting become the theme system.
+\end{principlebox}
+
+Figure~\ref{fig:laf-components} shows why the boundary matters even on an ordinary component panel. Enabled and disabled states are not just colors. Text weight, border contrast, focus presentation, spacing, and icon tint must agree. A one-off renderer that paints its own disabled foreground may look acceptable in one theme and become unreadable in another.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\lafComponentsFigure}
+\caption{A Look-and-Feel policy is visible in ordinary states: enabled, disabled, focused, selected, and invalid. The screenshot is intentionally mundane because mundane inconsistencies are the usual production problem.}
+\label{fig:laf-components}
+\end{figure}
+
+A Swing screen also has density. Figure~\ref{fig:laf-density} contains more controls, a table, status text, and a command surface. When the Look-and-Feel changes fonts, row heights, borders, or focus widths, the whole screen breathes differently. Layout managers such as \miglayout{} make that change tolerable because they recompute geometry from constraints, preferred sizes, baselines, and gaps rather than from fixed pixel positions.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\linewidth]{\lafDensityFigure}
+\caption{Density is a Look-and-Feel subject too. Row height, control padding, baseline alignment, focus width, and disabled text must remain coherent on a business screen.}
+\label{fig:laf-density}
+\end{figure}
+
+The same screen also has state. Figure~\ref{fig:laf-state-matrix} shows the useful ownership chain: application facts such as command enablement, focus owner, selection, and validation produce hints or component state; defaults define product and Look-and-Feel policy; delegates and renderers turn those facts into pixels. When a screen paints directly from private booleans and literal colors, this chain disappears and visual consistency becomes accidental.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\lafStateMatrixFigure}
+\caption{Visual state is not owned by one object. Model facts, client properties, UIDefaults, delegates, and renderers cooperate; a maintainable screen keeps those responsibilities named.}
+\label{fig:laf-state-matrix}
+\end{figure}
+
+\begin{examplebox}{Look-and-Feel figures}
+The companion screenshots in this chapter are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. The screenshot harness is named \screenshotHarnessExample. The examples install \flatlaf{} first and use \miglayout{} for ordinary panels, so the figures show production-shaped screens rather than isolated toy controls. The figures cover ordinary component states, dense screen metrics, and the state-to-delegate ownership chain.
+\end{examplebox}
+
+The delegate boundary is most visible when the application tries to customize appearance through subclassing. A subclass of \api{JButton} that overrides \api{paintComponent} to draw a brand background may bypass focus indicators, disabled rendering, pressed state, default button state, and high-contrast colors. The code may be short, but it has silently accepted responsibility for behavior it does not understand.
+
+The same problem appears in tables and lists. A renderer that sets a red foreground for overdue rows must still respect selection foreground and background when the row is selected. It should also respect disabled state, focus border policy, and component orientation. The renderer owns the semantic distinction, not the whole theme. A renderer that forgets this boundary makes selected overdue rows unreadable.
+
+Another common mistake is to treat Look-and-Feel as an initialization event. The constructor reads \api{UIManager.getColor("Panel.background")} into a field, the component paints with that field forever, and runtime theme changes later produce a patchwork screen. Swing's delegate model expects \api{updateUI} to be the refresh boundary. A component that caches UI-derived values needs an invalidation story at that boundary.
+
+The distinction between behavior and appearance is not philosophical decoration. It is an engineering partition that supports testing. You can test a component's model behavior without installing a particular theme. You can render a component under several themes to see whether the delegate obeys defaults. You can audit application defaults independently of a screen's business logic.
+
+Corusco fits this partition because it already asks the program to give stable identity to screen facts. A command is not a button; a resource key is not a string literal; a validation problem is not a red border call; a binding is not a listener scattered in a constructor. The Look-and-Feel chapter is the visual counterpart of the same discipline. Visual policy deserves explicit identity too.
+
+The practical question in a code review is therefore simple: who owns this visual decision? If the answer is "a random override in this one panel," keep asking. Perhaps the decision is semantic and belongs there. Perhaps it is a theme decision and belongs in defaults. Perhaps it is a screen workflow decision and belongs in a Corusco behavior. The question prevents a local convenience from becoming a global liability.
+
+Four boundary words will recur. A \termdef{default}{a value published through the current Look-and-Feel or the application defaults table} is global or at least application-wide policy. A \termdef{client property}{a local named hint stored on one component} is per-component policy or state exposed to delegates, renderers, or behaviors. A \termdef{renderer}{a stamp component used by tables, lists, trees, and similar controls to paint many logical cells} is a state-to-pixels adapter for repeated data. A \termdef{delegate}{the \api{ComponentUI} object installed on a component} is the Look-and-Feel implementation for a component family. These objects can cooperate, but they should not impersonate one another.
+
+A default is the right home for "error borders are this thick in this product." A client property is the right home for "this particular field currently has error severity." A renderer is the right home for "this row is overdue, but selected rows still use selected foreground and background." A delegate is the right home for "this component family measures and paints its normal, disabled, focused, and pressed states in this way." A panel constructor is the right home for none of those policies unless the screen is truly a one-off visualization whose appearance is part of the screen's semantics.
+
+This separation becomes more valuable as the codebase ages. Early Swing screens often begin with local calls: set a foreground here, set a border there, override painting in this subclass, add a renderer branch for a warning row. Each call is easy to justify. The aggregate is hard to theme, localize, test, and explain. The Look-and-Feel architecture gives the application better places to put those choices; Corusco gives the application stable names for the facts that motivate the choices.
+
+There is also a psychological reason to use the boundary. Visual bugs invite quick fixes because they are visible. A label clips; someone sets a preferred size. A red border is too pale; someone chooses a darker literal. A disabled row is hard to read; someone overrides selected colors. These fixes can be necessary in prototypes, but in production they should be converted into policy: correct preferred size, correct default, correct renderer rule, correct severity behavior. Otherwise the code teaches future maintainers to patch pixels locally.
+
+The delegate boundary does not diminish the value of good design. It makes design executable. A designer may specify density, focus prominence, validation severity, warning hierarchy, and destructive action emphasis. Swing needs those choices as defaults, icons, borders, fonts, client properties, commands, and renderers. A well-organized codebase can trace each designed state to an implementation owner. A poorly organized one can only search for colors and hope.
+
+\section{Defaults, Client Properties, and Theme Resources}
+
+\api{UIManager} is the public entrance to the installed Look-and-Feel. It holds the current \api{LookAndFeel} instance and provides access to a chain of \api{UIDefaults}. Standard components use these defaults to find UI delegate classes and to initialize fonts, colors, borders, icons, dimensions, input maps, and other values. Application code may also add its own keys.
+
+\termdef{UIDefaults}{the Look-and-Feel defaults table consulted by Swing components and UI delegates} is more than a string-to-color map. Values may be ordinary objects, lazy values, active values, proxy objects, class names, input maps, borders, painters, icons, or derived colors supplied by a third-party Look-and-Feel. Treat the table as a typed convention even though its Java type is loose.
+
+A useful application startup sequence is deliberately boring. Select the Look-and-Feel. Install application defaults. Install resource policy. Only then construct most UI. The order matters because constructors and \api{updateUI} methods may read defaults. If a screen is built before the policy exists, it may cache values or create delegates under the wrong assumptions.
+
+Defaults form a stack, not a magic constant pool. Swing has Look-and-Feel defaults, system or toolkit influences, and application defaults layered by the current installation sequence. A third-party Look-and-Feel may compute derived colors from a base palette. An application may add product-specific defaults after the Look-and-Feel is selected. A delegate may read both standard keys and application keys. The reader should therefore treat a key as part of a vocabulary: its owner, value type, fallback, and update behavior matter.
+
+The value type is part of that vocabulary. A key that usually holds a \api{Color} should not sometimes hold a string color name. A key that holds an \api{Icon} should say whether the icon is scale-aware, theme-aware, shared, or recreated. A key that holds an \api{Insets} object should say whether callers may mutate it. Swing will not enforce these conventions for application keys; the codebase must. Constants, helper methods, and small assertions are often enough.
+
+\begin{lstlisting}[caption={Installing application defaults after Look-and-Feel selection.}]
+static void configureLookAndFeel() {
+    try {
+        UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+    } catch (ReflectiveOperationException | UnsupportedLookAndFeelException e) {
+        throw new IllegalStateException("Cannot install Look-and-Feel", e);
+    }
+
+    UIDefaults defaults = UIManager.getDefaults();
+    defaults.put("App.validation.errorColor", new Color(150, 30, 30));
+    defaults.put("App.timeline.gridColor", new Color(0xE0E0E0));
+    defaults.put("App.command.warningIcon", loadIcon("warning"));
+}
+\end{lstlisting}
+
+The names in the example are not incidental. Application defaults should be namespaced. A key such as \api{App.validation.errorColor} tells the reader that the value is application policy and that validation rendering may consult it. A key such as \api{red} or \api{badBorder} tells the reader almost nothing and will eventually collide with another local convention.
+
+Defaults are most maintainable when they describe purpose rather than current color. \api{App.validation.errorColor} can later be a theme-specific red, a high-contrast magenta, or a derived value that depends on the current text background. \api{new Color(150, 30, 30)} cannot. The literal may still exist in one theme definition, but the screen should not know it.
+
+Purpose names also improve discussion. A code review can debate whether \api{App.command.destructiveForeground} should be used for a delete action. It cannot usefully debate whether \api{0xb94a48} is the right red in every context. The name carries intent; the value carries an implementation of that intent for one theme. When theme work later changes values, the semantic name remains stable.
+
+Application defaults should be documented near the code that installs them. The documentation need not be an API reference, but it should state the owner, type, intended consumers, and fallback. For a small application this may be a table in the startup class. For a library it may be formal Javadoc. For generated Corusco screens it may be generated metadata. The important point is that a screen author should not discover defaults by reading delegate source line by line.
+
+\api{UIDefaults.LazyValue} creates a value when it is first requested. \api{UIDefaults.ActiveValue} creates a value each time it is requested. Lazy values are useful for icons and borders that should not be loaded during startup. Active values are useful when the returned object must reflect another current default or must not be shared.
+
+\begin{lstlisting}[caption={A lazy default for an icon.}]
+UIManager.getDefaults().put("App.icons.refresh", (UIDefaults.LazyValue) table ->
+        new ImageIcon(AppResources.url("icons/refresh.png")));
+\end{lstlisting}
+
+Do not turn \api{UIDefaults} into a hidden service locator. The table is excellent for presentation policy and delegate discovery. It is not a good home for repositories, application services, or workflow state. When everything is available through a global defaults table, code becomes easy to call and hard to reason about.
+
+The service-locator temptation usually begins innocently with icons, then grows to resource bundles, then to help services, then to application state. Keep the boundary simple: defaults can hold presentation resources and policy values needed by visual code. Domain services should be passed through application architecture. Corusco command descriptors and resource keys are a better bridge than stuffing workflow objects into \api{UIManager}.
+
+\termdef{Client property}{a key-value entry attached to a \api{JComponent}} is the local companion to global defaults. Look-and-Feels use client properties for small per-component hints. Applications can do the same. A compact mode flag, a validation severity, a command role, or a semantic variant can be a property when subclassing would be disproportionate.
+
+Client properties are attractive because they require no new component class. They are dangerous for exactly the same reason. A string key used by a delegate, a renderer, and a behavior installer is an API. It needs a constant, allowed values, ownership rules, invalidation rules, and tests. Otherwise the property becomes folklore.
+
+\begin{lstlisting}[caption={A client property setter that owns invalidation.}]
+static void setVariant(JComponent c, String variant) {
+    Object old = c.getClientProperty("App.variant");
+    if (Objects.equals(old, variant)) {
+        return;
+    }
+    c.putClientProperty("App.variant", variant);
+    c.revalidate();
+    c.repaint();
+    c.firePropertyChange("App.variant", old, variant);
+}
+\end{lstlisting}
+
+The setter above is intentionally explicit. If a property affects preferred size, it must trigger revalidation. If it affects painting, it must trigger repaint. If a delegate listens for property changes, the change event is part of the contract. A casual \api{putClientProperty} hidden in a presenter may be enough for a demo and not enough for a library component.
+
+Client properties are especially useful for variants. A search field may have a compact variant, a validation field may have severity, a toolbar button may have an emphasis role, a table may have a density hint, and a dialog section may have a visual group role. None of those facts necessarily justifies a new subclass. But each fact should still have a named key and a small policy document. The absence of a subclass does not mean absence of API.
+
+A property should also say whether it is inherited. Swing client properties are not automatically inherited from parent containers. Some Look-and-Feels simulate inheritance for selected properties, but that is a specific convention, not a general Swing law. If a whole form should be compact, decide whether the builder applies a property to each child, whether the delegate searches ancestors, or whether layout constraints express the density instead.
+
+Inherited-looking properties are a frequent source of bugs. A developer sets a compact property on a parent panel and expects every nested field to shrink. Some components do because the builder propagated the property, some do because the Look-and-Feel searches ancestors, and some do not. This inconsistency looks like a layout bug but is really an ownership bug. Either make propagation explicit or choose a different expression of the state, such as constructing the form with compact layout constraints.
+
+Client properties should not duplicate model state casually. A validation severity property is often a view hint derived from a \api{ProblemSet}; it is not the primary validation model. A busy property may be a view hint derived from a task value; it is not the primary task state. A command-role property may be a presentation hint derived from a command descriptor; it is not the command. This distinction keeps the property disposable and recomputable.
+
+Resource loading belongs beside defaults because icons and localized strings often appear in the same visual surfaces. A button may need a text resource, a tooltip resource, a help topic, an icon, an accelerator, and a semantic command role. If these are installed by unrelated code paths, the button becomes hard to theme and hard to localize.
+
+Corusco resource keys reduce that drift. A generated command descriptor can carry stable identity for text, tooltip, icon, shortcut, help topic, and enabled state. The Look-and-Feel still decides how a disabled toolbar button looks. The resource system decides what language and icon are attached to the command. The binding layer decides when the command is enabled. These are separate decisions even when they meet on one component.
+
+\begin{coruscobox}{resource identity and visual policy}
+Corusco does not replace \api{UIDefaults}. It gives application concepts stable identities before they reach Swing. A validation severity can become a client property or behavior input; a resource key can supply text and icon; a command descriptor can supply role and shortcut. The Look-and-Feel then receives named facts rather than anonymous colors and listeners.
+\end{coruscobox}
+
+FlatLaf is the default companion Look-and-Feel in this book because it gives contemporary screenshots and predictable metrics across many machines. That choice is pragmatic, not doctrinal. A screen written with a clean boundary should still behave under another Look-and-Feel. If the code depends on one FlatLaf border inset to align a form, the dependency should be named or removed.
+
+The same caution applies to third-party client properties. FlatLaf supports many useful properties and defaults. Use them when they are the chosen product policy, but isolate them behind application constants or configuration helpers. A codebase should not contain hundreds of raw theme-specific strings whose meaning has to be reconstructed from release notes.
+
+There is a useful three-layer rule for third-party Look-and-Feel integration. At the outer layer, application screens should speak application concepts: command role, validation severity, compact mode, destructive action, sidebar section. At the middle layer, application visual policy maps those concepts to \api{UIDefaults}, client properties, icons, and layout constraints. At the inner layer, FlatLaf or another Look-and-Feel receives its own documented keys. If the product later changes Look-and-Feel, the inner layer changes most. If the screen copied inner-layer strings everywhere, the product has no layer to change.
+
+A defaults audit is often the best first improvement to an old Swing application. Search for literal colors, fonts, borders, icons, and insets. Classify each value as data semantics, product theme, Look-and-Feel policy, diagnostic overlay, or accidental styling. Data semantics may remain local. Theme policy should move into named defaults. Accidental styling should usually disappear.
+
+The audit should include renderers. Table, tree, and list renderers are a common place where a screen invents a private theme. A renderer that sets both foreground and background should prove that it handles selected, focused, disabled, alternate-row, and error states. Most renderers should derive from the supplied component colors and add only the semantic distinction the row requires.
+
+The audit should also include icons. Icons are sometimes treated as static assets outside theme discussion, yet they carry color, contrast, size, alignment, and semantic weight. A light gray icon may disappear in disabled state. A raster icon may blur on HiDPI. A warning icon may conflict with the product's severity scale. Store icon intent as resource identity and load the theme-appropriate representation through one path.
+
+Fonts deserve the same pass. A one-off \api{new Font} in a heading may be acceptable for a splash screen and wrong in a business form. Font changes affect metrics, baselines, row heights, and accessibility. Use Look-and-Feel fonts and derived styles where possible. If a product typography scale exists, name it in defaults. Avoid making every panel invent heading, caption, and monospace policy independently.
+
+One useful debugging panel displays relevant defaults for the current Look-and-Feel: label font, control font, text foreground, text background, selection foreground, selection background, focus color, disabled foreground, table grid color, table row height, and application severity colors. This panel turns "the theme looks wrong" into observable input values.
+
+The discipline is not to avoid customization. A product without visual vocabulary feels unfinished. The discipline is to make customization reviewable. Defaults say "this is policy"; client properties say "this component has a hint"; resource keys say "this user-facing fact has identity"; delegates say "this component family has a visual implementation."
+
+\section{Writing and Maintaining UI Delegates}
+
+A custom UI delegate is appropriate when you have a reusable component whose visual policy should be replaceable or at least centralized. It is less appropriate when you have a one-off drawing surface whose appearance is inseparable from its data. The difference is ownership. A delegate says that appearance can be installed, uninstalled, and refreshed as policy.
+
+The smallest custom delegate example has two classes. The component class owns state and exposes properties. The delegate class owns defaults, measurement, and painting. The component's \api{updateUI} method asks \api{UIManager} for the delegate associated with its UI class id. That is the same mechanism standard Swing components use.
+
+The decision to write a delegate should be justified by reuse or policy, not by discomfort with \api{paintComponent}. A one-off sparkline in a dashboard can paint itself if its visual vocabulary is part of the dashboard. A reusable status component used in forms, tables, dialogs, and toolbars benefits from a delegate because it must honor fonts, borders, disabled state, compact mode, focus policy, and theme changes everywhere. The more contexts a component enters, the more attractive the delegate boundary becomes.
+
+It helps to name the component family before writing code. "Status pill" is a family if the application expects several severities, compact and normal density, disabled state, accessible text, table renderer use, and theme variants. "The green rounded label in this one header" is not yet a family. Turning the second into a custom delegate may be overengineering; leaving the first as a painted label subclass is underengineering.
+
+\begin{lstlisting}[caption={A custom component that delegates UI installation.}]
+public final class StatusPill extends JComponent {
+    private String text = "";
+
+    public StatusPill() {
+        updateUI();
+    }
+
+    @Override
+    public void updateUI() {
+        setUI((StatusPillUI) UIManager.getUI(this));
+        invalidate();
+    }
+
+    public void setText(String text) {
+        String old = this.text;
+        this.text = Objects.requireNonNull(text);
+        firePropertyChange("text", old, text);
+        revalidate();
+        repaint();
+    }
+
+    public String getText() {
+        return text;
+    }
+
+    @Override
+    public String getUIClassID() {
+        return "StatusPillUI";
+    }
+}
+\end{lstlisting}
+
+The component above is not finished, but it shows the essential shape. Text changes fire a property change, invalidate layout through \api{revalidate}, and schedule painting. \api{getUIClassID} returns a stable key. The constructor calls \api{updateUI} so the component receives a delegate even when it is created outside a window.
+
+The application or Look-and-Feel registers a delegate class name under that key. Standard delegates are registered by the Look-and-Feel itself. Application-specific delegates may be registered after Look-and-Feel selection. If the class name cannot be resolved, the failure will appear when \api{UIManager.getUI} tries to create the delegate, so registration belongs near startup and should be covered by a smoke test.
+
+\begin{lstlisting}
+UIManager.getDefaults().put("StatusPillUI", "com.acme.ui.BasicStatusPillUI");
+\end{lstlisting}
+
+A delegate should install only what it owns. It may install colors, font, border, listeners, keyboard actions, input maps, child components, and property-change listeners. It must also know how to remove or restore those things. The most useful mental model is resource acquisition: \api{installUI} acquires delegate-owned resources, and \api{uninstallUI} releases them.
+
+Installation should be boring and reversible. If the delegate installs a border because no user border is present, it should know whether uninstall removes that border. If it installs a keyboard action, it should know whether the action map belonged to the delegate or the application. If it installs a listener, it should keep a reference so it can remove the same listener. If it creates child components, it should remove them. Delegates that cannot answer these questions often work until the first runtime theme switch, then duplicate behavior appears.
+
+\begin{lstlisting}[caption={A minimal Basic-style UI delegate.}]
+public class BasicStatusPillUI extends ComponentUI {
+    public static ComponentUI createUI(JComponent c) {
+        return new BasicStatusPillUI();
+    }
+
+    @Override
+    public void installUI(JComponent c) {
+        StatusPill pill = (StatusPill) c;
+        LookAndFeel.installColorsAndFont(pill,
+                "StatusPill.background",
+                "StatusPill.foreground",
+                "StatusPill.font");
+        LookAndFeel.installBorder(pill, "StatusPill.border");
+    }
+
+    @Override
+    public void uninstallUI(JComponent c) {
+        LookAndFeel.uninstallBorder(c);
+    }
+
+    @Override
+    public Dimension getPreferredSize(JComponent c) {
+        StatusPill pill = (StatusPill) c;
+        FontMetrics fm = pill.getFontMetrics(pill.getFont());
+        Insets in = pill.getInsets();
+        return new Dimension(fm.stringWidth(pill.getText()) + in.left + in.right + 18,
+                             fm.getHeight() + in.top + in.bottom + 6);
+    }
+
+    @Override
+    public void paint(Graphics g, JComponent c) {
+        StatusPill pill = (StatusPill) c;
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            g2.setColor(pill.getBackground());
+            g2.fillRoundRect(0, 0, pill.getWidth() - 1, pill.getHeight() - 1, 14, 14);
+            g2.setColor(pill.getForeground());
+            FontMetrics fm = g2.getFontMetrics();
+            int x = 9;
+            int y = (pill.getHeight() - fm.getHeight()) / 2 + fm.getAscent();
+            g2.drawString(pill.getText(), x, y);
+        } finally {
+            g2.dispose();
+        }
+    }
+}
+\end{lstlisting}
+
+The delegate is deliberately small, and its omissions are instructive. A production delegate would consider disabled state, focus indication, component orientation, accessibility, antialiasing policy, baseline, high contrast, mnemonic text if applicable, and possibly client-property variants. Minimal code is useful for teaching; minimal responsibility is dangerous in reusable widgets.
+
+Disabled state alone can double the complexity. The delegate may need disabled foreground, disabled background, icon opacity, tooltip behavior, accessible state, and a decision about whether semantic severity remains visible while disabled. A warning pill that becomes indistinguishable from an inactive neutral pill may hide important information. A disabled warning that remains too vivid may look actionable. The Look-and-Feel should provide guidance, but the delegate must decide how the component family expresses the state.
+
+Pressed, rollover, selected, and focused states are similar. Some components have a model such as \api{ButtonModel}. Others have custom state. A delegate should read state through the component API rather than through incidental fields. If a component has selected state, give it a property and fire changes. If it has focus state, rely on Swing focus APIs and repaint when focus changes. If it has validation severity, decide whether that severity is a component property, client property, or model-bound behavior.
+
+The delegate's preferred size is a contract with layout. If it forgets border insets, text clips. If it ignores font changes, layout becomes stale after a theme switch. If it reports a width based on the current text but the text setter does not revalidate, \miglayout{} cannot do the right thing. Layout managers depend on honest component metrics.
+
+Baseline is part of that contract for form controls. Labels, text fields, combo boxes, and custom status components often sit in the same row. A delegate that can report a useful baseline helps \miglayout{} align mixed controls. Without a baseline, the layout manager may fall back to top or center alignment, which looks subtly wrong in dense screens.
+
+The baseline calculation should be tested with real fonts. It is tempting to center text vertically by eye and declare the result finished. But baselines are not visual centers; they are typographic anchors. Different fonts, sizes, scripts, and Look-and-Feel defaults can change ascent, descent, and leading. A delegate used in forms should implement \api{getBaseline} when possible and should return a value consistent with its preferred size and border insets.
+
+Preferred size should avoid hidden constants. Insets may come from a border. Text gaps may come from defaults. Icon-text gaps may come from defaults or client properties. Compact mode may change them. A delegate that uses literal padding everywhere may be readable, but it has no theme vocabulary. A delegate that reads named defaults can be tuned without code changes and can participate in density policy.
+
+Painting should use the component's current properties after defaults are installed. If a delegate sets background and foreground during installation, paint from \api{getBackground} and \api{getForeground}. This gives client code and accessibility modes a chance to override values. It also keeps the delegate from reading \api{UIManager} repeatedly during every repaint unless active values are truly needed.
+
+Graphics state must be treated as borrowed. Create a copy before changing rendering hints, transforms, composites, clips, or strokes, and dispose that copy. This rule is not unique to delegates, but delegate painting is often called from deep inside standard painting code. Leaking a modified clip or transform to later painting is a severe and hard-to-read bug.
+
+Delegate painting should also avoid allocating per repaint when the values are stable. It is fine to create a small \api{Graphics2D} copy; it is usually not fine to rebuild icons, parse colors, allocate complex shapes, or compute expensive text layouts every time a cell renderer paints. Cache only with an invalidation story: font, text, size, scale, theme, client property, component orientation, and enabled state may all matter. A cache without invalidation is a delayed bug.
+
+Renderers complicate delegate reuse because a renderer component may be stamped many times without being part of the component hierarchy in the ordinary way. A custom status pill used as a table renderer should not assume that focus, parent, or installed listeners behave as they do in a standalone component. Often the renderer uses the same visual helper or delegate-like painter, not a full live component with listeners. This is another reason to separate measurement and painting policy from screen state.
+
+Install and uninstall symmetry is where many custom delegates fail. A property-change listener installed during \api{installUI} should be removed during \api{uninstallUI}. A timer should be stopped. A border installed by the delegate should be uninstalled or restored according to Look-and-Feel conventions. Keyboard actions should not accumulate after every theme switch.
+
+\begin{detailbox}{delegate ownership ledger}
+For a custom delegate, list every resource installed in \api{installUI}: listeners, borders, keyboard actions, colors, fonts, timers, child components, and client-property listeners. Then list its uninstall point. Anything without a removal or restoration rule is a future leak or duplicate behavior.
+\end{detailbox}
+
+Some delegates need no listeners because all state changes arrive through component property setters that call \api{revalidate} and \api{repaint}. Prefer that simplicity when possible. A delegate listener is appropriate when the delegate must respond to properties that the component itself does not interpret, such as a client property that changes compactness or severity decoration.
+
+If a delegate listens to client properties, document which properties affect layout and which affect paint only. A compactness property may change insets and therefore preferred size. A warning variant may change colors and icons only. The difference decides whether the listener calls \api{revalidate}, \api{repaint}, or both.
+
+Delegates should be conservative about mutating application state. They can update visual installation, react to component properties, and paint. They should not write domain models, trigger saves, or perform business validation. If a visual state change needs domain behavior, that behavior belongs in a command or model binding. The delegate can display the result. This rule sounds obvious until a delegate listener is the most convenient place to "just fix" a property after theme installation.
+
+\api{SynthLookAndFeel} is another path. It separates style from behavior more strongly and allows declarative styling for component regions and states. Synth can be useful for a product that wants a controlled visual language without writing a complete Look-and-Feel from scratch. It is not a Swing version of web CSS; you still need to understand regions, states, painters, defaults, and delegate behavior.
+
+Synth also changes the debugging questions. Instead of asking only which Java delegate painted this pixel, you may need to ask which region, state, painter, style, and default were active. This can be powerful in a controlled component family and frustrating when used as a patch layer over poorly named application states. If the application facts are still anonymous booleans and colors, Synth will not make them meaningful. It will only move the anonymity into style declarations.
+
+For many applications, a system or third-party Look-and-Feel plus application defaults, renderers, and a small number of custom delegates is easier to maintain than adopting Synth globally. Full custom Look-and-Feel work is product engineering. It affects accessibility, keyboard behavior, high contrast, platform expectations, screenshots, documentation, and support. Treat it as a project, not as a theme file.
+
+The delegate decision should therefore be conservative. Write a delegate when a component family has a reusable appearance contract. Use defaults when standard components already expose the desired policy. Use renderers when the visual difference belongs to data in cells. Use custom painting when the component is a semantic visualization. The wrong mechanism usually starts small and spreads quickly.
+
+\begin{pitfallbox}{subclassing to change paint only}
+Subclassing \api{JButton} just to draw a different background often bypasses Look-and-Feel behavior, focus indicators, disabled state, accessibility, and platform conventions. Prefer defaults, borders, icons, or a UI delegate unless the component's behavior is genuinely different.
+\end{pitfallbox}
+
+Delegate tests need not be pixel-perfect golden files. Test that \api{installUI} and \api{uninstallUI} are symmetric. Test preferred size with short, long, empty, and localized text. Test disabled, focused, selected, rollover, pressed, and default states if the component has them. Test \api{updateUI}. Test that no old delegate still receives events after a Look-and-Feel switch.
+
+Pixel tests are useful for geometry invariants. Render the component into a fixed-size \api{BufferedImage} under fixed defaults, then inspect broad facts: the focus ring is inside bounds, text is not clipped, disabled state differs from enabled state, and the icon remains visible. Avoid brittle tests that fail because antialiasing moved one edge by one pixel.
+
+The design payoff is not novelty. The payoff is a component that can be reused without carrying a pile of undocumented assumptions. The component's Java API describes behavior. Defaults describe visual policy. Client properties describe local hints. The delegate implements the policy and cleans up after itself.
+
+\section{Runtime Theme Changes, Metrics, and Accessibility}
+
+Runtime Look-and-Feel switching is an optional product feature but an excellent test. It stresses cached colors, fixed borders, undisposed listeners, renderer state, icons, row heights, focus rings, and custom components that forgot \api{updateUI}. Even if users never switch themes in the shipped product, internal theme switching reveals whether the component boundary is clean.
+
+The mechanical sequence is straightforward. Set the new Look-and-Feel. Update every visible top-level window with \api{SwingUtilities.updateComponentTreeUI}. Invalidate, validate, and repaint as needed. Some windows may need packing if preferred sizes changed substantially. The simplicity of the sequence can be misleading because every custom component must honor its part of the contract.
+
+Theme switching should be treated as a transaction over visible UI, not as a single global variable assignment. Menus, popups, glass panes, owned dialogs, hidden but reusable panels, renderer instances, offscreen caches, and screenshot harness windows may all hold visual state. Some of those objects are reachable from top-level windows; some are not. A product that promises runtime switching should inventory the surfaces it owns and define which ones update immediately, which ones update on next creation, and which ones are deliberately fixed.
+
+\begin{lstlisting}[caption={Updating visible windows after a Look-and-Feel change.}]
+static void updateAllWindows() {
+    for (Window window : Window.getWindows()) {
+        SwingUtilities.updateComponentTreeUI(window);
+        window.invalidate();
+        window.validate();
+        window.repaint();
+    }
+}
+\end{lstlisting}
+
+The most common failure is permanent caching. A component reads a color from \api{UIManager} in its constructor and paints with that field forever. After a theme switch, standard controls refresh and the custom component remains in the old palette. The failure is not in \api{updateComponentTreeUI}; the component did not treat \api{updateUI} as a refresh boundary.
+
+Fonts have the same problem. A cached \api{FontMetrics} object is tied to a font and graphics context. A delegate that computes layout from a stale font metric may clip text after the user changes theme, font size, display scale, or accessibility settings. Prefer computing metrics from the current component font when measuring or painting, unless a cache has a clear invalidation point.
+
+The safe cache rule is to cache facts that have explicit keys. If a text layout depends on text, font, font render context, component width, orientation, and scale, those values form the cache key or invalidation set. If a shape cache depends on size and insets, size and insets invalidate it. If an icon cache depends on theme and scale, theme and scale invalidate it. Caching is not forbidden; unkeyed caching of visual facts is.
+
+Icons also have theme and scale concerns. A dark theme may require a different icon variant. A HiDPI display may require a vector icon or a multi-resolution image. An icon loaded once from a light-theme PNG and stored globally may pass the first demo and fail the first high-contrast test. Resource policy and Look-and-Feel policy meet here, so the boundary should be explicit.
+
+SVG or vector icons can help but do not remove policy. Stroke thickness, fill color, disabled tint, and semantic meaning still have to be chosen. A vector icon that uses hard-coded black may be crisp and unreadable. A theme-aware icon loader should know whether it recolors icons, selects variants, or leaves colors intrinsic. Screenshots should include enabled, disabled, hovered, and selected icon states when iconography carries meaning.
+
+Borders are not decoration in Swing. They contribute insets. Insets affect preferred size, child placement, clipping, focus painting, validation decoration, and scrollable view dimensions. Replacing a border can require revalidation. Stacking compound borders can produce surprising geometry if each layer reserves more space than the layout expects.
+
+Focus painting is a border and accessibility subject at the same time. If a focus ring is painted outside the component bounds, it may be clipped by the parent. If it is painted inside without reserving space, it may collide with text. If it is too subtle, keyboard users cannot see where input goes. A beautiful focus ring that cannot be seen under high contrast is a broken focus ring.
+
+Disabled state deserves the same care. A disabled control is not merely a control painted gray. It must remain legible enough to understand, distinct enough to signal inactivity, and consistent with the Look-and-Feel's policy. A renderer that paints disabled text with a hard-coded gray may become invisible on a dark background or too prominent in high contrast.
+
+Selection is another trap. Tables, lists, and trees supply selected foreground and background colors through their component state. Renderers should normally use those colors when selected. Adding semantic state such as overdue, warning, or invalid should not erase selection contrast. A common pattern is to change an icon, font style, border, or secondary marker while leaving selected foreground and background under Look-and-Feel control.
+
+Invalid selection is an instructive case. A selected row may also contain invalid data. If the renderer paints the invalid row with a red background, selection may disappear. If it ignores invalidity while selected, the user may miss the problem. A better renderer may keep selected foreground and background, add an error icon, adjust font style, or paint a narrow marker inside a reserved area. The exact design is product policy, but the renderer must preserve both facts: selected and invalid.
+
+\termdef{High contrast}{a visual mode or theme policy that increases legibility for users who need stronger distinctions} is not only an operating-system checkbox. It is also a design constraint. Do not rely on color alone for validation, warnings, selection, or focus. Combine color with text, iconography, border shape, tooltip, accessible description, or row marker where the state matters.
+
+High contrast review should include negative cases. A disabled command should be visibly disabled but still readable. A focused component should be obvious without color alone. A warning should differ from an error. A selected invalid row should show both selection and invalidity. A busy overlay should not hide keyboard focus permanently. These states are rare in the happy path and common in support screenshots.
+
+Accessibility APIs see parts of appearance indirectly. A validation border may need an accessible description. A custom component may need an accessible name, role, value, and state. A compact variant may still need a usable focus target. A disabled command should have a disabled reason available to tooltips or help, not merely a grayed-out button.
+
+Look-and-Feel and layout are coupled through metrics. Control padding, border insets, row heights, scroll bar width, combo-box arrow width, and focus width all change geometry. \miglayout{} helps because it asks components for preferred sizes and baselines, but it cannot rescue components that lie. A custom delegate with wrong preferred size will make any layout manager look bad.
+
+Density should be a named decision, not an accidental consequence of a font. A business application may offer normal and compact modes. That mode should flow through defaults, client properties, or layout configuration, not through random calls to \api{setPreferredSize}. Compactness affects gaps, row height, control padding, and sometimes information hierarchy. It must be tested as a screen state.
+
+Compact mode should not be confused with cramped mode. Good compact screens reduce unneeded gaps, align baselines, keep command groups predictable, and preserve focus targets. Bad compact screens shrink fonts, clip labels, hide validation text, and make tables visually noisy. MigLayout helps because it can express related and unrelated gaps, growth, and baseline alignment explicitly. It cannot decide which information deserves space; that remains screen design.
+
+The screenshot harness is important here because density bugs are visual and systemic. A unit test can prove that a model changed. A screenshot can show that compact mode clips a German label, that disabled text is unreadable in dark mode, or that an error border shifts a form by two pixels when a problem appears. Screenshots are not a replacement for tests; they are tests for a different layer.
+
+Runtime theme switching should be tested with active screens, not empty controls. A real screen has tables with selection, invalid fields, disabled commands, focused controls, busy overlays, and scroll panes. A component gallery is useful, but it can miss interactions that appear only when renderers, layout, validation, and command state meet.
+
+A screenshot matrix does not have to be enormous. Choose states that combine independent concerns: selected plus invalid, focused plus disabled nearby, busy plus cancel command, compact plus long translation, dark theme plus warning, high-contrast-like colors plus focus. Each screenshot should answer a question a unit test cannot answer. If the screenshot merely proves that a button exists, it is probably too shallow for a book example.
+
+\begin{migrationbox}{from hard-coded visuals to theme-aware visuals}
+Begin by moving repeated colors, borders, icons, and density decisions into named defaults or resource keys. Then adjust renderers and delegates to read those names. Finally add screenshot states for enabled, disabled, focused, selected, invalid, busy, compact, and dark-theme variants. The migration is mechanical only after ownership is clear.
+\end{migrationbox}
+
+A product must decide how native it wants to be. Menus, accelerators, text editing shortcuts, file dialogs, and focus traversal are often better when they follow platform norms. Domain panels, dashboards, validation markers, and branded command surfaces may need product style. The weak position is an inconsistent middle where every screen chooses independently.
+
+Do not promise runtime theme switching casually. Supporting it means all visible windows update, custom delegates refresh, icons adapt, cached metrics invalidate, validation markers remain legible, and screenshots are reviewed. A product can reasonably choose a fixed theme per launch. What it should not do is claim theme independence while hard-coding half the screen.
+
+Visual review should include font changes. Many Java desktop users run with larger system fonts or different text rendering settings. A form that only works at one font size is fragile. This is another reason to avoid fixed coordinates and fixed preferred sizes. Let \miglayout{} and honest preferred sizes carry the screen.
+
+The mature test matrix is small but deliberate: light theme, dark theme, high-contrast or high-contrast-like colors, normal density, compact density, larger font, keyboard focus path, and selected rows. Not every build must run every screenshot, but every reusable visual component should have passed that matrix before the project depends on it.
+
+The matrix should include long resources because Look-and-Feel metrics and localization meet in layout. A Czech or German label may widen a form. A translated tooltip may need wrapping. A table header may become two lines. A button row may need ordering or growth rules. When text changes, the Look-and-Feel supplies metrics, MigLayout supplies geometry, and the resource system supplies content. A fixed-size screen breaks the cooperation.
+
+It should also include stale-state checks after the theme changes. Open a screen with validation, selection, focus, and busy state; switch the theme; verify that the same facts remain visible and that no old listener, border, or overlay remains. This test finds a different class of defect from a fresh dark-theme screenshot. Fresh construction proves defaults can be read. Switching proves old visual ownership can be released.
+
+\section{Corusco at the Visual Boundary}
+
+Corusco's contribution to Look-and-Feel work is not a new painter. Its contribution is identity, lifecycle, and generated consistency around the facts that painters and delegates consume. Swing gives powerful hooks; Corusco helps keep those hooks from becoming handwritten protocols spread across listeners, renderers, and panel constructors.
+
+Consider validation. In plain Swing, one screen might set a red border on a field, another might change the background, a third might install a tooltip, and a fourth might disable the OK button. Each choice can be reasonable locally and still produce an inconsistent application. The missing object is not a color; it is a structured problem with severity, target, message, and lifecycle.
+
+With Corusco form and problem models, validation can enter Swing as data. A binding behavior can decorate the target component, update a tooltip, contribute to an error summary, and control command enablement. The Look-and-Feel still decides what an error border or warning icon looks like. The screen no longer invents a private validation protocol.
+
+This is why Figure~\ref{fig:laf-state-matrix} belongs in a Look-and-Feel chapter rather than only in a forms chapter. The visual surface is the last step in a chain of meaning. A validation problem is born in a model, targeted by a typed key, exposed through a problem set, bound by a behavior, represented through a client property or decorator, and painted according to defaults. Each step can be tested and replaced. A red border in a constructor has none of that structure.
+
+The same pattern appears in commands. Swing's \api{Action} was an excellent early attempt to give commands identity, text, icon, accelerator, selected state, and enabled state. Corusco command descriptors extend that discipline across resources, help topics, generated companions, and tests. A toolbar button should not be the primary owner of a command's user-facing facts.
+
+Command visual roles should also be data. A destructive command, default command, secondary command, toggle command, and progress command may receive different presentation. That does not mean every button subclass paints itself. It means the command descriptor or binding can expose a role, and the visual policy can map that role to defaults, icons, emphasis, or button order. The Look-and-Feel remains responsible for the component family; Corusco supplies stable command facts.
+
+Resource keys matter visually because language changes geometry. A label that is short in English may be long in Czech or German. A generated form descriptor can give the field stable identity while \miglayout{} handles actual growth. The Look-and-Feel supplies font metrics and gaps. The resource system supplies language. The view builder arranges components. These layers must cooperate without pretending to be one layer.
+
+Generated companions help with client-property discipline. If a generated form knows stable component keys, a behavior can attach validation, help, test identity, or density hints without searching by fragile names. The property is still a Swing client property, but its key and target come from a typed declaration rather than a copied string.
+
+Generated companions can also protect resource and visual drift. A generated field descriptor can know label key, help key, validation target, editor type, and preferred grouping. A hand-built screen can still lay those fields out with care, but it no longer has to copy literal labels, tooltips, and property keys. When a generated descriptor and a Look-and-Feel-aware behavior meet, the screen receives consistent text, help, validation, and visual hints without surrendering layout judgment.
+
+Lifecycle is equally important. A visual behavior that installs listeners, overlays, property listeners, or renderer state must be disposed when the screen closes. Plain Swing code often forgets this because the installation is a few lines in a constructor. Corusco scopes make the owner explicit. When the view's scope closes, bindings and behaviors release what they installed.
+
+Visual behaviors should have the same install ledger as UI delegates. If a behavior installs a border wrapper, it needs to restore or replace it predictably. If it observes a problem set, it needs to unsubscribe. If it adds an overlay, it needs to remove it. If it changes a client property, it needs to decide whether closing the behavior clears the property. The delegate chapter's lifecycle discipline applies to Corusco behaviors as well.
+
+Corusco does not make all visual choices automatic. The developer still decides whether validation is a border, icon, inline message, status row, tooltip, or summary. The difference is that the decision can be implemented once as a behavior and reused. The behavior can read Look-and-Feel defaults and application resource keys instead of hard-coded colors.
+
+\begin{coruscobox}{what Corusco changes}
+Plain Swing supplies the mechanisms: \api{UIDefaults}, client properties, renderers, delegates, actions, and listeners. Corusco supplies stable model facts, descriptors, scopes, and generated companion objects. The result is visual code that reacts to named state instead of rediscovering state by probing widgets.
+\end{coruscobox}
+
+A generated table descriptor is a good example. The descriptor knows column identity, value type, resource keys, editability, validation target, and persistence identity. The JTable still uses Swing renderers and Look-and-Feel colors. But column visibility, header text, tooltips, validation markers, and state persistence no longer depend on indexes and scattered renderer branches.
+
+Observable lists and precise list changes also protect visual consistency. A table model that fires broad resets after every small change loses selection, editing state, sorter context, and sometimes visual continuity. A descriptor-backed model that knows which rows changed can preserve the user's visual context. Appearance is not only color; it is also continuity.
+
+Continuity is often forgotten in visual review. A screen that flashes, loses selection, collapses a tree, or resets scroll position after a small model change may use the correct colors and still feel broken. Look-and-Feel policy governs how selected rows appear, but the model event policy decides whether the selection survives. Corusco's observable collections and descriptors help keep visual continuity tied to precise state changes rather than broad repaint habits.
+
+Background work benefits from the same boundary. A busy overlay should read busy state and progress state, not infer work by checking whether a button is disabled. A task service can expose cancellation, status text, and generation counters. A Look-and-Feel-aware overlay can then use proper colors, alpha, focus handling, and accessibility descriptions while remaining tied to real task lifecycle.
+
+The screenshot harness becomes more valuable when state has identity. Instead of manually clicking a screen into a fragile configuration, the test can construct a model with a selected row, a validation problem, a disabled command, and a busy task state. The view renders that state under \flatlaf{} and \miglayout{}; the screenshot records the visual contract.
+
+This is also the path away from screenshot-only examples. A book example should have a model-level test or smoke test whenever possible. The screenshot is then a byproduct of real state, not a hand-painted illustration. Readers can run the example, inspect the model, and see how Corusco reduces wiring.
+
+Generated screenshot names should be treated as part of the example contract. A chapter should cite \api{BookFigureGenerator} and compact class names, while the build script knows where files live. That keeps the PDF professional and keeps source movement cheap. A long absolute path inside a figure box is not documentation; it is an implementation leak.
+
+MigLayout remains the ordinary layout recommendation in Corusco screens because generated and descriptor-backed UIs still need human-quality geometry. Code generation should not produce a layout that looks generated. Labels need baselines, fields need growth rules, command rows need platform-consistent grouping, and optional sections need collapse behavior. \miglayout{} gives the screen builder a compact grammar for those decisions.
+
+The useful separation is this: Corusco can generate stable component fields, bindings, descriptors, and behavior plans; the developer still owns the composition of the screen. A generated companion should reduce repetitive wiring, not remove judgment about spacing, grouping, emphasis, and workflow. The Look-and-Feel chapter is where that judgment touches pixels.
+
+Corusco also gives reviewers better questions. Is this color a severity default? Is this tooltip from a resource key? Is this disabled state from a command? Is this component key stable enough for tests? Is this visual behavior disposed? Is this table column identity stable across reordering? These questions are more precise than "does the UI look OK?"
+
+The migration from plain Swing can be incremental. Start by naming visual facts: command role, validation severity, compactness, help topic, column identity. Move repeated presentation constants into defaults or resources. Bind model facts to components through scoped behaviors. Replace ad hoc renderer branches with descriptor-driven renderers. Each step leaves working Swing code behind it.
+
+There is no need to hide Swing. Corusco works best when it respects Swing's own architecture. A descriptor-backed table is still a \api{JTable}. A validation decorator may still be a border, overlay, or client property. A command may still adapt to \api{Action}. The gain is that Swing receives organized information instead of being used as the only place where information exists.
+
+The most useful migration pattern is to leave the visible screen mostly intact while moving meaning outward. First name commands. Then name resources. Then name validation targets. Then name component keys. Then move repeated visual reactions into scoped behaviors. Finally move repeated layout fragments or descriptors where generation helps. The Look-and-Feel does not have to wait for a rewrite; it improves as each unnamed fact becomes named.
+
+\section{Workflow and Review Rules}
+
+A practical Look-and-Feel workflow begins before the first screen is built. Choose the baseline Look-and-Feel, install it early, and decide which application defaults exist. Decide whether the product supports theme switching at runtime, theme switching at restart, or one fixed theme. Decide whether compact density exists. Decide how validation, warning, destructive action, and busy states are represented.
+
+Next, build a component gallery that is not too precious. It should show labels, buttons, text fields, combo boxes, check boxes, radio buttons, lists, tables, trees, tabs, dialogs, validation states, disabled commands, focused controls, selected rows, and busy overlays. The gallery is not a marketing page. It is a laboratory for defaults, client properties, resource text, and screenshot comparisons.
+
+Then build one real dense screen early. Component galleries hide layout pressure. A real screen with a table, filter form, detail panel, command row, status text, and validation summary reveals whether the visual policy can survive production composition. This is why the companion examples prefer \miglayout{} panels and \flatlaf{} styling instead of isolated control snapshots.
+
+When a visual problem appears, classify it before fixing it. Is the problem a wrong default, a wrong resource, a wrong layout constraint, a wrong component metric, a wrong renderer rule, a wrong model fact, or a missing behavior? The classification prevents local fixes that solve the screenshot and damage the architecture.
+
+If the problem is a wrong default, fix the default or the theme. If it is a wrong layout constraint, fix the \miglayout{} grammar. If it is a wrong component metric, fix the delegate's preferred size or baseline. If it is a wrong renderer rule, make the renderer respect selection and disabled state. If it is a wrong model fact, fix the Corusco model or descriptor. Each layer has a different repair.
+
+This classification is a practical debugging tool. A clipped label after translation is rarely a color problem. A disabled command that still looks enabled is rarely a layout problem. A selected warning row with unreadable text is usually a renderer-state problem. A validation border that shifts the form may be a border-insets or layout problem. A stale busy overlay after closing a tab is a lifecycle problem. Naming the category reduces the urge to solve every visual problem with another local style call.
+
+A code review should be suspicious of \api{setPreferredSize}. Sometimes it is legitimate for fixed-format components such as swatches, icons, timeline thumbs, or canvas previews. It is usually wrong for text controls, labels, buttons, and forms. Preferred size should normally arise from UI delegates, content, borders, and layout constraints, not from guessing pixels.
+
+There are legitimate fixed dimensions, and the review should recognize them. A color swatch, icon button square, chessboard cell, waveform viewport, or screenshot preview may have a stable format. Even then, the fixed dimension should be expressed as a domain or design constraint, not as a rescue for broken layout. Text-bearing controls should nearly always size from font metrics, content, and constraints because text length, scaling, and localization change.
+
+The review should also search for \api{new Color}, \api{new Font}, \api{setBorder}, and raw client-property strings. None of these is automatically wrong. All of them should have a named reason. A chart palette may legitimately be data semantics. A focus border copied into six panels is likely a theme leak. A raw property string in a generated behavior is likely a missing constant.
+
+Review renderer methods with extra care. A renderer is reused as a stamp. It must reset every property it changes, respect selected and focused state, avoid per-cell allocation where possible, and avoid storing row-specific state in fields that survive the next cell. Look-and-Feel bugs in renderers often appear as colors leaking from one row to another.
+
+Review UI delegates for lifecycle. The delegate should install and uninstall symmetrically, avoid permanent caches of UI-derived values, compute metrics from current state, and respond to property changes that affect layout or painting. If a delegate starts a timer, the uninstall method should stop it. If it registers a listener, the uninstall method should remove it.
+
+Review accessibility as part of appearance. A validation icon without accessible description is incomplete. A color-only warning is incomplete. A custom focus ring that disappears in high contrast is incomplete. A compact mode that makes focus targets too small may be incomplete. The Look-and-Feel can help, but custom code can still undo its help.
+
+Review screenshot coverage by state, not by class. The goal is not to have a picture of every component. The goal is to capture states where visual policy often breaks: focused, disabled, selected, invalid, busy, compact, dark, high-contrast-like, long localized text, and large font. A few state-rich screenshots are more useful than many empty galleries.
+
+Screenshots should be paired with nonvisual assertions when possible. A screenshot can show the invalid border; a model test can assert the \api{ProblemSet}. A screenshot can show Paste disabled; a command test can assert the disabled reason. A screenshot can show selected rows preserved; an observable-list test can assert the precise event. This pairing keeps screenshots from becoming the only specification and keeps unit tests honest about visible consequences.
+
+Review text length and wrapping at the same time. A Look-and-Feel chapter that teaches resource keys but never shows long labels is incomplete. Long translated text changes baseline alignment, dialog width, table header height, tooltip usefulness, and button-row balance. Visual policy must be tested with realistic strings, not only with the shortest English labels.
+
+The hard-coded color audit is a good recurring exercise. Search the codebase, classify every literal color, and move policy colors into named defaults. Some colors will remain because they are data colors or generated image assets. The point is not prohibition. The point is that a reviewer can tell which colors are semantic and which colors are theme policy.
+
+The client-property audit is similar. Search for \api{putClientProperty}. For each key, identify the owner, allowed values, default behavior, affected components, invalidation rule, and tests. If no one can answer those questions, the property is not an extension point; it is a hidden side channel.
+
+The delegate ownership drill should be performed on every custom delegate before it is reused. Make a table with columns for installed object, installation method, owner, uninstall method, and reason. Include borders, listeners, timers, keyboard actions, child components, and caches. This table is tedious once and valuable forever.
+
+The renderer reset drill is equally important. Render one selected row, then one unselected row, then one disabled row, then one invalid row, then one normal row. If colors, borders, icons, fonts, or tooltips leak from one row to the next, the renderer is storing state accidentally or failing to reset properties. This drill catches many bugs before they require a full table screenshot.
+
+The theme-switch drill should be run after the renderer reset drill. A renderer that is correct on first construction can still hold stale colors after a Look-and-Feel change if it cached defaults in fields. Re-render the same states after \api{updateComponentTreeUI}; the selected, disabled, invalid, and focused states should still be coherent under the new defaults.
+
+If the second rendering differs for reasons other than the new theme policy, the renderer probably owns visual state that should have remained in defaults, component state, or the model, and that ownership should be corrected before the renderer is reused in a production table, dialog, or screen surface.
+
+\begin{detailbox}{review rule}
+The question "who owns this visual decision?" should have a concrete answer. Acceptable answers include Look-and-Feel default, application default, resource key, command descriptor, validation behavior, table descriptor, renderer semantic rule, and custom component delegate. "This panel happened to set it" is not an architecture.
+\end{detailbox}
+
+Beginners can use a simpler checklist. Install the Look-and-Feel before building the UI. Avoid fixed sizes. Let layout managers work. Do not block the EDT while loading icons or themes. Use Swing models for state. Use \api{Action} or Corusco commands for commands. Test with keyboard focus. Try a dark theme. Look at disabled controls. That small discipline prevents many advanced failures.
+
+Intermediate programmers should add ownership and lifecycle. Name defaults. Define client-property constants. Make custom components honor \api{updateUI}. Do not cache UI resources forever. Make renderers reset state. Keep validation state outside the widget. Dispose visual behaviors. Capture screenshots of stressed states. These habits turn Swing from permissive toolkit into maintainable system.
+
+Advanced programmers should read Basic delegates periodically. Not to copy them blindly, but to remember the full shape of a component family. The standard delegates encode years of details about focus, input maps, baselines, disabled state, orientation, accessibility, and uninstall behavior. A custom component that ignores those details should do so knowingly.
+
+The point of the chapter is not that Look-and-Feel is mysterious. The point is that appearance is a contract with many parties: Swing, the current theme, layout managers, resources, accessibility, commands, validation, tests, and users. Corusco helps by giving application facts stable identity before they enter that contract. The Look-and-Feel does the visual work better when the facts it receives are organized.
+
+That organization is the difference between style and guesswork.
+
+For the reader returning to Swing after years away, this is the chapter's main simplification: do not memorize every default key first. Learn the ownership questions. What fact is being displayed? Who owns that fact? Is the visual decision global policy, local hint, renderer semantics, delegate behavior, or layout geometry? What invalidates it? What test or screenshot proves it? Once those questions are natural, the individual APIs become tools rather than folklore.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Create a small custom component with \api{getUIClassID}, \api{updateUI}, and a Basic-style delegate.
+\item Move hard-coded application colors into \api{UIDefaults} and update renderers to read them.
+\item Define a client property named \api{App.compact}; document its values and invalidation rule.
+\item Change Look-and-Feel at runtime and identify which custom components fail to update.
+\item Write a delegate that installs a listener, then prove \api{uninstallUI} removes it.
+\item Test a custom focus ring under keyboard-only navigation and high-contrast-like colors.
+\item Replace a subclassed button visual hack with a UI default or delegate-based approach.
+\item Build a small table of all application-specific \api{UIDefaults} keys and their types.
+\item Add screenshot states for selected, disabled, invalid, focused, busy, compact, and dark-theme variants.
+\item Rewrite one validation decoration as a Corusco behavior that reads problem state instead of widget state.
+\end{enumerate}
+\end{exercisebox}
+
+\begin{itemize}
+\item Read visual policy from \api{UIManager} or component properties where appropriate.
+\item Use client properties as documented extension points, not random side channels.
+\item Implement \api{updateUI} for custom components with delegates.
+\item Uninstall listeners, borders, timers, and keyboard actions installed by a delegate.
+\item Avoid caching UI-derived colors, fonts, icons, and metrics without refreshing them.
+\item Test renderers under selected, disabled, focused, invalid, and normal states.
+\item Remember that borders affect geometry and therefore layout.
+\item Prefer delegates and defaults for broad visual policy, renderers for cell semantics, and custom painting for semantic visualizations.
+\item Keep Corusco resources, commands, validation state, and component keys separate from Look-and-Feel mechanics.
+\item Use screenshots to review the states that prose and unit tests cannot see.
+\end{itemize}

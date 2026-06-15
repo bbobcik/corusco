@@ -1,0 +1,495 @@
+\chapter{Java 2D, HiDPI, and Multi-Resolution Images}
+\chapterquote{The component is measured in Swing coordinates; the device is measured in pixels; the transform is the treaty between them.}{A rendering maxim}
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Core question & How should a Swing component render correctly across scale factors, monitors, fonts, themes, and printing-like surfaces?\\
+Primary APIs & \api{Graphics2D}, \api{AffineTransform}, \api{RenderingHints}, \api{FontRenderContext}, \api{TextLayout}, \api{GlyphVector}, \api{MultiResolutionImage}, \api{GraphicsConfiguration}.\\
+Hidden difficulty & Manual pixel assumptions work at one scale, then fail under fractional scale, monitor movement, transformed graphics, text shaping, or cached raster output.\\
+Payoff & Sharper UI, correct hit testing, better icons, reliable custom drawing, fewer platform-specific surprises, and renderers that can be tested.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Logical Geometry and the Graphics Context}
+
+\termdef{User space}{the coordinate system in which ordinary Swing painting code expresses positions and sizes} is the first idea. When a component's \api{paintComponent} method receives a \api{Graphics} object, the origin and clip have already been prepared for that component. In ordinary code the point \((0,0)\) is the upper-left corner of the component, and a line from \((0,0)\) to \((100,0)\) is one hundred user-space units long. That statement says nothing about the exact number of device pixels used on the monitor. It describes a logical geometry that the Java 2D pipeline maps to the destination.
+
+\termdef{Device space}{the coordinate system of the destination pixels or printer units} is the second idea. A HiDPI monitor may use two physical pixels for one logical unit, a fractional desktop scale may use a non-integral mapping, and a printer or PDF target may have a completely different resolution. Swing components should not begin by asking how many pixels the screen has. They should begin by describing the geometry they intend to paint, and they should cross into device-space reasoning only when the program is deliberately creating a raster image, aligning a hairline, talking to native code, or comparing screenshots.
+
+The novice HiDPI mistake is therefore a very natural one: "what is the screen scale, and how do I multiply every coordinate?" The disciplined answer is usually: do not multiply every coordinate. Draw in logical coordinates. Let the graphics configuration and the default transform describe the device. Introduce your own transform only when the application model has a coordinate system of its own, such as a chart, a diagram, a document page, or a zoomable timeline.
+
+\begin{principlebox}{Do not chase pixels prematurely}
+Use logical coordinates for layout, hit testing, selection geometry, and most painting. Convert only at system boundaries: raster image creation, low-level buffers, native integration, screenshots, printing/export profiles, or deliberate pixel alignment.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{\javaTwoDVectorFigure}
+\caption{A scale-tolerant custom drawing example. The figure is a rendered Swing component: vector shapes, text, colors, and strokes are produced by Java 2D rather than by a static illustration.}
+\label{fig:java2d-vector-primitives}
+\end{figure}
+
+Figure~\ref{fig:java2d-vector-primitives} is intentionally simple. Its purpose is not to prove that Java 2D can draw impressive art, but to remind us that most Swing custom painting begins with ordinary geometric objects: lines, rectangles, rounded rectangles, ellipses, text baselines, and colors from the current theme. A program that preserves those objects for as long as possible adapts better to new scale factors than a program that converts everything to fixed integer pixel coordinates at the beginning of the method.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{\javaTwoDScaleFigure}
+\caption{A logical grid rendered at two visual scales. The important comparison is not merely sharpness; it is whether the program knows which decisions belong to logical geometry and which belong to the device.}
+\label{fig:java2d-scale-grid}
+\end{figure}
+
+Figure~\ref{fig:java2d-scale-grid} shows the practical form of the same rule. A grid is a model-space idea: a set of positions with meaning. The rasterization of the grid is a device-space result: which pixels become dark, which pixels are antialiased, and how a one-unit stroke is sampled. When a component confuses these two questions, it may look perfect at 100 percent scale and slightly wrong everywhere else. The error is often too small to notice during development and large enough to make the application feel unprofessional on a user's monitor.
+
+\begin{examplebox}{java2d figures}
+\api{BookVisualFigures} contains the source for Figures~\ref{fig:java2d-vector-primitives} and~\ref{fig:java2d-scale-grid}. The screenshots are produced by \api{BookFigureGenerator} through \screenshotHarnessExample{}, which fixes the Look-and-Feel, window size, and output path for the book build.
+\end{examplebox}
+
+\textbf{The \api{Graphics2D} state machine.} A \api{Graphics2D} object is a mutable rendering context. It contains a transform, a clip, a paint, a stroke, a composite, a font, rendering hints, and several other pieces of drawing state. Every paint method receives a context owned by the caller. If a component changes that context and leaves it changed, later drawing may inherit an unexpected transform, color, alpha value, or clipping region.
+
+The idiom is to work on a copy. Calling \api{create} produces a child graphics context whose state may be changed freely; calling \api{dispose} releases it. This is not ceremony. It is how a custom component says, "the antialiasing, stroke, transform, and composite used inside this block do not leak into the caller." The habit is especially important in renderers, decorators, and layered painting where many small routines share the same original context.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.20\linewidth}X X}
+\toprule
+State & Purpose & Common advanced failure\\
+\midrule
+Transform & Maps user coordinates to the destination or to an intermediate coordinate system. & Applying scale twice; forgetting the same transform during hit testing.\\
+Clip & Limits drawing to the damaged region or an explicit shape. & Traversing and painting thousands of objects that cannot be visible.\\
+Paint & Defines fill/stroke color, gradient, or texture. & Leaving a gradient or temporary color installed for later drawing.\\
+Stroke & Defines outline width, joins, caps, and dashes. & Assuming a one-unit stroke always means one physical pixel.\\
+Composite & Defines alpha and blending. & Leaving a translucent composite active and making later text faint.\\
+Font and hints & Control text and shape rendering behavior. & Forcing hints that clash with the platform or surrounding Look-and-Feel.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+A small state leak may look like a random rendering failure because it is observed far away from the line that caused it. A decorator sets a translucent composite, a later label becomes pale; a graph renderer scales the context, a later border is drawn in the wrong place; a cell renderer sets an interpolation hint, a later icon looks different from neighboring icons. The failure is not random. It is the natural consequence of a mutable context with shared ownership.
+
+\begin{lstlisting}[caption={A local graphics context for a custom painter.}]
+@Override
+protected void paintComponent(Graphics g) {
+    super.paintComponent(g);
+    Graphics2D g2 = (Graphics2D) g.create();
+    try {
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                            RenderingHints.VALUE_ANTIALIAS_ON);
+        paintScene(g2, getWidth(), getHeight());
+    } finally {
+        g2.dispose();
+    }
+}
+\end{lstlisting}
+
+\textbf{Transforms as architecture.} A transform is not merely a convenient way to zoom a picture. In a serious custom component it is the formal mapping between the application's coordinate system and the view. A timeline maps time to horizontal position. A chart maps values to vertical position. A document view maps page coordinates through zoom and scrolling. A diagram editor maps model coordinates through zoom, pan, and perhaps rotation.
+
+The same mapping must serve painting, hit testing, selection, drag feedback, tooltips, accessibility bounds, printing, and screenshot tests. If painting uses one scale variable, mouse handling uses another, and export uses a third, the program has three definitions of the same screen. Bugs then appear only under certain combinations: after panning, after changing zoom, after moving to another monitor, or after printing.
+
+\begin{lstlisting}[caption={A small viewport transform object for a zoomable canvas.}]
+public final class ViewTransform {
+    private final double scale;
+    private final double tx;
+    private final double ty;
+
+    public ViewTransform(double scale, double tx, double ty) {
+        if (scale <= 0.0) {
+            throw new IllegalArgumentException("scale must be positive");
+        }
+        this.scale = scale;
+        this.tx = tx;
+        this.ty = ty;
+    }
+
+    public AffineTransform toViewTransform() {
+        AffineTransform at = new AffineTransform();
+        at.translate(tx, ty);
+        at.scale(scale, scale);
+        return at;
+    }
+
+    public Point2D toModel(Point viewPoint) {
+        try {
+            return toViewTransform().createInverse().transform(viewPoint, null);
+        } catch (NoninvertibleTransformException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+}
+\end{lstlisting}
+
+Keep this object outside \api{paintComponent}. Painting should consume the current transform, not invent it from scattered fields. Mouse events should use the same transform for hit testing. A scroll pane, a zoom control, and a minimap can all observe or replace one presentation value. Once the mapping is explicit, a zoom bug becomes a testable arithmetic defect rather than a rumor about pixels.
+
+\textbf{The clip is a promise and a warning.} Swing's repaint machinery computes dirty regions and passes a clip to painting. That clip says which part of the component needs pixels. A small component can ignore it and survive; a large component cannot. If a canvas contains 100,000 shapes and the clip covers only a small rectangle, the renderer should avoid traversing and painting everything that cannot intersect that rectangle.
+
+Respecting the clip is not only a performance optimization. It is also a design pressure. To use the clip well, the model needs cheap bounds, spatial indexing, or at least sorted ranges. A component that stores its scene as arbitrary paint callbacks may have no way to answer "what intersects this rectangle?" That design is acceptable for a tiny decorative component and inadequate for an editor, chart, or large table-like visualization.
+
+\textbf{Stroke alignment and crisp lines.} A one-unit stroke centered on an integer coordinate straddles adjacent device pixels in some transforms. With antialiasing it may appear soft. Many developers remember the old remedy of adding \(0.5\) to coordinates. That trick can be correct at scale 1, wrong at scale 1.25, and meaningless under a nontrivial transform. The deeper question is whether the drawing wants geometric correctness or device-pixel crispness.
+
+For charts, diagrams, printable views, and zoomable editors, prefer geometric correctness. The stroke should describe a line in the model. When the user zooms, the geometry should still be honest. For separators, hairline grid rules, and certain pixel-aligned UI affordances, device awareness may be correct. Put that decision in a named helper and make the helper's coordinate system explicit.
+
+\begin{lstlisting}[caption={Painting a logical separator while keeping state local.}]
+static void paintHorizontalSeparator(Graphics2D g2, double y,
+                                     double x1, double x2) {
+    Stroke oldStroke = g2.getStroke();
+    Object oldAA = g2.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+    try {
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                            RenderingHints.VALUE_ANTIALIAS_OFF);
+        g2.setStroke(new BasicStroke(0.0f)); // Hairline in many pipelines.
+        g2.draw(new Line2D.Double(x1, y, x2, y));
+    } finally {
+        g2.setStroke(oldStroke);
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, oldAA);
+    }
+}
+\end{lstlisting}
+
+The example is intentionally modest because the important point is ownership. A production helper may inspect the current transform, may align an endpoint in device space, or may choose a different stroke strategy for export. What it must not do is hide a half-pixel superstition inside ordinary domain geometry. When a method performs device-space alignment, its name and documentation should say so.
+
+\section{Text, Images, and Scale-Sensitive Assets}
+
+Text is the fastest way to discover whether a drawing routine is merely decorative or truly part of a Swing user interface. A string has characters, code points, grapheme clusters, glyphs, advances, visual bounds, logical bounds, baselines, bidirectional runs, fallback fonts, and accessibility meaning. The method \api{Graphics.drawString} is useful, but it is not a complete text system. A component that supports selection, editing, precise labels, or multilingual content needs a more careful vocabulary.
+
+\termdef{Baseline}{the line on which text visually sits} is often more important than the top of the text box. Dense Swing screens look professional when labels, fields, table cells, and custom annotations agree about baselines. Hard-coded vertical offsets break when the Look-and-Feel changes font, when the user increases UI font size, or when the platform chooses different text antialiasing. Measure in the current graphics context, then align the measurement to the component's geometry.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.94\linewidth]{\javaTwoDTextFigure}
+\caption{Text measurement has several answers. The baseline aligns text, the advance positions following text, logical bounds reserve line space, and ink bounds describe pixels that may need repainting.}
+\label{fig:java2d-text-baseline}
+\end{figure}
+
+Figure~\ref{fig:java2d-text-baseline} shows why a single integer named "text width" is often not enough. The text has a baseline because adjacent labels and fields need to align visually. It has an advance because the next run of text needs a starting point. It has logical bounds because line layout needs space for ascent and descent. It has ink bounds because repainting and collision checks care where pixels are actually drawn. These rectangles can be close and still not identical.
+
+The difference matters in ordinary Swing, not only in typography tools. A validation badge aligned to the top of a label may look wrong under a larger font. A row header that reserves only ink bounds may clip descenders. A chart label that uses advance as its collision rectangle may overlap when glyphs overhang. A screenshot comparison that ignores fractional metrics may flicker between platforms. The cure is not to memorize every metric; it is to ask which question the code is answering.
+
+\api{FontMetrics.stringWidth} answers one simple and useful question: how far the current font metrics advance for this string in many ordinary cases. It does not answer every question. \api{TextLayout} can account for shaping and bidirectional layout. \api{GlyphVector} can expose glyph outlines. \api{FontRenderContext} ties the measurement to antialiasing, fractional metrics, and transform state. If a custom component has a method named \api{textWidth}, review what question it really answers.
+
+\api{FontRenderContext} is often the missing cache key. Text measured with fractional metrics off may not occupy the same advance as text measured with fractional metrics on. Text measured under one transform may not match text drawn under another. Text measured for a screen profile may differ from text measured for an export profile if the profile chooses different hints. A cache of \api{TextLayout} or truncated labels should therefore be keyed by more than the string. At minimum it needs font, text, width constraint when wrapping or ellipsizing, locale or direction policy when relevant, and the rendering context or profile that determines measurement.
+
+This does not mean every label should use \api{TextLayout}. Ordinary Swing labels and fields already handle much text work through their UI delegates. Use the advanced APIs when a custom component has become a text layout participant: chart labels, map labels, timeline markers, custom row headers, syntax views, diagram node titles, rulers, badges, and export surfaces. In those places, text is part of the component's geometry. It should be measured with the same seriousness as shapes.
+
+A good renderer distinguishes layout measurement from paint execution. It may compute which labels fit, which labels collide, which labels need ellipses, and which bounds need repainting before the actual draw calls. The paint method can then consume prepared layout facts. That preparation may still happen on the EDT if it is cheap and tied to current font metrics. If it is expensive, a worker can prepare candidate geometry from immutable inputs, but installation of Swing-visible layout state still belongs at the EDT boundary described in the previous chapter.
+
+\begin{lstlisting}[caption={Using TextLayout for precise label bounds.}]
+static Shape labelShape(Graphics2D g2, String text, Font font,
+                        float x, float baselineY) {
+    FontRenderContext frc = g2.getFontRenderContext();
+    TextLayout layout = new TextLayout(text, font, frc);
+    AffineTransform at = AffineTransform.getTranslateInstance(x, baselineY);
+    return layout.getOutline(at);
+}
+\end{lstlisting}
+
+The outline returned by this helper is not necessarily the same as the advance, and the advance is not necessarily the same as the logical bounds. That is not an API nuisance; it is the nature of text. A glyph may extend left of its origin, an accent may rise above the ascent expected by a naive label, and an emoji sequence may have a visual width unrelated to the number of \api{char} values in the string.
+
+\begin{detailbox}{Measure text with the API that matches the question}
+\api{FontMetrics.stringWidth} is often enough for simple labels. \api{TextLayout} is more appropriate when shaping, bidi text, ligatures, fractional metrics, or precise caret positions matter. Glyph vector bounds answer another question: the painted outline. Advanced components should name these distinctions instead of hiding them behind one method called \api{textWidth}.
+\end{detailbox}
+
+Rendering hints are not commands carved into the device. They are requests to the rendering pipeline, and the pipeline may interpret them differently depending on platform, transform, font, destination, or acceleration path. A good custom component may set antialiasing for shapes, fractional metrics for text, and interpolation for scaled images. A bad one sets every hint it can find and assumes the result is automatically better.
+
+Hints should be local. The surrounding Look-and-Feel may have chosen text rendering defaults that match the operating system. A renderer that forces incompatible text hints can make one table column look slightly unlike the rest of the application. A component that forces slow interpolation during a drag can make interaction feel heavy. A high-quality export path may deserve different hints than an interactive screen path.
+
+\begin{lstlisting}[caption={A conservative local hint block.}]
+Graphics2D g2 = (Graphics2D) g.create();
+try {
+    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+    g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,
+                        RenderingHints.VALUE_STROKE_PURE);
+    paintVectorContent(g2);
+} finally {
+    g2.dispose();
+}
+\end{lstlisting}
+
+Images introduce a different problem. A vector shape can be sampled at many scales, but a raster image has pixels. If the only toolbar asset is a 16-by-16 PNG, a 200 percent monitor can only enlarge those pixels unless another representation is available. Enlarging a small raster may be acceptable for a temporary prototype and unacceptable in a polished tool. The fix is not to double every toolbar size. The fix is to keep logical dimensions stable while supplying suitable raster variants.
+
+\api{MultiResolutionImage} is the Java concept for an image that can provide resolution variants for requested dimensions. The exact asset strategy may vary: separate 1x and 2x PNG files, several logical icon sizes, generated vector-to-raster outputs, or a custom image implementation. The design principle is stable. The icon's logical width and height describe layout. The selected image variant describes raster detail.
+
+\begin{lstlisting}[caption={A small icon wrapper around a multi-resolution image.}]
+public final class MultiResIcon implements Icon {
+    private final Image image;
+    private final int width;
+    private final int height;
+
+    public MultiResIcon(Image image, int width, int height) {
+        this.image = Objects.requireNonNull(image);
+        this.width = width;
+        this.height = height;
+    }
+
+    @Override public int getIconWidth() { return width; }
+    @Override public int getIconHeight() { return height; }
+
+    @Override
+    public void paintIcon(Component c, Graphics g, int x, int y) {
+        g.drawImage(image, x, y, width, height, c);
+    }
+}
+\end{lstlisting}
+
+The key is that \api{getIconWidth} and \api{getIconHeight} return logical dimensions. A 16-by-16 toolbar icon should occupy 16 logical units if that is the design of the toolbar. On a 2x destination the image machinery may choose a 32-pixel representation, but the button should not suddenly consume twice as much layout space.
+
+Themes complicate image policy. A disabled icon may be derived by the Look-and-Feel, supplied as a separate resource, tinted from a symbolic source, or generated dynamically. A dark theme may require a different image than a light theme. If the image is cached, the cache key must know which inputs affect the pixels. A cache that ignores theme, scale, enabled state, or foreground color will eventually draw stale pixels.
+
+When creating off-screen images for repeated painting, prefer images compatible with the destination graphics configuration. A compatible image can be accelerated or formatted to match the device better than a generic \api{BufferedImage}. This does not mean every custom component needs a cache. It means that when a cache is justified, the cache should be honest about the destination for which it was prepared.
+
+\begin{lstlisting}[caption={Creating a compatible translucent image.}]
+static BufferedImage createCompatibleImage(Component c, int w, int h) {
+    GraphicsConfiguration gc = c.getGraphicsConfiguration();
+    if (gc == null) {
+        gc = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getDefaultScreenDevice()
+                .getDefaultConfiguration();
+    }
+    return gc.createCompatibleImage(w, h, Transparency.TRANSLUCENT);
+}
+\end{lstlisting}
+
+A raster cache is an agreement that some inputs will not change until the cache is invalidated. That agreement should be written down in code. A chart background may depend on logical size, device scale, font metrics, Look-and-Feel colors, grid style, data range, and rendering profile. A text layout cache may depend on font, text, antialiasing, width, locale, and writing direction. A cache keyed only by width and height is usually a guess.
+
+\api{VolatileImage} is a specialized form of off-screen image whose contents may be lost and must be restored. It can be useful in animation or active rendering, but it is less commonly needed in ordinary Swing forms. The important point is contractual: lost contents are not exceptional. They are part of the API. If the component cannot tolerate a restoration loop, it should not choose \api{VolatileImage}.
+
+\begin{lstlisting}[caption={The essential VolatileImage validation loop.}]
+void paintCached(Graphics2D screen, GraphicsConfiguration gc) {
+    do {
+        int valid = volatileImage.validate(gc);
+        if (valid == VolatileImage.IMAGE_INCOMPATIBLE) {
+            recreateVolatileImage(gc);
+            renderIntoVolatileImage();
+        } else if (valid == VolatileImage.IMAGE_RESTORED) {
+            renderIntoVolatileImage();
+        }
+
+        screen.drawImage(volatileImage, 0, 0, null);
+    } while (volatileImage.contentsLost());
+}
+\end{lstlisting}
+
+Most business applications should not start here. Direct painting, immutable vector shapes, compatible \api{BufferedImage} caches, and well-scoped renderer objects are easier to reason about. \api{VolatileImage} is an advanced tool for workloads that justify its contract. The same restraint applies to every rendering optimization: choose it after the drawing contract is clear, not before.
+
+\section{Per-Monitor Reality and Rendering Boundaries}
+
+Modern desktops may have different scale factors on different monitors. A window can move while the application is running. A component can be undisplayable, displayable, moved to another \api{GraphicsConfiguration}, repainted with a different default transform, and asked to choose different image variants. A startup-global scale constant is therefore a liability. It describes a moment, not the application.
+
+Ask the current context when the answer is scale-sensitive. During painting, the \api{Graphics2D} transform is the most immediate description of the mapping. Outside painting, the component's \api{GraphicsConfiguration} may provide useful information, but it may be null before display. A robust component treats scale as an input to rendering and caching, not as a permanent field initialized in \api{main}.
+
+\begin{lstlisting}[caption={Observing graphics configuration changes for cache invalidation.}]
+component.addPropertyChangeListener("graphicsConfiguration", event -> {
+    imageCache.clear();
+    component.repaint();
+});
+\end{lstlisting}
+
+This listener is not a complete scale policy by itself. Fonts, Look-and-Feel, UI defaults, component size, rendering profile, and data may also invalidate pixels. The listener is valuable because it makes one hidden assumption visible: the graphics configuration is not a constant. Once the code admits that, the rest of the cache policy can be reviewed honestly.
+
+\textbf{Hit testing under transforms.} A zoomable component must not hit-test painted objects with ad hoc arithmetic. If painting uses an \api{AffineTransform}, hit testing should use its inverse. If a component has several layers with different transforms, the hit-testing code should know which layer is being tested. Otherwise a point that visually lands on a shape may select a different model object.
+
+\begin{lstlisting}[caption={Hit testing a model shape from a mouse event.}]
+@Override
+protected void processMouseEvent(MouseEvent e) {
+    if (e.getID() == MouseEvent.MOUSE_PRESSED) {
+        Point2D modelPoint = viewTransform.toModel(e.getPoint());
+        Optional<Node> hit = model.findTopmostNodeAt(modelPoint);
+        hit.ifPresent(this::selectNode);
+    }
+    super.processMouseEvent(e);
+}
+\end{lstlisting}
+
+The inverse transform can fail if the transform is not invertible, for example at zero scale. That should be prevented before rendering. A zoom factor of zero is not a valid view state; it is not merely a painting edge case. By rejecting invalid transforms at the presentation-model boundary, the component protects painting, hit testing, accessibility, and export at the same time.
+
+Rubber-band selection is a useful test. The user drags a rectangle in view coordinates. The application wants to select model objects in model coordinates. A careless implementation converts only the first point, or uses width and height without considering the transform, or forgets that a zoomed view may have a panned origin. A disciplined implementation converts the whole selection shape or computes its model-space bounds through the same transform service used by painting.
+
+Tooltips and accessibility bounds need the same discipline. A tooltip provider that asks "which model object is under this view point?" should not duplicate the renderer's coordinate math. An accessible child that exposes bounds should not report stale logical bounds as though they were screen bounds. Accessibility is a rendering boundary too: it turns visual geometry into information another client can consume.
+
+\textbf{Printing-like rendering.} Printing, PDF export, high-resolution screenshots, and image export often reuse component drawing code. Reuse is possible only if rendering is not dependent on incidental live component side effects. A print target may have a different transform, no ordinary screen device, different clip, different font metrics, and no reason to use Swing double buffering. A screenshot harness may run in a deterministic window at a fixed size, but it still asks whether the component can render without a human moving the mouse.
+
+For serious output, separate the scene renderer from the Swing component. The component handles events, focus, invalidation, scrolling, and screen-specific details. The renderer accepts a \api{Graphics2D}, a rectangle, a model snapshot, and a rendering profile. That boundary is not merely for graphics-heavy applications. A dense business screen with validation marks, disabled overlays, or status badges also benefits when the drawing of those marks is a pure function of state and context.
+
+\begin{lstlisting}[caption={Separating scene rendering from the Swing component.}]
+public interface SceneRenderer {
+    void render(Graphics2D g2, Rectangle2D bounds,
+                SceneSnapshot snapshot, RenderProfile profile);
+}
+\end{lstlisting}
+
+A \api{RenderProfile} is a small but powerful idea. Interactive rendering favors latency, respects the clip aggressively, may skip expensive shadows during drag, and paints only visible regions. Export rendering favors completeness, may choose higher quality interpolation, may render at larger resolution, and should ignore live hover state unless the export explicitly asks for it. Both profiles should share geometry. If they do not, users eventually discover that printed diagrams differ from screen diagrams in ways nobody intended.
+
+A profile should be small enough to inspect. It might contain a quality level, destination kind, scale policy, text hint policy, image interpolation policy, and flags for transient decoration. It should not become a bag of unrelated booleans that every painter interprets differently. The point is to make intentional differences explicit: interactive drag may suppress labels; ordinary screen paint shows labels; export may render all labels with collision avoidance; screenshot mode may force deterministic timestamps off. These are product and testing decisions, not accidental branches inside paint code.
+
+The profile also belongs in cache keys. A cached label layout created for export quality may be too expensive or too wide for interactive mode. A cached icon tinted for dark theme is wrong in light theme. A cached grid created at one scale may look soft at another. A cached shadow created for a translucent overlay may be wrong when the overlay opacity changes. If a cached artifact depends on the profile, the profile identity or its relevant fields must be part of the key. Otherwise the cache is not an optimization; it is stale state waiting for the right monitor to reveal it.
+
+Some caches should be invalidated by semantic changes and some by rendering changes. A path cache for diagram node geometry changes when the node shape changes, not when the window moves to another monitor. A raster cache of that node changes when the shape changes, but also when scale, colors, font, interpolation, profile, or Look-and-Feel changes. A text-layout cache changes when text, font, width, locale, direction, or font-render context changes. A spatial index changes when model geometry changes, but not when the theme changes. Naming the cache type often clarifies its invalidation policy.
+
+This distinction helps performance work stay honest. If moving a window between monitors forces rebuilding a spatial index, the cache boundary is probably wrong. If changing a theme does not invalidate a raster background whose colors came from UI defaults, the cache boundary is definitely wrong. If increasing the application font does not invalidate text truncation, the cache boundary is incomplete. The renderer should make these relationships visible enough that a reviewer can ask which inputs affect pixels and which inputs affect only model geometry.
+
+Screenshot generation is a special profile, not merely a file output. A book figure should render with deterministic data, deterministic size, deterministic theme, and no wall-clock animation. It may still use the same geometry and painters as the live UI. This is valuable because screenshot examples then exercise real rendering code. It is dangerous only when the screenshot path silently changes geometry to make the picture pretty. A figure should be curated, but it should not be a different application.
+
+The screenshot profile should also avoid environment-dependent surprises where possible. Fonts are the hardest part because desktop font availability and hinting can vary. A harness can choose a Look-and-Feel, size, and seeded data; it cannot make every platform rasterize text identically. The practical response is to keep screenshot assertions at the right level: use them to catch large layout, clipping, and overlap regressions, and use model or geometry tests for exact arithmetic. A screenshot is evidence, not the only proof.
+
+\textbf{Performance is scale-dependent.} Antialiasing, gradients, alpha compositing, image scaling, text layout, and shape intersections all have costs. Most screens can afford these costs for small regions. A full-window repaint at animation cadence cannot. A cache that saves time at one scale may waste memory at another. A clip-aware renderer may be fast on a small dirty region and slow when the whole component is resized.
+
+Measure at the scale where correctness is checked. A chart that is smooth at 100 percent may stutter at 200 percent if its cache doubles in both dimensions. A renderer that is acceptable with 500 shapes may fail with 50,000 shapes if it ignores the clip. A table cell renderer that creates images during painting may feel harmless until a fast scroll path asks it to render thousands of cells.
+
+The usual order is contract first, measurement second, optimization third. Define what logical geometry means. Define how scale enters raster choices. Define what invalidates a cache. Then measure. Premature caches often create stale-theme and stale-scale bugs because they are installed before the program knows which inputs matter.
+
+\section{Corusco and Scale-Aware Rendering}
+
+Corusco does not replace Java 2D. It should not try. The rendering APIs are where shapes, text, images, transforms, and pixels are finally produced. What Corusco changes is the ownership of the facts that rendering consumes. Selection, validation severity, busy state, zoom, active tool, theme-derived resources, and table state should not be discovered by interrogating arbitrary widgets during painting. They should live in explicit models and descriptors.
+
+\begin{coruscobox}{facts before pixels}
+Corusco helps custom painting by keeping semantic state observable and lifecycle-owned. The Java 2D code still chooses shapes, transforms, colors, strokes, and caches, but it receives cleaner inputs: values, problem sets, descriptors, commands, resources, and stable lifecycle scopes instead of hidden component side effects.
+\end{coruscobox}
+
+A validation icon painted beside a field is a small example. Plain Swing code can compute it directly from a listener attached to the field. That works until the same validation state must also disable a command, explain a tooltip, mark a table row, and block dialog acceptance. In a Corusco-oriented design, the problem set is an explicit model. Painting asks whether a target has a problem of a given severity. The field binding, tooltip behavior, dialog controller, and renderer all observe the same fact.
+
+The benefit is not merely less code. It is fewer coordinate mistakes. When a validation marker is driven by a model target, the painter can focus on geometry: where in the component bounds the mark belongs, how it aligns to the text baseline, how much inset it reserves, how it responds to scale, and whether it should appear in export. The logic that decides whether a problem exists is not entangled with the pixels.
+
+Zoom is another presentation value. A diagram component can expose a \api{WritableValue<ViewTransform>} or a more specific zoom-and-pan model. The mouse wheel behavior updates the value. The toolbar zoom combo updates the value. The renderer observes it. Hit testing uses it. A generated binding or behavior scope owns the subscriptions. When the component is removed, the subscriptions close. The alternative is a set of listeners installed in several places, each with its own idea of scale.
+
+\begin{migrationbox}{from fields to view state}
+In plain Swing, custom components often store \api{double scale}, \api{int originX}, selected object ids, and cache flags as private mutable fields. A Corusco-oriented screen promotes durable presentation facts to observable values and keeps rendering caches as derived, disposable implementation details.
+\end{migrationbox}
+
+This distinction is important. Not every piece of rendering state belongs in Corusco. A temporary \api{Shape} allocated during painting, a local \api{Graphics2D} copy, and a short-lived path object are not application state. A cache of raster pixels may be a component implementation detail. But the zoom value, selected object identity, current validation problems, command enablement, and busy overlay state are part of the screen's behavior. They deserve names, tests, and cleanup.
+
+Large data makes the same point with more pressure. A table-like visualization may have millions of domain rows but only a small visible region. The Java 2D renderer should not search the whole domain on every repaint. The model should provide view ranges, filtered and sorted order, stable row identity, and precise change events. Corusco's observable lists and adapters are relevant because they preserve the difference between "one item changed" and "everything is unknown." Painting can then repaint the affected region instead of surrendering to full invalidation.
+
+Descriptors are useful at the rendering boundary because they attach names to visual decisions. A table column descriptor can say how to obtain a value, what renderer policy applies, which resource key names the header, and whether a problem target exists for the cell. A custom renderer still paints with Java 2D, but it no longer reverse-engineers the screen from column indexes and component state. The descriptor gives it stable meaning.
+
+Resource keys matter for scale-sensitive assets. A toolbar icon should not be a random file path hard-coded inside a renderer. It should have stable identity, theme policy, disabled-state policy, and resolution variants. Corusco's resource approach can make that identity explicit; Java 2D then handles the actual image drawing. The split keeps resource selection testable and pixel production local.
+
+Lifecycle is also a rendering concern. A component that listens for Look-and-Feel changes, graphics configuration changes, data changes, or zoom changes must eventually stop listening. A leaked rendering cache may keep a large image alive. A leaked listener may repaint a screen that no longer exists. Corusco scopes make the ownership visible: the screen creates the binding or behavior; the scope closes it; the cache is cleared when the owner is disposed.
+
+Background work touches painting whenever a screen shows progress, partial results, or stale-result suppression. A worker thread should not paint. It should produce data, publish state, and hand results to the EDT. The renderer consumes a snapshot that is already safe for the EDT. If a load is superseded, generation counters or cancellation tokens prevent old data from changing the visible model after a new request has begun.
+
+Busy overlays are a compact example. The overlay painter may draw a translucent veil, a spinner, and a status message. Its Java 2D code is ordinary: alpha composite, text metrics, and shapes. Its state should be ordinary too: \api{ReadableValue<Boolean>} for busy, perhaps a \api{ReadableValue<String>} for status, and a lifecycle-owned subscription that calls \api{repaint} when those values change. The painter should not ask a worker thread whether it is alive.
+
+Testing improves when these boundaries are clean. A core test can assert that invalid input produces a problem. An EDT test can assert that a component repaints or updates an icon when the problem appears. A screenshot test can render a deterministic state and compare the produced figure. Each layer asks a different question. Mixing all questions into a hand-written paint method makes every test expensive and fragile.
+
+\section{Worked Example: A Scale-Aware Canvas}
+
+Consider a small planning screen that shows work items on a two-dimensional canvas. Each item has an identifier, a rectangular logical extent, a title, a validation severity, and perhaps a dependency line to another item. The user can zoom, pan, select, and hover. The same scene appears in a scrollable Swing component, in a print preview, and in a screenshot used by the book examples. This is not a graphics application in the artistic sense; it is an ordinary business tool that happens to use custom drawing because a table would not explain the relationships well.
+
+The first design decision is to keep the item geometry in model coordinates. An item at \(x=120\), \(y=80\), width \(160\), and height \(48\) is not "at pixel 120." It is at logical position 120 in the scene's coordinate system. The distinction seems pedantic until the user zooms to 150 percent or the application prints the scene. If item coordinates are model facts, zoom changes only the transform. If item coordinates are already pixels, every zoom operation must rewrite or reinterpret the model.
+
+The second design decision is to put the viewport state in one object. A canvas may need scale, translation, visible rectangle, perhaps minimum and maximum zoom, and a method that maps view points back to model points. These fields should not be scattered among mouse listeners, scroll bars, menu actions, and the paint method. A single viewport value gives every participant the same vocabulary. It also gives tests something to assert without opening a window.
+
+In plain Swing, the viewport object can be a final class or a record, and the component can store it as a private field. A zoom action replaces the value and calls \api{revalidate} if preferred size changed, then \api{repaint}. A mouse handler asks the viewport to map the event point into model space. The paint method asks the viewport for the model-to-view transform. That is already a large improvement over hand-written scale arithmetic.
+
+In a Corusco screen, the same viewport can be exposed as a \api{WritableValue<ViewportState>}. The toolbar zoom control, mouse wheel behavior, and overview panel update the value through ordinary commands or bindings. The canvas subscribes to the value and repaints when it changes. A generated or hand-written behavior scope owns the subscription. Closing the screen closes the subscription. The geometry rule has not changed; the lifecycle ownership has become explicit.
+
+The scene renderer should receive a snapshot. The snapshot contains the visible item list or an index that can answer visible queries, the selected item id, hover state if it is part of the intended rendering, problem severities, resource handles, and the rendering profile. It should not reach through the component tree to ask a toolbar which zoom value is selected. It should not ask a background worker whether it is busy. It should not read a text field to decide whether a validation mark exists.
+
+\begin{lstlisting}[caption={A snapshot-oriented render call.}]
+record CanvasSnapshot(List<ItemView> items,
+                      Optional<ItemId> selectedItem,
+                      ProblemSet problems,
+                      ViewportState viewport,
+                      RenderProfile profile) {
+}
+
+interface CanvasRenderer {
+    void render(Graphics2D g2, Rectangle2D bounds,
+                CanvasSnapshot snapshot);
+}
+\end{lstlisting}
+
+The snapshot boundary makes repainting more precise. If one item changes title, the screen can compute the old and new logical bounds, transform them to view bounds, inflate by stroke and shadow margins, and repaint the union. It need not repaint the whole canvas. If the problem severity changes for one item, the same local invalidation applies. If zoom changes, the whole visible area probably repaints, but that is an intentional consequence of the viewport value changing.
+
+This local repaint calculation is only as good as the geometry model. A renderer that draws shadows, labels, selection handles, and dependency lines must know the visual bounds of those decorations. A common bug is to repaint only the item's logical rectangle and forget that the selected outline extends beyond it. Another common bug is to repaint the new bounds but not the old bounds, leaving a stale mark behind after movement. The fix is not to call \api{repaint()} everywhere; the fix is to make visual bounds a named part of the renderer contract.
+
+The visual bounds may be larger than the hit bounds. A soft shadow may be visible but not clickable. A selection handle may be both visible and interactive. A dependency line may be visible and selectable with a tolerance wider than its stroke. These questions should be answered deliberately. Conflating visible bounds, hit bounds, and model bounds is a common source of strange interaction defects, especially after zoom is introduced.
+
+For a large scene, the renderer should not inspect every item for every repaint. A simple implementation can begin with a list and a bounds intersection test. A larger implementation may use a spatial index, tile index, sorted intervals, or a model service that returns candidates for a model-space rectangle. The important point is that the clip and transform provide enough information to ask for a model-space visible region. Ignoring that information wastes work that the repaint system already tried to save.
+
+The conversion from view clip to model query should use the inverse transform. A rectangular clip in view space may become a non-integer rectangle in model space. Under simple scale and translation, its bounds are straightforward. Under more complex transforms, the conservative model-space bounds of the transformed clip shape may be needed. It is usually better to ask for slightly too many candidates than to miss a visible object. Painting extra objects is slower; failing to paint visible objects is wrong.
+
+Text labels in this canvas should be measured where they are drawn. If the renderer truncates titles with ellipses, the truncation routine needs the current font metrics or \api{TextLayout}. If labels are centered, the baseline calculation belongs to the renderer, not to a stored integer chosen under one font. If a selected item switches to bold text, the bounds may change. If the title can contain bidirectional text, a naive substring operation can produce a misleading visual result.
+
+Validation severity illustrates the Corusco advantage. The item view does not need to store a copied color called \api{warningOrange}. It can store or derive a problem target, and the renderer can ask the \api{ProblemSet} for the most severe problem affecting that target. The color then comes from a resource or theme policy. The screenshot harness, the live screen, and the print renderer all use the same semantic severity but may choose different rendering profiles.
+
+Selection should be stored by identity, not by current item index. A sorted or filtered view can change order without changing which item is selected. The renderer should receive \api{Optional<ItemId>} or a set of selected ids, not "row 7" unless the model's identity really is row position. This is the same lesson taught by tables, but a canvas makes the error more visible because the selected object may move after sorting, filtering, or reloading.
+
+Hover state is more delicate. A hover mark is transient presentation state. It is often reasonable for the component to own it, because it follows mouse motion and has no meaning after the pointer leaves. But if hover affects tooltips, status text, command enablement, or a property inspector, it may need to become an observable value owned by the screen. The rule is not "everything goes into a model." The rule is "facts with cross-component meaning need named owners."
+
+The cache policy for the canvas should be conservative at first. Cache immutable shapes if they are expensive to create and depend only on item geometry. Cache text layouts if text measurement dominates and the font and width are stable. Cache a raster background if the grid is expensive and the key includes size, scale, colors, font, and profile. Avoid caching the entire scene unless measurements prove that full-scene raster caching is worth the invalidation complexity.
+
+If a background load replaces the item list, the renderer should see a completed snapshot on the EDT. It should not observe a list being mutated by a worker. Corusco task services and observable lists can help here: the task produces data off the EDT, the presentation model is updated on the EDT, and the list change describes what actually changed. A full reload may repaint the visible area; an incremental update may repaint only affected item bounds.
+
+The busy state is part of the same scene. While loading, the canvas may draw an overlay and keep the previous data visible. It may disable selection, or it may allow selection while showing stale data. Those are product decisions. The renderer needs clear inputs: current snapshot, busy value, optional status message, and profile. It should not infer busy state from whether a future is done. A future is a mechanism; busy is a presentation fact.
+
+Printing this canvas exposes hidden dependencies. A renderer that calls \api{component.getMousePosition()} cannot be printed meaningfully. A renderer that asks \api{getVisibleRect()} may be wrong when the print profile wants the whole scene. A renderer that uses live scroll bar values to compute model positions may produce only the current viewport. Printing should pass the intended bounds and profile explicitly, even if the screen path uses the same renderer underneath.
+
+Screenshot generation exposes different hidden dependencies. The screenshot harness can set FlatLaf, a deterministic size, and seeded data. It cannot make arbitrary timing deterministic if the screen starts background work during painting. It cannot make a renderer stable if the renderer uses wall-clock time for blinking. Book figures should therefore render a named state, not a live workflow in the middle of a race.
+
+Accessibility should not be postponed until the painting is finished. If items are meaningful, the accessible context may need child objects or at least descriptions and bounds that correspond to the current transform. A screen reader does not consume pixels. It consumes names, roles, states, and coordinates. Keeping model geometry and transform logic explicit makes those answers possible. Painting-only code has nothing reliable to report.
+
+Keyboard interaction follows the same model. Arrow keys may move selection, zoom shortcuts may change the viewport, and command keys may operate on the selected item. These actions should update model or presentation values and then let rendering follow. If a key handler directly tweaks paint-only fields, toolbar state, menu state, and accessibility state will drift. The Swing action system and Corusco command descriptors exist to prevent that drift.
+
+Look-and-Feel changes should be treated as rendering invalidation. Fonts, colors, icon policies, focus indicators, and disabled-state painting may all change. A canvas with cached text layouts or raster backgrounds must clear or rebuild them. A Corusco resource policy can reduce the number of places that know color names, but the renderer still needs to respond when the resolved resources change. Theme awareness is not only for ordinary buttons.
+
+MigLayout still has a role around the canvas. The canvas may sit next to a property panel, below a toolbar, above a status strip, or inside a split pane. MigLayout arranges those ordinary Swing components using preferred sizes, growth constraints, and gaps. It does not solve the canvas's internal coordinate system. The canvas solves child-side geometry; MigLayout solves parent-side geometry. Confusing the two leads either to hard-coded container sizes or to custom painting that tries to compensate for layout mistakes.
+
+The smallest useful test does not paint anything. It asserts that a viewport maps known model points to known view points and back. The next test asserts that the renderer computes visual bounds for an item with a given font and scale. An EDT test can verify that changing the viewport value requests repaint. A screenshot test can verify the final visual shape for a fixed scene. Each layer is cheaper than the next, and each catches a different class of error.
+
+The worked example therefore has a simple architecture: explicit scene facts, explicit viewport state, a renderer that consumes a snapshot, local graphics-state ownership, named cache keys, and lifecycle-owned subscriptions. None of these rules is exotic. Together they make custom drawing boring in the best sense: when a defect appears, there is an obvious place to look.
+
+\section{Case Studies, Drills, and Review Rules}
+
+The blurred icon migration begins with a toolbar from the 96 DPI era. It contains only 16-by-16 PNG files. On a 200 percent display the toolbar still occupies reasonable logical space, but the icons are scaled and blurry. A developer attempts to fix the issue by doubling icon dimensions and button sizes. The toolbar becomes too large on normal monitors and still inconsistent on fractional-scale monitors.
+
+The durable fix is to keep logical toolbar dimensions stable and provide better image variants. The action or resource descriptor owns icon identity. The icon implementation can supply an appropriate resolution variant. The toolbar layout still sees the intended logical size. This separates the design question "how large should the toolbar be?" from the asset question "which pixels represent the icon on this device?"
+
+The broken zoom hit test begins with a diagram editor that paints nodes under a transform but tests the mouse by multiplying coordinates with a hand-written scale. It works until panning is added. It works again after a patch until nonuniform scale, export, or minimap rendering is added. Eventually the selection rectangle no longer matches the painted nodes, and the bug report contains a screenshot that looks impossible.
+
+The fix is to make the view transform a first-class object. Painting uses it. Hit testing uses its inverse. Tooltips, accessibility bounds, rubber-band selection, and export use the same mapping. Once that happens, the defect can be reproduced with known points: a model point should map to a particular view point, and the inverse should return the model point within a tolerance. The problem becomes ordinary geometry.
+
+The stale raster cache begins with a chart that caches its background grid in a \api{BufferedImage}. The key is width and height. After a Look-and-Feel change, grid colors are wrong. After moving the window between monitors, line sharpness is wrong. After changing the font, labels collide. The cache was not wrong because caching is wrong. It was wrong because the key omitted inputs that affect pixels.
+
+The right review question is "when does this cached value stop being true?" A geometry cache may depend on data, font, and layout policy. A raster cache additionally depends on device scale, graphics configuration, colors, hints, and rendering profile. If the complete key is too complicated for the benefit, the cache may not be worth having. Deleting a cache is sometimes the best HiDPI fix.
+
+The table renderer that performs image I/O is a performance case study. A cell renderer loads or scales an icon whenever the table asks it to paint. On a small table the code appears to work. During fast scrolling it blocks the EDT, allocates temporary images, and produces inconsistent icon sharpness because each paint call repeats asset decisions. The right design loads resources outside painting, caches by named policy, and lets the renderer only choose and draw a prepared icon.
+
+The text-baseline bug is quieter. A custom row header draws a label at \api{y + 14}. It looks aligned under the developer's font. Under another Look-and-Feel the text is low. Under a larger accessibility font it clips. Under export it drifts. The fix is to measure ascent, descent, and baseline in the current graphics context or to delegate baseline decisions to components that already know their UI delegates.
+
+The printing mismatch is a useful thought experiment even when the application does not print. Suppose the current component is rendered to a high-resolution image. Does it still use logical shapes, or does it assume the screen transform? Does it ask live component state for hover and focus, or does it render a supplied snapshot? Does it disable double buffering when appropriate? The exercise exposes which coordinates are part of the model and which are accidents of the screen.
+
+The debug overlay is an inexpensive diagnostic tool. It can paint clip bounds, cache-hit regions, transformed model bounds, text baselines, and repaint causes. It should be optional, visually distinct, and cheap to disable. A good overlay turns rendering mistakes into visible facts: a repaint is too large, a baseline is wrong, a cached tile is stale, or a hit region does not match the painted outline.
+
+Screenshot generation is another discipline. A deterministic screenshot harness fixes Look-and-Feel, size, seed data, and output path. It does not prove that every monitor will look identical, but it makes accidental changes visible. A screenshot that changes unexpectedly is often the first warning that rendering depends on environment state the code did not name.
+
+The fractional-scale review should be deliberate. Test at 100 percent because that is where many developers still work. Test at 125 or 150 percent because fractional mappings reveal rounding mistakes. Test at 200 percent because missing raster variants become obvious. Move the same window between monitors if the machine permits it. A component that survives only one scale has not yet earned the word HiDPI-safe.
+
+The theme review should be equally deliberate. Change Look-and-Feel, switch between light and dark variants, increase the default font, and check disabled and focused states. Java 2D code that hard-codes colors, icon variants, and text offsets may pass a scale test while failing a theme test. A modern Swing application is not merely scalable in pixels; it must remain coherent under the user's chosen UI vocabulary.
+
+The input review closes the loop. A painted object should be selectable where it appears, tooltips should describe the same object that was hit, accessible bounds should correspond to visible geometry, and keyboard commands should operate on the same selection that painting highlights. These checks are not separate from rendering. They prove that the program has one geometry model rather than a pile of similar calculations.
+
+\begin{pitfallbox}{The dangerous half-fix}
+The most dangerous HiDPI fix is a local multiplication or division that makes one screenshot look correct. If the coordinate system is not named, the patch may double-scale on another monitor, break hit testing, or make export wrong. Fix the coordinate model first; then adjust raster details deliberately.
+\end{pitfallbox}
+
+The chapter's rule can be stated compactly: keep semantic state vector-like for as long as possible, render through the current graphics context, and cache only what has a named invalidation policy. This rule is mundane, but it prevents many HiDPI regressions because every rounded or cached value must answer the question "when does this stop being true?"
+
+\textbf{A practical rendering checklist.} Draw in logical coordinates unless crossing a raster or native boundary. Keep transform logic explicit and shared with hit testing. Use \api{Graphics2D.create} and dispose local copies. Respect the clip. Avoid startup-global scale constants. Use multi-resolution assets for icons and raster art. Cache by all inputs that affect pixels: size, scale, font, colors, data, graphics configuration, and rendering profile. Test fractional scaling and monitor movement. Separate reusable scene rendering from component event handling.
+
+\textbf{A Corusco checklist.} Keep zoom, selection, validation problems, busy state, resources, and command state in explicit models or descriptors. Let component painting consume snapshots of those facts. Own subscriptions through a scope. Treat raster caches as disposable implementation details. Prefer precise observable-list changes to full repaint guesses. Make screenshot states deterministic enough that the book, tests, and examples can render the same scene.
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Build a zoomable canvas whose painting transform and mouse hit testing use the same \api{AffineTransform} object.
+\item Create a cache keyed only by size, then move the window between two monitor scales. Observe and fix the stale rendering.
+\item Implement an icon with 1x and 2x raster variants using \api{MultiResolutionImage} or a compatible image wrapper.
+\item Compare \api{FontMetrics.stringWidth}, \api{TextLayout.getAdvance}, and glyph vector bounds for English, Japanese, and emoji text.
+\item Write a chart that respects \api{Graphics.getClipBounds}; measure paint time with 10,000, 100,000, and 1,000,000 data points.
+\item Add a print/export renderer that does not depend on \api{JComponent.getWidth} or live component side effects.
+\item Draw one-pixel separators at scale 1, 1.25, 1.5, and 2. Decide which should be geometric and which should be device-aligned.
+\item Implement a property-change listener that invalidates image caches when graphics configuration changes.
+\item Add a debug overlay that paints clip bounds, text baselines, cache hits, and transformed model bounds.
+\item Move validation severity, zoom, and selected object identity out of a custom component into explicit observable values, then compare the test shape before and after the move.
+\end{enumerate}
+\end{exercisebox}

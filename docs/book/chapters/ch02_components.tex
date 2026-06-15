@@ -1,0 +1,733 @@
+\chapter{Components, Geometry, Painting, Events, and Scrolling}
+\label{ch:components}
+\chapterquote{A Swing component is a rectangle with obligations: it must know how large it wants to be, how to paint itself, how to answer input, and how to live inside its parent.}{The component contract}
+
+\begin{chaptermap}
+Core question & What is a Swing component's full contract before a layout manager, scroll pane, or Corusco binding touches it?\\
+Primary APIs & \api{Component}, \api{Container}, \api{JComponent}, \api{Dimension}, \api{Insets}, \api{LayoutManager2}, \api{Scrollable}, \api{JViewport}, \api{InputMap}, \api{ActionMap}.\\
+Hidden difficulty & Preferred size, validation, repainting, focus, event dispatch, and scrolling are separate contracts that often appear as one visual symptom.\\
+Payoff & MigLayout constraints become easier to reason about, custom components stop fighting scroll panes, and Corusco bindings have a sound component boundary.\\
+Companion example & \componentsExample.\\
+\end{chaptermap}
+
+\section{Why components deserve their own chapter}
+
+It is tempting to teach Swing layout by starting with layout managers. That order is convenient but incomplete. A layout manager can only arrange components because each component offers a geometry contract. A scroll pane can only expose part of a large view because the view reports a preferred size and, when necessary, implements \api{Scrollable}. A repaint manager can only repaint stale pixels because each component obeys the painting contract. A key binding can only invoke a command because focus and input maps route the event to the component hierarchy.
+
+\termdef{Component}{an object that occupies a rectangular region in an AWT/Swing hierarchy} is the base idea. \api{java.awt.Component} supplies location, size, visibility, enabled state, focusability, events, and painting hooks. \api{java.awt.Container} adds child containment and layout. \api{javax.swing.JComponent} adds Swing-specific services: borders, opacity, tooltips, double buffering, input and action maps, client properties, accessible context, and the usual custom-component painting point.
+
+The next chapter about \miglayout{} will speak about preferred sizes, growing columns, shrinking rows, alignment, wrapping, and scroll panes. Those words only make sense if the component side is already understood. MigLayout is powerful because it asks precise questions of the components it arranges. If those components lie, the layout will also appear to lie.
+
+\begin{principlebox}{Layout begins inside the child}
+A parent chooses a child's final bounds, but the child supplies the evidence: preferred size, minimum size, maximum size, baseline, opacity, focusability, and scrolling behavior. Most layout puzzles are disagreements between what the child reports and what the parent was asked to do.
+\end{principlebox}
+
+\textbf{The containment tree.}
+
+A Swing screen is a tree. The root is usually a top-level container such as \api{JFrame}, \api{JDialog}, or, in headless-friendly examples, \api{JInternalFrame}. Beneath the top-level window is a root pane. The root pane contains a layered pane, a content pane, and a glass pane. Application panels and widgets normally live in the content pane.
+
+Containment matters because Swing asks questions down the tree and reports changes up the tree. Layout flows from parent to child: a container asks its layout manager to assign bounds to its children. Painting flows through parent-child relationships: a parent paints itself and then its lightweight children. Events are delivered to a target and may be interpreted in the context of focus, ancestors, glass panes, popups, and input maps.
+
+The component tree is also a lifecycle tree in practice, even though Swing does not enforce a complete lifecycle abstraction. When a screen closes, the code that created a panel should remove listeners, close bindings, stop timers, cancel tasks, and release table controllers owned by that panel. Corusco's scopes exist largely because Swing's component tree does not by itself remember every application-level relationship installed onto the components.
+
+\textbf{Bounds, coordinates, and insets.}
+
+Every component has bounds: an \api{x} coordinate, a \api{y} coordinate, a width, and a height, all relative to its parent. The parent owns these bounds. A child should not normally move itself as part of painting, nor should it assume that its preferred size will be granted. The preferred size is a request; the current size is the fact.
+
+Coordinates in ordinary Swing painting are component-local. The point \api{0,0} means the top-left corner of the component's own drawing area. Mouse events delivered to a component also use component-local coordinates. When code must compare points between components, use \api{SwingUtilities.convertPoint}, \api{convertRectangle}, or the corresponding methods on components. Hand-converting by adding parent locations is fragile once viewports, layered panes, popups, or right-to-left orientation enter the picture.
+
+\termdef{Insets}{reserved interior space around a component or container} usually come from borders or container policies. A component with a border may have an inset area that should not be used for content. A layout manager also often has insets and gaps. Do not confuse border insets with layout gaps. Border insets belong to a component; layout gaps belong to a parent arranging children.
+
+\begin{detailbox}{Coordinates are integers, painting is not}
+Component bounds are integer rectangles, but \api{Graphics2D} may paint with sub-pixel transforms, antialiasing, and fractional metrics. A component can have integer size and still need careful stroke alignment or a dirty rectangle grown by one or two pixels.
+\end{detailbox}
+
+\textbf{Preferred, minimum, and maximum size.}
+
+The three size methods are often described as a trio, but they do not have equal practical weight.
+
+\api{getPreferredSize} answers the normal size the component would like if there is enough room. It is the most important size for layout. Labels derive it from text and font metrics; text fields derive it from columns, font, border, and UI delegate; scroll panes derive it from their viewport view or explicit preferred viewport size.
+
+\api{getMinimumSize} answers how far the component can reasonably shrink. Some layout managers use it aggressively; others treat it as advice. A text field may be technically able to shrink to a few pixels, but a form that allows that is not useful. Minimum size is a usability contract, not only a mathematical lower bound.
+
+\api{getMaximumSize} answers how far a component can reasonably grow. It matters in managers such as \api{BoxLayout} and in some third-party layout decisions. Many Swing components return very large maximum sizes, which means "I can grow if the parent wants me to". A fixed-size icon component may return the same preferred and maximum size.
+
+\begin{lstlisting}[caption={A custom component whose preferred size expresses its data geometry.}]
+public final class TimelineView extends JComponent {
+    private int eventCount;
+    private int pixelsPerEvent = 18;
+
+    @Override
+    public Dimension getPreferredSize() {
+        Insets insets = getInsets();
+        return new Dimension(
+                insets.left + insets.right + eventCount * pixelsPerEvent,
+                insets.top + insets.bottom + 64);
+    }
+
+    public void setEventCount(int eventCount) {
+        if (this.eventCount == eventCount) {
+            return;
+        }
+        Dimension old = getPreferredSize();
+        this.eventCount = eventCount;
+        if (!old.equals(getPreferredSize())) {
+            revalidate();
+        }
+        repaint();
+    }
+}
+\end{lstlisting}
+
+The important part of the example is not the arithmetic. It is the separation between geometry and pixels. When the preferred size changes, call \api{revalidate}. When visual content changes, call \api{repaint}. Sometimes both are needed; sometimes only one is needed.
+
+\begin{pitfallbox}{setting sizes instead of reporting sizes}
+Calling \api{setSize} or \api{setBounds} on a component that is managed by a layout manager is usually a losing argument with the parent. Override or set preferred/minimum/maximum size when you are defining the component's size contract; let the parent assign actual bounds.
+\end{pitfallbox}
+
+\textbf{Preferred size is not destiny.}
+
+Beginners often ask why a component's preferred size is ignored. The better question is: which parent is responsible for assigning the final bounds, and what constraints did that parent receive? A \api{BorderLayout} center component normally receives all remaining space. A \api{FlowLayout} component normally receives its preferred size. A \api{JScrollPane} gives its viewport a particular extent while the view may be larger. MigLayout can honor, shrink, grow, group, align, or override sizes depending on constraints.
+
+A preferred size therefore does not mean "this component shall be this size". It means "this is my natural size if the parent has no stronger reason". Parents have stronger reasons all the time: the window is too small, a column is marked grow, a row is fixed, a sibling takes priority, or a scroll pane chooses to show only part of the view.
+
+\begin{principlebox}{Final size belongs to the parent}
+A component describes its desired geometry. A container decides final geometry. Code that mixes those responsibilities usually becomes brittle when the window is resized or the Look-and-Feel changes.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\componentsSizeFigure}
+\caption{A component reports size facts, while the parent assigns final bounds after applying constraints, insets, gaps, orientation, and available space. The preferred size is evidence in the negotiation, not the final judgment.}
+\label{fig:components-size-negotiation}
+\end{figure}
+
+Figure~\ref{fig:components-size-negotiation} is deliberately drawn as overlapping rectangles because that is how layout bugs feel in practice. The minimum size says when the component stops being useful. The preferred size says where the component is comfortable. The maximum size, when meaningful, says how far the component should grow. The assigned bounds are what the parent actually chose. A correct screen may assign bounds larger than preferred, smaller than preferred, or exactly preferred. The question is not whether preferred size was obeyed absolutely; the question is whether the parent had a clear policy for departing from it.
+
+This distinction gives beginners a better debugging question. Instead of asking "why did Swing ignore my preferred size?", ask "which parent assigned these bounds?" Then ask what evidence the child reported and what constraints the parent used. A text field squeezed by a non-growing column is a parent-side problem. A canvas inside a scroll pane that reports a tiny preferred size is a child-side problem. A button that grows to fill a wide toolbar may be a maximum-size or parent-constraint problem. The symptom is visible in one rectangle, but the cause may live on either side of the parent-child contract.
+
+The same discipline prevents over-correction. When a field does not grow, the wrong repair is often to call \api{setPreferredSize} on the field. That changes the evidence, not the policy. If the field's natural size was already sensible, the parent should receive a grow/fill constraint. When a custom view has no scroll bars, the wrong repair is often to force scroll bars always visible. That changes decoration, not world size. If the view's world is large, the view should report a large preferred size and revalidate when the world changes.
+
+Size policy should also be local to the right owner. A reusable date field may know that twelve columns are enough for its textual format. A customer-search panel may know that the query field should take all spare width. A dialog may know that its form should have a minimum useful width. These are three different owners. If the date field hard-codes the whole dialog width, it becomes unusable elsewhere. If the parent guesses the date field's internal text metrics, it duplicates component knowledge. Keep content-derived size near the component and workflow-derived distribution near the parent.
+
+\textbf{Standard components have size stories.} The standard Swing components are not arbitrary rectangles. A \api{JLabel}
+derives its preferred size from text, icon, font metrics, icon-text gap, border,
+and UI delegate. A \api{JTextField} also uses columns, margin, border, font, and
+Look-and-Feel rules. A \api{JButton} adds button margin, focus painting, icon
+gap, default-button emphasis, and platform conventions. A \api{JComboBox} uses
+the editor or renderer, popup policy, arrow button, and prototype display value
+when one is supplied. A \api{JScrollPane} derives its size from the viewport
+view, row and column headers, borders, scroll bar policies, and preferred
+viewport size.
+
+This is why professional Swing layout rarely begins by inventing pixel sizes.
+The components already know a great deal about the visual system in which they
+live. The developer's job is to decide relationships among those natural sizes:
+which column grows, which row absorbs height, which component fills its cell,
+which group aligns by baseline, and which large view scrolls instead of making
+the window enormous. MigLayout is effective because it speaks this relationship
+language directly.
+
+The most dangerous size override is the one that silently encodes yesterday's
+screenshot. A developer sets every text field to \api{new Dimension(180, 24)}
+because it looked neat on one machine. Later the font changes, a translated
+label grows, the Look-and-Feel uses different insets, or high-DPI scaling makes
+the fixed height too small. The bug is not in the layout manager. The bug is
+that the component was told to stop listening to its own UI delegate.
+
+\textbf{When explicit sizes are legitimate.} Some components really do have fixed or bounded geometry. A color swatch may be
+16 by 16 logical pixels. A severity icon column may be one icon wide. A small
+numeric spinner may have a domain-specific width. A thumbnail preview may have
+a fixed aspect ratio. A drawing canvas may expose a virtual world whose size is
+data-derived rather than text-derived. The difference is that the size expresses
+a domain or component contract, not a local layout patch.
+
+Prefer component-specific APIs before generic size setters. For text fields,
+\api{setColumns} is often better than \api{setPreferredSize} because it lets the
+UI delegate compute width from the current font. For lists and combo boxes,
+prototype display values may express expected content. For scroll panes,
+preferred viewport size may be better than forcing the scroll pane itself to a
+fixed preferred size. For custom components, overriding \api{getPreferredSize}
+near the code that owns the geometry is usually clearer than setting a size from
+the outside.
+
+There is also a legitimate screen-local override. A report preview in one
+dialog may deserve a larger initial viewport than the same preview component
+inside a dashboard. In that case, express the override at the parent boundary
+and keep it local. Do not change the reusable component to satisfy one screen,
+and do not scatter the same override across unrelated parents.
+
+\textbf{Minimum and maximum as usability policy.} Minimum size should answer "when does this component stop being useful?" rather
+than "when can Java technically draw it?" A text field can be compressed to a
+thin vertical line, but no user can edit a name there. A table can be reduced to
+one row, but perhaps the workflow requires at least a few visible rows. A chart
+can shrink to a postage stamp, but its labels may overlap. Minimum size is
+therefore partly a human-factors decision.
+
+Maximum size is similarly contextual. A button normally should not stretch
+across a wide dialog merely because the command row has extra space. A text
+field often should stretch. A notes area probably should stretch in both
+directions. A compact status icon should not. If the maximum size is left
+unbounded everywhere, some layout managers will happily grow components that
+should have remained at preferred size. If the maximum size is fixed everywhere,
+large screens waste space.
+
+In MigLayout, maximum and minimum policy is often expressed through constraints
+rather than component methods, but the concepts are the same. A component has a
+natural size range; the parent has a policy for distributing space. The cleanest
+screens make both sides visible.
+
+\textbf{The negotiation, step by step.} A layout pass is a negotiation, not a single method call. The parent has an
+available rectangle after its own border and insets. The layout manager asks
+children for size hints, baselines, visibility, and sometimes alignment. It
+combines those hints with constraints, gaps, row and column policy, component
+orientation, and the current container size. It assigns final bounds. Some
+children may then invalidate again because a size-dependent property changed,
+though good components avoid endless negotiation.
+
+The same story explains several mysterious bugs. A label text changes and the
+parent must relayout because preferred width changed. A table model changes row
+height and the enclosing viewport must update scroll bars. A hidden section
+collapses only if the layout manager treats invisible components as absent and
+the parent is revalidated. A component that reports a preferred size depending
+on current width may need careful design to avoid oscillation. None of these is
+MigLayout-specific; MigLayout merely makes the negotiation visible.
+
+\textbf{Validation and invalidation.} \termdef{Invalidation}{marking layout information as no longer trustworthy} is not the same as repainting. If a label's text changes from "OK" to "Connection refused", its preferred width probably changed. The component or its UI delegate will invalidate layout and request painting. If only the foreground color changes, layout may remain valid while pixels become stale.
+
+\api{revalidate} is the ordinary Swing method for saying that geometry may need to be recomputed. It invalidates the relevant hierarchy and schedules validation later. \api{validate} attempts immediate validation on a validate root. Application code usually calls \api{revalidate}; the event system batches the work.
+
+Validation interacts with validate roots. A \api{JRootPane}, \api{JScrollPane}, or other validate root can stop invalidation from traveling all the way to the top-level window. This is a performance feature: a change inside a scroll pane should not always relayout the entire application. But it also means that a component embedded in a scroll pane must communicate geometry changes correctly to the viewport and scroll bars.
+
+\textbf{Baselines.} Many form layouts need labels and fields aligned by text baseline, not merely by top or center. The \termdef{baseline}{the line on which text visually sits} allows layout managers to align different component types in a way that looks professional. \api{JComponent.getBaseline} and baseline resize behavior are less visible than preferred size, but they matter in dense forms.
+
+MigLayout can use baseline alignment well, but only if components report meaningful baselines. Standard Swing text components and labels usually do. A custom component that visually participates in a form may need to implement baseline behavior or be wrapped in a panel whose alignment is explicit.
+
+\textbf{Alignment is not only horizontal.} Swing components also have alignment hints used by some layout managers, most
+famously \api{BoxLayout}. These are not the same as MigLayout alignment
+constraints, but they illustrate the same idea: a component may have a preferred
+way to sit inside extra space. A label might align by text baseline. A button
+row might align to the trailing edge. A custom gauge might center itself in a
+larger cell. Good parent layout uses these preferences intentionally instead of
+letting accidental defaults decide the result.
+
+Component orientation is part of this story. A left-to-right form and a
+right-to-left form do not merely swap text alignment. Leading and trailing
+placement, icon gaps, scroll bar positions, and command order may change.
+Standard components and layout managers can help only when code describes
+relationships such as leading, trailing, baseline, and related gap rather than
+absolute left/right pixel positions.
+
+\section{Opacity and the background promise}
+
+Opacity is a component contract. If \api{isOpaque} is true, the component promises to fill every pixel in its bounds. This lets Swing avoid painting ancestors behind it. If a component is visually opaque but reports false, painting may be needlessly expensive. If it reports true but fails to fill its bounds, visual artifacts can appear.
+
+Custom components should make an explicit decision. If the component is a solid canvas, call \api{setOpaque(true)} and let \api{super.paintComponent} clear the background before custom painting. If the component is a translucent overlay or decoration, keep it non-opaque and be prepared for ancestor painting to matter.
+
+\begin{pitfallbox}{opaque renderers and panels}
+A renderer component or custom panel that is opaque only under some states must still honor the opacity promise for each painting call. Ghosting bugs often appear only after a Look-and-Feel change, viewport scroll, or selection repaint.
+\end{pitfallbox}
+
+\textbf{The painting contract.}
+
+For ordinary custom Swing components, override \api{paintComponent}. Do not override \api{paint} unless you need to change the whole painting sequence, including borders and children. Do not store a \api{Graphics} object after painting returns. Do not call \api{paintComponent} directly as an application update mechanism.
+
+The painting method should render the current state. It should not fetch data from a remote service, mutate the model, install listeners, change layout, or start tasks. Painting can be frequent, clipped, interrupted by resizing, and repeated under different double-buffering conditions. Treat it as a pure rendering pass over already available state.
+
+\begin{lstlisting}[caption={The conservative painting skeleton.}]
+@Override
+protected void paintComponent(Graphics graphics) {
+    super.paintComponent(graphics);
+    Graphics2D g = (Graphics2D) graphics.create();
+    try {
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                RenderingHints.VALUE_ANTIALIAS_ON);
+        Rectangle clip = g.getClipBounds();
+        paintVisibleContent(g, clip);
+    } finally {
+        g.dispose();
+    }
+}
+\end{lstlisting}
+
+Creating a copy of the graphics context protects the rest of the painting chain from changes to transform, clip, color, font, stroke, composite, and rendering hints. Disposing the copy is not ceremony; it is part of ownership.
+
+\textbf{Dirty regions and repaint precision.} \api{repaint} schedules painting. It does not paint immediately. The repaint manager may merge dirty rectangles, delay work until pending events finish, and paint only the clipped region. A custom component that knows what changed should often repaint a specific rectangle rather than the whole component.
+
+In the companion example, a keyboard move repaints the union of the old and new cursor cells and then calls \api{scrollRectToVisible} for the new cell. Those two operations are different: repaint says which pixels are stale; scrolling says which part of a larger view should become visible.
+
+\begin{lstlisting}[caption={Repainting the old and new cursor cells.}]
+Rectangle dirty = cellBounds(old).union(cellBounds(cursor));
+dirty.grow(2, 2);
+repaint(dirty);
+scrollRectToVisible(cellBounds(cursor));
+\end{lstlisting}
+
+The \api{grow} call accounts for stroke width and antialiasing. Without it, a two-pixel focus rectangle can leave stale edge pixels outside the mathematical cell rectangle.
+
+\textbf{Painting state and model state.} A custom component often needs small presentation state: hover cell, pressed
+point, keyboard cursor, selection rectangle, cached shape, or current animation
+phase. This state should be named and bounded. It is presentation state because
+it exists to draw or interpret the component. It is not automatically domain
+state. A hover cell may disappear when the mouse leaves; the selected customer
+should not.
+
+The distinction matters when Corusco enters the screen. A component-local hover
+value may remain a private field. A selected row that enables commands and loads
+details should become an observable value or selection model. A validation mark
+painted by a component should come from a problem model, not from a one-off
+paint flag. The component should paint facts it receives; it should not become
+the only place where application meaning is stored.
+
+\textbf{Caching without lying.} Painting caches are useful when drawing is expensive. They are also a common
+source of stale visuals. A cached image depends on size, scale, Look-and-Feel,
+font, colors, data, selection, and sometimes component orientation. If any of
+those inputs change, the cache may be wrong. A cache without an invalidation
+story is a bug postponed.
+
+Start with direct painting. Add a cache only when measurement shows that direct
+painting is too costly or when the component naturally owns a stable rendered
+asset. When adding the cache, write down what invalidates it. Resizing, theme
+change, data change, and scale change are the usual suspects. If the invalidator
+list becomes longer than the drawing code, the cache is probably the wrong
+abstraction.
+
+\section{Input, focus, and component decoration}
+
+Input is where many Swing programs accidentally turn components into application models. A mouse listener changes a field, a key listener saves a record, a focus listener validates a form, and a tooltip listener invents help text. Each listener is small; the screen becomes difficult because the rules are distributed across event callbacks. The component contract asks for a cleaner translation: Swing events describe local interaction, while actions, models, values, and commands describe application meaning.
+
+A component should interpret the input that truly belongs to it. A drawing canvas should understand mouse press, drag, release, wheel, hover, and keyboard navigation inside the canvas. A text field should let its document and editor kit handle text editing. A table should let its selection model and editor machinery handle row selection and cell editing. Application commands should sit above these local mechanisms so the same operation can be invoked from a button, menu, toolbar, popup, shortcut, or generated command surface.
+
+This separation keeps input testable. A custom canvas can have pure tests for hit testing: given view coordinates and a model, which object is under the pointer? It can have EDT tests for focus and key bindings. The presenter can have command tests for deleting the selected object. A screenshot can show the selected object and focus ring. One large robot test can still exist as a smoke test, but the rule no longer depends on a fragile sequence of mouse movements.
+
+\termdef{Gesture}{a low-level or local interaction pattern, such as press-drag-release, click, hover, wheel, or key stroke} is a useful word here. A gesture is not automatically a command. Dragging inside a diagram may pan, select, resize, draw, or do nothing depending on mode. Pressing Delete inside a text field deletes text; pressing Delete inside a selected table may remove a row; pressing Delete in an empty form may be ignored. The component or screen maps gestures to commands after considering focus, mode, selection, enabled state, and editing state.
+
+Document events are a special input case. Text components do not become useful by listening to raw key events. They own a \api{Document}, editor kit, selection model, caret, input methods, clipboard behavior, undoable edits, and Look-and-Feel delegate. A form binding should normally observe document changes or use a higher-level binding behavior, not replace text editing with a \api{KeyListener}. This is particularly important for paste, input methods, dead keys, composed characters, accessibility, and programmatic text changes.
+
+Mouse events are more appropriate for custom visual surfaces, but they still need discipline. Store enough presentation state to complete the gesture: pressed point, drag anchor, current hover target, or selected handle. Convert the gesture into semantic state as soon as the meaning is known. If the drag selected object ids, expose selected ids. If it panned the view, update view transform or scroll position. If it started editing, enter editing mode. Do not let every later layer depend on the original mouse event.
+
+Wheel input belongs to the current interaction context. Inside a scroll pane, wheel events usually scroll. Inside a zoomable canvas, wheel plus a modifier may zoom. Inside a combo popup, wheel may change selection. Avoid stealing wheel events globally unless the screen has a strong reason. Users expect scrolling to follow the visible region under attention, and nested scroll owners already make this expectation delicate. The fewer components that compete for wheel ownership, the more predictable the screen feels.
+
+Focus policy is part of input, not an afterthought. A component that accepts keyboard commands must be reachable by keyboard. A custom component that can be selected by mouse should usually request focus on deliberate activation, not on hover. A component that draws a focus ring should use Look-and-Feel-aware colors where possible. A component that traps focus because validation failed should provide a clear escape, help path, and correction path. Focus is a workflow boundary; do not turn it into a punishment.
+
+Focus traversal should be reviewed at the screen level. Individual fields know whether they are focusable; the screen knows the order in which a user should move through them. Generated component keys can help tests verify that important fields are present, but traversal itself should remain a product decision. A dense business form may need a custom focus traversal policy when visual order, generated order, and workflow order differ. That policy should be explicit and tested, not hidden in focus listeners that request focus on neighboring fields.
+
+Input maps are the normal tool for keyboard commands because they let Swing resolve keystrokes by context. \api{WHEN\_FOCUSED} belongs to component-local behavior. \api{WHEN\_ANCESTOR\_OF\_FOCUSED\_COMPONENT} belongs to a containing region such as a form or table panel. \api{WHEN\_IN\_FOCUSED\_WINDOW} belongs to genuinely window-wide commands and should be used carefully. A shortcut that overrides text editing throughout a window is rarely friendly.
+
+Actions are the bridge from input to commands. Swing's \api{Action} carries enabled state, selected state, text, icon, accelerator, and handler. Corusco commands carry stable identity, resources, help, and testable state. The adapter between them should be mechanical. The component should not contain a private save rule if the same Save command appears elsewhere. A command rule belongs to the command model; the component invokes it through the appropriate action surface.
+
+Tooltips and help are also component decoration, not random strings. A tooltip may describe a component, show validation detail, or expose abbreviated help. A help topic may be invoked by F1. A validation behavior may want to use the same tooltip surface. Without ownership, features overwrite one another: help erases validation, validation erases help, and a copied listener erases both. A behavior scope can make the composition explicit: base tooltip, validation supplement, help topic, and cleanup.
+
+Client properties should be named with the same care as component keys. Look-and-Feels such as FlatLaf use client properties for style hints. Applications use them for validation markers, diagnostic names, testing keys, or feature flags. A string literal copied through a codebase is hard to audit. Prefer constants or typed helpers when the property is part of application policy. A client property is small, but it can quietly become a cross-cutting contract.
+
+Accessible names and descriptions should be set where visible text is absent or insufficient. A button with text may already expose its label. An icon-only button needs an accessible name. A custom canvas needs at least a description of what it represents and how to interact with it. A validation decoration should have a textual problem somewhere: tooltip, summary, accessible description, or problem list. The component contract includes users who do not inspect pixels directly.
+
+Decoration order matters. A border installed for validation may change insets and therefore layout. An overlay painted through \api{JLayer} may affect pixels but not preferred size. A tooltip behavior may not require repaint at all. A help behavior may install a key binding. A busy behavior may paint, disable commands, and consume input. Treat these as different effects even when they are triggered by one model value. The behavior that owns the presentation should know whether it affects geometry, pixels, input, or metadata.
+
+Testing input and decoration should follow the same layered approach used elsewhere in the book. Test command enablement without Swing. Test key binding installation on the EDT. Test component-key lookup without localized text. Test validation problem facts in the form model. Test tooltip composition where tooltip policy lives. Test screenshot states only after the semantic facts are already proven. This division keeps event handling from becoming the only proof of application behavior.
+
+\textbf{Input begins with events.}
+
+Mouse events, key events, focus events, component events, hierarchy events, and property changes are ordinary Swing communication mechanisms. They are useful and dangerous for the same reason: installing a listener is easy. A listener should have a narrow purpose and a clear owner.
+
+Mouse events are delivered to the component under the pointer, adjusted by glass panes, popups, enabled state, and event dispatch rules. Coordinates are local to the receiving component. A custom canvas often uses mouse events directly because the gesture belongs to the canvas.
+
+Key events are more subtle. A component only receives low-level key events when focus and key-event dispatch rules allow it. For application commands, prefer key bindings over raw \api{KeyListener}. Key bindings participate in Swing's input-map hierarchy and can express whether a binding applies when the component is focused, when an ancestor is focused, or when the window is focused.
+
+\textbf{Event objects are not workflow objects.} An event object describes what Swing observed: a mouse press, a key stroke, a
+document mutation, a component resize, a focus transfer. It does not by itself
+describe the application operation. A double-click on a table might mean edit,
+open, drill down, select word, or nothing, depending on the screen. The listener
+translates the event into a model change or command invocation. That translation
+should be small enough to review.
+
+Consuming an event should also be a deliberate act. When code consumes a key or
+mouse event, it prevents later processing. That may be correct for a custom
+canvas gesture. It may be wrong for a component that should cooperate with text
+editing, focus traversal, accessibility, or a parent glass pane. Prefer higher
+level APIs such as actions, input maps, transfer handlers, and selection models
+where they express the intention directly.
+
+\textbf{Mouse motion, hover, and repaint.} Mouse motion can produce many events. A hover effect that repaints the entire
+component on every mouse move is acceptable for a small label and painful for a
+large canvas. Track the old hover region and the new hover region, repaint their
+union, and ignore moves that do not change the semantic hover target. This is
+the same dirty-region discipline used for keyboard cursor movement.
+
+Hover state should usually be visual state, not application state. A status bar
+may show help for the hovered component, but the domain model should not change
+because a pointer crossed a cell. If hover help becomes important enough to be
+tested or shared, model the help text as a presentation value owned by the
+screen, not as domain data.
+
+\begin{principlebox}{Mouse listeners are gestures; actions are commands}
+Use mouse listeners to interpret local pointing gestures. Use actions and key bindings to represent semantic commands. A Delete command should not be hidden inside a key listener on one table if the same command also belongs in a menu.
+\end{principlebox}
+
+\textbf{Focus and focusability.}
+
+Focus is the current destination for keyboard input. A component must be focusable before it can normally receive keyboard focus. Many standard components are focusable by default; passive display components often are not. A custom interactive component should call \api{setFocusable(true)} and should provide visible focus feedback.
+
+Focus is also user experience. If a component accepts keyboard input but does not draw a focus indicator, keyboard users are lost. If a component steals focus on mouse movement rather than deliberate activation, users are annoyed. If validation prevents focus traversal too aggressively, users become trapped.
+
+The companion component requests focus when clicked because the canvas then interprets arrow keys. That is a reasonable local rule: clicking the canvas selects it as the current interactive surface. A larger application should still expose the same operations as commands where appropriate.
+
+\textbf{Focus traversal belongs to the screen.} Individual components know whether they can receive focus. The screen knows the
+workflow order. A custom component should not invent global traversal policy by
+forcing focus to neighbors or trapping focus on validation failure. Use focus
+traversal policy when the ordinary order is wrong. Use validation summaries and
+problem focus as recovery tools, not as prison walls. A user must be able to
+reach help, cancel, and other fields even when one field is invalid.
+
+Focus events are also not a validation architecture. It is tempting to validate
+only on focus lost, because that matches a common visual moment. But text can be
+committed through OK, reset through a model change, pasted, programmatically
+loaded, or edited inside an active table editor. A form model should own
+validation facts. Focus can decide when to display or emphasize them.
+
+\textbf{Input maps and action maps.}
+
+\api{InputMap} maps \api{KeyStroke} values to action names. \api{ActionMap} maps action names to \api{Action} objects. This split is central to Swing command routing. A key stroke is not the command; it is one way to invoke the command.
+
+There are three important input-map conditions: \api{WHEN\_FOCUSED}, \api{WHEN\_ANCESTOR\_OF\_FOCUSED\_COMPONENT}, and \api{WHEN\_IN\_FOCUSED\_WINDOW}. Use the narrowest scope that matches the user expectation. A text-field editing shortcut should not become a window-wide shortcut. A dialog-level Escape binding should usually work when focus is anywhere inside the dialog.
+
+Corusco command adapters build on this principle. The command owns identity, text, enabled state, and handler. Swing actions and key bindings become component-facing adapters.
+
+\textbf{Component events and hierarchy events.} Component resize, move, show, and hide events can be useful, but they are often
+the wrong place for layout policy. A component listener that adjusts child
+bounds after every resize is usually reimplementing a layout manager. A
+hierarchy listener that starts and stops expensive work when a component becomes
+showing can be appropriate, but it must have a lifecycle owner and it must not
+confuse "currently showing" with "logically active" if the application has tabs,
+cards, or docked workspaces.
+
+Use these lower-level events for boundaries they truly express. A canvas may
+drop a scale-dependent image cache when resized. A screenshot harness may wait
+until a component has a realized size before capturing. A behavior may attach
+only while a component is displayable. But business workflow should normally be
+modeled in presenters, values, commands, and tasks rather than in component
+visibility callbacks.
+
+\textbf{Tooltips, accessible context, and client properties.} Swing components carry more than pixels and events. \api{setToolTipText} installs tooltip behavior. \api{getAccessibleContext} exposes names, descriptions, roles, states, and relationships to assistive technology. Client properties attach small extension values used by Look-and-Feels and application helpers.
+
+These are component contracts too. A validation decorator that overwrites a tooltip may erase help text. A custom component that paints meaningful data but has no accessible name is silent to a screen reader. A Look-and-Feel client property that is copied everywhere as a string literal becomes hard to audit.
+
+\begin{coruscobox}{component decoration}
+Corusco behaviors are useful when multiple features want to decorate the same component. Validation, help, accessible text, status text, busy state, and command binding can be named, ordered, and cleaned up instead of installed as unrelated listener fragments.
+\end{coruscobox}
+
+\section{Scrollable views}
+
+\api{JScrollPane} is not just a panel with scroll bars. It contains a \api{JViewport}, optional row and column headers, optional corner components, and scroll bars whose models track the viewport position. The component inside the viewport is called the view.
+
+There are two common cases. In the first, the view is smaller than the viewport or tracks the viewport size. A text area with line wrap may track viewport width. A form panel inside a scroll pane often tracks viewport width but not height, so vertical scrolling appears while horizontal scrolling does not. In the second case, the view has its own larger virtual size. A canvas, table, timeline, or diagram may be larger than the viewport in both directions.
+
+The view's preferred size is the starting point. If the view does not implement \api{Scrollable}, the viewport uses preferred size and scroll bar policies to decide the scrollable extent. If the view implements \api{Scrollable}, it can answer better questions: preferred viewport size, unit increment, block increment, and whether it tracks viewport width or height.
+
+\textbf{Viewport coordinates and view position.}
+
+The viewport is a moving window over the view. The view usually remains one
+component with its own coordinate system; the viewport changes which part is
+visible. The visible rectangle reported by \api{getVisibleRect} is expressed in
+view coordinates. Mouse events delivered to the view are also in view
+coordinates, even when the visible portion begins far from the view's origin.
+This is why a custom canvas can use the same hit-testing code whether it is
+scrolled to the top-left or deep into the diagram.
+
+The viewport's view position is the coordinate of the visible rectangle's
+origin. Setting it scrolls the viewport. Calling \api{scrollRectToVisible} asks
+the containing viewport, if any, to adjust that position so a rectangle becomes
+visible. A component should use \api{scrollRectToVisible} for local navigation
+such as keyboard cursor movement; it should not usually reach into parent scroll
+bars and manipulate their models directly.
+
+Clipping connects painting to scrolling. When a large view is inside a scroll
+pane, Swing normally calls painting with a clip that covers only the visible
+region. A well-written component uses that clip to skip invisible work. A
+poorly written component redraws the whole virtual world every time the
+viewport moves. The two components may look identical with small data and feel
+completely different with large data.
+
+\begin{lstlisting}[caption={The essential Scrollable methods for a large canvas.}]
+@Override
+public Dimension getPreferredScrollableViewportSize() {
+    return new Dimension(520, 280);
+}
+
+@Override
+public int getScrollableUnitIncrement(Rectangle visible, int orientation,
+        int direction) {
+    return CELL / 2;
+}
+
+@Override
+public boolean getScrollableTracksViewportWidth() {
+    return false;
+}
+\end{lstlisting}
+
+Returning false from \api{getScrollableTracksViewportWidth} means that the view may be wider than the viewport and horizontal scrolling may be needed. Returning true means the view should be stretched to the viewport width, often eliminating horizontal scrolling. Forms often want true for width and false for height. Large canvases often want false for both.
+
+\textbf{Unit and block increments are user interface.} The scroll increments returned by \api{Scrollable} shape keyboard, wheel, and
+scroll bar behavior. A unit increment should feel like one small meaningful
+movement: one row, one half cell, one line of text, one tick mark. A block
+increment should feel like one viewport-sized movement with enough overlap that
+the user does not lose context. Returning a random constant may work, but it
+throws away a chance to make navigation match the component's content.
+
+Tables, lists, and text components already provide sensible increments because
+their content is row- or line-based. Custom components should do the same. A
+timeline can scroll to the next tick. A diagram can scroll by grid cell. A
+thumbnail wall can scroll by row. These increments are part of the component
+contract because they determine how the user moves through the component when
+it is larger than the viewport.
+
+\textbf{Scrolling and preferred size.} Scroll panes expose a common misunderstanding. A developer sets the preferred size of a large custom component, adds it to a scroll pane, and then wonders why the scroll bars do not update after the data changes. The missing operation is often \api{revalidate}. When the preferred size changes, the viewport and scroll bars need a new geometry calculation.
+
+Another common error is setting the preferred size of the scroll pane's parent instead of the view. The scroll pane's size controls how much can be seen; the view's preferred size controls how much exists. If both are set arbitrarily, the result may work on one screen and fail on another.
+
+\begin{principlebox}{Viewport size and view size are different facts}
+The viewport extent is the visible window. The view preferred size is the scrollable world. Good scrolling code keeps those facts separate.
+\end{principlebox}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\componentsScrollFigure}
+\caption{A scroll pane shows a viewport extent over a larger view world. The view position moves the visible rectangle, while painting and mouse input remain expressed in the view's coordinate system.}
+\label{fig:components-scrollable-viewport}
+\end{figure}
+
+Figure~\ref{fig:components-scrollable-viewport} gives names to the pieces that are often confused in code. The view is the large component. The viewport is the visible window. The view position is the coordinate in the view that appears at the viewport's origin. The visible rectangle is expressed in view coordinates, not in scroll-bar coordinates. A custom component that understands these four facts can paint, hit test, keyboard-scroll, and expose tooltips without special cases for "currently scrolled".
+
+This is also why a scroll pane should not be treated as a magic cure for size mistakes. If the view reports a small preferred size, the scroll pane believes the world is small. If the view tracks viewport width, horizontal scrolling disappears because the view accepts the viewport's width. If the view does not track viewport width, horizontal scrolling may appear because the view keeps its own width. Each behavior can be correct. The error is failing to decide which behavior the workflow needs.
+
+The component inside a viewport should usually remain a single coherent view. Avoid splitting a large canvas into many child components merely to obtain scrolling. A grid of thousands of cells represented by thousands of \api{JPanel} children gives the layout and event systems far more work than necessary. A single custom component with a model, visible-range calculation, and clip-aware painting is often simpler and faster. Use real child components when each child has independent component behavior: focus traversal, accessibility, editing, native peer interaction, or complex embedded controls.
+
+Programmatic scrolling should speak view coordinates. A text editor scrolls the caret rectangle into view. A timeline scrolls the selected event rectangle into view. A diagram editor scrolls the selected shape bounds into view. The component asks \api{scrollRectToVisible}; it does not normally compute scroll-bar values itself. This keeps the request local: "make this view rectangle visible." The viewport and scroll bars decide how to satisfy the request.
+
+\textbf{Scrollable forms.}
+
+Business applications often need forms that may be taller than the window but should not scroll horizontally. The usual structure is a scroll pane whose view is a panel using MigLayout. The view should track viewport width, either by implementing \api{Scrollable} or by using a helper panel whose width follows the viewport. The fields then grow within the visible width while extra rows scroll vertically.
+
+This is one reason to understand components before MigLayout. MigLayout can make a form column grow, but the scroll pane decides the viewport extent, and the view decides whether it tracks that extent. If the form panel reports a preferred width larger than the viewport and does not track width, a horizontal scroll bar appears. Sometimes that is correct; most forms should avoid it.
+
+Width tracking should still respect minimum usability. If the viewport becomes
+too narrow for a readable form, the screen must choose a policy: allow
+horizontal scrolling, wrap labels above fields, collapse optional columns, or
+show a minimum window size. Returning true from
+\api{getScrollableTracksViewportWidth} is not a magic guarantee that every word
+will fit. It merely says that the view accepts the viewport width. The layout
+inside the view must still have sensible minimums and wrapping behavior.
+
+The same distinction appears in dialog design. A dialog may have a minimum
+window size to keep its form useful. Inside that size, the form tracks width and
+scrolls vertically. Below that size, the window may refuse to shrink or may
+allow horizontal scrolling as a last resort. These are product decisions, but
+they rely on the component and scroll contracts being stated correctly.
+
+\textbf{Tables in scroll panes.} \api{JTable} is normally used inside \api{JScrollPane}. The table header is placed in the scroll pane's column header. The table itself implements scrolling behavior suitable for rows and columns. This is why adding a table directly to a panel often looks wrong: the header may be missing, and the table has no viewport boundary.
+
+Large tables add another concern. The table does not create one component per cell. It uses renderers as stamps. Scrolling causes visible rows to be repainted and renderers to be reused. This is efficient only if renderers are cheap and model events are precise. The component contract for a table therefore includes model behavior and renderer discipline, not just a preferred size.
+
+\textbf{Headers, corners, and row headers.} Scroll panes can carry row headers, column headers, and corner components. A
+\api{JTable} uses the column header for table headers. A spreadsheet-like view
+may use a row header for row numbers. A corner component can fill the square
+where row and column headers meet. These pieces scroll with specific axes:
+column headers track horizontal movement, row headers track vertical movement.
+Understanding this structure prevents awkward attempts to build headers as
+ordinary children above or beside the scroll pane.
+
+This structure also explains why nested scroll panes usually feel wrong. A
+table inside a scroll pane inside another scroll pane creates competing
+viewports, wheel handling, and size policies. Sometimes nested scrolling is
+necessary, but most business screens should have one clear scrolling owner for a
+region. If a form contains a table, decide whether the whole form scrolls, the
+table scrolls, or both under a carefully designed split.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.96\linewidth]{\componentsFigure}
+\caption{The companion component example rendered as a deterministic book figure. The scroll pane shows a viewport over a larger custom component; the canvas paints only visible grid cells, accepts mouse and keyboard input, and reports scroll increments through \api{Scrollable}.}
+\label{fig:components-contract}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{\componentsPaintFigure}
+\caption{A second component screenshot isolates the contracts behind the example: preferred geometry, clip-aware painting, local input coordinates, and scrollable increments.}
+\label{fig:components-paint-contract}
+\end{figure}
+
+\begin{examplebox}{components}
+\componentsExample{} contains the executable custom component used in Figure~\ref{fig:components-contract}. \api{BookVisualFigures} supplies the supporting diagrams in Figures~\ref{fig:components-size-negotiation}, \ref{fig:components-scrollable-viewport}, and~\ref{fig:components-paint-contract}. All four figures are generated by \api{BookFigureGenerator}, which writes the component PNG files for the LaTeX build.
+\end{examplebox}
+
+This figure is not meant to be visually impressive. It is meant to be inspectable. The whole point is that one small component can demonstrate the contracts that later chapters rely on: it has a preferred world size, a preferred viewport size, a clipping-aware paint method, local mouse coordinates, keyboard focus, scroll increments, and a status label outside the component.
+
+The four figures form a reading sequence. First, Figure~\ref{fig:components-size-negotiation} separates reported size facts from assigned bounds. Second, Figure~\ref{fig:components-scrollable-viewport} separates the view world from the visible viewport. Third, Figure~\ref{fig:components-contract} shows those ideas inside a real scroll pane with input and status feedback. Fourth, Figure~\ref{fig:components-paint-contract} isolates the custom-painting obligations that make the example trustworthy. The order is important because it follows the order in which Swing itself asks questions: how large is the view, what part is visible, what input happened there, and which pixels must be redrawn?
+
+This is also the order a reviewer should use when a custom component appears in a code review. Do not start with the paint method merely because it is visually interesting. Start with the size contract. Then inspect the viewport contract if the component can scroll. Then inspect input and focus. Then inspect painting. Finally inspect lifecycle, accessibility, and bindings. Painting is where the component becomes visible, but it is not where the component contract begins.
+
+The same order keeps examples honest. A screenshot of a painted canvas is not enough if the canvas cannot explain its preferred size. A screenshot of scroll bars is not enough if the view does not revalidate when its world changes. A screenshot of a selected cell is not enough if keyboard focus is invisible or mouse coordinates are wrong after scrolling. A book figure should therefore be read together with the component contract that produced it. The picture is evidence, not decoration.
+
+For that reason, the component example is intentionally reusable in later chapters. MigLayout can refer back to size negotiation. The painting chapter can refer back to clipping and dirty regions. The testing chapter can refer back to deterministic screenshots. The Corusco chapters can refer back to lifecycle-owned bindings. A small component that tells the truth becomes a common reference point.
+
+That shared reference is more valuable than another isolated toy. It makes later precision cheaper, easier to review, and less likely to drift.
+
+\textbf{How this prepares MigLayout.} MigLayout does not remove component contracts. It uses them. When a MigLayout column is marked \api{grow}, the layout manager still begins with component preferred sizes. When a field is aligned by baseline, the field must report a baseline. When a panel is put in a scroll pane, the panel's preferred size and scrollable behavior still determine scroll bars. When a button is bound to a command, the button remains a component with enabled state, focus behavior, tooltip, accessibility, and painting.
+
+The next chapter should therefore be read as parent-side geometry. This chapter is child-side geometry and behavior. Together they form the screen contract.
+
+\textbf{Corusco at the component boundary.} Corusco should not make developers forget Swing's component contract. It should make repeated component relationships explicit. A field binding should not need to re-explain preferred size. A validation behavior should not need to own layout. A command behavior should not steal focus rules. A table state controller should not pretend the viewport and view are the same object.
+
+The library's job is to connect models, commands, problems, resources, help, and lifecycle to components that still behave like Swing components. That is an important boundary. If a custom component has wrong preferred size, Corusco cannot make MigLayout arrange it correctly. If a renderer retains state, Corusco cannot make table scrolling cheap. If a screen installs a binding and never closes it, Corusco cannot guess the missing lifecycle owner.
+
+\begin{coruscobox}{respecting Swing}
+Corusco is most useful when the underlying Swing code already honors component contracts. Bindings and behaviors remove repetitive wiring; they do not replace preferred sizes, painting discipline, focus policy, or scrollable view design.
+\end{coruscobox}
+
+\textbf{Reading existing screens through the component contract.} When approaching an old Swing screen, do not start by judging whether it uses the
+right layout manager. Start by asking whether the components tell the truth.
+Find the fields, buttons, scroll panes, custom canvases, tables, and overlays.
+For each one, ask what size it reports, whether that size comes from content or
+from a hard-coded patch, whether geometry changes call \api{revalidate}, whether
+visual changes call \api{repaint}, and whether listeners installed on the
+component have a visible owner. This review often explains layout bugs before
+the layout code is opened.
+
+Then inspect the parent containers. A component may report a good preferred
+size, but the parent may put it in a non-growing column. A panel may call
+\api{revalidate}, but a surrounding scroll pane may contain the wrong view. A
+table may be efficient, but the panel around it may add and remove the table on
+every refresh. A good review moves between child and parent until the
+disagreement is visible. The defect is rarely "Swing is strange"; it is usually
+one contract being interpreted as another.
+
+This review style is especially valuable during migration to Corusco. It is
+tempting to introduce bindings and generated descriptors first because those are
+the visible library features. But a binding attached to a misleading component
+only makes the misleading component update more consistently. First make the
+component truthful: natural size, honest opacity, predictable focus, precise
+painting, sensible scrolling, and explicit cleanup. Then bind it to model state.
+
+The same ordering applies to screenshots. A screenshot should not merely prove
+that a window can be captured. It should show a state that the component
+contract can explain: a large view inside a viewport, a focused interactive
+component, a validation decoration over a model problem, a table whose header is
+owned by the scroll pane, or a form whose fields grow inside a width-tracking
+view. A figure that cannot be explained this way is probably only decorative.
+
+The component contract also gives a compact vocabulary for bug reports. "The
+field does not grow" becomes a question about preferred size, column growth, and
+fill. "The diagram has no scroll bars" becomes a question about view preferred
+size and revalidation. "The button action works from the toolbar but not the
+keyboard" becomes a question about commands, input maps, focus scope, and
+enabled state. "The validation icon leaves trails" becomes a question about
+opacity, dirty regions, and repainting. The vocabulary turns symptoms into
+engineering work.
+
+Finally, notice how little of this vocabulary is obsolete. Swing is old, but the
+component contract is still the contract used by modern Java desktop code.
+Records, virtual threads, generated descriptors, FlatLaf, MigLayout, and
+Corusco all sit around the same component tree. They can make state clearer,
+work faster, screens prettier, layout more expressive, and wiring safer. They
+do not repeal the fact that a Swing component is a rectangle with obligations.
+
+That is why this chapter belongs before layout. A reader who understands the
+component contract can treat MigLayout as a clear parent-side language rather
+than as a bag of tricks. The constraints become readable because the child
+evidence is readable first.
+
+It also explains why the examples stay ordinary. A small custom canvas, a
+scroll pane, a status label, and a few bindings are enough to expose the same
+contracts that govern large production screens. Once those contracts are
+visible, later chapters can build upward without redefining the ground.
+
+\section{Reviewing component contracts}
+
+The fastest way to debug a Swing screen is often to read it as a set of contracts rather than as a set of classes. A component reports geometry. A parent assigns bounds. A component paints inside those bounds. A viewport exposes part of a view. Focus chooses the keyboard target. Input maps turn keystrokes into action names. Listeners translate low-level events into model changes or command invocations. Each sentence is small, but together they describe most of the failures that make Swing feel mysterious.
+
+A text field sits in a panel and stubbornly stays small. The field's preferred size is reasonable, but the parent layout does not assign extra width to the field's column. The component contract is fine; the parent constraint is wrong. In MigLayout terms, the field or column probably lacks \api{grow} and \api{fill}. The opposite bug appears when a custom component paints a large diagram but always reports a small preferred size. The scroll pane believes the world is small, so scroll bars do not appear. The fix is not to force scroll bars on; the fix is to make \api{getPreferredSize} report the diagram's virtual size and call \api{revalidate} when that size changes.
+
+The painting contract produces equally concrete failures. An overlay component marked opaque but painting only a translucent badge asks Swing to skip the ancestor background and then leaves ghost pixels during scroll or resize. The repair is to make the overlay non-opaque or to paint every pixel. A window-level key binding that catches a key stroke belonging to a focused text field looks clever in a demo and hostile in a form; the repair is to narrow the input-map scope, choose a less hostile shortcut, or let the text component's own bindings win. A form panel inside a scroll pane that reports a wide preferred size and does not track viewport width produces horizontal scrolling where the user expected wrapping and growing fields; the repair is to design the view as a width-tracking scrollable panel or constrain the layout so fields grow and shrink inside the viewport.
+
+The first review drill is to classify the symptom. Geometry symptoms include unexpected component size, missing scroll bars, clipped labels, shaking layout, and components that do not grow. Painting symptoms include ghosting, trails, stale highlights, flicker, excessive repainting, and text that looks wrong under another Look-and-Feel. Input symptoms include shortcuts that work only from one focus owner, mouse gestures that miss after scrolling, validation that traps focus, and buttons that do not reflect command state. Lifecycle symptoms include old views updating after close, timers that continue to repaint, and task results delivered to invisible panels. Classification does not fix the bug, but it chooses the right contract to inspect first.
+
+The second drill is to find the owner. A label that clips under localization may be the label's size evidence, the parent's grow policy, or the screen's minimum width. A table that loses selection after sorting may be a table-coordinate bug, not a renderer bug. A custom canvas that scrolls slowly may be painting every object instead of only visible objects, or it may be receiving broad model events. A validation decoration that leaves trails may be an opacity lie, a dirty-region bug, or an overlay drawn outside its owner. The visible component is the clue, not always the owner.
+
+The third drill is to ask whether the component is standard, adapted, or custom. A standard \api{JTextField} already knows how to compute preferred size, paint under the Look-and-Feel, handle text input, expose accessibility, and interact with focus traversal. The application should not replace these behaviors casually. An adapted component, such as a text field bound to a Corusco field model, keeps the standard component behavior but connects it to application state. A custom component owns more of the contract: size, painting, input interpretation, focus feedback, accessibility, and scrolling. The more custom the component is, the more explicit its tests and documentation should be.
+
+Custom components should earn their existence. Use one when the screen needs a genuine visual surface: timeline, graph, map, waveform, color ramp, diagram, thumbnail wall, calendar, ruler, heatmap, or custom editor. Do not use one merely to avoid learning layout constraints. A panel full of standard fields is usually better as standard components arranged by MigLayout. A hand-painted form may look controlled at first and become inaccessible, uneditable, unlocalizable, and hostile to Look-and-Feel changes.
+
+When a custom component is justified, design its public API before painting it. What model facts does it consume? What selection or cursor state does it expose? Which operations are commands? What size does it report? Does it scroll? Does it accept focus? What accessible name and description does it provide? Which visual facts are resource-driven? Which state changes affect geometry and which affect only pixels? These questions sound formal, but they prevent the paint method from becoming the component's only design document.
+
+A useful custom component has a small semantic surface. A timeline might expose \api{setEvents}, \api{setSelectedEventId}, \api{scrollEventToVisible}, and \api{addSelectionListener}. It should not expose \api{repaintEventRectangle} to callers. Dirty rectangles are implementation. Domain selection is public behavior. The component maps domain facts to visual facts internally, where it has the transform, font, scale, and clipping knowledge needed to be precise.
+
+The same principle applies to input. A custom component may receive a mouse press at \api{x=147,y=83}. That coordinate is not the application operation. The component maps it to a row, item, time, shape, or empty space. The presenter or command layer should hear "selected event 42" or "started drag of node A", not "mouse pressed at 147,83" unless the screen is truly a drawing editor whose domain is geometry. Keeping this translation local makes tests readable and keeps application logic independent of transient view positions.
+
+A custom component also needs an accessibility story. If it paints a meaningful selection, warning, or status, that meaning should be available outside pixels. A simple decorative component may only need a name and description. A rich editor may need a custom accessible context, keyboard navigation, and textual summaries. The minimum acceptable answer is not always large, but there should be an answer. A visual component that is silent to keyboard users and assistive technology is not finished merely because it paints correctly.
+
+The following matrix is a compact review aid. It is not a substitute for reading code, but it keeps the review from wandering through symptoms without naming contracts.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.22\linewidth}X X}
+\toprule
+Symptom & First contract to inspect & Common repair\\
+\midrule
+Field does not grow & Parent layout constraints and child preferred size. & Add grow/fill policy to the parent; avoid fixed field dimensions.\\
+No scroll bars for canvas & View preferred size and \api{revalidate}. & Report world size from \api{getPreferredSize}; revalidate when it changes.\\
+Horizontal scroll in form & View width tracking and form minimum policy. & Use a width-tracking scrollable view or redesign narrow-width behavior.\\
+Ghost pixels after scroll & Opacity, clip, and dirty-region bounds. & Make opacity truthful; repaint old and new visual bounds.\\
+Shortcut works only sometimes & Focus owner and input-map condition. & Bind the command at the narrowest correct input-map scope.\\
+Selection changes wrong row & View/model coordinate conversion. & Store row identity or model coordinates; convert at the table boundary.\\
+Old panel still updates & Listener, binding, timer, or task lifecycle. & Close scopes and task handles with the screen owner.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Review should include at least one resize experiment. Pack the window, make it narrower, make it wider, put the panel in a scroll pane, and change the font scale if possible. Watch which components keep natural size, which grow, which clip, and which scroll. If the screen is meant to support right-to-left orientation, test leading and trailing placement. If the screen is meant to support localization, test longer labels. The component contract is not proven at one hand-picked size.
+
+Review should also include a theme experiment. A component that hard-codes a light background may pass under one theme and fail under another. A renderer that forgets to reset foreground may look random only when selection colors change. A custom focus ring may be invisible under a dark Look-and-Feel. A fixed-height field may clip text under a font change. The component contract includes cooperation with the UI delegate unless the component deliberately owns the entire visual style.
+
+Review should include a scroll experiment. Put the component in a \api{JScrollPane} even if the final screen may not use one. If the component reports an honest preferred size, scroll bars should tell a coherent story. If the component paints outside its bounds, the clipped viewport will expose the mistake. If mouse hit testing uses component-local coordinates correctly, it will still work after scrolling. If keyboard navigation calls \api{scrollRectToVisible}, the selected object should remain reachable.
+
+Review should include an input experiment. Navigate with Tab. Trigger commands by keyboard. Click the custom view. Type into text fields. Open tooltips. Check whether focus indicators appear and whether shortcuts respect text editing. A screen that works only by mouse is incomplete. A screen that steals text-field shortcuts for window commands is hostile. A screen that hides commands inside one mouse listener is hard to test and hard to expose through menus or help.
+
+Review should include cleanup. Close the panel or dialog, then mutate the model in a test. The old component should not update. Stop background tasks or complete stale tasks after close. The old view should not repaint or show status. Remove a table controller and verify table-state listeners do not keep the table alive. A component contract without lifecycle is only half a contract in a long-running application.
+
+The component chapter therefore gives the first real code-review vocabulary for the book. Later chapters will discuss MigLayout, painting, tables, overlays, commands, validation, tasks, generation, and testing in greater detail. Those chapters all return to the same questions: what does the component report, what does the parent decide, what pixels are stale, what event means a command, what state outlives the widget, and who closes the relationship?
+
+This vocabulary also protects against a common migration error. A team decides to modernize a Swing screen with FlatLaf, MigLayout, and Corusco. The visual result improves, but the screen still has custom fields with fixed pixel sizes, listeners that own domain state, a canvas that lies about preferred size, and a task that updates a dead panel. The migration appears only half successful because it improved surfaces without repairing contracts. Start with contracts. Then add better layout, state, resources, and generation.
+
+Conversely, do not postpone all improvement until every contract is perfect. A practical migration can be incremental. Fix one custom component's preferred size and scrolling. Replace one key listener with an action map entry. Move one validation flag into a problem set. Add one cleanup scope. Capture one screenshot that demonstrates the repaired state. Each step makes the screen easier to reason about, and each step gives later Corusco features a better boundary.
+
+For examples in this book, the component contract has an additional responsibility: it must teach by being inspectable. The reader should be able to look at the screenshot, the listing, and the prose, then answer why scroll bars appear, why only a dirty region is repainted, why arrow keys move the cursor, why focus is visible, and why a later MigLayout panel can trust the component's preferred size. If the example requires hidden magic, it is a bad example even if it compiles.
+
+The final review habit is to write down what the component refuses to own. A table renderer refuses to own row identity. A text field refuses to own validation policy. A custom canvas refuses to own background loading. A scroll pane refuses to invent the view's world size. A binding refuses to fix bad preferred sizes. These negative statements are useful because they keep responsibilities from drifting back into the easiest listener or paint method.
+
+\textbf{Checklist for component design.}
+
+\begin{itemize}
+\item The component reports preferred size from content, font, border, and insets.
+\item Geometry changes call \api{revalidate}; visual changes call \api{repaint}.
+\item Painting overrides \api{paintComponent}, creates a graphics copy, honors the clip, and does not mutate application state.
+\item Opacity is true only when every pixel is painted.
+\item Mouse coordinates are treated as component-local; cross-component coordinates use Swing conversion helpers.
+\item Keyboard commands use input/action maps unless the component is truly interpreting low-level key input.
+\item Interactive custom components are focusable and draw visible focus state.
+\item Components in scroll panes distinguish viewport extent from view size.
+\item Large views implement \api{Scrollable} when default viewport behavior is not precise enough.
+\item Listeners, bindings, timers, and task callbacks installed on a component have a lifecycle owner.
+\end{itemize}
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Modify the companion canvas so each mark has a label. Repaint only the old and new label bounds when a label changes.
+\item Change \api{getScrollableTracksViewportWidth} to return true. Predict the scroll-bar behavior before running the example.
+\item Add an \api{InputMap}/\api{ActionMap} binding for the Delete key that removes the last mark. Compare it to a raw \api{KeyListener}.
+\item Put the canvas directly in a MigLayout panel without a scroll pane. Explain which size is now visible and why.
+\item Add an accessible name and description to the canvas. Decide whether each cell needs to be individually accessible or whether a summary is enough for this example.
+\end{enumerate}
+\end{exercisebox}
