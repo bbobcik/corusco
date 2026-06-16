@@ -298,7 +298,7 @@ Input is where many Swing programs accidentally turn components into application
 
 A component should interpret the input that truly belongs to it. A drawing canvas should understand mouse press, drag, release, wheel, hover, and keyboard navigation inside the canvas. A text field should let its document and editor kit handle text editing. A table should let its selection model and editor machinery handle row selection and cell editing. Application commands should sit above these local mechanisms so the same operation can be invoked from a button, menu, toolbar, popup, shortcut, or generated command surface.
 
-This separation keeps input testable. A custom canvas can have pure tests for hit testing: given view coordinates and a model, which object is under the pointer? It can have EDT tests for focus and key bindings. The presenter can have command tests for deleting the selected object. A screenshot can show the selected object and focus ring. One large robot test can still exist as a smoke test, but the rule no longer depends on a fragile sequence of mouse movements.
+This separation keeps input testable. A custom canvas can have pure tests for hit testing: given view coordinates and a model, which object is under the pointer? It can have EDT tests for focus and key bindings. The screen presenter, defined in Chapter~\ref{ch:models-views-presenters}, can have command tests for deleting the selected object. A screenshot can show the selected object and focus ring. One large robot test can still exist as a smoke test, but the rule no longer depends on a fragile sequence of mouse movements.
 
 \termdef{Gesture}{a low-level or local interaction pattern, such as press-drag-release, click, hover, wheel, or key stroke} is a useful word here. A gesture is not automatically a command. Dragging inside a diagram may pan, select, resize, draw, or do nothing depending on mode. Pressing Delete inside a text field deletes text; pressing Delete inside a selected table may remove a row; pressing Delete in an empty form may be ignored. The component or screen maps gestures to commands after considering focus, mode, selection, enabled state, and editing state.
 
@@ -405,7 +405,7 @@ Use these lower-level events for boundaries they truly express. A canvas may
 drop a scale-dependent image cache when resized. A screenshot harness may wait
 until a component has a realized size before capturing. A behavior may attach
 only while a component is displayable. But business workflow should normally be
-modeled in presenters, values, commands, and tasks rather than in component
+modeled in screen presenters, values, commands, and tasks rather than in component
 visibility callbacks.
 
 \textbf{Tooltips, accessible context, and client properties.} Swing components carry more than pixels and events. \api{setToolTipText} installs tooltip behavior. \api{getAccessibleContext} exposes names, descriptions, roles, states, and relationships to assistive technology. Client properties attach small extension values used by Look-and-Feels and application helpers.
@@ -663,7 +663,7 @@ When a custom component is justified, design its public API before painting it. 
 
 A useful custom component has a small semantic surface. A timeline might expose \api{setEvents}, \api{setSelectedEventId}, \api{scrollEventToVisible}, and \api{addSelectionListener}. It should not expose \api{repaintEventRectangle} to callers. Dirty rectangles are implementation. Domain selection is public behavior. The component maps domain facts to visual facts internally, where it has the transform, font, scale, and clipping knowledge needed to be precise.
 
-The same principle applies to input. A custom component may receive a mouse press at \api{x=147,y=83}. That coordinate is not the application operation. The component maps it to a row, item, time, shape, or empty space. The presenter or command layer should hear "selected event 42" or "started drag of node A", not "mouse pressed at 147,83" unless the screen is truly a drawing editor whose domain is geometry. Keeping this translation local makes tests readable and keeps application logic independent of transient view positions.
+The same principle applies to input. A custom component may receive a mouse press at \api{x=147,y=83}. That coordinate is not the application operation. The component maps it to a row, item, time, shape, or empty space. The screen presenter or command layer should hear "selected event 42" or "started drag of node A", not "mouse pressed at 147,83" unless the screen is truly a drawing editor whose domain is geometry. Keeping this translation local makes tests readable and keeps application logic independent of transient view positions.
 
 A custom component also needs an accessibility story. If it paints a meaningful selection, warning, or status, that meaning should be available outside pixels. A simple decorative component may only need a name and description. A rich editor may need a custom accessible context, keyboard navigation, and textual summaries. The minimum acceptable answer is not always large, but there should be an answer. A visual component that is silent to keyboard users and assistive technology is not finished merely because it paints correctly.
 

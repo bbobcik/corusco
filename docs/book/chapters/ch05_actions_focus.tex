@@ -12,13 +12,13 @@ Payoff & Coherent menus, toolbars, popups, shortcuts, validation, accessibility,
 \end{tabularx}
 \end{center}
 
-\section{Commands Before Presenters}
+\section{Commands Before Command Surfaces}
 
 \termdef{Command}{a user intention with identity, state, and behavior} is the idea behind Swing's \api{Action}. A command is not the same thing as a button click. "Save document" may be invoked by a toolbar button, menu item, popup item, key binding, command palette entry, default button, test harness, or accessibility action. If these surfaces are implemented as unrelated listeners, the application has several almost-identical operations waiting to drift apart.
 
-An \api{Action} is both behavior and state. It has a name, enabled flag, optional icon, accelerator, mnemonic, selected state, short description, and arbitrary properties. A \api{JButton}, \api{JMenuItem}, toolbar button, popup item, or key binding can point at the same \api{Action}. When the action becomes disabled, all presenters can update. When the selected state changes, toggle presenters can agree.
+An \api{Action} is both behavior and state. It has a name, enabled flag, optional icon, accelerator, mnemonic, selected state, short description, and arbitrary properties. A \api{JButton}, \api{JMenuItem}, toolbar button, popup item, or key binding can point at the same \api{Action}. When the action becomes disabled, all command surfaces can update. When the selected state changes, toggle command surfaces can agree.
 
-\begin{principlebox}{One command, many presenters}
+\begin{principlebox}{One command, many command surfaces}
 If the same user intention can be invoked by a menu item, toolbar button, popup menu, keyboard shortcut, or test command, it should normally be one \api{Action} instance or one command object adapted to \api{Action}.
 \end{principlebox}
 
@@ -29,7 +29,7 @@ If the same user intention can be invoked by a menu item, toolbar button, popup 
 \label{fig:actions-command-surfaces}
 \end{figure}
 
-Figure~\ref{fig:actions-command-surfaces} shows the basic economy. A toolbar wants icon-first presentation. A menu wants text, mnemonic, accelerator, and perhaps a check mark. A key binding wants no visible component at all. These are presenter choices. The operation underneath should still have one identity, one enablement rule, one help topic, one permission policy, and one testable execution path.
+Figure~\ref{fig:actions-command-surfaces} shows the basic economy. A toolbar wants icon-first presentation. A menu wants text, mnemonic, accelerator, and perhaps a check mark. A key binding wants no visible component at all. These are command-surface choices. The operation underneath should still have one identity, one enablement rule, one help topic, one permission policy, and one testable execution path.
 
 \begin{figure}[htbp]
 \centering
@@ -43,7 +43,7 @@ Figure~\ref{fig:actions-focus-traversal} shows the companion problem. A command 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.94\linewidth]{\actionsRoutingFigure}
-\caption{A routed command resolves the active context before execution, then publishes command state back to every presenter. Focus owner, semantic owner, command id, and visual surface are related but distinct facts.}
+\caption{A routed command resolves the active context before execution, then publishes command state back to every command surface. Focus owner, semantic owner, command id, and visual surface are related but distinct facts.}
 \label{fig:actions-command-routing}
 \end{figure}
 
@@ -51,7 +51,7 @@ Figure~\ref{fig:actions-command-routing} gives the rest of the chapter its
 map. A key stroke, button press, menu item, or accessibility action does not
 magically know which object should receive the operation. The screen must
 resolve the active context, find the stable command, check the command model,
-execute the handler if appropriate, and update all presenters from the same
+execute the handler if appropriate, and update all command surfaces from the same
 state. When a program skips this route, commands begin to depend on whichever
 widget happened to hear the event first.
 
@@ -59,9 +59,9 @@ widget happened to hear the event first.
 The command-surface, focus-traversal, and command-routing figures keep keyboard and command examples tied to executable Swing panels. Each figure shows a state that can be constructed deliberately: visible commands, focus order, and routing scope.
 \end{examplebox}
 
-\textbf{Action properties describe the command.} Standard properties include \api{Name}, \api{SMALL\_ICON}, \api{SHORT\_DESCRIPTION}, \api{ACCELERATOR\_KEY}, \api{MNEMONIC\_KEY}, and \api{SELECTED\_KEY}. Presenters listen to property changes and update themselves. Custom properties can be useful, but they should be documented because only presenters that know the property will honor it.
+\textbf{Action properties describe the command.} Standard properties include \api{Name}, \api{SMALL\_ICON}, \api{SHORT\_DESCRIPTION}, \api{ACCELERATOR\_KEY}, \api{MNEMONIC\_KEY}, and \api{SELECTED\_KEY}. Command surfaces listen to property changes and update themselves. Custom properties can be useful, but they should be documented because only surfaces that know the property will honor it.
 
-A subtle rule follows: changing an action's name or icon changes it for all presenters sharing the action. If a toolbar needs icon-only presentation and a menu needs text, configure the presenter. Do not mutate the shared action to satisfy one surface. The action's properties should describe the command; the presenter decides how much of that description to show.
+A subtle rule follows: changing an action's name or icon changes it for all command surfaces sharing the action. If a toolbar needs icon-only presentation and a menu needs text, configure the surface. Do not mutate the shared action to satisfy one surface. The action's properties should describe the command; the command surface decides how much of that description to show.
 
 \begin{lstlisting}[caption={A domain-aware action with centralized enablement.}]
 public final class DeleteCustomerAction extends AbstractAction {
@@ -97,14 +97,14 @@ The example hides confirmation, error handling, lifecycle cleanup, and asynchron
 
 The example also shows a common lifetime problem. The action registers a listener on selection. Who removes it? In a small application, this may not matter. In a screen that opens and closes many times, it matters. A command object that listens to models needs a lifecycle owner. Later Corusco chapters turn this into scoped subscriptions, but plain Swing developers should already ask the question.
 
-\termdef{Presenter}{a visual or input surface that invokes a command} includes buttons, menu items, popup items, toolbar buttons, key bindings, default buttons, and sometimes accessibility actions. Presenters may be created and destroyed with views. Commands may live for the screen, document, application, or focused context. Mixing these lifetimes is a common source of stale enabled state and memory leaks.
+\termdef{Command presenter}{a visual or input surface that invokes a command} includes buttons, menu items, popup items, toolbar buttons, key bindings, default buttons, and sometimes accessibility actions. Chapter~\ref{ch:models-views-presenters} distinguishes this term from a screen presenter, which owns workflow and screen state. Command presenters may be created and destroyed with views. Commands may live for the screen, document, application, or focused context. Mixing these lifetimes is a common source of stale enabled state and memory leaks.
 
 A command should have a stable identity separate from localized text. The key \api{customer.delete} or \api{deleteCustomer} can survive translation, icon redesign, and menu reorganization. This matters for preferences, shortcuts, help links, logging, tests, generated metadata, and documentation. The visible label is a resource. The command key is a contract.
 
 The identity also gives the team a vocabulary for review. A reviewer can ask
 "what enables \api{customer.delete}?" rather than "why is this button gray?"
 The first question points to selection, permissions, busy state, validation,
-and active context. The second question points to one presenter. The same
+and active context. The second question points to one command surface. The same
 difference appears in tests. A robust test changes the model and asserts that
 \api{customer.delete} is disabled with a reason. A fragile test finds a button
 whose label happens to be "Delete" and reads its enabled flag.
@@ -118,23 +118,23 @@ be provided by the focused editor, table, tree, or canvas. Gesture commands
 live for a short interaction such as a drag or resize. These lifetimes should
 not all be forced into one global map.
 
-Presenters have their own lifetimes and density rules. A toolbar may be rebuilt
+Command presenters have their own lifetimes and density rules. A toolbar may be rebuilt
 when the Look-and-Feel changes or when a perspective changes. A popup menu may
 be built on demand and discarded immediately. A key binding may remain in a
 root pane until the window closes. A command palette may filter descriptors
-without creating buttons at all. If the command is stored inside one presenter,
-all other presenters become second-class copies. If the command exists apart
-from presenters, each surface can be created and destroyed without losing the
+without creating buttons at all. If the command is stored inside one command presenter,
+all other command presenters become second-class copies. If the command exists apart
+from command presenters, each surface can be created and destroyed without losing the
 operation's state.
 
 There is also a difference between command state and invocation state. Enabled,
 selected, visible, name, icon, shortcut, and disabled reason are command state.
 A pressed toolbar button, an open menu item, a hover tooltip, or a focused
-default button is presenter state. A long-running Save operation may introduce
+default button is command-presenter state. A long-running Save operation may introduce
 task state that several commands observe. Mixing these states produces subtle
 bugs: a toolbar button stays visually pressed because the task failed, a menu
 item remains checked because a button model owned the selected flag, or a
-shortcut still invokes a command after its presenter disappeared.
+shortcut still invokes a command after its command presenter disappeared.
 
 Command metadata should be precise but not ornamental. A name resource tells
 the user what the command does. A tooltip resource adds short help. A help topic
@@ -242,7 +242,7 @@ Binding scope & Good question & Typical mistake\\
 Focused component & What does this key mean inside this editor or canvas? & Treating a local editing key as an application command.\\
 Focused subtree & What does this key mean while the user is inside this panel? & Installing the same subtree shortcut in many sibling panels.\\
 Focused window & What command should be reachable anywhere in this window? & Stealing keys from text components, editors, or popups.\\
-Application/global & What command remains valid across windows? & Forgetting that each top-level window has its own focus and modality.\\
+Application/\allowbreak global & What command remains valid across windows? & Forgetting that each top-level window has its own focus and modality.\\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -573,10 +573,10 @@ tests are not UI theater. They prove the command layer's contract.
 
 \section{Corusco Command Descriptors}
 
-Corusco command descriptors make command identity, resources, help, enablement, selected state, shortcuts, and generated metadata explicit outside concrete Swing presenters. Swing's \api{Action} remains the adapter to buttons, menus, and key bindings. Corusco's value is that the command contract becomes inspectable and testable before a toolbar happens to exist.
+Corusco command descriptors make command identity, resources, help, enablement, selected state, shortcuts, and generated metadata explicit outside concrete Swing command presenters. Swing's \api{Action} remains the adapter to buttons, menus, and key bindings. Corusco's value is that the command contract becomes inspectable and testable before a toolbar happens to exist.
 
 \begin{coruscobox}{Commands as Data}
-Corusco treats command identity, resource keys, help topics, shortcuts, enablement, selected state, and lifecycle as named model facts. The Swing \api{Action} is then a presenter adapter, not the only place where command meaning lives.
+Corusco treats command identity, resource keys, help topics, shortcuts, enablement, selected state, and lifecycle as named model facts. The Swing \api{Action} is then a command-presenter adapter, not the only place where command meaning lives.
 \end{coruscobox}
 
 This distinction matters for tests. A command test can assert that Save is disabled while a form is invalid without constructing every visual surface that might invoke Save. A generated Swing adapter test can then be small and mechanical: the button, menu item, shortcut, and help surface all point at the command descriptor.
@@ -591,11 +591,11 @@ Lifecycle remains important. A command descriptor may be stable, but a Swing act
 
 Generated actions are useful only if their generated shape remains readable. A developer should be able to inspect which command key produced which Swing \api{Action}, which resource keys fill properties, which input map scope installed a shortcut, and which behavior owns cleanup. Generation that hides command routing is not an improvement. Generation that makes routing boring is.
 
-Corusco also helps with command context. A screen can expose selected domain ids, active editor state, dirty state, problem state, busy state, and permission state as observable values. Command enablement can derive from those values. The same derivation can feed disabled reasons, presenter enabled flags, and tests. This is more maintainable than having each \api{Action} search the component tree.
+Corusco also helps with command context. A screen can expose selected domain ids, active editor state, dirty state, problem state, busy state, and permission state as observable values. Command enablement can derive from those values. The same derivation can feed disabled reasons, command-surface enabled flags, and tests. This is more maintainable than having each \api{Action} search the component tree.
 
 The command descriptor should not erase Swing knowledge. Input map scopes still matter. Text components still have their own key bindings. Root panes still own default buttons. Active editors still need to stop before commit. Corusco should reduce repetition and make conflicts visible, not pretend the Swing keyboard system disappeared.
 
-Migration can be incremental. Start by naming important commands and replacing duplicate listeners with shared actions. Next, move labels, shortcuts, and help topics into stable resource-backed descriptors. Then derive enablement from observable state. Finally, let generated adapters install presenters and bindings. Each step removes a class of drift without requiring a full rewrite.
+Migration can be incremental. Start by naming important commands and replacing duplicate listeners with shared actions. Next, move labels, shortcuts, and help topics into stable resource-backed descriptors. Then derive enablement from observable state. Finally, let generated adapters install command surfaces and bindings. Each step removes a class of drift without requiring a full rewrite.
 
 A descriptor is not merely a constants holder. It is a compact statement of the
 command contract. It can say that \api{customer.save} belongs to the customer
@@ -657,7 +657,7 @@ same cleanup principle used for overlays and bindings: generated code is still
 code with lifetime.
 
 Generated diagnostics are a practical advantage. A developer should be able to
-ask a screen to list installed commands, shortcuts, presenters, enabled states,
+ask a screen to list installed commands, shortcuts, command presenters, enabled states,
 disabled reasons, help topics, resource keys, and owners. If a shortcut fails,
 the diagnostic should say whether no binding was installed, the action was
 disabled, the active provider rejected the command, or a local editor owned the
@@ -684,7 +684,7 @@ Migration from plain Swing should keep the application running. First, wrap
 existing \api{Action} instances with ids and diagnostics. Next, merge duplicate
 actions that represent the same operation. Then move resource and shortcut data
 to descriptors. Then replace imperative enablement listeners with observable
-derived values. Finally, generate adapters for routine presenters. Each step is
+derived values. Finally, generate adapters for routine command presenters. Each step is
 valuable by itself, and each step reduces command drift.
 
 The end result is not less Swing. It is Swing whose command surfaces are
@@ -726,7 +726,7 @@ When the service fails, the command has several policies to choose from. A netwo
 
 Cancellation is a command too. If Save is running, Cancel Load or Cancel Save may request cancellation through a token. It may not be able to stop a remote operation immediately. The UI should distinguish "cancellation requested" from "operation canceled." If a stale success result later arrives, the generation check prevents it from overwriting newer screen state.
 
-The default button is just another presenter for the same Save or OK command. It should not bypass active-editor commit, validation, busy state, or cancellation policy. A dialog whose default button has a private listener often works until the toolbar or keyboard shortcut is added. Then the default path and shortcut path disagree. Commands prevent that split.
+The default button is just another command presenter for the same Save or OK command. It should not bypass active-editor commit, validation, busy state, or cancellation policy. A dialog whose default button has a private listener often works until the toolbar or keyboard shortcut is added. Then the default path and shortcut path disagree. Commands prevent that split.
 
 The Escape key follows a similar slow path. If a popup is open, Escape may close the popup. If a table editor is active, Escape may cancel editing. If a background task is cancellable, Escape might ask whether to cancel. If the form is dirty, Escape may ask for confirmation before closing. The root-pane binding should route to the appropriate command context instead of unconditionally disposing the dialog.
 
@@ -738,17 +738,17 @@ The Delete command is even more delicate. Delete in a text field deletes text. D
 
 Provider registration should be scoped. A table selection provider can register while the table is displayable or focused and unregister when the screen closes. A text editor provider can become active while editing and yield afterward. If providers are left in a global registry forever, commands may operate on dead screens. Command routing therefore has the same lifecycle problem as model listeners.
 
-Shortcut customization adds a persistence layer. If users can customize shortcuts, persisted shortcuts must be keyed by command id, not by menu label. The application must detect conflicts in a scope, provide defaults, and migrate renamed commands. A shortcut file that stores localized text or presenter paths will break under translation and menu reorganization.
+Shortcut customization adds a persistence layer. If users can customize shortcuts, persisted shortcuts must be keyed by command id, not by menu label. The application must detect conflicts in a scope, provide defaults, and migrate renamed commands. A shortcut file that stores localized text or command-presenter paths will break under translation and menu reorganization.
 
 Localization adds another detail. Mnemonics are not universal. A mnemonic that works in English may conflict in Czech or German. If command descriptors contain resource keys for names and mnemonics, localization can be reviewed as a command surface. If mnemonics are hard-coded in constructors, translation becomes a hunt through Java code.
 
-Icons are also command resources, but icon size is often presenter-specific. A menu item may use a small icon or none. A toolbar may use a larger icon. A command palette may use a symbolic icon plus text. The command can name the icon resource; the presenter chooses size and layout. This keeps the command semantic and the visual surface flexible.
+Icons are also command resources, but icon size is often command-surface-specific. A menu item may use a small icon or none. A toolbar may use a larger icon. A command palette may use a symbolic icon plus text. The command can name the icon resource; the command surface chooses size and layout. This keeps the command semantic and the visual surface flexible.
 
-Selected state belongs to toggle commands. A toggle command should have one boolean or enum state that presenters observe. Some toggles are binary, such as "show inactive." Others are mutually exclusive modes, such as select, pan, zoom, and edit. A group of mode commands should be backed by one mode value, not by buttons that deselect one another through listener gossip.
+Selected state belongs to toggle commands. A toggle command should have one boolean or enum state that command presenters observe. Some toggles are binary, such as "show inactive." Others are mutually exclusive modes, such as select, pan, zoom, and edit. A group of mode commands should be backed by one mode value, not by buttons that deselect one another through listener gossip.
 
 Command groups help menus and toolbars remain coherent. File commands, edit commands, navigation commands, view commands, table commands, and help commands often have different shortcut scopes and enablement dependencies. Grouping is not only visual organization. It gives review a way to ask whether a command belongs to the window, active document, table, editor, or application.
 
-Logging and telemetry should use command ids. "customer.save invoked" is stable; "button Save clicked" is a presenter accident. If users invoke Save by shortcut, menu, or automation, the command id stays the same. Presenter-specific logging can be useful for usability research, but it should not replace semantic command logging.
+Logging and telemetry should use command ids. "customer.save invoked" is stable; "button Save clicked" is a command-presenter accident. If users invoke Save by shortcut, menu, or automation, the command id stays the same. Command-surface-specific logging can be useful for usability research, but it should not replace semantic command logging.
 
 Security checks should not live only in enabled predicates. Enablement is a user-interface hint. The command execution path should still verify permission before mutation, especially if command state may be stale or invoked programmatically. A disabled button prevents ordinary clicks; it is not an authorization boundary. The service or domain layer remains responsible for final enforcement.
 
@@ -758,11 +758,11 @@ Undo policy should be documented with command policy. Save may not be undoable b
 
 Command ordering matters in menus. Users expect New, Open, Save, Save As, and Exit in conventional places. They expect Undo and Redo near edit commands. They expect Help at the end. A generated or descriptor-backed command system should not produce arbitrary order. Order can be data, but it is still design. Stable ordering also keeps screenshots and documentation predictable.
 
-A command palette makes missing metadata visible. Commands need searchable names, groups, shortcuts, enabled reasons, and sometimes keywords. If metadata exists only inside Swing widgets, a palette has to scrape UI text. If commands have descriptors, the palette becomes another presenter. This is a useful test for whether command identity is truly separate from presentation.
+A command palette makes missing metadata visible. Commands need searchable names, groups, shortcuts, enabled reasons, and sometimes keywords. If metadata exists only inside Swing widgets, a palette has to scrape UI text. If commands have descriptors, the palette becomes another command presenter. This is a useful test for whether command identity is truly separate from presentation.
 
-Menu construction is a similar test. A menu bar should be built from command descriptors and group policy, not from a sequence of listeners that happen to create menu items. When a command is removed, disabled, localized, or given a new shortcut, every presenter should see the same command metadata. Repetition in menu construction is a warning sign.
+Menu construction is a similar test. A menu bar should be built from command descriptors and group policy, not from a sequence of listeners that happen to create menu items. When a command is removed, disabled, localized, or given a new shortcut, every command presenter should see the same command metadata. Repetition in menu construction is a warning sign.
 
-Toolbars require a density policy. A toolbar button may hide text, show only an icon, use a compact tooltip, and group toggle modes. The command should not change its name because the toolbar is compact. The toolbar presenter chooses compact rendering. The menu presenter chooses textual rendering. A command is allowed to know its semantic icon; it should not know every toolbar layout.
+Toolbars require a density policy. A toolbar button may hide text, show only an icon, use a compact tooltip, and group toggle modes. The command should not change its name because the toolbar is compact. The toolbar command presenter chooses compact rendering. The menu command presenter chooses textual rendering. A command is allowed to know its semantic icon; it should not know every toolbar layout.
 
 Context menus require a target policy. A table row popup may operate on the row under the pointer even if it is not selected, or it may first select that row, or it may operate on the current selection. All three policies exist in real applications. The screen should choose one and implement it consistently. The command should receive domain ids, not raw mouse coordinates.
 
@@ -772,9 +772,9 @@ Focus tests should include dynamic screens. When an optional section becomes vis
 
 The same workflow applies to generated Corusco actions. A generated action adapter should not hide the command state. It should expose or be traceable to descriptor id, resource keys, shortcut, enablement source, selected source, and handler. If generated code makes debugging harder, the generation boundary is wrong. If generated code removes repetitive wiring while keeping metadata visible, it is doing its job.
 
-The reader should notice the repeated shape: command facts first, Swing presenters second. Button construction, menu construction, key binding installation, focus traversal, validation, undo, help, and tests all become easier when the command is a named object with modeled state. This is the command equivalent of the table chapter's stable row identity.
+The reader should notice the repeated shape: command facts first, Swing command presenters second. Button construction, menu construction, key binding installation, focus traversal, validation, undo, help, and tests all become easier when the command is a named object with modeled state. This is the command equivalent of the table chapter's stable row identity.
 
-A command registry should be inspectable at runtime. During development, it is useful to open a small diagnostic view that lists command id, text resource, enabled state, selected state, shortcut, shortcut scope, disabled reason, help topic, and presenters. This is the command equivalent of a repaint manager log. It turns invisible routing into data that can be reviewed.
+A command registry should be inspectable at runtime. During development, it is useful to open a small diagnostic view that lists command id, text resource, enabled state, selected state, shortcut, shortcut scope, disabled reason, help topic, and command presenters. This is the command equivalent of a repaint manager log. It turns invisible routing into data that can be reviewed.
 
 Such a diagnostic view often finds surprising bugs. A toolbar button may point at a different action instance from the menu item with the same text. A shortcut may invoke an old action left in a root pane after a screen was replaced. A disabled reason may be missing even though the button is disabled. A help topic may be attached to a button but not to the command. These defects are hard to see from the surface because the UI still looks plausible.
 
@@ -788,11 +788,11 @@ The registry is not a reason to centralize all behavior in one huge class. It is
 
 This is also where code generation must be careful. Generated descriptors can register keys, resources, shortcut declarations, and adapter classes, but hand-written workflow code still decides what Save means for a particular screen. Good generation removes repetitive wiring and preserves local reasoning. Bad generation hides local reasoning behind a framework ceremony that is harder to debug than the original listeners.
 
-When introducing Corusco to an existing Swing application, the registry diagnostic is a useful migration tool. First list existing actions and listeners. Then merge duplicate presenters under stable command ids. Then move resources and shortcuts into descriptors. Then derive enablement from observable state. Each migration step can be measured by the diagnostic view: fewer duplicate actions, fewer unknown shortcuts, fewer presenter-only labels.
+When introducing Corusco to an existing Swing application, the registry diagnostic is a useful migration tool. First list existing actions and listeners. Then merge duplicate command presenters under stable command ids. Then move resources and shortcuts into descriptors. Then derive enablement from observable state. Each migration step can be measured by the diagnostic view: fewer duplicate actions, fewer unknown shortcuts, fewer command-presenter-only labels.
 
 The end state is not a more abstract button. It is a screen where a user operation has one name, one modeled state, one route through focus and shortcuts, and several honest presentations. That is easier for readers to understand, easier for tests to prove, and easier for Corusco to generate without hiding the Swing contracts underneath. It also scales to larger teams.
 
-The command that lies about enablement is the standard failure. A Delete button is disabled when no row is selected, but the Delete menu item remains enabled because it has a separate listener and separate predicate. The keyboard shortcut still works because it bypasses both. This is not a button bug. It is a command architecture bug. One command should own semantic enabled state, and presenters should reflect it.
+The command that lies about enablement is the standard failure. A Delete button is disabled when no row is selected, but the Delete menu item remains enabled because it has a separate listener and separate predicate. The keyboard shortcut still works because it bypasses both. This is not a button bug. It is a command architecture bug. One command should own semantic enabled state, and command presenters should reflect it.
 
 The stolen Enter key is the standard focus failure. A dialog binds Enter globally to OK. Inside the dialog is a multiline text area. Users cannot insert newlines because the window-level binding wins in a context where the text component should own Enter. The fix is not to abandon key bindings. The fix is to choose the right input-map scope and respect local editing semantics.
 
@@ -823,7 +823,7 @@ visual result: text, icon density, focus order, and disabled presentation.
 
 When the example grows, resist the temptation to demonstrate every Swing
 shortcut. A compact example with Save, Delete, Copy, Help, and Cancel can teach
-the whole pattern: stable ids, several presenters, context routing, active
+the whole pattern: stable ids, several command presenters, context routing, active
 editor commit, disabled reasons, and cleanup. A large catalog of shortcuts
 usually teaches less because the reader loses the route. The point is command
 architecture, not key trivia.
@@ -832,13 +832,13 @@ Finally, inspect the example after changing Look-and-Feel, font size, and
 locale. Toolbar text may need to hide. Mnemonics may conflict. Disabled colors
 may lose contrast. A focus ring may move because border metrics changed. These
 are not afterthoughts; they are exactly why the command belongs to a stable
-descriptor while each presenter remains free to render appropriately.
+descriptor while each command presenter remains free to render appropriately.
 
-\textbf{Review questions.} Is this operation represented once or copied across listeners? Which presenters invoke it? Which input map scope makes it reachable? What context owns it when focus is inside an editor? What model facts drive enablement? What disabled reason explains it? Does it stop active editing before reading data? Does it block the EDT? Does it produce an undoable edit? How is it tested without clicking a button?
+\textbf{Review questions.} Is this operation represented once or copied across listeners? Which command presenters invoke it? Which input map scope makes it reachable? What context owns it when focus is inside an editor? What model facts drive enablement? What disabled reason explains it? Does it stop active editing before reading data? Does it block the EDT? Does it produce an undoable edit? How is it tested without clicking a button?
 
 \textbf{Corusco review questions.} Does the command have a stable key, resource keys, help topic, shortcut scope, enabled value, selected value, and lifecycle owner? Can generated metadata detect missing resources or shortcut conflicts? Are Swing adapters disposable? Do tests assert command state through the descriptor rather than through one button?
 
-\textbf{Checklist for command and focus architecture.} Use \api{Action} or command descriptors for reusable operations. Share one command across menu, toolbar, popup, and key binding presenters. Separate command state from visual presenter state. Use platform menu shortcut masks. Put window-level key bindings in one place. Avoid broad replacement of built-in input maps. Log focus before debugging key bindings. Use \api{InputVerifier} only for fast local checks. Preserve labels, mnemonics, focus order, and keyboard alternatives. Test actions without requiring mouse automation.
+\textbf{Checklist for command and focus architecture.} Use \api{Action} or command descriptors for reusable operations. Share one command across menu, toolbar, popup, and key binding command presenters. Separate command state from visual command-presenter state. Use platform menu shortcut masks. Put window-level key bindings in one place. Avoid broad replacement of built-in input maps. Log focus before debugging key bindings. Use \api{InputVerifier} only for fast local checks. Preserve labels, mnemonics, focus order, and keyboard alternatives. Test actions without requiring mouse automation.
 
 \begin{exercisebox}
 \begin{enumerate}

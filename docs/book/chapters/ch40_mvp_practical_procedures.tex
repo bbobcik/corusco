@@ -1,0 +1,492 @@
+\chapter{Practical Model, View, and Presenter Procedures}
+\label{ch:mvp-practical-procedures}
+\chapterquote{The reward for naming screen facts is that ordinary screen work becomes procedural instead of improvised.}{The practical MVP rule}
+
+\begin{chaptermap}
+Core question & How should a production Corusco screen be assembled, reviewed, migrated, and tested once values, forms, commands, bindings, lifecycle, testing, and generation are available?\\
+Primary APIs & \api{@UiAction}, \api{@SwingForm}, \api{CommandSet}, \api{BehaviorScope}, \api{CommandBehaviors}, \api{SwingMvpTester}, generated form companions, generated action companions, table descriptors, and table-state controllers.\\
+Corusco connection & Generated definitions remove repetitive wiring while screen presenters keep workflow, views keep layout, bindings keep synchronization, and scopes keep cleanup.\\
+Companion examples & \commandExample, \swingIntegrationExample, \generationExample, \bookAppExample, and \screenshotHarnessExample.\\
+\end{chaptermap}
+
+\section{Why this chapter comes after generation}
+
+The first Corusco chapter revisited model, view, and presenter vocabulary as a map. This chapter is deliberately later. It uses details from the value, list, form, command, lifecycle, binding, testing, and generation chapters. It can therefore be practical without asking the reader to accept too many unexplained names at once.
+
+The goal is not to introduce a new framework pattern. The goal is to give repeatable procedures for screens that use Corusco well. A business screen usually has commands, forms, problem feedback, table selection, resources, help, busy state, generated companions, tests, and cleanup. If each screen invents its own order of operations, the codebase becomes harder to review than the library itself. Procedures keep the shape predictable.
+
+The useful split remains the same. Stable declarations name facts. Generated companions expose the mechanical artifacts that follow from those facts. The screen presenter owns workflow. The view owns Swing components and layout. Bindings and behaviors own synchronization at the Swing boundary. Scopes own cleanup. Tests use the same keys and descriptors as production code.
+
+The procedures are intentionally written as defaults. A small screen may skip a step because the behavior is truly small. A large screen may repeat a step for several subpresenters or embedded panels. The point is that deviations should be visible decisions, not accidental shortcuts.
+
+\section{Procedure for annotated commands}
+
+Commands are a high-payoff adoption point because one operation usually has many command surfaces. A Save operation may appear as a button, menu item, toolbar item, popup item, default button, keyboard shortcut, command-palette row, diagnostic entry, and test helper. If those surfaces repeat labels, listeners, tooltips, shortcuts, and enabled rules, the operation is already fragmented.
+
+Start with the operation, not the button. Write down the stable action id, text resource, tooltip resource, optional mnemonic, optional accelerator, selectable state if any, and the screen-presenter method that owns the workflow. Then identify the model facts that drive enabled state and selected state. Only after those decisions exist should the view create Swing command surfaces.
+
+This order prevents a common problem: the first button becomes the command. When that happens, the later menu item and shortcut must copy behavior from the button or call into the button's listener. A Corusco command should exist before any one surface claims authority over the operation.
+
+\begin{enumerate}
+\item Put the operation method on the screen presenter or workflow owner.
+\item Add \api{@UiAction} with stable action and resource metadata.
+\item Let the generated companion provide action keys, descriptors, resource keys, command factories, and descriptor lists.
+\item Create commands in the presenter and initialize runtime state from values, form models, permissions, and task state.
+\item Install command behaviors on buttons, menu items, and key maps from the view under a scope.
+\item Test command state by generated \api{ActionKey}; test Swing surfaces separately.
+\end{enumerate}
+
+\begin{lstlisting}[caption={An annotated presenter method is the command source.}]
+final class CustomerEditorPresenter implements AutoCloseable {
+    private final CustomerService service;
+    private final CustomerEditFormModel form;
+    private final SimpleValue<Boolean> saveBusy =
+            SimpleValue.of(false);
+    private final MutableCommand saveCommand;
+
+    CustomerEditorPresenter(CustomerService service,
+            CustomerEditFormModel form) {
+        this.service = service;
+        this.form = form;
+        this.saveCommand =
+                CustomerEditorPresenterActions.saveCommand(this);
+        updateSaveEnabled();
+        form.problems().subscribe(event -> updateSaveEnabled());
+        form.dirty().subscribe(event -> updateSaveEnabled());
+        saveBusy.subscribe(event -> updateSaveEnabled());
+    }
+
+    CommandSet commands() {
+        return CommandSet.of(saveCommand);
+    }
+
+    @UiAction(
+            id = "customer/save",
+            text = "customer/save/text",
+            tooltip = "customer/save/tooltip")
+    void save() {
+        if (!form.isCommittable() || saveBusy.value()) {
+            return;
+        }
+        saveBusy.setValue(true, ChangeOrigin.SYSTEM);
+        service.save(form.result());
+        saveBusy.setValue(false, ChangeOrigin.SYSTEM);
+    }
+
+    private void updateSaveEnabled() {
+        saveCommand.setEnabled(
+                form.isCommittable() && !saveBusy.value(),
+                ChangeOrigin.SYSTEM);
+    }
+}
+\end{lstlisting}
+
+The example shows the intended boundary. The annotation names the operation and metadata. The generated companion supplies descriptors and factories. The presenter still decides whether the command may run and what it does. The service call, busy policy, and committability decision are not generated. Those are workflow facts.
+
+The view should install command surfaces mechanically. A button, menu item, and key binding may render differently, but they should point to the same command. The scope owns the Swing adapters so a disposed view does not retain command subscriptions.
+
+\begin{lstlisting}[caption={Several Swing surfaces present one command.}]
+Command save = presenter.commands()
+        .require(CustomerEditorPresenterActions.SAVE_KEY);
+
+scope.install(saveButton, List.of(
+        CommandBehaviors.commandButton(save, commandResources)));
+scope.install(saveMenuItem, List.of(
+        CommandBehaviors.commandMenuItem(save, commandResources)));
+scope.install(rootPanel, List.of(
+        CommandBehaviors.commandKeyBinding(
+                save,
+                commandResources,
+                JComponent.WHEN_IN_FOCUSED_WINDOW)));
+\end{lstlisting}
+
+This code is not trying to be clever. It says the same operation is visible through several command presenters. If a toolbar later appears, it consumes the same command. If a command palette is added, it consumes the same descriptor. If a test invokes the generated key, it uses the same identity.
+
+The enabled state should be checked in the command, not only in the Swing surface. A disabled button protects one route. A disabled command protects every route. This matters as soon as shortcuts, menu items, automation, or tests can invoke the operation without clicking the original button.
+
+\section{Procedure for generated form MVP}
+
+Forms repeat even more metadata than commands. A field has stable identity, value type, component key, label resource, optional help topic, converter, validation rules, problem target, binding behavior, accessibility behavior, dirty state, reset semantics, and tests. Generated form definitions are effective because they collapse those repeated declarations into a small source contract.
+
+The form source should be stable enough to deserve generation. If the fields are still exploratory, start with a handwritten model. Once the field identities, value types, and validation vocabulary become durable, generation pays off because those facts are consumed in many places.
+
+The procedure is not a visual designer workflow. First declare the form source. Then let the processor generate field keys, descriptors, model helpers, view contracts, binding facades, behavior plans, resource keys, and problem codes. Then implement the Swing view with real components and layout. Then let the screen presenter own load, save, reset, cancel, service calls, and task policy.
+
+\begin{lstlisting}[caption={A generated form source names editable facts.}]
+@SwingForm(id = "customer/edit")
+record CustomerEdit(
+        @TextField
+        @Required
+        String name,
+
+        @TextField
+        @DecimalRange(min = "0.00", max = "999999.99")
+        BigDecimal creditLimit,
+
+        @CheckBox
+        boolean active) {
+}
+\end{lstlisting}
+
+The annotation source is compact but still meaningful. It says the record is a form source. It says two fields are text-editable and one field is a checkbox. It says name is required and credit limit has a decimal range. The generated companions can turn those facts into typed keys, descriptors, model pieces, behavior plans, validation metadata, resource keys, and test handles.
+
+The view remains handwritten Swing. It implements the generated view contract, exposes the components needed by generated bindings, and arranges those components with the layout that fits the product. The screen presenter should not care whether the form is arranged in one column, two columns, a tab, a dialog, or a detail panel.
+
+\begin{lstlisting}[caption={A view implements the generated contract with ordinary Swing.}]
+final class CustomerEditPanel extends JPanel
+        implements CustomerEditView {
+
+    private final JTextField nameField = new JTextField();
+    private final JTextField creditLimitField = new JTextField();
+    private final JCheckBox activeBox = new JCheckBox();
+
+    CustomerEditPanel() {
+        super(new MigLayout("fillx, insets 0",
+                "[][grow, fill]", "[][][]"));
+        add(new JLabel(), "skip");
+        add(nameField, "growx, wrap");
+        add(new JLabel(), "skip");
+        add(creditLimitField, "growx, wrap");
+        add(activeBox, "span 2");
+    }
+
+    public JTextField nameField() {
+        return nameField;
+    }
+
+    public JTextField creditLimitField() {
+        return creditLimitField;
+    }
+
+    public JCheckBox activeBox() {
+        return activeBox;
+    }
+}
+\end{lstlisting}
+
+The binding step is where generation pays off. The view does not need to install a document listener, parse decimal text, update problem targets, compose tooltips, install accessible descriptions, and mark component keys field by field. A generated binding facade or behavior plan can install the standard relationships under one scope.
+
+Generated bindings also reduce review noise. Instead of reviewing the same listener pattern on every field, the reviewer checks the generated declaration once and then checks whether the generated binding facade is installed under the right lifetime. That is a better use of attention.
+
+\begin{lstlisting}[caption={Generated bindings install routine form behavior.}]
+BehaviorScope scope = new BehaviorScope();
+CustomerEditFormModel form = CustomerEditFormModel.create();
+CustomerEditPanel view = new CustomerEditPanel();
+
+CustomerEditBindings.install(
+        scope,
+        view,
+        form,
+        behaviorContext);
+\end{lstlisting}
+
+The presenter should treat the generated form model as the editable contract. It loads domain data into the model. It observes dirty state and problems. It derives command state. It asks for a result only after commit is allowed. It should not scrape text fields at save time and should not set validation borders directly.
+
+This makes the presenter testable without showing a window. A presenter test can load a customer, mutate the form model, assert Save enablement, invoke Save, and verify the service call. A Swing test can then focus on whether typing in the field reaches the same form model.
+
+\section{Dialog procedure}
+
+Dialogs compress many decisions into a small surface. OK should usually commit the active editor, parse fields, validate, produce a result, close only on success, and clean up. Cancel may discard, ask for confirmation, cancel tasks, close scopes, and produce no result. These steps deserve names because they are product behavior, not button mechanics.
+
+The same dialog may later gain Apply, Reset, Help, or asynchronous validation. If OK is only an anonymous listener, those additions tend to produce event-order bugs. If OK is a command backed by presenter policy, new surfaces and checks can share the same workflow.
+
+\begin{enumerate}
+\item Create one form model, view, presenter, command set, and scope for the dialog activation.
+\item Install generated form bindings and any dialog-specific behaviors under that scope.
+\item Represent OK, Apply, Reset, and Cancel as commands.
+\item On OK, commit active editing first, then commit fields, then check problems, then produce the result.
+\item On Cancel, apply dirty-cancel policy before closing.
+\item Close the scope exactly once.
+\end{enumerate}
+
+\begin{lstlisting}[caption={OK is a workflow method, not a private button listener.}]
+final class CustomerDialogPresenter implements AutoCloseable {
+    private final CustomerEditFormModel form;
+    private final DialogResult<CustomerEdit> result;
+    private final SubscriptionScope scope = new SubscriptionScope();
+
+    @UiAction(id = "customer/dialog/ok",
+            text = "dialog/ok/text")
+    void ok() {
+        if (!commitActiveEditor()) {
+            return;
+        }
+        if (!form.commitFields()) {
+            focusFirstProblem();
+            return;
+        }
+        result.accept(form.result());
+        close();
+    }
+
+    @UiAction(id = "customer/dialog/cancel",
+            text = "dialog/cancel/text")
+    void cancel() {
+        if (form.isDirty() && !confirmDiscard()) {
+            return;
+        }
+        result.cancel();
+        close();
+    }
+
+    public void close() {
+        scope.close();
+    }
+}
+\end{lstlisting}
+
+The generated action companion can provide keys and descriptors for OK and Cancel. It cannot decide dirty-cancel policy. The presenter owns that policy. This is the recurring rule: generated support makes the mechanical pieces consistent; the presenter keeps the workflow readable.
+
+A dialog should also have a single close path. Whether the user presses Cancel, closes the window decoration, or completes OK successfully, cleanup should pass through one lifecycle owner. Repeated close calls should be harmless. Late task callbacks should be rejected.
+
+\section{Modeless panels and application state}
+
+Modeless panels need special care because their lifetime is independent. A search panel, inspector, palette, properties panel, or notification panel may observe application-scoped state, expose local state, and start tasks while the main workspace continues to change. The panel should have its own presenter and scope. It should observe shared models deliberately and detach when closed.
+
+The trap is to treat modeless panels as decorations. They are usually small screens. They have input, commands, subscriptions, task state, and cleanup. Treating them as screens makes their ownership obvious and prevents them from retaining old workspaces through listeners.
+
+Take a customer inspector. It observes the application-selected customer id. It owns local detail state, busy state, status text, and Refresh or Pin commands. It does not own application selection. It should not reach through the component tree to discover the current table row. The application selection model lives longer than the inspector; the inspector's subscription does not.
+
+\begin{lstlisting}[caption={A modeless presenter observes shared state explicitly.}]
+final class CustomerInspectorPresenter implements AutoCloseable {
+    private final ReadableValue<CustomerId> activeCustomer;
+    private final SimpleValue<Boolean> busy = SimpleValue.of(false);
+    private final SimpleValue<CustomerDetail> detail =
+            SimpleValue.empty();
+    private final SubscriptionScope scope = new SubscriptionScope();
+    private final GenerationCounter generation =
+            new GenerationCounter();
+
+    CustomerInspectorPresenter(AppSelectionModel selection,
+            CustomerService service) {
+        this.activeCustomer = selection.customer();
+        scope.add(activeCustomer.subscribe(event ->
+                loadDetail(event.newValue(), service)));
+    }
+
+    private void loadDetail(CustomerId id, CustomerService service) {
+        long token = generation.next();
+        busy.setValue(true, ChangeOrigin.SYSTEM);
+        service.loadAsync(id, loaded -> {
+            if (generation.isCurrent(token)) {
+                detail.setValue(loaded, ChangeOrigin.SYSTEM);
+                busy.setValue(false, ChangeOrigin.SYSTEM);
+            }
+        });
+    }
+
+    public void close() {
+        scope.close();
+        generation.next();
+    }
+}
+\end{lstlisting}
+
+The important facts are the lifetimes. The application model survives the panel. The panel subscription closes with the panel. The generation counter rejects old callbacks. Generated command and view companions can still reduce wiring for Refresh, Pin, component lookup, and tests, but they do not replace the lifetime policy.
+
+If a modeless panel can be pinned, detached, or reused across workspaces, write that policy explicitly. Does it follow the active selection or hold the selected object it was opened for? Does refresh use current application filters or the filters captured at open time? Those decisions belong in the panel presenter.
+
+\section{Master-detail procedure}
+
+Master-detail screens combine the whole vocabulary. They have row lists, table adapters, descriptors, selection bindings, selected identity, detail form state, commands, busy state, background loading, table-state persistence, and cleanup. The common failure is to let \api{JTable.getSelectedRow()} become the application model.
+
+The practical repair is to convert coordinates once and then stop thinking in view rows. View rows are real, but they are local to the current table presentation. Presenter logic needs a row object, model row, or domain id. Commands should not repeat conversion logic in every handler.
+
+\begin{enumerate}
+\item Define row identity and table/column descriptors.
+\item Expose rows through an observable list.
+\item Adapt rows to a Swing table model.
+\item Bind table selection into screen-presenter values.
+\item Derive commands from selected identity, form state, permissions, and busy state.
+\item Load detail through generation-protected callbacks.
+\item Bind the detail form through generated form bindings.
+\item Persist table state by table and column ids.
+\end{enumerate}
+
+\begin{lstlisting}[caption={Presenter state separates table mechanics from meaning.}]
+final class CustomerWorkspacePresenter implements AutoCloseable {
+    private final ObservableArrayList<CustomerRow> rows =
+            ObservableArrayList.empty();
+    private final SimpleValue<Integer> selectedModelRow =
+            SimpleValue.empty();
+    private final SimpleValue<CustomerRow> selectedRow =
+            SimpleValue.empty();
+    private final SimpleValue<CustomerId> selectedCustomerId =
+            SimpleValue.empty();
+    private final CustomerEditFormModel detailForm =
+            CustomerEditFormModel.create();
+    private final GenerationCounter detailGeneration =
+            new GenerationCounter();
+
+    CustomerWorkspacePresenter(CustomerService service) {
+        selectedRow.subscribe(event -> {
+            CustomerRow row = event.newValue();
+            selectedCustomerId.setValue(
+                    row == null ? null : row.id(),
+                    ChangeOrigin.SYSTEM);
+            loadDetail(service, row == null ? null : row.id());
+        });
+    }
+}
+\end{lstlisting}
+
+The selected view row is absent because it is Swing table mechanics. A binding may use view rows internally, but workflow wants model row, row object, or domain id. Sorting, filtering, and refresh should not corrupt meaning.
+
+\begin{lstlisting}[caption={The view installs table adapters under scope ownership.}]
+ObservableTableModel<CustomerRow> tableModel =
+        ObservableTableModel.of(
+                presenter.rows(),
+                CustomerRowTableDescriptor.customerTable());
+
+customerTable.setModel(tableModel);
+customerTable.setAutoCreateRowSorter(true);
+
+scope.add(TableSelectionBinding.bind(
+        customerTable,
+        tableModel,
+        presenter.selectedModelRow(),
+        presenter.selectedRow()));
+
+scope.add(TableStateController.install(
+        customerTable,
+        tableModel,
+        tableStateStore));
+\end{lstlisting}
+
+The code states the relationships. Rows come from the presenter. Columns come from the descriptor. Swing displays an adapter. Selection crosses the view/model boundary once. Table state is persisted by stable ids. Command enablement can derive from selected identity instead of asking the table in every handler.
+
+The same setup helps export and copy actions. An export command can use descriptor identity to decide which columns to include, which headers to resolve, and which values to extract. It does not need to scrape visible table headers as the only schema.
+
+\section{Review procedure}
+
+Review a generated Corusco screen in passes. The declaration pass inspects annotations, descriptors, stable ids, resources, help topics, and table/column keys. The generation pass inspects generated keys, descriptors, factories, binding facades, behavior plans, and generated-source tests. The presenter pass inspects workflow methods, command state, service calls, task policy, stale-result checks, and cleanup.
+
+The view pass should look for ordinary Swing layout and generated view contract implementation. The binding pass should find model/component synchronization, command adapters, table selection conversion, problem decoration, and component-key installation. The lifecycle pass should find scopes, close methods, subscriptions, task handles, timers, and table controllers. The test pass should use generated keys and descriptors rather than localized text or component indexes.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.24\linewidth}X}
+\toprule
+Review pass & Evidence\\
+\midrule
+Declaration & Source annotations, descriptors, ids, resources, help topics.\\
+Generation & Generated keys, factories, form models, binding facades, behavior plans.\\
+Presenter & Workflow, command state, services, task policy, stale-result checks.\\
+View & Swing layout, generated view contracts, behavior installation.\\
+Binding & Synchronization, command adapters, table selection conversion, problems.\\
+Lifecycle & Scopes, subscriptions, task handles, table-state controllers, close tests.\\
+Testing & Generated-key lookup, command-key invocation, problem-code assertions.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+This review order prevents generated code from becoming a place where nobody looks. Generated companions should make review easier by concentrating mechanical facts. They do not prove that the field id is the right id, that the command belongs on the right presenter, or that the selection policy matches the product.
+
+\section{Construction order for a new screen}
+
+When starting a new Corusco screen, resist the urge to begin with a panel constructor. The visual layout matters, but it is not the first source of truth. Begin with the screen vocabulary. List the domain object or workflow being edited, the application-scoped facts it needs, the row sources it displays, the editable forms it owns, the commands it exposes, and the task states it can enter. This list gives the generated declarations and presenter a target.
+
+The first concrete artifact is often a set of stable ids. Choose ids for the screen, commands, fields, table, columns, resources, and help topics. Good ids are durable and semantic. They should not mention current Swing class names, visible ordering, or localized labels. A field id such as \api{customer/name} can survive layout changes. A component id such as \api{left-panel/text-1} cannot.
+
+Next declare stable generated sources where they have clear payoff. If the screen has a form with more than a trivial amount of validation, declare a \api{@SwingForm} source. If the screen has repeated command surfaces, annotate screen-presenter methods with \api{@UiAction}. If the screen has a table whose columns will be tested, persisted, exported, or localized, define a descriptor. These declarations create the shared handles that later code should consume.
+
+Then sketch the presenter without Swing layout. Give it constructor dependencies, application-scoped models, presentation values, row lists, form models, command set, task service, and scopes. The presenter sketch should read like a workflow outline: load rows, select row, load detail, save detail, refresh, delete, cancel, close. If a method name sounds like a button, make sure it represents the operation rather than the button.
+
+After that, assemble the view. Implement generated view contracts. Build the component tree with ordinary Swing. Use MigLayout or the appropriate Swing layout manager. Create the toolbar, table, form panel, status region, and dialog buttons. The view should expose components by generated contract or component key, not by asking later code to search visual text.
+
+Only then install bindings and behaviors. Create a scope for the view activation. Install generated form bindings. Install command behaviors on buttons, menu items, and key bindings. Install table adapters, selection binding, table-state controller, validation decorations, accessible text, help behavior, and busy overlays. The scope should make the screen's installed relationships visible and disposable.
+
+Finally, write tests in the same order. Test presenter rules without Swing first. Test generated source and descriptor contracts. Test bindings on the EDT. Test command surfaces after command state is proven. Test screenshots after semantic state is proven. Test cleanup by closing the scope and mutating models afterward. This order keeps failures close to the rule they disprove.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.24\linewidth}X}
+\toprule
+Construction step & Concrete output\\
+\midrule
+Vocabulary & Screen facts, lifetimes, commands, forms, rows, tasks.\\
+Stable ids & Field ids, action ids, table ids, column ids, resource ids.\\
+Declarations & \api{@SwingForm} records, \api{@UiAction} methods, descriptors.\\
+Presenter & Values, lists, form models, commands, task policy, close policy.\\
+View & Swing components, layout, generated view contract implementation.\\
+Bindings & Generated bindings, command behaviors, table selection, problem decoration.\\
+Tests & Model tests, generated-source tests, EDT binding tests, screenshots, cleanup tests.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+This order is not mandatory for every small screen, but it is a strong default for production work. It prevents generated code from appearing before the stable facts are known. It prevents the view from becoming the only model. It prevents tests from depending on localized captions because keys were added too late. It also gives reviewers a predictable path through the code.
+
+\section{Acceptance checks}
+
+A practical screen is ready when each major fact can be found without searching the whole component tree. The selected row has a value or selection model. The dirty state has a model. The Save command has one identity. The reason Save is disabled has an owner. The table columns have stable ids. The dialog result has a contract. The busy state is not just a disabled panel. The validation problems are structured before they are visual.
+
+The screen should also have one obvious place for each relationship. Text-field synchronization should be in generated or handwritten bindings. Command-to-button synchronization should be in command behaviors. Table selection conversion should be in a table selection binding. Table state persistence should be in a table-state controller. Problem decoration should be in behaviors. If the same relationship is maintained by several listeners, the screen is not yet reviewable.
+
+Generated artifacts should be consumed by production code and tests. If generated action keys exist but tests still click buttons by text, the tests are not using the contract. If generated field keys exist but validation assertions search tooltip strings, the problem model is being bypassed. If generated column ids exist but table-state persistence stores visible indexes, the descriptor is not carrying its weight.
+
+Cleanup should be demonstrable. Closing the view should close bindings, behaviors, table controllers, subscriptions, timers, and task handles owned by that view. Mutating a model after close should not update an old component. Completing an obsolete background request should not install stale detail. Reopening the screen should not duplicate listeners. These are acceptance checks, not optional diagnostics.
+
+The screen should remain explainable to a new maintainer. A reviewer should be able to start at a generated form declaration, find the generated field key, see the view component implementing the contract, find the binding installation, inspect the presenter rule that uses the field, and read the test that asserts it. The same should be true for a command and for a table column. If that path cannot be traced, the code may work but the architecture is not yet earning its keep.
+
+Finally, the screen should preserve Swing honesty. Generated support should not conceal EDT requirements, renderer discipline, table coordinate conversion, focus behavior, or layout constraints. A Corusco screen is still a Swing screen. The advantage is that application facts and Swing mechanics can now be reviewed separately.
+
+\section{Migration procedure}
+
+Migration should be incremental. First list hidden facts: dirty state, selected id, enabled rules, validation messages, busy state, table column identity, and active lookup lists. Next name commands and replace duplicate listeners with shared command identities. Add \api{@UiAction} when an operation's id and metadata are stable.
+
+Then introduce presentation values for selected id, busy state, status text, disabled reasons, and dirty state. Bind components to those values rather than letting components be the only store. After that, introduce form models for stable forms. Move parse state, validation problems, dirty state, and result construction out of component scraping. Install generated bindings under a scope.
+
+Tables usually follow. Add descriptors for table and column identity. Bind selection into presenter values. Persist state by ids. Review every command that reads selected rows. Convert view indexes to model rows or domain ids at the boundary. Finally, close lifecycle gaps: bindings, behaviors, subscriptions, table controllers, task handles, and timers all need a scope or close method.
+
+\begin{principlebox}{Migration is successful when code reads like the screen}
+After migration, a reviewer should find field identity in generated form companions, command identity in generated action companions, workflow in the screen presenter, layout in the view, synchronization in bindings, and cleanup in scopes. If the rule still lives only in one listener, migration is not finished.
+\end{principlebox}
+
+\section{Testing procedure}
+
+Use generated identities in tests. A command test should query the generated \api{ActionKey}, set model facts, invoke the command, and assert service calls or state changes. A Swing command-surface test can separately assert that a button, menu item, or key binding presents that command.
+
+\begin{lstlisting}[caption={Command tests use generated action identity.}]
+@Test
+void saveCommandUsesGeneratedIdentity() {
+    FakeCustomerService service = new FakeCustomerService();
+    CustomerEditFormModel form = CustomerEditFormModel.create();
+    CustomerEditorPresenter presenter =
+            new CustomerEditorPresenter(service, form);
+
+    Command save = presenter.commands()
+            .require(CustomerEditorPresenterActions.SAVE_KEY);
+
+    assertThat(save.enabled()).isFalse();
+
+    form.name().setRawText("Ada", ChangeOrigin.USER);
+    form.creditLimit().setRawText("100.00", ChangeOrigin.USER);
+
+    assertThat(save.enabled()).isTrue();
+    save.invoke();
+    assertThat(service.savedCustomers()).hasSize(1);
+}
+\end{lstlisting}
+
+Field binding tests use component keys and field models. They should run on the EDT, type through the component, assert the model, mutate the model, assert the component, close the scope, and assert late model changes do not update the disposed component. Problem tests should assert problem codes and targets, not English text. Resource tests can separately verify localized messages.
+
+Table tests should state the coordinate system. A sorting test may select view row zero. A presenter workflow test should set selected identity or selected row value. A table-state test should assert generated table and column ids. A stale-result test should complete old detail loads after new selections and prove the old result is ignored.
+
+\section{Choosing what not to generate}
+
+Generate mechanical contracts with several consumers. Field identity, command identity, descriptor constants, binding plans, behavior plans, view contracts, resource keys, and test handles are good candidates. They are tedious to repeat and harmful when they drift.
+
+Keep product decisions handwritten. Permission policy, service calls, retry policy, stale-result policy, dirty-cancel behavior, navigation, import/export semantics, and complex authorization belong in screen presenters, services, or explicit models. If annotations start encoding branching workflow, they are hiding the code that most needs review.
+
+There are also screens where generation is not worth the ceremony. A one-off two-field diagnostic dialog may be simpler as disciplined Swing. A custom drawing editor may need hand-authored contracts because its core facts are geometry and tools rather than fields. Corusco should reduce repeated work, not require generated files where no repeated contract exists.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Convert a duplicated Save button/menu/shortcut setup into one annotated presenter method and list every generated artifact that should be consumed.
+\item Sketch a generated form source for a settings dialog and identify which facts remain in the dialog presenter.
+\item Design a modeless inspector that observes application selection. Name the application-scoped model, panel-local model, commands, and close policy.
+\item For a master-detail screen, write the conversion path from selected view row to selected domain id and identify where stale detail results are rejected.
+\item Review one existing screen using the seven review passes in this chapter. Record which pass finds the first unclear owner.
+\end{enumerate}
+\end{exercisebox}

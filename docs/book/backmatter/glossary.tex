@@ -3,14 +3,20 @@
 \section*{Selected terms}
 
 \begin{description}
+\item[Application-scoped model] Long-lived application or session state, such as current user, permissions, preferences, shared lookup data, resource context, or application selection. It is shared deliberately and has explicit ownership; it is not a dumping ground for globals.
 \item[Binding] A lifecycle-owned connection between a model and a Swing component or component property.
 \item[Behavior] A named reusable Swing component capability, such as validation decoration, command binding, or help-on-F1.
+\item[Command presenter] A concrete visual or input surface that presents a command, such as a button, menu item, toolbar item, popup item, key binding, default button, command palette row, or accessibility action.
 \item[Descriptor] Immutable metadata describing a field, table, column, command, resource, or help topic before Swing components are created.
 \item[EDT] The AWT/Swing event dispatch thread; the normal owner of Swing component state.
 \item[MigLayout] The preferred layout manager for nontrivial examples and ordinary Corusco Swing screens.
+\item[Presentation boundary] The line between application-owned screen facts and concrete Swing widgets. It decides whether a fact belongs in a domain model, application model, presentation model, presenter, binding, Swing model, or component.
 \item[Presentation model] Screen-owned state such as field text, selected row, dirty flag, enabled command state, or validation problems.
 \item[Problem] Structured validation or parsing feedback with severity, code, source, target, and message.
 \item[Scope] An object that owns cleanup for subscriptions, listeners, bindings, behaviors, tasks, or detachable state.
+\item[Screen presenter] A screen or dialog coordinator that owns workflow decisions, commands, task policy, service calls, state transitions, and lifecycle for a view.
+\item[Swing model] A Swing-facing model such as \api{Document}, \api{ButtonModel}, \api{ListModel}, \api{TableModel}, \api{TableColumnModel}, or \api{ListSelectionModel}. It adapts data to widget mechanics and is not automatically a domain model.
+\item[View] The Swing component tree, or a root view object that creates and exposes that tree. A view owns components, layout, visual affordances, and local widget mechanics.
 \end{description}
 
 \section*{Decision table}

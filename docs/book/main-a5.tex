@@ -1,11 +1,11 @@
-\documentclass[11pt,a4paper,twoside,openright]{book}
+\documentclass[10pt,a5paper,twoside,openright]{book}
 
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage{libertine}
-\usepackage[scaled=0.88]{inconsolata}
+\usepackage[scaled=0.84]{inconsolata}
 \usepackage{microtype}
-\usepackage[a4paper,inner=30mm,outer=24mm,top=27mm,bottom=30mm,headheight=23pt,headsep=10pt,footskip=13mm]{geometry}
+\usepackage[a5paper,inner=17mm,outer=13mm,top=17mm,bottom=19mm,headheight=18pt,headsep=6pt,footskip=10mm]{geometry}
 \usepackage{fancyhdr}
 \usepackage{titlesec}
 \usepackage{titletoc}
@@ -29,7 +29,7 @@
 \usepackage{caption}
 
 \hypersetup{
-  pdftitle={Swing with Corusco},
+  pdftitle={Swing with Corusco (A5 Edition)},
   pdfauthor={Auderis},
   pdfsubject={Progressive Java Swing engineering with Corusco, MigLayout, and JDK 25},
   pdfkeywords={Java, Swing, Corusco, MigLayout, FlatLaf, JDK 25, EDT, JTable, forms, bindings, annotation processing},
@@ -43,69 +43,97 @@
 \definecolor{LinkBlue}{RGB}{32,70,120}
 
 \titleformat{\chapter}[display]
-  {\normalfont\huge\bfseries}
-  {\filleft\Large\chaptertitlename\,\thechapter}
-  {1.2ex}
-  {\titlerule\vspace{1.8ex}\filright}
-  [\vspace{1.0ex}\titlerule]
+  {\normalfont\LARGE\bfseries}
+  {\filleft\normalsize\chaptertitlename\,\thechapter}
+  {0.9ex}
+  {\titlerule\vspace{1.2ex}\filright}
+  [\vspace{0.7ex}\titlerule]
 
 \titleformat{\section}
-  {\normalfont\Large\bfseries}
-  {\thesection}{0.75em}{}
-\titleformat{\subsection}
   {\normalfont\large\bfseries}
-  {\thesubsection}{0.75em}{}
+  {\thesection}{0.6em}{}
+\titleformat{\subsection}
+  {\normalfont\normalsize\bfseries}
+  {\thesubsection}{0.6em}{}
 \titleformat{\subsubsection}
   {\normalfont\normalsize\bfseries}
-  {\thesubsubsection}{0.75em}{}
+  {\thesubsubsection}{0.6em}{}
+
+\titlespacing*{\chapter}{0pt}{0pt}{2.0ex}
+\titlespacing*{\section}{0pt}{1.6ex plus 0.5ex minus 0.2ex}{0.7ex}
+\titlespacing*{\subsection}{0pt}{1.2ex plus 0.4ex minus 0.2ex}{0.5ex}
 
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[LE]{\small\scshape Swing with Corusco}
-\fancyhead[RO]{\small\scshape\leftmark}
+\fancyhead[LE]{\scriptsize\scshape Swing with Corusco}
+\fancyhead[RO]{\scriptsize\scshape\leftmark}
 \fancyfoot[LE,RO]{\thepage}
-\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrulewidth}{0.35pt}
 \renewcommand{\footrulewidth}{0pt}
 
-\setlength{\parskip}{0.38em}
-\setlength{\parindent}{1.1em}
-\setlist[itemize]{leftmargin=*,itemsep=0.18em,topsep=0.25em}
-\setlist[enumerate]{leftmargin=*,itemsep=0.18em,topsep=0.25em}
+\makeatletter
+\renewcommand{\@pnumwidth}{2.8em}
+\makeatother
+
+\titlecontents{chapter}
+  [0pt]
+  {\vspace{0.35em}\bfseries}
+  {\contentslabel{1.8em}}
+  {}
+  {\titlerule*[0.45em]{.}\makebox[2.6em][r]{\contentspage}}
+\titlecontents{section}
+  [1.8em]
+  {\small}
+  {\contentslabel{2.4em}}
+  {}
+  {\titlerule*[0.45em]{.}\makebox[2.6em][r]{\contentspage}}
+\titlecontents{subsection}
+  [4.2em]
+  {\footnotesize}
+  {\contentslabel{3.0em}}
+  {}
+  {\titlerule*[0.45em]{.}\makebox[2.6em][r]{\contentspage}}
+
+\setlength{\parskip}{0.28em}
+\setlength{\parindent}{1.0em}
+\setlength{\marginparwidth}{8mm}
+\setlist[itemize]{leftmargin=*,itemsep=0.12em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=*,itemsep=0.12em,topsep=0.2em}
 \raggedbottom
-\emergencystretch=3em
+\emergencystretch=4em
 \sloppy
 
 \captionsetup[figure]{
-  font={small,it},
+  font={footnotesize,it},
   labelfont={bf,sf},
   justification=raggedright,
   singlelinecheck=false,
-  margin=1.3em,
-  skip=0.55em
+  margin=0.6em,
+  skip=0.45em
 }
 \captionsetup[lstlisting]{
-  font={small,it},
+  font={footnotesize,it},
   labelfont={bf,sf},
   justification=raggedright,
   singlelinecheck=false,
-  margin=1.3em,
-  skip=0.55em
+  margin=0.6em,
+  skip=0.45em
 }
 
 \lstdefinestyle{javaswing}{
   language=Java,
-  basicstyle=\ttfamily\footnotesize,
+  basicstyle=\ttfamily\scriptsize,
   keywordstyle=\bfseries,
   commentstyle=\color{RuleGray},
   stringstyle=\color{BoxGray},
   backgroundcolor=\color{CodeGray},
   frame=single,
   rulecolor=\color{RuleGray},
-  framerule=0.25pt,
-  xleftmargin=1.0em,
-  xrightmargin=0.4em,
-  aboveskip=0.8em,
-  belowskip=0.8em,
+  framerule=0.22pt,
+  xleftmargin=0.5em,
+  xrightmargin=0.2em,
+  aboveskip=0.6em,
+  belowskip=0.6em,
   captionpos=b,
   showstringspaces=false,
   breaklines=true,
@@ -113,11 +141,11 @@
   postbreak=\mbox{\textcolor{RuleGray}{$\hookrightarrow$}\space},
   columns=fullflexible,
   keepspaces=true,
-  tabsize=4,
+  tabsize=2,
   upquote=true,
   numbers=left,
-  numberstyle=\scriptsize\color{RuleGray},
-  numbersep=6pt
+  numberstyle=\tiny\color{RuleGray},
+  numbersep=4pt
 }
 \lstset{style=javaswing}
 
@@ -131,56 +159,56 @@
 \newcommand{\miglayout}{MigLayout}
 \newcommand{\flatlaf}{FlatLaf}
 \newcommand{\termdef}[2]{\textbf{#1}---#2}
-\newcommand{\bookedition}{A4 book edition}
+\newcommand{\bookedition}{A5 book edition}
 
 \newtcolorbox{principlebox}[1]{
   enhanced, breakable, colback=SoftGray, colframe=BoxGray,
-  title={#1}, fonttitle=\bfseries, boxrule=0.35pt,
-  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+  title={#1}, fonttitle=\bfseries\small, boxrule=0.32pt,
+  left=0.7em,right=0.7em,top=0.45em,bottom=0.45em
 }
 \newtcolorbox{pitfallbox}[1]{
   enhanced, breakable, colback=white, colframe=BoxGray,
-  title={Pitfall: #1}, fonttitle=\bfseries, boxrule=0.35pt,
-  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+  title={Pitfall: #1}, fonttitle=\bfseries\small, boxrule=0.32pt,
+  left=0.7em,right=0.7em,top=0.45em,bottom=0.45em
 }
 \newtcolorbox{detailbox}[1]{
   enhanced, breakable, colback=white, colframe=RuleGray,
-  title={Less-known detail: #1}, fonttitle=\bfseries, boxrule=0.28pt,
-  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+  title={Less-known detail: #1}, fonttitle=\bfseries\small, boxrule=0.25pt,
+  left=0.7em,right=0.7em,top=0.45em,bottom=0.45em
 }
 \newtcolorbox{roadmapbox}{
   enhanced, breakable, colback=white, colframe=RuleGray,
-  title={Roadmap outline}, fonttitle=\bfseries, boxrule=0.28pt,
-  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+  title={Roadmap outline}, fonttitle=\bfseries\small, boxrule=0.25pt,
+  left=0.7em,right=0.7em,top=0.45em,bottom=0.45em
 }
 \newtcolorbox{coruscobox}[1]{
   enhanced, breakable, colback=SoftGray, colframe=BoxGray,
-  title={What Corusco changes: #1}, fonttitle=\bfseries, boxrule=0.35pt,
-  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+  title={What Corusco changes: #1}, fonttitle=\bfseries\small, boxrule=0.32pt,
+  left=0.7em,right=0.7em,top=0.45em,bottom=0.45em
 }
 \newtcolorbox{migrationbox}[1]{
   enhanced, breakable, colback=white, colframe=RuleGray,
-  title={From plain Swing to Corusco: #1}, fonttitle=\bfseries, boxrule=0.28pt,
-  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+  title={From plain Swing to Corusco: #1}, fonttitle=\bfseries\small, boxrule=0.25pt,
+  left=0.7em,right=0.7em,top=0.45em,bottom=0.45em
 }
 \newtcolorbox{examplebox}[1]{
   enhanced, breakable, colback=CodeGray, colframe=RuleGray,
-  title={Companion example: #1}, fonttitle=\bfseries, boxrule=0.28pt,
-  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+  title={Companion example: #1}, fonttitle=\bfseries\small, boxrule=0.25pt,
+  left=0.7em,right=0.7em,top=0.45em,bottom=0.45em
 }
 \newtcolorbox{exercisebox}{
   enhanced, breakable, colback=SoftGray, colframe=RuleGray,
-  title={Exercises}, fonttitle=\bfseries, boxrule=0.28pt,
-  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+  title={Exercises}, fonttitle=\bfseries\small, boxrule=0.25pt,
+  left=0.7em,right=0.7em,top=0.45em,bottom=0.45em
 }
 
 \newenvironment{chaptermap}{
-  \begin{center}\small\begin{tabular}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}p{0.65\linewidth}}\toprule
+  \begin{center}\scriptsize\begin{tabular}{>{\bfseries\raggedright\arraybackslash}p{0.28\linewidth}p{0.60\linewidth}}\toprule
 }{
   \bottomrule\end{tabular}\end{center}
 }
 
-\newcommand{\chapterquote}[2]{\epigraph{#1}{#2}}
+\newcommand{\chapterquote}[2]{\epigraph{\small #1}{\scriptsize #2}}
 \input{examples}
 
 \begin{document}

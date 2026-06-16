@@ -13,7 +13,7 @@ Companion examples & \api{SwingMvpTesterExample}, \api{SwingMvpTesterProblemExam
 
 Swing testing has a bad reputation for understandable reasons. A test opens a window, finds a button by its current text, clicks through five states, waits for the event queue, inspects a label, and fails two months later because a translator changed the button caption or a layout improvement moved the label. Such tests are expensive to run and worse, expensive to interpret. They pretend to test a rule, but they also depend on text resources, focus traversal, Look-and-Feel timing, table sorting, component geometry, and the graphics environment. When they fail, the maintainer must first discover which layer was actually responsible.
 
-\termdef{Testing split}{the discipline of testing a rule at the lowest layer that owns it} is the central idea of this chapter. A form validation rule belongs in the form model. A generated descriptor belongs in generated source. A command enablement rule belongs in the command or presenter model. A text binding belongs at the Swing boundary because a \api{JTextField} document is involved. A table-selection conversion belongs at the Swing table boundary because view rows and model rows are Swing concepts. A screenshot belongs at the visual boundary because pixels, density, theme, and layout are the evidence.
+\termdef{Testing split}{the discipline of testing a rule at the lowest layer that owns it} is the central idea of this chapter. A form validation rule belongs in the form model. A generated descriptor belongs in generated source. A command enablement rule belongs in the command or screen-presenter model, using the vocabulary from Chapter~\ref{ch:models-views-presenters}. A text binding belongs at the Swing boundary because a \api{JTextField} document is involved. A table-selection conversion belongs at the Swing table boundary because view rows and model rows are Swing concepts. A screenshot belongs at the visual boundary because pixels, density, theme, and layout are the evidence.
 
 This split is not merely an optimization, although it makes test suites faster. It is an ownership rule. The test should speak the vocabulary of the object that owns the behavior. A validation test that says "credit limit cannot be negative" should not need a toolbar, a frame, or a real mouse click. A binding test that says "typing in this text field updates this field model" should involve a text field, because the text field is the source of the behavior. A screenshot that says "the validation state is readable under FlatLaf" should render pixels, because contrast and spacing are pixel facts.
 
@@ -103,7 +103,7 @@ assertThat(problems)
         .contains(REQUIRED);
 \end{lstlisting}
 
-This is the pattern that later appears in \api{SwingMvpTesterProblemExample}. The Swing test can type into a field and assert that the presenter's problem set contains \api{REQUIRED} for the \api{NAME} field key. It should not search a tooltip for "Name is required" unless the tooltip text is the rule being tested.
+This is the pattern that later appears in \api{SwingMvpTesterProblemExample}. The Swing test can type into a field and assert that the screen presenter's problem set contains \api{REQUIRED} for the \api{NAME} field key. It should not search a tooltip for "Name is required" unless the tooltip text is the rule being tested.
 
 Core tests are not a retreat from user-facing behavior. They are a way to name behavior before it is presented. A user-facing form is only maintainable when its model-level facts are visible. The screen can then present those facts through Swing components, generated bindings, overlays, tooltips, summaries, and screenshots. Without core tests, the view becomes the only place where behavior is observable, and every test has to enter through the slowest door.
 
@@ -111,9 +111,9 @@ Core tests are not a retreat from user-facing behavior. They are a way to name b
 
 Swing components must be constructed, mutated, and queried on the Event Dispatch Thread. This sentence is familiar enough to be ignored, which is why tests should encode it rather than rely on memory. A test that changes a \api{JTextField} off the EDT may pass until a different document implementation, Look-and-Feel delegate, focus policy, or test runner timing exposes the race. Passing off-EDT tests are not evidence of correctness; they are evidence that the race did not happen this time.
 
-\termdef{EDT test}{a test whose Swing construction, mutation, and query work is executed on the Event Dispatch Thread} is not the same as a test that simply calls \api{SwingUtilities.invokeAndWait} around one assertion. The whole fixture has to be honest about thread ownership. View factories should run on the EDT. Presenter construction should run on the EDT if it touches the view. Component lookup should run on the EDT. Command invocation should run through the same thread expectations as production code.
+\termdef{EDT test}{a test whose Swing construction, mutation, and query work is executed on the Event Dispatch Thread} is not the same as a test that simply calls \api{SwingUtilities.invokeAndWait} around one assertion. The whole fixture has to be honest about thread ownership. View factories should run on the EDT. Screen-presenter construction should run on the EDT if it touches the view. Component lookup should run on the EDT. Command invocation should run through the same thread expectations as production code.
 
-\api{SwingMvpTester} is the small Corusco test fixture for this boundary. It constructs a view and, optionally, a presenter. It provides \api{runOnEdt} for mutations and \api{queryOnEdt} for reads. It can locate components by typed keys, drive common component inputs, execute commands, assert problems, inspect behavior scopes, and verify table state. It does not make Swing free. It makes the Swing boundary explicit.
+\api{SwingMvpTester} is the small Corusco test fixture for this boundary. It constructs a view and, optionally, a screen presenter. It provides \api{runOnEdt} for mutations and \api{queryOnEdt} for reads. It can locate components by typed keys, drive common component inputs, execute commands, assert problems, inspect behavior scopes, and verify table state. It does not make Swing free. It makes the Swing boundary explicit.
 
 \begin{lstlisting}[caption={Creating a view and presenter under the Swing tester.}]
 SwingMvpTester<CustomerView, CustomerPresenter> tester =
@@ -126,7 +126,7 @@ tester.runOnEdt((view, presenter) ->
         view.nameField().setText("Ada"));
 \end{lstlisting}
 
-The factory form matters. A test that constructs the view before creating the tester has already made a threading decision. A test that creates a presenter outside the tester may accidentally mutate the view off the EDT in the presenter's constructor. The tester factory centralizes this boundary. A large application may have its own fixture, but it should preserve the same visibility: where is the view created, where is the presenter created, and where are Swing components touched?
+The factory form matters. A test that constructs the view before creating the tester has already made a threading decision. A test that creates a screen presenter outside the tester may accidentally mutate the view off the EDT in the presenter's constructor. The tester factory centralizes this boundary. A large application may have its own fixture, but it should preserve the same visibility: where is the view created, where is the screen presenter created, and where are Swing components touched?
 
 The tester does not absolve the view from lifecycle responsibility. If a view installs a \api{BindingScope}, \api{BehaviorScope}, table controller, task subscription, timer, or native window, the test must close the owner that production code closes. A fixture can call that close method in teardown, but the ownership should be visible. Otherwise the test suite will slowly train developers to create screens that cannot be disposed.
 
@@ -228,7 +228,7 @@ tester.assertBehaviorInstalled(NAME_COMPONENT,
 
 The negative assertion is not decorative. It documents conflicts and absences. A field may deliberately have validation presentation but no help behavior. A generated plan may reject two behaviors that both want to own the same keystroke. A test that only verifies the happy path can miss accidental over-installation, especially when generation evolves.
 
-Problems should be tested by typed targets and stable codes. A problem message can be localized, copyedited, shortened for a tooltip, or expanded in a summary. The problem target and code are the contract. A Swing test can drive the component input and then assert the presenter's problem set through \api{SwingMvpTester.assertProblem}.
+Problems should be tested by typed targets and stable codes. A problem message can be localized, copyedited, shortened for a tooltip, or expanded in a summary. The problem target and code are the contract. A Swing test can drive the component input and then assert the screen presenter's problem set through \api{SwingMvpTester.assertProblem}.
 
 \begin{lstlisting}[caption={Asserting a problem by field key and code.}]
 tester.enterText(NAME_COMPONENT, "")
@@ -239,7 +239,7 @@ tester.enterText(NAME_COMPONENT, "")
                 CustomerProblems.REQUIRED);
 \end{lstlisting}
 
-This test proves adapter behavior: typing in the Swing field reaches the presenter, and the presenter exposes a problem with the expected stable identity. It does not assert the English message. A separate resource test can verify that \api{CustomerProblems.REQUIRED} has the correct localized text. A screenshot can verify that the invalid state is visible and not clipped. These are three different proofs.
+This test proves adapter behavior: typing in the Swing field reaches the screen presenter, and the presenter exposes a problem with the expected stable identity. It does not assert the English message. A separate resource test can verify that \api{CustomerProblems.REQUIRED} has the correct localized text. A screenshot can verify that the invalid state is visible and not clipped. These are three different proofs.
 
 Problem presentation tests should be careful about geometry. A validation border may change insets and require layout. A validation icon painted inside already reserved space may require only repaint. A tooltip change may require no repaint until the tooltip is shown. The behavior that presents a problem should own this decision, and the test should assert the decision at the right level. Do not make a form model test assert \api{revalidate}; the model does not know how the problem is presented.
 
@@ -251,7 +251,7 @@ The migration from listener tests to behavior tests is incremental. A legacy tes
 
 Commands live at an awkward boundary. They are core objects, but Swing presents them through \api{Action}, buttons, menu items, key bindings, popup menus, and sometimes generated toolbar descriptors. Testing them well means separating command semantics from command surfaces.
 
-The command itself should be tested without Swing where possible. Does it have the correct action key? Does enablement follow the form state? Does execution call the intended service or presenter method? Does selected state follow the model? Does cancellation disable it? These questions are command questions. The Swing boundary asks different questions: is the button connected to the command, does the accelerator invoke it, are enabled and selected states presented, and are resources resolved?
+The command itself should be tested without Swing where possible. Does it have the correct action key? Does enablement follow the form state? Does execution call the intended service or screen-presenter method? Does selected state follow the model? Does cancellation disable it? These questions are command questions. The Swing boundary asks different questions: is the button connected to the command, does the accelerator invoke it, are enabled and selected states presented, and are resources resolved?
 
 \api{SwingMvpTester} can invoke commands by \api{ActionKey} when the tester was created with a command-set source. This keeps Swing-facing tests at the same identity level as generated actions and resource descriptors.
 
@@ -284,7 +284,7 @@ Tables deserve special testing discipline because they contain several coordinat
 \label{fig:testing-table-coordinates}
 \end{figure}
 
-Figure~\ref{fig:testing-table-coordinates} is a reminder that table assertions should not smuggle meaning through current view indexes. A selection test may deliberately select view row 0 to prove sorting. A presenter test may select model row 1 because source order is stable. A domain test may prefer selected row identity. These are all valid tests, but they are not the same test.
+Figure~\ref{fig:testing-table-coordinates} is a reminder that table assertions should not smuggle meaning through current view indexes. A selection test may deliberately select view row 0 to prove sorting. A screen-presenter test may select model row 1 because source order is stable. A domain test may prefer selected row identity. These are all valid tests, but they are not the same test.
 
 \begin{lstlisting}[caption={Testing selection through explicit table coordinates.}]
 tester.selectTableViewRow(CUSTOMER_TABLE, 0)
@@ -529,7 +529,7 @@ The fourth rung is behavior and command surface. Assert that validation-border b
 
 The fifth rung is table behavior. Construct the customer table with descriptor-backed columns and an observable model. Sort it, select view and model rows explicitly, move a column, capture table state, and assert stable ids. Test renderer state reset separately if custom renderers are used. Test row identity preservation when the observable list changes. This rung is where table coordinates are named.
 
-The sixth rung is task and busy behavior. Use a controlled task service or fake completion source. Start a refresh, assert busy state, assert overlay behavior or busy component state, complete a stale generation, and assert it is ignored. Complete the current generation and assert rows appear. A screenshot can show the busy overlay, but the test that suppresses stale results should be model/task-level or presenter-level.
+The sixth rung is task and busy behavior. Use a controlled task service or fake completion source. Start a refresh, assert busy state, assert overlay behavior or busy component state, complete a stale generation, and assert it is ignored. Complete the current generation and assert rows appear. A screenshot can show the busy overlay, but the test that suppresses stale results should be model/task-level or screen-presenter-level.
 
 The seventh rung is screenshot smoke. Render the normal workspace and busy-detail workspace under FlatLaf at fixed sizes. Assert the files exist and are nonblank, then review the images. The screenshots prove that the assembled screen looks like the prose says it looks. They are late in the ladder because they are broad and visual.
 
@@ -583,7 +583,7 @@ Feature & First proof & Later proof\\
 Validation rule & Form model and \api{ProblemSet} by field key and problem code. & Swing binding test and invalid-state screenshot.\\
 Command state & Command model by \api{ActionKey}. & Button/menu/key binding surface and resource audit.\\
 Generated form & \api{GeneratedSourceCompiler} output and diagnostics. & Generated-style Swing binding and screenshot.\\
-Table state & \api{TableStateController.captureState} by table and column ids. & Screenshot showing restored order, width, visibility, and sort.\\
+Table state & \api{TableStateController.\allowbreak captureState} by table and column ids. & Screenshot showing restored order, width, visibility, and sort.\\
 Busy workflow & Task, cancellation, and generation-counter tests. & Busy overlay behavior and screenshot.\\
 Custom visual effect & Geometry, dirty-region, and renderer tests. & Deterministic screenshot under representative themes.\\
 \bottomrule

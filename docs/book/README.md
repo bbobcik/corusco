@@ -18,6 +18,19 @@ TEXLIVE_IMAGE=texlive/texlive:latest ./build.sh
 
 The generated PDF is `main.pdf`.
 
+## A5 PDF edition
+
+The A5 edition uses the same chapter sources as the A4 book, but it has its own
+LaTeX entry point with A5 page geometry, smaller heading scale, tighter boxes,
+and listing/table settings chosen for the narrower measure. It is not produced
+by scaling the A4 PDF.
+
+```sh
+./build-a5.sh
+```
+
+The generated PDF is `main-a5.pdf`.
+
 ## EPUB build
 
 The EPUB edition is generated from the same LaTeX source with Pandoc. It is a
@@ -107,6 +120,8 @@ The PDF source is built with pdfLaTeX via Dockerized `latexmk`. It uses common T
 ## Project layout
 
 - `main.tex` - document preamble and chapter includes.
+- `main-a5.tex` - A5 PDF preamble and the same chapter includes.
+- `build-a5.sh` - Dockerized A5 PDF build entry point.
 - `build-epub.ps1` - Pandoc EPUB build entry point.
 - `epub/` - EPUB metadata, mobile-first CSS, and LaTeX-to-EPUB filter.
 - `frontmatter/` - title page and preface.

@@ -246,16 +246,16 @@ between sessions? This vocabulary need not be perfect. It will change during
 implementation. But it gives the screen a semantic skeleton before Swing
 components, listeners, and layout constraints multiply.
 
-\section{Presenter state and command vocabulary}
+\section{Screen-Presenter State and Command Vocabulary}
 
-The presenter owns screen state that is not purely visual: observable row
+The screen presenter, in the sense defined in Chapter~\ref{ch:models-views-presenters}, owns screen state that is not purely visual: observable row
 source, selected row or selected customer id, form model for the detail side,
 command set, busy state, task service, status text, problem sets, and lifecycle
 scopes. This does not mean the presenter should become a god object. It means
 state needs a non-widget owner. Split services and models when they become
 concepts of their own.
 
-The presenter is the place where screen facts become workflow. It knows that a
+The screen presenter is the place where screen facts become workflow. It knows that a
 selected row should load detail, that Save depends on dirty state and
 validation, that Refresh starts a background task, and that a closed view
 should cancel view-owned work. It should not know how MigLayout aligns a
@@ -263,7 +263,7 @@ label, and it should not paint a table cell. If a service call, permission
 rule, or validation rule becomes large, move it into a service or model. The
 presenter coordinates; it should not absorb the whole application.
 
-\begin{lstlisting}[caption={Presenter state sketch.}]
+\begin{lstlisting}[caption={Screen-presenter state sketch.}]
 final class CustomerWorkspacePresenter implements AutoCloseable {
     private final ObservableArrayList<CustomerRow> rows =
             ObservableArrayList.empty();
@@ -292,7 +292,7 @@ late, inspect the generation counter and task callback. Without these named
 owners, the reviewer must search through listeners and component state hoping
 to find the one place where a fact is currently stored.
 
-Commands are part of presenter state because they express operations in terms
+Commands are part of screen-presenter state because they express operations in terms
 of screen state. The Save command is enabled when the form is dirty, valid,
 editable, and not saving. The Delete command is enabled when a durable
 selection exists and permission allows deletion. The Refresh command may stay
@@ -312,7 +312,7 @@ scope.add(canSave.subscribe(event ->
 \end{lstlisting}
 
 The generated action descriptor supplies identity and presentation metadata.
-The presenter supplies runtime availability. This distinction lets a toolbar
+The screen presenter supplies runtime availability. This distinction lets a toolbar
 button, menu item, popup item, key binding, and command palette observe the
 same command. If the keyboard shortcut works while the Save button is disabled,
 there are probably two operation paths. The fix is not another boolean; the
@@ -331,10 +331,10 @@ is different from Save disabled because validation failed, permission is
 missing, or a save is already running. A boolean command enabled state is
 necessary for Swing, but it may not be sufficient for users. A neighboring
 reason value can feed a tooltip, status line, command palette, or accessible
-description. The presenter is the place to derive that reason from form,
+description. The screen presenter is the place to derive that reason from form,
 permission, and task state.
 
-Presenter state should be testable without Swing where possible. A core test
+Screen-presenter state should be testable without Swing where possible. A core test
 can construct the presenter with fake services, load deterministic rows,
 select a row, edit the form model, and assert command state. EDT tests should
 cover bindings and component behavior. This separation keeps the expensive
@@ -346,7 +346,7 @@ delete task is already running, or because the current user lacks permission.
 Those reasons have different user-facing consequences. A permission failure
 may need a help link or audit message. A missing selection may need no
 explanation. A busy task may need a progress indicator. Modeling only one
-boolean forces the view to invent text it cannot justify. Presenter state can
+boolean forces the view to invent text it cannot justify. Screen-presenter state can
 derive both enabled booleans and explanatory values from the same facts.
 
 Undo and reset are a useful test of command vocabulary. Reset detail form
@@ -354,7 +354,7 @@ should restore the current form model to the loaded customer. Undo may be a
 broader application command that reverses the last edit. Cancel may close a
 dialog or discard workspace changes depending on container. These operations
 sound related, but they are not the same command. Naming them precisely in the
-presenter prevents the view from turning every "go back" gesture into a local
+screen presenter prevents the view from turning every "go back" gesture into a local
 button listener.
 
 \section{View assembly with MigLayout}
@@ -518,7 +518,7 @@ scope.add(TableStateController.install(
 
 The extra code is where table meaning becomes explicit. The row list is
 observable. The table descriptor supplies columns. The selection binding states
-which presenter values receive selected coordinates and row values. The
+which screen-presenter values receive selected coordinates and row values. The
 table-state controller states where column layout is restored and saved. In a
 plain \api{new JTable(data, headers)} table, these facts still exist; they are
 merely implicit, often as indexes and listeners that will be harder to find
@@ -546,10 +546,10 @@ descriptors, view order can change without changing identity.
 When the selected row changes, the detail form should load or display the
 corresponding customer. This is a master-detail relationship. Avoid putting
 the whole workflow in a table selection listener. Selection binding writes
-selected state. Presenter logic reacts to selected state. Detail loading uses
+selected state. Screen-presenter logic reacts to selected state. Detail loading uses
 tasks or master-detail values as appropriate.
 
-\begin{lstlisting}[caption={Selection reaction in presenter state.}]
+\begin{lstlisting}[caption={Selection reaction in screen-presenter state.}]
 scope.add(selectedRow.subscribe(event -> {
     CustomerRow row = event.newValue();
     if (row == null) {
@@ -572,7 +572,7 @@ Selection preservation during refresh deserves policy. If the refreshed row
 set still contains the selected customer id, the screen may preserve
 selection. If the selected customer disappeared, the screen may clear detail,
 show a message, or select the nearest row. Do not let the table sorter decide
-this accidentally. The presenter should compare durable row ids, not view
+this accidentally. The screen presenter should compare durable row ids, not view
 indexes. Generated row identities and column descriptors make that comparison
 straightforward.
 
@@ -587,7 +587,7 @@ Renderers remain explicit Swing code. A generated descriptor can supply value
 type and column identity, but a status badge, risk color, date format, or
 validation marker needs renderer policy. Keep renderers small, stateless, and
 aware of performance. Let the descriptor identify the column; let the renderer
-present the cell. Do not put presenter state into renderer components.
+present the cell. Do not put screen-presenter state into renderer components.
 
 Large-data behavior should be considered even when the example data is small.
 The customer table may eventually show tens of thousands of rows or a virtual
@@ -610,7 +610,7 @@ first visible table works.
 
 The detail form edits the selected customer. Its generated form model owns raw
 text, parsed values, validation, dirty state, and committed result creation.
-The view owns components and layout. The presenter owns when a form is loaded,
+The view owns components and layout. The screen presenter owns when a form is loaded,
 saved, reset, or discarded. This separation prevents the common Swing mistake
 where the current text field values are both the user interface and the
 application state.
@@ -920,14 +920,14 @@ refreshed when the code changes.
 A practical construction order keeps the system from starting as a component
 tree full of hidden state. First define records and stable ids. Then add
 annotations for form, table, actions, validation, and help. Build core
-presenter state. Generate and inspect companions. Create the MigLayout view.
+screen-presenter state. Generate and inspect companions. Create the MigLayout view.
 Install table model, selection binding, and table state. Install form bindings
 and behaviors. Add commands and keyboard shortcuts. Add task service, busy
 state, overlays, and stale-result suppression. Add layered tests and
 screenshot harness output.
 
 This order is forgiving. After records and stable ids exist, generation can be
-inspected before the view is finished. After presenter state exists, command
+inspected before the view is finished. After screen-presenter state exists, command
 and validation tests can be written before the final layout. After the
 MigLayout view exists, screenshots can guide visual refinement while core
 tests continue to protect behavior. Building in this order gives the developer
@@ -1001,7 +1001,7 @@ customers" or equivalent text derived from the result.
 
 The user selects a row. Swing selection changes first, but selection binding
 translates the view coordinate to model coordinate and writes selected state
-into presenter values. Commands that depend on selection update. The detail
+into screen-presenter values. Commands that depend on selection update. The detail
 load workflow sees the selected customer id and starts a detail load or uses
 cached detail. If the table is sorted, the selection binding crosses the
 coordinate boundary in one place. Command handlers do not ask the table for
@@ -1085,7 +1085,7 @@ The presenter-facing files should read like workflow. A presenter constructor
 receives services, resources, task services, or stores it needs. Presenter
 methods load rows, select customers, start saves, reset forms, and close
 scopes. Commands are created there or by generated action companions consumed
-there. The presenter should not build MigLayout panels. It should not subclass
+there. The screen presenter should not build MigLayout panels. It should not subclass
 \api{JPanel}. It may expose observable values, command sets, form models, and
 row sources that the view binds.
 
@@ -1269,7 +1269,7 @@ data from \api{JTable.getValueAt}, stores selection as view row number, and
 updates cells by column indexes. This may be acceptable for a throwaway
 prototype. It is fragile in a sorted, filtered, persistent, descriptor-backed
 business screen. Recovery starts by defining a row type and row source. Then
-install a table model from a descriptor, bind selection into presenter values,
+install a table model from a descriptor, bind selection into screen-presenter values,
 and move command logic to row identity or selected row state. The table then
 returns to its proper role: a presentation of row data.
 

@@ -1,13 +1,110 @@
-\chapter{Models, Components, and the Presentation Boundary}
+\chapter{Models, Views, and Presenters}
 \label{ch:models-boundary}
+\label{ch:models-views-presenters}
 \chapterquote{A widget can display state, but it should not be the only place where important state exists.}{The presentation boundary}
 
 \begin{chaptermap}
-Core question & Which facts belong in Swing components, which belong in Swing models, and which belong in application-owned presentation models?\\
+Core question & Which facts belong in models, which belong in views, and which belong in presenters when a business Swing application grows beyond a demo?\\
 Primary APIs & \api{Document}, \api{ButtonModel}, \api{ListModel}, \api{TableModel}, \api{ListSelectionModel}, \api{Action}, \api{PropertyChangeListener}.\\
-Corusco connection & Core models, typed keys, descriptors, problems, values, commands, and lifecycle scopes make the presentation boundary testable.\\
+Corusco connection & Core models, typed keys, descriptors, problems, values, commands, generated companions, bindings, behaviors, and lifecycle scopes make the presentation boundary testable.\\
 Companion example & \coreExample.\\
 \end{chaptermap}
+
+\section{Vocabulary before patterns}
+
+A business application is not only a collection of widgets. It is a collection of facts, workflows, promises, and visual surfaces. A customer is selected. A form is dirty. A value is invalid. A Save operation is disabled because a required field is missing. A lookup list is shared by several screens. A background refresh is still running. A dialog has a result only after the active editor commits. A table row is selected by identity, even though sorting moves it to another visible position. These facts may be displayed by Swing components, but they should not all be owned by Swing components.
+
+The purpose of model-view-presenter vocabulary is to make those ownership decisions speakable. The vocabulary is not a religion and it is not a class diagram that every screen must copy. It is a review language. When a reviewer asks "where does this value live?", "who may change it?", "which object closes this listener?", or "why is this command disabled?", the answer should name an owner. If the answer is "some listener changes a label and a button", the screen may work, but the design is still difficult to reason about.
+
+\termdef{Model}{an object that owns facts and publishes changes in a useful vocabulary} is the broadest term. It does not mean only a database entity. It does not mean only a Swing \api{TableModel}. A model may be a domain object, an application session object, a form field, an observable list, a selection value, a problem set, a command, or a Swing model used by a component. The common point is ownership: the model answers for a fact when code needs to read it, change it, observe it, reset it, validate it, or test it.
+
+\termdef{Domain model}{state and rules that belong to the problem domain} describes the world the application is about. A customer has a credit limit. An invoice has a due date. A telescope observation has a timestamp. Domain models should not know whether a user edits them with a text field, a table cell, a wizard page, or a generated form. They may expose validation rules, invariants, identifiers, and relationships, but they should not own Swing focus, component enablement, table sorting, or a dialog's dirty flag.
+
+\termdef{Application-scoped model}{long-lived application or session state shared deliberately by several screens} sits above individual views. It may hold the current user, active tenant, permission snapshot, locale, resource context, preferences, remembered window layout, shared lookup lists, recent files, or an application-wide selection. This model is not a hidden global variable. It has a lifetime, an owner, and an explicit reason to be shared. The danger is to put every convenient field there. The discipline is to put only facts whose lifetime and audience are truly application-scoped.
+
+\termdef{Presentation model}{screen-owned state that expresses what is happening in one screen, dialog, or workflow} is closer to the user interaction. It may store raw field text, parsed values, touched state, dirty state, selected row identity, selected table model row, active tab, busy state, status text, validation problems, disabled reasons, and draft command state. Presentation models are not less important because they are temporary. A dirty flag that disappears when a panel closes is still a real fact while the panel is open, and it deserves an owner that can be tested.
+
+\termdef{Swing model}{a Swing-facing model used by components} is another category. \api{Document}, \api{ButtonModel}, \api{ListModel}, \api{ComboBoxModel}, \api{TableModel}, \api{TableColumnModel}, \api{ListSelectionModel}, and \api{BoundedRangeModel} all exist because Swing itself separates widgets from many of their mechanics. These models answer Swing questions: what text is in the document, which button state is armed, how many rows exist, which row is selected, what column class should a table use, or where is the scroll bar. They may adapt application state, but they should not automatically become the only application state.
+
+\termdef{View}{the Swing component tree, or a root object that creates and exposes that tree} owns visible components, layout, local widget behavior, borders, renderers, editors, input maps, and component-local state. A view knows which label sits beside which field. It knows that a table is inside a scroll pane. It may expose named components or component keys for binding and testing. It should not decide the business meaning of Save, whether the current customer may be deleted, or which service to call when Refresh runs.
+
+\termdef{Screen presenter}{the coordinator that turns screen state and services into workflow} sits beside the view. It may create or receive presentation models, commands, task services, repositories, resource services, and application-scoped models. It decides what happens when the user invokes Save, selects a row, opens a detail panel, starts a refresh, or closes a dialog. A presenter should not be a second view. It should not build MigLayout constraints, subclass \api{JPanel}, or paint. It coordinates; the view presents.
+
+\termdef{Command presenter}{a visual or input surface that exposes a command} is a different use of the word presenter. A button, menu item, toolbar item, popup item, default button, key binding, command palette row, or accessibility action can all present the same command. This book uses "command surface" when that avoids ambiguity. A screen presenter owns workflow. A command presenter presents one operation. Confusing those two meanings is one reason the term "presenter" needs this chapter.
+
+\termdef{Binding}{a lifecycle-owned relationship that synchronizes two sides} connects facts across boundaries. A text binding may mirror a field model's raw text into a \api{JTextField}'s document and mirror document edits back into the field model. A selection binding may translate between \api{JTable} view rows, model rows, row objects, and selected ids. A command binding may adapt a command to a Swing \api{Action}. Binding code is allowed to know both sides. That is its job. It must also know when to stop, because stale bindings are a common source of leaks and late updates.
+
+\termdef{Behavior}{a reusable component capability installed under a lifecycle} is a larger view-side relationship. A validation border, composed tooltip, accessible description, help-on-F1 binding, select-all-on-focus policy, busy overlay, or command adapter can be a behavior. Behaviors prevent repeated listener fragments from being scattered through every view constructor. They make view capabilities inspectable and disposable.
+
+\termdef{Descriptor}{stable metadata named before components are created} describes fields, commands, columns, resources, help topics, and generated contracts. A descriptor says "this field is customer name", "this command is customer/save", or "this table column is creditLimit". It is not the current value. It is the durable identity and metadata that make values, components, generated code, tests, resources, and diagnostics agree.
+
+\termdef{Lifecycle scope}{an owner of cleanup} gives all these relationships an end. A view may open and close many times while an application-scoped model lives all day. A dialog may create field bindings that must close when the dialog closes. A presenter may start a task whose callback must not update a disposed view. A behavior may install an input-map entry that must be removed. A scope records these responsibilities so cleanup is not a rumor hidden in comments.
+
+\begin{principlebox}{Name the owner before the pattern}
+Do not begin by asking whether a screen is "MVP enough". Begin by naming facts and lifetimes. Domain facts belong to domain models. Shared session facts belong to application-scoped models. Screen facts belong to presentation models or screen presenters. Widget mechanics belong to Swing models and components. Synchronization belongs to bindings. Cleanup belongs to scopes.
+\end{principlebox}
+
+\section{How the pieces cooperate}
+
+A model, a view, and a presenter are not three piles of code with walls between them. They are three kinds of responsibility that cooperate on every useful screen. The view sends local user events upward in semantic form. The presenter interprets those events against current state and services. Models change. Bindings reflect those changes back into components. Command surfaces update because command state changed. The user sees a coherent screen, but the code has kept the facts reviewable.
+
+Consider a simple customer edit form. The view owns the \api{JTextField}, \api{JCheckBox}, labels, layout, focus traversal, and a Save button. A form model owns the raw name text, active flag, parsed values, touched flags, dirty state, and problems. A screen presenter owns the current customer id, the service used to load and save, the Save command, the Cancel command, and the policy for closing after a successful save. A text binding owns the relationship between the \api{JTextField} document and the name field model. A command binding owns the relationship between the Save command and the Save button. A scope owns both bindings.
+
+The same screen can fail in several familiar ways if these responsibilities are collapsed. If the Save listener scrapes every component, the screen cannot explain dirty state before Save is pressed. If the text field owns validation by setting a red border directly, the dialog summary, tooltip, accessible description, and command enablement may drift. If the presenter stores the current caret position, it is pretending to be a text component. If the form model calls \api{JOptionPane}, it has crossed into view policy. If a binding is not closed, an old field may still update after the dialog is gone.
+
+The direction of dependency is practical rather than mystical. A view may expose methods such as \api{nameField()} or component keys because bindings and tests need stable access. A presenter may hold a reference to the view when it installs bindings or reads a view-local event, but it should avoid treating the view as the model. A model should avoid importing Swing unless it is explicitly a Swing adapter. A binding is often the one object that imports both model and Swing APIs, because it is the adapter at the boundary.
+
+\begin{center}\small
+\begin{tabularx}{0.96\linewidth}{>{\bfseries\raggedright\arraybackslash}p{0.25\linewidth}X}
+\toprule
+Responsibility & Typical owner\\
+\midrule
+Business identity, invariants, persisted facts & Domain model or service result\\
+Current user, permissions, preferences, shared lookup values & Application-scoped model\\
+Raw field text, dirty state, selected id, current problems, busy flag & Presentation model\\
+Workflow, task policy, command handlers, service calls & Screen presenter\\
+Components, layout, local focus, renderers, editors, visual affordances & View\\
+Documents, table data adapter, selection adapter, button state & Swing model\\
+Synchronization between model and component & Binding or behavior\\
+Stable field, command, column, resource, and help identity & Descriptor or typed key\\
+Listener, subscription, task, and binding cleanup & Scope\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+This table is intentionally ordinary. It should make a reviewer slower before writing a listener and faster after reading the code. If a fact is in the wrong row, the bug often becomes obvious. A permission flag stored inside a disabled button is not application-scoped enough. A scroll bar value stored in a domain object is too visual. A selected table view row stored as a business identity is too unstable. A service call hidden inside a renderer is too late and too frequent. A resource key stored as a localized label string is too fragile.
+
+\section{Organizing common screens}
+
+Small examples often put every object in one method because the example is trying to teach one API. Production screens need a more deliberate shape. The following patterns are not framework requirements. They are starting points for common business-application cases.
+
+\textbf{Application-scoped models.} An application usually has facts that outlive a single panel. Current user, tenant, locale, permissions, preferences, remembered table layouts, shared resource context, help service, recent files, and lookup values may belong to an application-scoped model or application shell. These facts should be observable when screens need to react. If permissions change, commands should update. If locale changes, resource-backed labels may refresh or the application may require a controlled restart. If shared lookup values reload, combo-box option models should receive precise changes.
+
+Application-scoped does not mean static. A static \api{CurrentUser.current} field is convenient until tests run in parallel, a second window opens, or a logout/login cycle leaves stale listeners behind. Prefer an explicit object passed to presenters, view factories, or application services. Give it a lifecycle and a cleanup story. If the model caches lookup data, decide who refreshes it, who observes it, and what happens when a screen closes while a refresh is running.
+
+\textbf{MVP for forms.} A form view owns labels, fields, layout, focus order, and local editing components. A form model owns field state: raw text, parsed value, dirty state, touched state, parse problems, validation problems, baseline value, and committability. A screen presenter owns workflow: load a record, reset a draft, invoke validation, decide whether Save is available, call a service, handle success or failure, and close or keep the form open. The command surfaces merely present Save, Reset, Apply, or Cancel.
+
+This split protects invalid intermediate input. A user typing a date may temporarily enter a string that is not a valid date. The text field can still display it. The field model can record it as raw text with a parse problem. The last meaningful value can remain intact. The Save command can disable itself or explain the disabled reason. A tooltip, border, summary, and accessible description can all reflect the same problem. None of that works well if the only model is "read the text field when OK is clicked."
+
+\textbf{Dialogs.} A dialog adds result and modality policy. OK should usually commit the active editor, parse the current fields, validate the form, produce a result, and close only on success. Cancel may discard changes, ask for confirmation, cancel tasks, close bindings, and release resources. A dialog view should not hide these decisions inside two anonymous button listeners. A dialog screen presenter or dialog model should name them. Even a small modal dialog benefits from a clear result contract: no result before OK succeeds, one result after OK succeeds, no late update after close.
+
+Dialogs also make lifecycle visible. They are opened, used, and disposed repeatedly. Every listener, binding, task handle, table-state controller, and behavior installed for one dialog activation must close with that activation. If the dialog uses application-scoped lookup data, the lookup model may live longer, but the subscription from this dialog should not. That distinction is the difference between sharing and leaking.
+
+\textbf{Auxiliary modeless panels.} A search panel, inspector, properties panel, log panel, palette, or notification panel may be open while the main screen changes underneath it. It may observe application selection, expose its own filter text, start background refreshes, and be closed independently. Treat it as a small screen with its own view, presentation model, presenter, and scope. Do not let it reach through global component trees to find the "current" table. Give it the application-scoped facts it needs and let it publish its own state.
+
+Modeless panels are especially vulnerable to stale callbacks. A background refresh started from a panel may complete after the panel is hidden. A selection listener may retain the panel after the workspace closes. A timer may keep updating invisible labels. The presenter should own generation counters, task handles, or cancellation tokens that prove a result still belongs to the current panel. The scope should close subscriptions when the panel closes, even if the application model continues.
+
+\textbf{Master-detail screens.} A master-detail screen combines a row source, table model, selection model, detail form, commands, and background loading. The table view row is not the business identity. Sorting and filtering move rows. The presentation model or presenter should store selected row identity or selected model row according to the workflow. A binding can translate Swing selection into that state. The presenter can then load the detail form by id, derive command enablement, and ignore stale detail results.
+
+This organization prevents common table bugs. Delete should apply to the selected domain id, not whichever view row happens to be index 3 after sorting. Refresh should preserve selection by identity where possible. Detail loading should not overwrite the form with an older result. Table column state should be persisted by stable column ids, not current view positions. Each of these rules depends on separating Swing table mechanics from screen facts.
+
+\textbf{Reusable embedded panels.} A reusable address editor, money field, date-range selector, tag chooser, or filter bar should not know every host workflow. It may own a local model for its editable facts and local validation. It may expose commands or events such as commit, reset, clear, add tag, or remove tag. The host presenter decides what those events mean in the containing workflow. If the embedded panel calls the customer service directly, it is no longer reusable; it is a screen pretending to be a component.
+
+Reuse also changes lifecycle. The embedded panel may be created inside a dialog today and inside a modeless inspector tomorrow. Its bindings should close when the panel closes. Its local model should be resettable. Its public contract should expose semantic state, not the private text fields that happen to implement it. A host may still need component keys for testing and binding, but the reusable panel's value should not be "whatever text is in child component number four."
+
+\begin{principlebox}{Common pattern, common question}
+For each screen shape, ask the same questions: Which facts outlive this view? Which facts are local to this workflow? Which Swing models are adapters? Which screen-presenter method names each user operation? Which bindings cross the boundary? Which scope closes them?
+\end{principlebox}
 
 \section{Why this boundary matters}
 
@@ -250,11 +347,11 @@ Master-detail screens also show why a presentation model can be smaller than it 
 Corusco commands can be surrounded by values and resources that explain command state. The button should not be the only object that knows Save is disabled.
 \end{coruscobox}
 
-Disabled reasons need policy. If several reasons apply, which one should the user see? A dialog may prefer validation errors because the user can fix them immediately. A toolbar may prefer "busy" because the operation will become available soon. An administrator screen may prefer permission failure because no amount of editing will enable the command. That ordering belongs in presenter or command state, not in whichever component happens to refresh last.
+Disabled reasons need policy. If several reasons apply, which one should the user see? A dialog may prefer validation errors because the user can fix them immediately. A toolbar may prefer "busy" because the operation will become available soon. An administrator screen may prefer permission failure because no amount of editing will enable the command. That ordering belongs in screen-presenter or command state, not in whichever component happens to refresh last.
 
 \textbf{Resources and help as model facts.} User-facing text is often treated as component decoration, but much of it is model metadata. A field label belongs to the field contract. A table header belongs to the column contract. A command name belongs to the command contract. A help topic belongs to the field, action, or screen concept. When text is embedded in components, it is hard to audit and generate. When descriptors refer to resource keys, text can be resolved late, tested, localized, and reused across components. This is why Corusco distinguishes typed keys. A resource key is not an action key. A help topic is not a field key. The type system should help the reader avoid mixing them.
 
-\textbf{MVP without ceremony.} Swing applications often use the words model-view-presenter or model-view-controller loosely. This book uses a pragmatic vocabulary. The \termdef{view}{the Swing component tree and its component-facing API} owns widgets and layout. The \termdef{presenter}{application code for one screen's behavior} owns workflow decisions, service calls, command handlers, and model coordination. The \termdef{presentation model}{observable state and descriptors used by the presenter and view} owns current screen facts. No base class is required. A small screen may have a panel and a few model objects. A large screen may have explicit presenter, view interface, generated bindings, and several model classes. The useful question is always the same: can behavior be tested without pretending the component tree is the only source of truth?
+\textbf{MVP without ceremony.} Swing applications often use the words model-view-presenter or model-view-controller loosely. This book uses a pragmatic vocabulary. The \termdef{view}{the Swing component tree and its component-facing API} owns widgets and layout. The \termdef{screen presenter}{application code for one screen's behavior} owns workflow decisions, service calls, command handlers, and model coordination. The \termdef{presentation model}{observable state and descriptors used by the presenter and view} owns current screen facts. No base class is required. A small screen may have a panel and a few model objects. A large screen may have explicit presenter, view interface, generated bindings, and several model classes. The useful question is always the same: can behavior be tested without pretending the component tree is the only source of truth?
 
 Ceremony becomes harmful when it hides the screen instead of clarifying it. A three-field utility dialog may not need a presenter interface, dependency-injection module, generated view contract, and several files. But it still needs a truthful boundary if it has validation, command state, resources, or cleanup. The design should scale with the behavior, not with a pattern name. This is why the book prefers concrete ownership questions to architectural slogans.
 

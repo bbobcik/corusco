@@ -26,7 +26,7 @@ For a returning programmer, this is the first pleasant and dangerous fact about 
 
 This book therefore begins with names. A component is not a model. A model event is not a repaint request. A command is not a button. A tooltip is not the only place for help. A validation problem is not merely a red border. A table column is not its current view index. A screen lifecycle is not the same thing as garbage collection. These distinctions may sound heavy for a refresh chapter, but they are what make later advanced material readable. They also make Corusco useful rather than magical: the library gives explicit homes to concepts that Swing already forced serious programs to discover.
 
-The modern Java context changes the surrounding code, but not the Swing contracts. Records make small data carriers clearer. Pattern matching can simplify presenter logic. Virtual threads make blocking service code cheaper when it is kept away from the EDT. Modules, \api{jlink}, and \api{jpackage} improve delivery. None of them changes the fact that a \api{JTable} observes a \api{TableModel}, that a component must be mutated on the EDT, or that a layout manager assigns bounds from size hints and constraints. Modern Java is a better workshop; the furniture is still Swing.
+The modern Java context changes the surrounding code, but not the Swing contracts. Records make small data carriers clearer. Pattern matching can simplify screen-presenter logic, a term defined in Chapter~\ref{ch:models-views-presenters}. Virtual threads make blocking service code cheaper when it is kept away from the EDT. Modules, \api{jlink}, and \api{jpackage} improve delivery. None of them changes the fact that a \api{JTable} observes a \api{TableModel}, that a component must be mutated on the EDT, or that a layout manager assigns bounds from size hints and constraints. Modern Java is a better workshop; the furniture is still Swing.
 
 If you last used Swing years ago, the most dangerous memory is partial memory.
 You may remember that a button has an action listener, but not that the same
@@ -110,7 +110,7 @@ Corusco mostly lives in the presentation-model and Swing-boundary layers. It doe
 
 The table is a map, not a package diagram. A small application may keep the
 screen and presentation model in one class while it is still being explored. A
-larger application may split them into view, presenter, generated binding
+larger application may split them into view, screen presenter, generated binding
 companion, form model, command set, and service adapter. The important part is
 not how many classes exist. The important part is whether a reader can tell
 which layer owns a fact. If a domain service owns a validation message in
@@ -240,7 +240,7 @@ selection, and sluggish tables.
 Selection models deserve special attention because they are presentation state,
 not domain state. A selected view row is the user's current visual position. A
 selected customer id is application meaning. A \api{JTable} selection model can
-tell which view row is selected; presenter code should usually convert that to
+tell which view row is selected; screen-presenter code should usually convert that to
 model identity before making decisions. If the code stores only the view row,
 sorting, filtering, and refresh make the selection ambiguous. This distinction
 will return in the table chapters, but the refresh chapter introduces it because
@@ -287,7 +287,7 @@ architecture imposed from outside.
 Returning programmers often remember action listeners but forget actions. The difference is architectural. A listener says "this particular button was pressed". An action says "the Save command was invoked". Mature applications are built from commands because users encounter the same operation through buttons, menus, context menus, keyboard shortcuts, toolbars, and sometimes accessibility actions.
 
 \begin{coruscobox}{Commands Beyond Swing Action}
-Corusco commands make action identity and resources toolkit-neutral. A Corusco command can be adapted to a Swing \api{Action}, but the command itself can be tested without a button and generated from annotated presenter methods.
+Corusco commands make action identity and resources toolkit-neutral. A Corusco command can be adapted to a Swing \api{Action}, but the command itself can be tested without a button and generated from annotated screen-presenter methods.
 \end{coruscobox}
 
 The command distinction is useful even before menus and toolbars appear. A button labeled "Refresh" can remain a local listener if the screen is a disposable experiment. The same operation should become a command when it has enablement, status text, a shortcut, a menu item, cancellation, help, permission checks, or tests. The trigger is not visual complexity. It is semantic reuse and policy. Once the operation has a name in the user's workflow, it deserves a name in the code.

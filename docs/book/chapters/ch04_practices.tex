@@ -175,7 +175,7 @@ code is not merely easier to read. It is easier to review because each
 relationship has a type and an owner.
 
 When the screen is still small, the same idea can be applied without Corusco.
-Create a tiny presenter object with fields for state and methods for events.
+Create a tiny screen-presenter object with fields for state and methods for events.
 Let listeners call those methods. Let the presenter update the few components it
 owns. This is already better than hiding the whole screen in anonymous
 callbacks. Later, if the screen grows, the presenter methods reveal exactly
@@ -365,8 +365,8 @@ only at named boundaries.
 
 The simplest rule is to convert as late as possible when reading from the UI
 and as early as possible when driving the UI from the model. If a user clicks a
-view row, convert it to a model row before presenter code asks for the selected
-object. If presenter code wants to select an object by id, resolve the id in
+view row, convert it to a model row before screen-presenter code asks for the selected
+object. If screen-presenter code wants to select an object by id, resolve the id in
 the model and then convert the model row to the current view row before touching
 the selection model. Code that mixes conversions in the middle of a business
 method tends to accumulate off-by-one defects that appear only after a sorter
@@ -419,7 +419,7 @@ they do the same small set of operations for each cell: read already prepared
 facts, set component state completely, return the stamp. The interesting
 decisions happen before painting. Is the row stale? Is the amount negative? Is
 the record locked? Which severity applies? Which icon should represent that
-severity? Those decisions can be tested as model or presenter logic. The
+severity? Those decisions can be tested as model or screen-presenter logic. The
 renderer then becomes a measured projection of facts to pixels.
 
 Allocation discipline does not mean avoiding every object at all costs. It
@@ -588,7 +588,7 @@ chapters provide the mechanics; good practice is choosing the owner.
 
 Swing client properties are useful extension points. They are also an easy place to hide untyped state. A Look-and-Feel client property that controls a documented visual option is fine. A random object graph stored under a string key because it was convenient is not.
 
-Global singletons have a similar risk. A global help service, resource service, or diagnostic registry may be appropriate. A global "current customer panel" is not. Prefer passing services through presenters, behavior contexts, or application shells.
+Global singletons have a similar risk. A global help service, resource service, or diagnostic registry may be appropriate. A global "current customer panel" is not. Prefer passing services through screen presenters, behavior contexts, or application shells.
 
 The question for any global is whether it represents application infrastructure
 or current screen state. A resource bundle service is infrastructure. A help
@@ -767,7 +767,7 @@ that already exists; it cannot replace the decision to be disciplined.
 
 The most effective migration sequence is therefore modest. First name the
 facts without changing the UI. Second move repeated facts out of widgets and
-into a presenter or model. Third introduce Corusco values, commands, problems,
+into a screen presenter or model. Third introduce Corusco values, commands, problems,
 descriptors, and scopes where they match those named facts. Fourth replace
 repeated Swing wiring with bindings or behaviors. Fifth add generation only
 after the source facts are stable enough that generated code will remove
@@ -961,7 +961,7 @@ help compose from shared metadata. Closing the screen closes installed
 relationships. If the story can be told without mentioning "and then this
 listener also...", the design is probably healthy.
 
-The same story should be visible in code. A presenter or model names the facts.
+The same story should be visible in code. A screen presenter or model names the facts.
 A view constructs components and layout. Bindings or behaviors synchronize
 component state with model state. Commands own operations. Descriptors own
 stable metadata. Scopes own lifetimes. Tests exercise the layers in the same
@@ -1046,7 +1046,7 @@ practice includes performance because performance is part of the user's
 experience of correctness.
 
 After the readings, do not propose a heroic rewrite. Classify findings by the
-owner they need. Some findings need plain refactoring: a presenter method, a
+owner they need. Some findings need plain refactoring: a screen-presenter method, a
 small model class, a cached renderer resource, or a cleanup handle. Some need
 Corusco concepts: a value, command, problem set, descriptor, behavior, task
 service, or scope. Some need generated companions because the repeated metadata

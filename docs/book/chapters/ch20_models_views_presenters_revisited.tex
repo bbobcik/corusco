@@ -1,0 +1,156 @@
+\chapter{Models, Views, and Presenters Revisited in Corusco}
+\label{ch:corusco-mvp-revisited}
+\chapterquote{Corusco does not remove the boundary; it gives the boundary names that code, generated companions, and tests can share.}{The generated-contract rule}
+
+\begin{chaptermap}
+Core question & How does Corusco reinterpret the model, view, presenter, binding, descriptor, and lifecycle vocabulary introduced earlier?\\
+Concept families & Values, observable lists, form models, problem models, commands, descriptors, resources, help topics, bindings, behaviors, scopes, generated companions, and test handles.\\
+Corusco connection & Stable declarations and generated companions reduce repetition, but screen presenters still own workflow and views still own Swing layout.\\
+Companion examples & \typedKeyExample, \commandExample, \swingIntegrationExample, \generationExample, and \bookAppExample.\\
+\end{chaptermap}
+
+\section{Returning to the boundary}
+
+Chapter~\ref{ch:models-views-presenters} introduced model, view, presenter, binding, descriptor, and lifecycle vocabulary without requiring Corusco. This chapter revisits the same vocabulary at the entrance to the Corusco part of the book. It is intentionally a map, not a replacement for the chapters that follow. The detailed APIs for values, lists, forms, commands, lifecycle, bindings, testing, and generation each receive their own treatment later.
+
+The continuity matters. A Corusco screen still has domain facts, application-scoped facts, presentation facts, Swing components, Swing models, command surfaces, bindings, behaviors, and lifecycle scopes. A Corusco screen presenter still owns workflow. A view still owns components and layout. A command surface still presents an operation. A text field still owns document editing mechanics. A table still has view and model coordinates. Corusco changes the cost of writing and checking these relationships; it does not make the relationships disappear.
+
+The library's practical value comes from making repeated presentation facts explicit. A field is not only a text component. It has identity, resource keys, validation metadata, problem targets, component lookup, binding policy, and tests. A command is not only a button. It has identity, resources, enabled state, optional selected state, shortcut metadata, command surfaces, diagnostics, and tests. A table column is not only a visible header. It has identity, value extraction, resource text, state persistence, sort policy, and export meaning.
+
+Without a shared vocabulary, those facts are written again and again as strings, listeners, component names, and assertions. Corusco's approach is to name stable facts early, then let generated companions and handwritten code reuse the same names. The generated support is useful because the same decision has many consumers: production bindings, command surfaces, resource resolution, accessibility, diagnostics, and tests.
+
+This makes Corusco most useful in the middle of real application complexity. A one-button demonstration can survive with one listener. A large application cannot survive when every screen invents its own naming, validation, command, resource, and cleanup conventions. Corusco gives those conventions a shared vocabulary before the codebase grows too large to audit.
+
+The vocabulary also helps teams talk about partial adoption. A project may introduce command identities before generated forms. It may introduce form models before table descriptors. It may add lifecycle scopes before annotation processing. Those steps are compatible because they all strengthen the same boundary instead of requiring one all-or-nothing rewrite.
+
+\begin{principlebox}{Generated code should reinforce ownership}
+Generated companions are valuable when they produce stable keys, descriptors, factories, and binding plans that reflect named screen facts. They are not valuable if they hide arbitrary workflow in a place that reviewers cannot reason about.
+\end{principlebox}
+
+\section{What Corusco names}
+
+Corusco values name single observable facts. Selected customer, busy state, status text, can-save state, dirty state, and disabled reason are typical examples. The value is not the label or button that displays it. The value is the fact; Swing components are presentations of that fact. The value chapter explains the concrete API and design rules.
+
+The important habit is to look for facts that have more than one reader. If a status label, command, and test all need to know whether refresh is running, refresh state is not merely a label property. If a selected row controls detail loading, Delete enablement, and export availability, selection is not merely a table highlight. These are the facts values are meant to expose.
+
+Observable lists name changing collections. A row source, lookup list, filtered result, sorted result, or loadable list should report what changed precisely enough that Swing adapters can preserve selection, sorter state, and user trust. The list chapter explains identity, sorting, filtering, view/model coordinates, and large-data update discipline.
+
+The list vocabulary is especially important because tables make small ownership mistakes visible. Replacing a whole table for one changed row may lose selection. Storing selection as a view index may delete the wrong object after sorting. Treating localized column text as identity may break persistence. Corusco list and descriptor concepts exist because these failures are common in ordinary business screens.
+
+Form and field models name editable facts. A text component can own editing mechanics, but it should not be the only owner of raw text, parsed value, dirty state, touched state, validation problems, committability, and result construction. The forms chapter explains parse state, conversion, validation, problem targets, result contracts, and dialog policies.
+
+This distinction lets a form be honest while the user is still typing. Invalid intermediate text can remain visible without corrupting the last valid semantic value. A problem can be recorded before it is painted. Save can be disabled for a structured reason. A dialog can decide whether OK should close. Those are model and presenter questions, not text-field questions.
+
+Problem models name feedback. A problem has severity, code, source, target, and message policy. A border, tooltip, summary row, status line, or accessible description is a presentation of that problem. This distinction prevents validation from becoming a collection of unrelated visual effects.
+
+Commands name operations. A Save command can be presented by a button, menu item, toolbar item, key binding, default button, command palette row, or accessibility action. The command owns the operation identity and state; each command surface decides how to render it. The commands/resources/help chapter explains keys, descriptors, resources, command sets, and Swing adapters.
+
+This is why the word "presenter" is handled carefully in this book. A screen presenter owns workflow. A command presenter is one surface for one operation. Corusco command support keeps those roles apart: the operation is named once, while each visual or input surface can appear, disappear, or render differently.
+
+Descriptors and typed keys name stable metadata. They identify fields, components, commands, resources, help topics, tables, and columns before a Swing component happens to exist. They are the bridge between generated code, handwritten code, resource files, diagnostics, persistence, and tests.
+
+Bindings and behaviors name relationships at the Swing boundary. A binding synchronizes a model fact with a component fact. A behavior installs a reusable view capability such as text binding, validation decoration, help-on-F1, command binding, accessible text, or busy overlay. The Swing integration chapters explain how those relationships are installed, ordered, inspected, and cleaned up.
+
+This boundary is where many applications become difficult. Listener code begins as glue and gradually becomes policy. Corusco's binding and behavior vocabulary gives glue a place to live without letting it quietly absorb workflow. When the boundary is good, bindings are easy to close and easy to test.
+
+Scopes name lifecycle ownership. Subscriptions, task handles, listeners, bindings, behaviors, table-state controllers, and generated installations all need an owner that can close them. Corusco makes cleanup explicit because Swing's component tree alone does not remember every application-level relationship installed on the screen.
+
+\section{Where annotations fit}
+
+Annotation-based definitions are a productivity mechanism, not a substitute for design. They work best when a compact declaration has many mechanical consumers. A presenter method that represents Save can declare stable action metadata once. A form record can declare editable fields and validation metadata once. The processor can then generate ordinary Java companions containing keys, descriptors, factories, binding plans, behavior plans, resource handles, and test handles.
+
+The most important word in that paragraph is "mechanical". Generation should remove repetition that would otherwise be copied by hand. It should not make a design decision merely because a design decision is inconvenient. A stable key is mechanical. A binding facade is mechanical. A dirty-cancel policy is not mechanical.
+
+This is effective because it removes the work humans are bad at repeating. Humans should decide that a Save command exists, that a customer name field exists, that a credit-limit field is decimal, that a problem target is stable, and that a table column has durable identity. Humans should not have to copy those same ids into every button, menu item, tooltip, component name, problem assertion, resource lookup, and binding installer.
+
+The boundary remains important. An annotation can identify a command and generate a command factory; it cannot decide the product policy for Save. An annotation can identify a field and generate model/binding support; it cannot decide when a dirty dialog should ask for confirmation. An annotation can identify a table column; it cannot decide whether selection should survive a refresh. Those decisions belong in screen presenters, domain services, application models, or explicit policies.
+
+This is also what keeps generated code reviewable. A reviewer should be able to inspect generated companions and say, "these are the consequences of the declaration." If generated code surprises the reviewer with hidden workflow, the generation boundary is wrong. If handwritten code repeats every generated id, the generated support is not being used enough.
+
+Generated code should therefore be boring. It should expose constants, descriptors, factories, and adapters that are easy to inspect. It should not surprise the reader with hidden runtime scanning or implicit workflow. The generation chapter later explains the compile-time model in detail. The practical procedures chapter after generation shows how to use these generated artifacts in real screens.
+
+\begin{coruscobox}{Annotation payoff}
+Annotations are most valuable when they generate identity, descriptors, factories, binding plans, behavior plans, and test handles from stable declarations. They reduce work because one durable decision is written once and consumed many times.
+\end{coruscobox}
+
+\section{Common screen shapes}
+
+Application-scoped models stay explicit in Corusco. Current user, permissions, preferences, resource context, help service, shared lookup lists, and table-state stores may live longer than one view. A screen presenter can receive the shared models it needs. A view subscription to a shared model still closes with the view.
+
+The phrase "application-scoped" should make code more disciplined, not more global. Shared state deserves stronger ownership because more screens can observe it. A current-user model, permission model, or lookup cache should have a clear lifetime and update policy. Screens should subscribe and detach deliberately.
+
+Form MVP keeps three responsibilities apart. The view owns fields and layout. The form model owns editable state, parse state, validation problems, dirty state, and result creation. The screen presenter owns load, save, reset, cancel, service calls, task policy, and close policy. Generated form companions reduce wiring, but they do not erase those responsibilities.
+
+Dialogs make the boundary concrete. OK is not merely a button click. It usually means commit active editor, parse fields, validate, produce a result, close on success, and clean up. Cancel may mean discard, confirm, cancel tasks, close scopes, and produce no result. Corusco gives these steps names so dialog behavior can be tested instead of inferred from anonymous listeners.
+
+Auxiliary modeless panels need explicit lifetimes. A properties panel, inspector, palette, search panel, or log view may observe application-scoped state while owning local filter, selection, busy, and status state. It can be opened and closed independently. Corusco scopes and task policies help prevent stale callbacks from updating dead components.
+
+Master-detail screens combine lists, table adapters, selection bindings, form models, commands, and background loading. The table view row is not business identity. A selection binding should convert table mechanics into screen-presenter state. Detail loading should check that the completed result still belongs to the selected identity.
+
+Reusable embedded panels should expose semantic state without owning host workflow. A money editor, address editor, date-range selector, tag chooser, or filter bar may have local models and generated component keys. The host screen presenter decides what commit, clear, selection, or reset means in the larger workflow.
+
+This makes reuse less fragile. A reusable panel can bring its own local editing model and generated view contract, but it should not know which repository the host uses or which navigation step follows commit. Reuse works when the embedded panel is explicit about its local contract and modest about its authority.
+
+\section{How to read the Corusco chapters}
+
+The next chapters deepen the pieces introduced here. Read the values chapter as the foundation for one changing fact. Read the lists chapter as the foundation for changing collections and table row identity. Read the forms chapter as the foundation for editable state, conversion, validation, and problems. Read the commands/resources/help chapter as the foundation for operation identity, localization, help, and typed keys. Read the lifecycle chapter as the cleanup and task policy foundation.
+
+The Swing integration part then explains how model facts reach components. Bindings and behavior scopes connect models to views. Table integration handles descriptors, selection conversion, and persisted state. Dialog and form integration applies the same contracts to modal workflows. Background and busy-state integration keeps task state visible without blocking the EDT. Testing explains how generated identities make Swing tests less fragile.
+
+The generation chapter is the point where annotations become detailed. After that, the practical MVP procedures chapter shows concrete command, form, dialog, modeless panel, master-detail, review, migration, and testing procedures. Placing the practical chapter later avoids using detailed APIs before they have been introduced.
+
+\begin{principlebox}{Use this chapter as a map}
+This chapter tells the reader what Corusco will name and why those names matter. The later chapters teach the concrete APIs and procedures. If a screen concept feels too abstract here, keep reading; the detailed mechanics appear in the specialized chapters.
+\end{principlebox}
+
+\section{What not to assume yet}
+
+It is useful to pause before the detailed chapters and state what this map does not promise. Corusco does not make every model observable automatically. It gives observable types and conventions that should be used deliberately. A domain object can remain an ordinary record or class. An application-scoped model can expose only the facts that screens need. A presentation model can be small. Observability is a design choice about change, not a tax on every Java object.
+
+Corusco also does not make Swing thread rules disappear. Swing components still belong to the EDT. A generated binding that touches a text field is still Swing code. A command invoked by a key binding still runs through a Swing event path. A background task still needs a handoff back to the UI boundary before installing results. Later chapters will be precise about which contracts are Swing-free and which are EDT-confined.
+
+Generated code is not a place to hide uncertainty. If the product team has not decided what a dialog does when the form is dirty, an annotation should not pretend that decision exists. If the application has not decided whether table selection survives filtering, a table descriptor cannot answer that policy by itself. If a permission rule depends on server state, the presenter or service needs a named policy. Generated companions are strongest after the stable facts have names.
+
+Corusco does not require every screen to have a class literally named \api{Presenter}. The book uses "screen presenter" as a role. A small utility panel may use a panel controller, a dialog coordinator, or a few model objects. A large workspace may use several presenters because the workflow is genuinely split. The important rule is that workflow decisions should be outside accidental component state and should be testable at the layer that owns them.
+
+The same caution applies to views. A view may be a \api{JPanel} subclass, a factory that returns a component tree, an object implementing a generated view contract, or a larger workspace object with several panels. The view role is not defined by inheritance. It is defined by ownership of Swing components, layout, visual affordances, and local widget mechanics.
+
+Bindings should not become miniature presenters. A binding may translate text changes into field-model raw text. It may translate selected table view rows into selected model rows. It may adapt command state into a Swing \api{Action}. It should not decide whether the customer may be saved, whether a refresh should start, or whether a dirty form should discard changes. If a binding begins to contain product policy, the ownership boundary has drifted.
+
+Behaviors should not become a dependency-injection framework. They are useful for reusable component capabilities: validation borders, tooltips, accessible text, help keys, command adapters, busy overlays, and focus policies. They should stay close to the Swing boundary. Services, repositories, cross-screen navigation, and business decisions should remain in presenters, application models, or domain services.
+
+Descriptors should not be mistaken for current state. A field descriptor says what a field is. It does not say what the user typed today. A command descriptor says what an operation is called and how it may be presented. It does not say whether this user can invoke it now. A table descriptor says which columns exist. It does not say which rows are currently loaded. Descriptors make identity durable; models carry current facts.
+
+This distinction helps avoid a common first-generation mistake: putting too much runtime policy into metadata because metadata feels tidy. Metadata should describe stable facts that many consumers need. Runtime models and presenters should describe changing facts and decisions. The screen remains easier to test when stable facts and current facts are separate.
+
+Another useful non-assumption is that Corusco does not replace plain Swing knowledge. The components chapter, table chapter, text chapter, action chapter, EDT chapter, and diagnostics chapter still matter. A generated form can install a text binding, but the text component still has a document, caret, focus behavior, input methods, and undo mechanics. A table descriptor can name columns, but \api{JTable} still has renderers, editors, row sorters, selection models, and column models.
+
+The purpose of the library is to let Swing do Swing work while application facts stay named. A good Corusco screen should feel more Swing-literate, not less. The view should still be readable to a Swing programmer. The presenter should still be readable to an application programmer. The generated companions should be boring bridges between those worlds.
+
+\section{A small orientation example}
+
+Imagine a customer workspace. The application-scoped model knows the current user, permissions, locale, resource context, and shared table-state store. The workspace presenter knows the current rows, selected customer id, detail load state, form model, and commands. The view knows the search field, table, detail panel, toolbar, status line, and layout. A table descriptor names columns. A form descriptor names fields. A command descriptor names Save, Refresh, and Delete.
+
+When the user selects a table row, Swing first reports a view-row selection. That is component mechanics. A table selection binding converts that into model-row or row-object state. The presenter derives selected customer id from the row. The Delete command updates because selected id and permission state changed. The detail load starts with a generation token. The view may show a busy state because a busy value changed. Each step has an owner.
+
+When the detail load completes, the presenter checks that the result still belongs to the selected id. If it does, the form model resets to the loaded customer. Generated form bindings update fields. Problem models clear or update. Save remains disabled until the form becomes dirty. The view presents these facts, but it does not invent them.
+
+When the user edits the credit limit, the text component owns the keystrokes and document mutation. The text binding writes raw text to the field model. The field model records parse state. Validation records problems if the semantic value is outside the allowed range. A problem behavior decorates the field. The Save command observes committability. A test can assert the field problem without looking at the tooltip text.
+
+When the user invokes Save, the command identity is the same whether the surface was a toolbar button, menu item, key binding, or default button. The screen presenter owns the save method. It commits active editing, checks the form, starts the service call, sets busy state, handles success or failure, and updates the model. Generated action metadata made the surfaces consistent; it did not perform the workflow.
+
+When the workspace closes, the view scope closes bindings and behaviors. The presenter scope closes subscriptions and task handles it owns. The application-scoped model remains alive. A late service callback checks lifecycle or generation before installing anything. That cleanup story is part of the architecture, not an afterthought.
+
+This example is intentionally not detailed enough to implement from this chapter alone. It is a reading guide for the chapters that follow. Values explain selected id and busy state. Lists explain row source updates. Forms explain raw text and validation. Commands explain operation identity. Lifecycle explains cleanup and stale results. Bindings explain model/component synchronization. Generation explains how annotations produce companions. The practical chapter puts those pieces into procedures.
+
+\section{Exercises}
+
+\begin{exercisebox}
+\begin{enumerate}
+\item Pick one existing screen and list its domain facts, application-scoped facts, presentation facts, Swing models, command surfaces, bindings, and lifecycle owners.
+\item Find one command that appears in more than one place. Name the stable action id, resource keys, command state, and screen-presenter method that should own it.
+\item Find one form field and list every consumer of its identity: label, component lookup, field model, validation target, tooltip, accessibility, resource entry, and test.
+\item For a modeless panel, decide which facts come from application-scoped models and which facts belong only to the panel activation.
+\item For a master-detail table, decide which state should be a view row, model row, row object, and domain id.
+\end{enumerate}
+\end{exercisebox}
