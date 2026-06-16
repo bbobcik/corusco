@@ -41,7 +41,7 @@ Nothing in this listing depends on Swing. The same value could later feed a
 label, a window title, a command, or a test assertion. The widget is no longer
 the only place where the fact exists.
 
-\begin{principlebox}{small models first}
+\begin{principlebox}{Small Models First}
 Before inventing a presenter hierarchy, ask whether the screen fact is simply
 one observable value. A selected row, busy flag, disabled reason, active tab,
 status message, or committed filter text often is.
@@ -77,7 +77,7 @@ synchronously on the thread that performs the mutation, and equal effective
 values do not produce events. That policy is simple enough to test and simple
 enough to reason about.
 
-\begin{pitfallbox}{values are not hidden dispatchers}
+\begin{pitfallbox}{Values Are Not Hidden Dispatchers}
 Do not assume that a Corusco core value will marshal events to Swing for you.
 Thread ownership belongs at the Swing boundary. If a value is consumed by Swing,
 mutate it on the EDT or adapt it before Swing observes it.
@@ -166,7 +166,7 @@ reported as user-originated. A presenter selecting a row after loading data is
 model-originated. Both changes may lead to the same selected row, but they have
 different meaning.
 
-\begin{coruscobox}{origins at the Swing boundary}
+\begin{coruscobox}{Origins at the Swing Boundary}
 Corusco Swing bindings write user-originated component edits with
 \api{ChangeOrigin.USER}. Presenter-originated changes retain their model origin
 when they update components. This makes feedback loops easier to detect and
@@ -226,7 +226,7 @@ usually can. The question is "who owns this value?" A screen presenter may own a
 busy flag. A long-lived application model may own the active workspace. A dialog
 form may own dirty state. Ownership should follow lifetime.
 
-\begin{pitfallbox}{observable globals}
+\begin{pitfallbox}{Observable Globals}
 Replacing global mutable variables with global observable values does not fix
 global state. It merely makes the global state louder. Prefer values whose
 lifetime matches the feature they represent.
@@ -271,7 +271,7 @@ This listing also shows a useful test shape. A test can change dirty state,
 problems, and busy state, then assert \api{canSave.value()} and its emitted
 events. No button is required. The button binding is a later concern.
 
-\begin{principlebox}{derived before listener}
+\begin{principlebox}{Derived Before Listener}
 When a listener merely recomputes a value from other values, consider a derived
 value. The dependency graph becomes visible, and the listener body disappears.
 \end{principlebox}
@@ -428,7 +428,7 @@ enabled state, selected state, resources, and invocation. Use a task handle for
 background work. A value is the atom of presentation state, not the whole
 periodic table.
 
-\begin{migrationbox}{from listener variables to values}
+\begin{migrationbox}{From Listener Variables to Values}
 During migration, look for private fields that are changed by listeners and read
 by other listeners. If the field represents one screen fact, replace it with a
 \api{SimpleValue}. If it represents several facts, introduce a named model
@@ -437,7 +437,7 @@ instead.
 
 \textbf{Worked example.}
 
-\begin{examplebox}{core values}
+\begin{examplebox}{Core Values}
 \coreExample{} creates selected-customer state, derived status text, and scoped
 cleanup. The example is deliberately Swing-free so the state contract can be
 tested directly before a component binding is introduced.
@@ -644,7 +644,7 @@ value and later modified in place, no setter call occurs and no value event is
 published. For changing collections, use an observable list. For scalar values,
 prefer immutable records, ids, enums, or small state objects.
 
-\begin{pitfallbox}{mutable payloads in scalar values}
+\begin{pitfallbox}{Mutable Payloads in Scalar Values}
 A \api{SimpleValue<List<Row>>} does not become an observable list. If callers
 mutate the list in place, observers see no change event and derived values may
 remain stale. Use immutable list snapshots for scalar state, or use the
@@ -803,7 +803,7 @@ change. Using a scalar list snapshot is acceptable when the entire collection is
 loaded or replaced as one fact, but it is not the same as precise large-data
 updates.
 
-\begin{principlebox}{one abstraction per kind of change}
+\begin{principlebox}{One Abstraction per Kind of Change}
 Use a value for one changing scalar fact, an observable list for collection
 membership and ordering, a form model for editable field workflow, a command for
 an operation, and a task handle for background work. Confusion begins when one
@@ -1027,7 +1027,7 @@ EDT boundary, presenter writes a state value, derived values update status and
 enablement, bindings update components. This shape is slightly more vocabulary
 up front and much less guesswork later.
 
-\begin{migrationbox}{from callback mutation to model mutation}
+\begin{migrationbox}{From Callback Mutation to Model Mutation}
 When an asynchronous callback updates several Swing components, introduce a
 single state value for the result first. Then derive component-facing facts from
 that state. The callback should publish the model result, not become a second

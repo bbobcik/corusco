@@ -42,8 +42,8 @@ Figure~\ref{fig:java2d-vector-primitives} is intentionally simple. Its purpose i
 
 Figure~\ref{fig:java2d-scale-grid} shows the practical form of the same rule. A grid is a model-space idea: a set of positions with meaning. The rasterization of the grid is a device-space result: which pixels become dark, which pixels are antialiased, and how a one-unit stroke is sampled. When a component confuses these two questions, it may look perfect at 100 percent scale and slightly wrong everywhere else. The error is often too small to notice during development and large enough to make the application feel unprofessional on a user's monitor.
 
-\begin{examplebox}{java2d figures}
-\api{BookVisualFigures} contains the source for Figures~\ref{fig:java2d-vector-primitives} and~\ref{fig:java2d-scale-grid}. The screenshots are produced by \api{BookFigureGenerator} through \screenshotHarnessExample{}, which fixes the Look-and-Feel, window size, and output path for the book build.
+\begin{examplebox}{Java 2D Figures}
+The Java 2D figures use deterministic rendering states so scale, stroke, text, and rasterization decisions can be discussed without relying on a live desktop session. The same discipline applies to application screenshots and export previews.
 \end{examplebox}
 
 \textbf{The \api{Graphics2D} state machine.} A \api{Graphics2D} object is a mutable rendering context. It contains a transform, a clip, a paint, a stroke, a composite, a font, rendering hints, and several other pieces of drawing state. Every paint method receives a context owned by the caller. If a component changes that context and leaves it changed, later drawing may inherit an unexpected transform, color, alpha value, or clipping region.
@@ -327,7 +327,7 @@ Some caches should be invalidated by semantic changes and some by rendering chan
 
 This distinction helps performance work stay honest. If moving a window between monitors forces rebuilding a spatial index, the cache boundary is probably wrong. If changing a theme does not invalidate a raster background whose colors came from UI defaults, the cache boundary is definitely wrong. If increasing the application font does not invalidate text truncation, the cache boundary is incomplete. The renderer should make these relationships visible enough that a reviewer can ask which inputs affect pixels and which inputs affect only model geometry.
 
-Screenshot generation is a special profile, not merely a file output. A book figure should render with deterministic data, deterministic size, deterministic theme, and no wall-clock animation. It may still use the same geometry and painters as the live UI. This is valuable because screenshot examples then exercise real rendering code. It is dangerous only when the screenshot path silently changes geometry to make the picture pretty. A figure should be curated, but it should not be a different application.
+Screenshot generation is a special profile, not merely a file output. A useful visual test should render with deterministic data, deterministic size, deterministic theme, and no wall-clock animation. It may still use the same geometry and painters as the live UI. This is valuable because screenshot examples then exercise real rendering code. It is dangerous only when the screenshot path silently changes geometry to make the picture pretty. A screenshot should be curated, but it should not be a different application.
 
 The screenshot profile should also avoid environment-dependent surprises where possible. Fonts are the hardest part because desktop font availability and hinting can vary. A harness can choose a Look-and-Feel, size, and seeded data; it cannot make every platform rasterize text identically. The practical response is to keep screenshot assertions at the right level: use them to catch large layout, clipping, and overlap regressions, and use model or geometry tests for exact arithmetic. A screenshot is evidence, not the only proof.
 
@@ -341,7 +341,7 @@ The usual order is contract first, measurement second, optimization third. Defin
 
 Corusco does not replace Java 2D. It should not try. The rendering APIs are where shapes, text, images, transforms, and pixels are finally produced. What Corusco changes is the ownership of the facts that rendering consumes. Selection, validation severity, busy state, zoom, active tool, theme-derived resources, and table state should not be discovered by interrogating arbitrary widgets during painting. They should live in explicit models and descriptors.
 
-\begin{coruscobox}{facts before pixels}
+\begin{coruscobox}{Facts Before Pixels}
 Corusco helps custom painting by keeping semantic state observable and lifecycle-owned. The Java 2D code still chooses shapes, transforms, colors, strokes, and caches, but it receives cleaner inputs: values, problem sets, descriptors, commands, resources, and stable lifecycle scopes instead of hidden component side effects.
 \end{coruscobox}
 
@@ -351,7 +351,7 @@ The benefit is not merely less code. It is fewer coordinate mistakes. When a val
 
 Zoom is another presentation value. A diagram component can expose a \api{WritableValue<ViewTransform>} or a more specific zoom-and-pan model. The mouse wheel behavior updates the value. The toolbar zoom combo updates the value. The renderer observes it. Hit testing uses it. A generated binding or behavior scope owns the subscriptions. When the component is removed, the subscriptions close. The alternative is a set of listeners installed in several places, each with its own idea of scale.
 
-\begin{migrationbox}{from fields to view state}
+\begin{migrationbox}{From Fields to View State}
 In plain Swing, custom components often store \api{double scale}, \api{int originX}, selected object ids, and cache flags as private mutable fields. A Corusco-oriented screen promotes durable presentation facts to observable values and keeps rendering caches as derived, disposable implementation details.
 \end{migrationbox}
 
@@ -373,7 +373,7 @@ Testing improves when these boundaries are clean. A core test can assert that in
 
 \section{Worked Example: A Scale-Aware Canvas}
 
-Consider a small planning screen that shows work items on a two-dimensional canvas. Each item has an identifier, a rectangular logical extent, a title, a validation severity, and perhaps a dependency line to another item. The user can zoom, pan, select, and hover. The same scene appears in a scrollable Swing component, in a print preview, and in a screenshot used by the book examples. This is not a graphics application in the artistic sense; it is an ordinary business tool that happens to use custom drawing because a table would not explain the relationships well.
+Consider a small planning screen that shows work items on a two-dimensional canvas. Each item has an identifier, a rectangular logical extent, a title, a validation severity, and perhaps a dependency line to another item. The user can zoom, pan, select, and hover. The same scene appears in a scrollable Swing component, in a print preview, and in a screenshot used for review. This is not a graphics application in the artistic sense; it is an ordinary business tool that happens to use custom drawing because a table would not explain the relationships well.
 
 The first design decision is to keep the item geometry in model coordinates. An item at \(x=120\), \(y=80\), width \(160\), and height \(48\) is not "at pixel 120." It is at logical position 120 in the scene's coordinate system. The distinction seems pedantic until the user zooms to 150 percent or the application prints the scene. If item coordinates are model facts, zoom changes only the transform. If item coordinates are already pixels, every zoom operation must rewrite or reinterpret the model.
 
@@ -425,7 +425,7 @@ The busy state is part of the same scene. While loading, the canvas may draw an 
 
 Printing this canvas exposes hidden dependencies. A renderer that calls \api{component.getMousePosition()} cannot be printed meaningfully. A renderer that asks \api{getVisibleRect()} may be wrong when the print profile wants the whole scene. A renderer that uses live scroll bar values to compute model positions may produce only the current viewport. Printing should pass the intended bounds and profile explicitly, even if the screen path uses the same renderer underneath.
 
-Screenshot generation exposes different hidden dependencies. The screenshot harness can set FlatLaf, a deterministic size, and seeded data. It cannot make arbitrary timing deterministic if the screen starts background work during painting. It cannot make a renderer stable if the renderer uses wall-clock time for blinking. Book figures should therefore render a named state, not a live workflow in the middle of a race.
+Screenshot generation exposes different hidden dependencies. The screenshot harness can set FlatLaf, a deterministic size, and seeded data. It cannot make arbitrary timing deterministic if the screen starts background work during painting. It cannot make a renderer stable if the renderer uses wall-clock time for blinking. Screenshots should therefore render a named state, not a live workflow in the middle of a race.
 
 Accessibility should not be postponed until the painting is finished. If items are meaningful, the accessible context may need child objects or at least descriptions and bounds that correspond to the current transform. A screen reader does not consume pixels. It consumes names, roles, states, and coordinates. Keeping model geometry and transform logic explicit makes those answers possible. Painting-only code has nothing reliable to report.
 

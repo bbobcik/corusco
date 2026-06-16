@@ -103,7 +103,7 @@ single-purpose. A tiny screen may have only three listeners and still be
 unmaintainable if each one updates several unrelated facts. The question is
 whether the listener owns meaning that should live elsewhere.
 
-\begin{migrationbox}{sprawl to scope}
+\begin{migrationbox}{Sprawl to Scope}
 Group installed listeners and subscriptions under a lifecycle object. In Corusco Swing, a \api{BindingScope} or \api{BehaviorScope} says, "these relationships belong to this screen activation, and they close together."
 \end{migrationbox}
 
@@ -196,7 +196,7 @@ Good plain Swing can therefore be a migration path rather than a dead end.
 \label{fig:practice-listener-sprawl}
 \end{figure}
 
-\begin{examplebox}{practices}
+\begin{examplebox}{Practices}
 \practiceExample{} contrasts a local-listener form with a model-backed form and records the review questions each style creates.
 \end{examplebox}
 
@@ -266,7 +266,7 @@ whether the table moves to an empty loading state. Users can tolerate waiting
 when the screen remains truthful. They cannot reason about a window that lies
 about being ready.
 
-\begin{pitfallbox}{the fast database fallacy}
+\begin{pitfallbox}{The Fast Database Fallacy}
 The developer says the query is fast. The network says otherwise. The production database says otherwise. The user's VPN says otherwise. EDT policy should be based on worst plausible latency, not the developer's local happy path.
 \end{pitfallbox}
 
@@ -318,7 +318,7 @@ observe, cancel or detach, publish on the EDT, close with the screen.
 
 A table column view index is a current visual coordinate. It is not a stable application id. Persisting column 3 because it currently displays "Status" breaks when columns move, localization changes, or a hidden column returns.
 
-\begin{coruscobox}{typed table descriptors}
+\begin{coruscobox}{Typed Table Descriptors}
 Corusco table descriptors give columns stable keys, resource keys, value types, defaults, and persistence ids. Swing still reorders and sorts, but application meaning no longer depends on current view indexes.
 \end{coruscobox}
 
@@ -439,7 +439,7 @@ composes it with validation and help. A renderer that passes this review is not
 only faster. It is less likely to carry visual residue from the last cell into
 the next one.
 
-\begin{pitfallbox}{renderer memory}
+\begin{pitfallbox}{Renderer Memory}
 A table renderer that stores "current row" in a field is almost always wrong. The same renderer instance is reused. Put row-specific state in the model or compute it during the rendering call.
 \end{pitfallbox}
 

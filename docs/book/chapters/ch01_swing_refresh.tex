@@ -154,7 +154,7 @@ Panels are also natural ownership boundaries. A panel that creates a table, sort
 
 A useful review question is: if this panel disappeared, what else should disappear with it? The answer may include listeners, commands, task handles, table state controllers, temporary models, or validation bindings. If the answer is "nothing", the panel may be only geometry. If the answer is long, the panel is a lifecycle owner and should be written as such.
 
-\begin{pitfallbox}{panel soup}
+\begin{pitfallbox}{Panel Soup}
 Too many panels can be as confusing as too few. A panel that exists only to compensate for an unclear layout constraint is a sign that the geometry should be redesigned. Use nested panels for different geometry, not as a substitute for understanding the parent layout.
 \end{pitfallbox}
 
@@ -196,7 +196,7 @@ The easiest listener bug is duplication. A Save button listener checks whether t
 
 The second listener bug is lifetime. A screen registers a listener on a service, then closes. The service remains alive and keeps the listener, which keeps the panel, which keeps the table, which keeps the model. The leak may be visible only after a day of opening and closing screens. A lifecycle scope is not decorative in this situation. It is the difference between "this relationship exists while the screen exists" and "this relationship exists until the process ends."
 
-\begin{migrationbox}{listener ownership}
+\begin{migrationbox}{Listener Ownership}
 Plain Swing gives you listener registration methods but does not force you to keep the removal handle. Corusco bindings and scopes make ownership visible: the code that installs a relationship receives an object that closes it.
 \end{migrationbox}
 
@@ -204,7 +204,7 @@ Plain Swing gives you listener registration methods but does not force you to ke
 
 A \termdef{model}{an object that stores state and emits change events} is not a philosophical luxury. A \api{JList} uses a \api{ListModel}; a \api{JTable} uses a \api{TableModel}; a text component uses a \api{Document}; a button may use an \api{Action}. Returning programmers often remember the widgets and forget how much of Swing's power is in these separations.
 
-\begin{coruscobox}{screen state}
+\begin{coruscobox}{Screen State}
 Corusco extends the model habit beyond Swing's built-in models. A field model owns raw text, parsed value, dirty state, and problems. A command owns identity, text, enabled state, and handler. A table descriptor owns column identity before a \api{JTable} exists.
 \end{coruscobox}
 
@@ -286,7 +286,7 @@ architecture imposed from outside.
 
 Returning programmers often remember action listeners but forget actions. The difference is architectural. A listener says "this particular button was pressed". An action says "the Save command was invoked". Mature applications are built from commands because users encounter the same operation through buttons, menus, context menus, keyboard shortcuts, toolbars, and sometimes accessibility actions.
 
-\begin{coruscobox}{commands beyond Swing Action}
+\begin{coruscobox}{Commands Beyond Swing Action}
 Corusco commands make action identity and resources toolkit-neutral. A Corusco command can be adapted to a Swing \api{Action}, but the command itself can be tested without a button and generated from annotated presenter methods.
 \end{coruscobox}
 
@@ -409,18 +409,18 @@ A good plain Swing baseline is not primitive code. It has named models where Swi
 
 The baseline is also a teaching tool. A developer should be able to write a small form, a table in a scroll pane, and a command button in plain Swing. Without that knowledge, a binding framework becomes superstition: code changes state because "the binding does something". The book therefore shows plain Swing first where the contract is important, then shows how Corusco names the same relationship and makes it easier to test or generate.
 
-\begin{migrationbox}{the first extraction}
+\begin{migrationbox}{The First Extraction}
 Move facts before mechanics. First extract stable ids, commands, field values, table columns, and validation results. Only then replace local listeners with Corusco bindings or generated companions.
 \end{migrationbox}
 
-\begin{examplebox}{refresh}
+\begin{examplebox}{Refresh}
 \refreshExample{} constructs a small FlatLaf-styled internal frame with a toolbar, form area, status label, and table. It is intentionally ordinary: its purpose is to show the component tree and EDT rule before Corusco abstractions appear.
 \end{examplebox}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.96\linewidth]{\refreshFigure}
-\caption{The refresh companion example rendered as a book figure. It is deliberately plain: toolbar, small form, table, scroll pane, and status label. The point is to see the component tree and ordinary Swing responsibilities before adding Corusco structure.}
+\caption{The refresh companion example is deliberately plain: toolbar, small form, table, scroll pane, and status label. The point is to see the component tree and ordinary Swing responsibilities before adding Corusco structure.}
 \label{fig:refresh-shell}
 \end{figure}
 
@@ -719,15 +719,15 @@ The rest is disciplined elaboration.
 That is a good place to begin again.
 And to continue with confidence.
 
-\begin{pitfallbox}{using old memory as an API}
+\begin{pitfallbox}{Using Old Memory as an API}
 Remembering that "Swing is single-threaded" is not enough. You must know which objects are Swing-confined, which models fire synchronously, which callbacks are invoked during mutation, and which helper code crosses threads.
 \end{pitfallbox}
 
-\begin{pitfallbox}{modernizing the wrong layer}
+\begin{pitfallbox}{Modernizing the Wrong Layer}
 Using records, virtual threads, or annotation processing does not repair an unclear component boundary. Modern Java helps when it makes ownership more explicit. It hurts when it hides the same old listener sprawl behind newer syntax.
 \end{pitfallbox}
 
-\begin{pitfallbox}{confusing visual simplicity with architectural simplicity}
+\begin{pitfallbox}{Confusing Visual Simplicity with Architectural Simplicity}
 A screen with three fields and two buttons may still contain command identity, validation timing, dirty state, resources, help, cancellation, and persistence. The visual surface is small; the behavior contract may not be.
 \end{pitfallbox}
 

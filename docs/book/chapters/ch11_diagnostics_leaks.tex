@@ -45,8 +45,8 @@ Figure~\ref{fig:diagnostics-watchdog} shows the kind of evidence this chapter wa
 \label{fig:diagnostics-watchdog}
 \end{figure}
 
-\begin{examplebox}{diagnostics figures}
-The diagnostics screenshots are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. The generated files are \diagnosticsWatchdogFigure{} and \diagnosticsTreeFigure. The chapter cites compact class and figure names so the PDF remains readable.
+\begin{examplebox}{Diagnostics Figures}
+The diagnostics figures show watchdog timing, leak lifecycle, and component-tree evidence as compact visual states. They are meant to make diagnostic facts reviewable, not to decorate the chapter.
 \end{examplebox}
 
 This chapter follows a plain-Swing-first order. We begin with the event queue and the watchdog because a frozen EDT disables almost every other diagnostic surface. We then examine repaint and layout churn, because visual cost is often scheduled in one place and observed in another. We turn to memory leaks, because listener ownership and timers can keep entire screens alive. Finally we join the topics through component-tree dumps, support bundles, Corusco scopes, and tests.
@@ -235,7 +235,7 @@ Animations should declare their frame budget. A blinking indicator, progress shi
 
 Look-and-Feel changes are useful stress tests. They alter fonts, borders, opacity assumptions, row heights, and UI delegate behavior. A screen that is barely stable under one Look-and-Feel may reveal layout churn or painting assumptions under another. When a visual defect appears only after a LAF switch, capture component bounds, UI class names, opacity, and repaint area before changing code.
 
-Screenshot generation can catch visual regressions before users do, but screenshots need semantic anchors. The harness should know which panel it renders, which data seed it uses, and which figure file it writes. If the image is blank, clipped, or produced at the wrong size, the build should fail or at least report a clear diagnostic. A stale screenshot silently included in a PDF is a documentation bug.
+Screenshot generation can catch visual regressions before users do, but screenshots need semantic anchors. The harness should know which panel it renders, which data seed it uses, and which state name it writes. If the image is blank, clipped, or produced at the wrong size, the test should fail or at least report a clear diagnostic. A stale screenshot silently reused in review is a documentation bug.
 
 \section{Leaks, Lifecycles, and Heap Evidence}
 
@@ -330,7 +330,7 @@ Behavior leaks are often noticed before memory leaks. A listener fires twice. A 
 
 The phrase "the screen owns it" should have code behind it. In plain Swing, that may be a presenter with a list of \api{Subscription} objects and timers. In Corusco, that may be a \api{SubscriptionScope}, \api{Disposable}, or \api{DetachableScope}. Generated bindings should install into a scope rather than scattering cleanup calls. Diagnostic dumps should be able to say which scope owns which installed behavior.
 
-\begin{coruscobox}{scopes make leaks visible}
+\begin{coruscobox}{Scopes Make Leaks Visible}
 Corusco scopes do not make object retention impossible. They make relationship ownership explicit. A binding, task callback, table state listener, or validation behavior can be installed into a scope, and the scope can be closed, counted, tested, and reported in diagnostics.
 \end{coruscobox}
 
@@ -396,7 +396,7 @@ The bundle should also say what it omitted. If file paths are redacted, report t
 
 Finally, support bundle creation itself should be observable. The command should report where the bundle was written, how large it is, which categories were included, and whether any category failed. A support action that silently fails because a log file is locked or a directory is unwritable creates a second incident. Treat diagnostics as a product feature with error handling, progress, cancellation when expensive, and tests.
 
-Screenshots are evidence too, but they need context. A screenshot without component names can show a red border but not which validation problem produced it. A screenshot without data policy can leak customer information. A screenshot without deterministic setup may vary between platforms. The book examples use deterministic panels and FlatLaf styling so figures can support text rather than merely illustrate it.
+Screenshots are evidence too, but they need context. A screenshot without component names can show a red border but not which validation problem produced it. A screenshot without data policy can leak customer information. A screenshot without deterministic setup may vary between platforms. Deterministic panels and FlatLaf styling let figures support text rather than merely illustrate it.
 
 Accessibility information belongs in diagnostics. Accessible name, description, role, and state often reveal whether the visual screen has a semantic counterpart. A button with a blank accessible name may also be hard to find in tests. A field whose visible label, accessible name, tooltip, and problem target disagree is a maintenance bug even if the screen looks acceptable to one user.
 
@@ -422,7 +422,7 @@ Corusco's diagnostic advantage comes from explicit relationships. A \api{Readabl
 
 In plain Swing, a screen often grows by adding listeners. A document listener updates the Save button. A table selection listener updates the detail panel. A property-change listener updates a status label. A timer refreshes a chart. A background callback updates a model. None of these is bad alone, but the relationships can become invisible. Corusco asks the program to name many of them as values, commands, bindings, scopes, and tasks.
 
-\begin{migrationbox}{from callbacks to owned relationships}
+\begin{migrationbox}{From Callbacks to Owned Relationships}
 When migrating a screen, do not begin by replacing every listener. Begin with the relationships that cross lifetimes or duplicate state: service subscriptions, table selection, validation, command enablement, and background delivery. Put those relationships into scopes first. Diagnostics improve before the screen is fully converted.
 \end{migrationbox}
 
@@ -440,7 +440,7 @@ Generated component keys help connect screens, tests, and support bundles. A scr
 
 Conflict detection is a diagnostic feature. If two behaviors try to own the same tooltip, border, enabled state, or input binding, the program should know that. Silent overwrites create bugs that appear as timing or ordering mysteries. A generated behavior plan can report phases and installed behaviors so that a reader sees which feature owns which visual effect.
 
-The screenshot harness belongs in this chapter because visual documentation should be reproducible. A book figure that cannot be regenerated is a picture, not an example. The harness fixes Look-and-Feel, component size, seeded data, layout, and output path. A screenshot test may not compare every pixel, but it can assert that the expected component tree exists and that the generated image is nonempty.
+The screenshot harness belongs in this chapter because visual diagnostics should be reproducible. A figure that cannot be regenerated is a picture, not an example. The harness fixes Look-and-Feel, component size, seeded data, layout, and output path. A screenshot test may not compare every pixel, but it can assert that the expected component tree exists and that the generated image is nonempty.
 
 Core-only tests are still the cheapest diagnostics. A value mapping test, validation test, command enablement test, task-generation test, or table descriptor test can run without opening a window. Use Swing tests when the behavior genuinely depends on component hierarchy, focus, editing, or painting. The testing split keeps diagnostics fast and makes the remaining Swing tests meaningful.
 
@@ -452,7 +452,7 @@ Diagnostics also need vocabulary stability. If one screen calls a closed relatio
 
 The strongest diagnostic posture is preventive. During code review, ask which objects are long-lived, which are short-lived, which references cross that boundary, which tasks can finish late, which model events are broad, and which visual changes trigger layout or repaint. This review catches ordinary leaks and storms before a profiler or heap dump is needed.
 
-Book examples should obey the same rule. If an example appears in a screenshot, it should have deterministic data and a regeneration path. If it demonstrates a model concept, it should have a model-level test. If it demonstrates cleanup, it should expose a diagnostic that proves cleanup happened. The examples are not throwaway illustrations; they are small laboratories for the chapter's claims.
+Examples should obey the same rule. If an example appears in a screenshot, it should have deterministic data and a regeneration path. If it demonstrates a model concept, it should have a model-level test. If it demonstrates cleanup, it should expose a diagnostic that proves cleanup happened. The examples are not throwaway illustrations; they are small laboratories for the chapter's claims.
 
 Generated code should be inspectable during diagnostics. A generated binding companion that installs five behaviors should have names that appear in failure reports and source locations that appear in compiler diagnostics. When generated code fails silently, it becomes harder to debug than hand-written listener code. When it reports declarations, keys, phases, and generated class names, it becomes a precise part of the system.
 
@@ -460,7 +460,7 @@ A diagnostic API should avoid making tests brittle. Expose stable facts, not inc
 
 Operational diagnostics and developer diagnostics can share mechanisms while using different policies. Development may throw on EDT violations, sample repaint stacks, and fail tests for missing keys. Support mode may collect warnings, redact data, and allow the user to continue. The distinction is policy, not architecture. The same named relationships feed both.
 
-\begin{coruscobox}{what Corusco changes}
+\begin{coruscobox}{Named Diagnostic Relationships}
 Corusco does not make Swing bugs disappear. It gives names and owners to relationships that plain Swing leaves implicit: values, commands, problems, descriptors, bindings, scopes, task handles, and generated keys. Diagnostics become smaller because the program can already state what exists.
 \end{coruscobox}
 
@@ -476,7 +476,7 @@ The fourth drill is a component-tree drill. Add a diagnostic action that dumps t
 
 The fifth drill is a stale-result drill. Start two background loads in quick succession and make the first finish last. Without generation checking, the older result may overwrite the newer state. With generation checking or cancellation, the older result is ignored and reported. The diagnostic record should show both generations so the behavior is not mysterious.
 
-Use the following checklist in code review and before relying on a screen in the book examples.
+Use the following checklist in code review and before relying on a screen as an example.
 
 \begin{itemize}
 \item Important commands, components, table columns, problems, and tasks have stable ids.

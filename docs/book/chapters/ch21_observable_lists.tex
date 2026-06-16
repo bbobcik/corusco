@@ -41,7 +41,7 @@ subscription.close();
 The list is still an ordinary indexed data source. The important addition is
 that mutations are observable as facts, not merely as "something changed".
 
-\begin{principlebox}{tell the truth about change}
+\begin{principlebox}{Tell the Truth About Change}
 Large-data Swing programming begins with honest events. If one row changed,
 report one row. If a batch inserted ten rows, report the inserted range. Use a
 reset only when the program really cannot describe the difference.
@@ -132,7 +132,7 @@ change into \api{fireTableRowsDeleted}; a replaced change into
 \api{fireTableRowsUpdated}; a clear into a deletion range or reset according to
 the model's state.
 
-\begin{pitfallbox}{indexes are temporal}
+\begin{pitfallbox}{Indexes Are Temporal}
 Indexes inside a change describe the list at a particular point in the ordered
 change stream. Do not collect indexes from several changes and apply them later
 without respecting order.
@@ -185,7 +185,7 @@ out rows. A row filter reads values through view indexes. A search listener
 rebuilds the entire table model on each keystroke. Corusco's core view keeps
 the filter before Swing and makes the relationship testable.
 
-\begin{migrationbox}{filter before rendering}
+\begin{migrationbox}{Filter Before Rendering}
 If a renderer contains business filtering logic, move that logic into a filtered
 row source or table row sorter policy. Renderers should present visible rows,
 not decide which rows exist.
@@ -336,7 +336,7 @@ Use this when an application already depends on GlazedLists or needs its
 advanced list machinery. The boundary remains important: decide which library
 owns filtering, sorting, threading, and disposal. Adapt deliberately.
 
-\begin{coruscobox}{interop instead of replacement}
+\begin{coruscobox}{Interop Instead of Replacement}
 Corusco's observable-list contract is a presenter and binding contract. It can
 own storage directly or adapt a mature external event-list source such as
 GlazedLists. The goal is not to force every application through one collection
@@ -412,7 +412,7 @@ table, adapted to a list, or used by a generated table companion.
 
 \textbf{Worked example.}
 
-\begin{examplebox}{large data}
+\begin{examplebox}{Large Data}
 \largeDataExample{} builds a deterministic row set, shows it through a table,
 and separates row generation from Swing display. Use it as a base for
 screenshot-scale tables and for model-level tests that run without a visible
@@ -592,7 +592,7 @@ internal list and another object mutates it directly, the observable-list
 contract is broken. Mutations must pass through the list's explicit methods so
 events can remain truthful.
 
-\begin{pitfallbox}{do not mutate behind the observable list}
+\begin{pitfallbox}{Do Not Mutate Behind the Observable List}
 If some code keeps a reference to the backing collection and modifies it
 directly, subscribers do not receive a truthful change set. Treat the observable
 list's mutation methods as the only public mutation path.

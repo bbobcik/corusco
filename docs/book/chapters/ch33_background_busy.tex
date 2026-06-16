@@ -127,7 +127,7 @@ responding" behavior. If the callback then performs another two-second query
 on the EDT, the benefit is lost. The boundary must stay clean all the way to
 result application.
 
-\begin{principlebox}{busy is not a spinner}
+\begin{principlebox}{Busy Is Not a Spinner}
 Treat busy as modeled interaction policy: which operation is running, who owns
 it, what can be cancelled, what input is incompatible, what result is current,
 and how success, failure, and cancellation are shown.
@@ -535,7 +535,7 @@ conversation as command enablement. Both are policies about what the user may
 do while work is in progress. One policy acts through actions and buttons; the
 other acts through the event stream reaching the component subtree.
 
-\begin{pitfallbox}{overlay without policy}
+\begin{pitfallbox}{Overlay Without Policy}
 A decorative overlay that does not block incompatible input may make the screen
 look busy while still allowing duplicate edits. Decide whether the operation
 should block input, and implement that policy explicitly.
@@ -579,7 +579,7 @@ The layer UI itself is deterministic. It paints a translucent cover with
 \api{AlphaComposite.SrcOver}, uses a wait cursor while busy, and consumes mouse,
 mouse-motion, mouse-wheel, key, and focus input events while busy. It avoids
 animation. This is a deliberate documentation and testing choice. A deterministic
-overlay can be captured in book screenshots, tested with a small offscreen
+overlay can be captured in screenshots, tested with a small offscreen
 image, and reasoned about from state alone. Applications can add animated
 progress elsewhere when product design requires it.
 
@@ -973,7 +973,7 @@ The same scenario also explains why examples should use FlatLaf and MigLayout
 without becoming decorative. The table, detail form, toolbar, and status area
 are ordinary Swing surfaces. MigLayout gives dense, predictable arrangement.
 FlatLaf gives modern component metrics and disabled-state rendering. Corusco
-adds the state and lifecycle relationships. The book screenshots should show
+adds the state and lifecycle relationships. The screenshots should show
 the combined result: not just a spinner, but a screen whose busy state is
 visibly and behaviorally coherent.
 
@@ -1074,7 +1074,7 @@ Failure disappears in logs only & Which user-visible failure state should be set
 
 \textbf{Worked example.}
 
-\begin{examplebox}{background work}
+\begin{examplebox}{Background Work}
 \modernJavaExample{} demonstrates virtual-thread background work with explicit
 EDT handoff. The Swing task examples in \api{corusco-examples} show busy overlay
 binding and service-level busy state.

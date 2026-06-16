@@ -47,8 +47,8 @@ A runnable posted with \api{invokeLater} runs after pending events that are ahea
 
 Figure~\ref{fig:edt-eventqueue-boundary} is the picture to keep beside every threaded Swing review. Input events, timer ticks, repaint requests, invocation events, and worker completions all compete for the same visible heartbeat. The queue is the gate through which work reaches the EDT. The live Swing graph is the object being protected. A worker that carries an immutable snapshot toward the queue respects the boundary. A worker that keeps a reference to the table model and mutates it directly has bypassed the gate.
 
-\begin{examplebox}{edt-eventqueue-boundary}
-\api{BookFigureGenerator} renders Figure~\ref{fig:edt-eventqueue-boundary} from a deterministic Swing panel in \api{BookVisualFigures}. The example exists to keep the diagram under the same FlatLaf and screenshot harness as the rest of the book.
+\begin{examplebox}{EDT EventQueue Boundary}
+Figure~\ref{fig:edt-eventqueue-boundary} uses a deterministic Swing panel so the event-queue boundary is shown as a concrete UI contract rather than as a detached diagram.
 \end{examplebox}
 
 The figure also shows why "I used \api{invokeLater}" is not a complete design argument. A background task may post a callback correctly and still post far too many callbacks. A modal dialog may enter a nested dispatch loop and let other work run before the surrounding method resumes. A timer may interleave with a command in a way that is perfectly legal and still surprising. The phrase \api{invokeLater} answers "which thread will run this runnable?" It does not answer "is the state still current?", "was the work batched?", "who owns cancellation?", or "what happens if the screen closes first?"
@@ -182,7 +182,7 @@ Corusco's task services are meant to make this contract explicit. A core task se
 
 The application should also decide what "busy" means. Some work blocks one command. Some work blocks a form. Some work blocks an entire screen because stale interaction would be dangerous. Some work should not block anything because it is merely refreshing secondary information. If busy state is only a disabled button, this policy is invisible. If busy state is a named value or task handle, the policy can be reviewed and tested.
 
-\begin{coruscobox}{task handoff}
+\begin{coruscobox}{Task Handoff}
 Plain Swing gives the primitives: a worker mechanism, an event queue, component methods, and model events. Corusco's contribution is to make the handoff a named design object. A task handle can expose running, failed, cancelled, and completed state. A scope can say whether the screen is still alive. A generation value can say whether the completion is still current. A Swing delivery adapter can make the callback's thread explicit. The result is not more magic; it is less hidden policy in listeners.
 \end{coruscobox}
 

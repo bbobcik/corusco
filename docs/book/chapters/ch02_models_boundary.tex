@@ -70,7 +70,7 @@ Swing models also show that adapters are legitimate. A \api{TableModel} may adap
 
 \textbf{The hidden cost of component-owned behavior.} Consider a form with three fields and a Save button. The simplest implementation adds document listeners to fields. Each listener parses text, sets an error label, and enables or disables Save. That implementation has three hidden costs. First, the validation result is not a value. It is an effect on a label. If a dialog summary later needs the same problem, the code must rediscover it or read it back from the label. Second, the Save enablement is not a value. It is an effect on a button. If a menu item also presents Save, it may drift. Third, the form result is not a model. It is assembled by scraping components at the moment OK is pressed. These costs compound. Listener code begins as glue and becomes the application. The cure is not to ban listeners. The cure is to make listeners connect components to owned state rather than make them the sole owners of behavior.
 
-\begin{pitfallbox}{scraping the UI}
+\begin{pitfallbox}{Scraping the UI}
 Reading every component at commit time is sometimes necessary, but it should not be the only representation of the screen. If validation, dirty state, command state, or tests need the same data before commit, scraping the UI has already failed as the main model.
 \end{pitfallbox}
 
@@ -93,7 +93,7 @@ This sketch is not yet a complete Corusco form or table setup. It is the basic m
 
 \textbf{Corusco's core boundary.} Corusco core is deliberately Swing-free. It contains values, lists, commands, forms, validation, problems, table descriptors, resources, help topics, tasks, and lifecycle contracts. The Swing module adapts these concepts to components. This division lets the same screen facts be tested and generated before Swing enters.
 
-\begin{coruscobox}{testability}
+\begin{coruscobox}{Testability}
 A Corusco form model can be tested without opening a window. A command can be enabled, disabled, and invoked without a button. A table descriptor can be reviewed without a column model. Swing tests then verify binding and component behavior, not every business rule.
 \end{coruscobox}
 
@@ -168,7 +168,7 @@ Bindings should be boring when the boundary is good. A text binding should not d
 
 \textbf{Plain Swing first.} The plain Swing baseline for a text field is a \api{DocumentListener}. The listener reads text, parses it, updates a label, and enables a button. This is serviceable until the same state must appear in a dialog summary, a table cell, a command, and a test.
 
-\begin{migrationbox}{from listeners to models}
+\begin{migrationbox}{From Listeners to Models}
 Replace "when the document changes, update everything nearby" with "the field model changes; bindings and commands observe it". This changes the review question from "which listener remembered this case?" to "which model owns this fact?"
 \end{migrationbox}
 
@@ -246,7 +246,7 @@ Master-detail screens also show why a presentation model can be smaller than it 
 
 \textbf{Disabled reasons.} Enabled state is not always enough. A command can be disabled because nothing is selected, because a task is running, because the user lacks permission, because the form is invalid, or because a prerequisite service is unavailable. Users and tests often need to know which reason applies. Plain Swing \api{Action} has enabled state but no standard disabled-reason model. Applications typically encode the reason in a tooltip or status label, if they encode it at all. A better presentation model can keep disabled reason as a value. A binding can then show it as tooltip text, status text, accessible description, or diagnostics.
 
-\begin{coruscobox}{disabled state}
+\begin{coruscobox}{Disabled State}
 Corusco commands can be surrounded by values and resources that explain command state. The button should not be the only object that knows Save is disabled.
 \end{coruscobox}
 
@@ -322,7 +322,7 @@ Only now rewrite listeners. The document listener should update a field model or
 
 This order gives small wins. Extracting search criteria improves tests even if the table remains old Swing. Extracting command state makes toolbar and menu behavior agree even if validation is still handwritten. Extracting selection identity fixes refresh bugs even before table descriptors arrive. A team can stop after any step and have a better screen.
 
-It also creates useful seams for examples. A book listing can show a small field model without rendering the whole dialog. A screenshot can show the same fact through text, tooltip, and command enablement. A test can assert that selection survives sorting without creating a frame. These examples are more educational than giant screens because each one demonstrates one boundary.
+It also creates useful seams for examples. A compact listing can show a small field model without rendering the whole dialog. A screenshot can show the same fact through text, tooltip, and command enablement. A test can assert that selection survives sorting without creating a frame. These examples are more educational than giant screens because each one demonstrates one boundary.
 
 The most common objection is that the refactoring introduces more objects. It does. The real comparison is not "one listener versus three classes"; it is "one listener plus all the rules hidden inside it versus named facts with tests." Small screens can keep small objects. Large screens need names because unnamed behavior is still behavior.
 
@@ -364,7 +364,7 @@ save.setEnabled(model.isCommittable() && !presenter.busy().value());
 
 The exact APIs will vary by chapter and Corusco version, but the architecture is the point. The field model owns field state. The command owns command state. Bindings own component synchronization. The presenter coordinates policy.
 
-\begin{examplebox}{core values}
+\begin{examplebox}{Core Values}
 \coreExample{} demonstrates observable value state outside Swing. Later chapters bind the same kind of state to components.
 \end{examplebox}
 

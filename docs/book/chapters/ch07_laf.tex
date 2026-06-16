@@ -26,7 +26,7 @@ The simplest rule is that a component should own what makes it a component, whil
 
 This does not mean that every custom component must have a custom UI delegate. Many application-specific components are semantic visualizations: a plot, a process map, a miniature calendar, a waveform. Their painting is part of their meaning. A delegate becomes attractive when the same component should adapt to several themes, when many instances share a visual policy, or when you want the component class to stay mostly behavioral.
 
-\begin{principlebox}{appearance belongs to a policy}
+\begin{principlebox}{Appearance Belongs to a Policy}
 If a visual choice is part of the application's theme, put it in \api{UIDefaults}, a UI delegate, or a documented client property. If it is intrinsic to the component's semantic visualization, put it in the renderer or visualization. Do not let accidental subclass painting become the theme system.
 \end{principlebox}
 
@@ -57,8 +57,8 @@ The same screen also has state. Figure~\ref{fig:laf-state-matrix} shows the usef
 \label{fig:laf-state-matrix}
 \end{figure}
 
-\begin{examplebox}{Look-and-Feel figures}
-The companion screenshots in this chapter are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. The screenshot harness is named \screenshotHarnessExample. The examples install \flatlaf{} first and use \miglayout{} for ordinary panels, so the figures show production-shaped screens rather than isolated toy controls. The figures cover ordinary component states, dense screen metrics, and the state-to-delegate ownership chain.
+\begin{examplebox}{Look-and-Feel Figures}
+The companion screenshots install \flatlaf{} first and use \miglayout{} for ordinary panels, so the figures show production-shaped screens rather than isolated toy controls. They cover ordinary component states, dense screen metrics, and the state-to-delegate ownership chain.
 \end{examplebox}
 
 The delegate boundary is most visible when the application tries to customize appearance through subclassing. A subclass of \api{JButton} that overrides \api{paintComponent} to draw a brand background may bypass focus indicators, disabled rendering, pressed state, default button state, and high-contrast colors. The code may be short, but it has silently accepted responsibility for behavior it does not understand.
@@ -160,7 +160,7 @@ Resource loading belongs beside defaults because icons and localized strings oft
 
 Corusco resource keys reduce that drift. A generated command descriptor can carry stable identity for text, tooltip, icon, shortcut, help topic, and enabled state. The Look-and-Feel still decides how a disabled toolbar button looks. The resource system decides what language and icon are attached to the command. The binding layer decides when the command is enabled. These are separate decisions even when they meet on one component.
 
-\begin{coruscobox}{resource identity and visual policy}
+\begin{coruscobox}{Resource Identity and Visual Policy}
 Corusco does not replace \api{UIDefaults}. It gives application concepts stable identities before they reach Swing. A validation severity can become a client property or behavior input; a resource key can supply text and icon; a command descriptor can supply role and shortcut. The Look-and-Feel then receives named facts rather than anonymous colors and listeners.
 \end{coruscobox}
 
@@ -310,7 +310,7 @@ Renderers complicate delegate reuse because a renderer component may be stamped 
 
 Install and uninstall symmetry is where many custom delegates fail. A property-change listener installed during \api{installUI} should be removed during \api{uninstallUI}. A timer should be stopped. A border installed by the delegate should be uninstalled or restored according to Look-and-Feel conventions. Keyboard actions should not accumulate after every theme switch.
 
-\begin{detailbox}{delegate ownership ledger}
+\begin{detailbox}{Delegate Ownership Ledger}
 For a custom delegate, list every resource installed in \api{installUI}: listeners, borders, keyboard actions, colors, fonts, timers, child components, and client-property listeners. Then list its uninstall point. Anything without a removal or restoration rule is a future leak or duplicate behavior.
 \end{detailbox}
 
@@ -328,7 +328,7 @@ For many applications, a system or third-party Look-and-Feel plus application de
 
 The delegate decision should therefore be conservative. Write a delegate when a component family has a reusable appearance contract. Use defaults when standard components already expose the desired policy. Use renderers when the visual difference belongs to data in cells. Use custom painting when the component is a semantic visualization. The wrong mechanism usually starts small and spreads quickly.
 
-\begin{pitfallbox}{subclassing to change paint only}
+\begin{pitfallbox}{Subclassing to Change Paint Only}
 Subclassing \api{JButton} just to draw a different background often bypasses Look-and-Feel behavior, focus indicators, disabled state, accessibility, and platform conventions. Prefer defaults, borders, icons, or a UI delegate unless the component's behavior is genuinely different.
 \end{pitfallbox}
 
@@ -395,7 +395,7 @@ Runtime theme switching should be tested with active screens, not empty controls
 
 A screenshot matrix does not have to be enormous. Choose states that combine independent concerns: selected plus invalid, focused plus disabled nearby, busy plus cancel command, compact plus long translation, dark theme plus warning, high-contrast-like colors plus focus. Each screenshot should answer a question a unit test cannot answer. If the screenshot merely proves that a button exists, it is probably too shallow for a book example.
 
-\begin{migrationbox}{from hard-coded visuals to theme-aware visuals}
+\begin{migrationbox}{From Hard-coded Visuals to Theme-aware Visuals}
 Begin by moving repeated colors, borders, icons, and density decisions into named defaults or resource keys. Then adjust renderers and delegates to read those names. Finally add screenshot states for enabled, disabled, focused, selected, invalid, busy, compact, and dark-theme variants. The migration is mechanical only after ownership is clear.
 \end{migrationbox}
 
@@ -437,7 +437,7 @@ Visual behaviors should have the same install ledger as UI delegates. If a behav
 
 Corusco does not make all visual choices automatic. The developer still decides whether validation is a border, icon, inline message, status row, tooltip, or summary. The difference is that the decision can be implemented once as a behavior and reused. The behavior can read Look-and-Feel defaults and application resource keys instead of hard-coded colors.
 
-\begin{coruscobox}{what Corusco changes}
+\begin{coruscobox}{Named Visual State}
 Plain Swing supplies the mechanisms: \api{UIDefaults}, client properties, renderers, delegates, actions, and listeners. Corusco supplies stable model facts, descriptors, scopes, and generated companion objects. The result is visual code that reacts to named state instead of rediscovering state by probing widgets.
 \end{coruscobox}
 
@@ -453,7 +453,7 @@ The screenshot harness becomes more valuable when state has identity. Instead of
 
 This is also the path away from screenshot-only examples. A book example should have a model-level test or smoke test whenever possible. The screenshot is then a byproduct of real state, not a hand-painted illustration. Readers can run the example, inspect the model, and see how Corusco reduces wiring.
 
-Generated screenshot names should be treated as part of the example contract. A chapter should cite \api{BookFigureGenerator} and compact class names, while the build script knows where files live. That keeps the PDF professional and keeps source movement cheap. A long absolute path inside a figure box is not documentation; it is an implementation leak.
+Screenshot names should be treated as part of the example contract. A useful name says which state is being rendered without exposing local file layout or transient tooling details. A long absolute path inside a report or figure box is not documentation; it is an implementation leak.
 
 MigLayout remains the ordinary layout recommendation in Corusco screens because generated and descriptor-backed UIs still need human-quality geometry. Code generation should not produce a layout that looks generated. Labels need baselines, fields need growth rules, command rows need platform-consistent grouping, and optional sections need collapse behavior. \miglayout{} gives the screen builder a compact grammar for those decisions.
 
@@ -511,7 +511,7 @@ The theme-switch drill should be run after the renderer reset drill. A renderer 
 
 If the second rendering differs for reasons other than the new theme policy, the renderer probably owns visual state that should have remained in defaults, component state, or the model, and that ownership should be corrected before the renderer is reused in a production table, dialog, or screen surface.
 
-\begin{detailbox}{review rule}
+\begin{detailbox}{Review Rule}
 The question "who owns this visual decision?" should have a concrete answer. Acceptable answers include Look-and-Feel default, application default, resource key, command descriptor, validation behavior, table descriptor, renderer semantic rule, and custom component delegate. "This panel happened to set it" is not an architecture.
 \end{detailbox}
 

@@ -35,6 +35,30 @@ consistently. The generated EPUB is
 `build/epub/Swing-with-Corusco.epub`. If `epubcheck` is available on `PATH`, the
 script runs it after generation; otherwise that validation step is skipped.
 
+To test whether a reader's Android TTS path honors hidden accessibility hints,
+build the experimental TTS-metadata variant:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-epub.ps1 -TtsMetadataExperiment
+```
+
+This writes `build/epub/Swing-with-Corusco-tts-metadata.epub`. The variant adds
+visually hidden short summaries before code blocks and marks the visible code
+blocks with accessibility metadata intended to discourage TTS from reading the
+raw code. Support depends on the EPUB reader; the normal EPUB output is
+unchanged.
+
+If the reader still speaks the raw code, build the spoken TTS variant instead:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-epub.ps1 -SpokenTts
+```
+
+This writes `build/epub/Swing-with-Corusco-spoken.epub`. It physically replaces
+code blocks with short visible summaries, which is more intrusive for visual
+reading but avoids leaving Java source text for simple reader-driven TTS engines
+to speak.
+
 ## Chapter volume audit
 
 Use the paragraph-volume audit after substantial drafting:

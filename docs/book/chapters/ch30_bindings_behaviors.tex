@@ -34,7 +34,7 @@ binding.close();
 The binding does not own \api{nameField} and does not own \api{form.name}. It
 owns the relationship it installed between them.
 
-\begin{principlebox}{relationship ownership}
+\begin{principlebox}{Relationship Ownership}
 If code installs synchronization between a component and a model, the same code
 path should expose a close handle for that synchronization.
 \end{principlebox}
@@ -175,7 +175,7 @@ callback when background work feeds a bound model.
 quietly installing a binding that sometimes updates a component from a worker
 thread.
 
-\begin{pitfallbox}{the core/swing split}
+\begin{pitfallbox}{The Core/Swing Split}
 A \api{ReadableValue} is toolkit-neutral. A \api{BindingFactory} method is
 Swing-specific. Do not expect the former to enforce the rules of the latter.
 \end{pitfallbox}
@@ -710,7 +710,7 @@ Without descriptors, installing two text bindings on the same field might
 appear to work until events bounce between two models. With descriptors, primary
 binding conflict is a defined error.
 
-\begin{coruscobox}{conflict detection}
+\begin{coruscobox}{Conflict Detection}
 Corusco behavior scopes detect duplicate single-cardinality behaviors and
 multiple primary bindings on the same component. The failure happens during
 installation, not after a user reports strange text-field behavior.
@@ -744,7 +744,7 @@ selection model, and so on. A component should not normally have two primary
 bindings. The behavior scope tracks this and throws a
 \api{BehaviorConflictException} when a second primary binding is installed.
 
-\begin{pitfallbox}{two masters}
+\begin{pitfallbox}{Two Masters}
 If one text field is bound to two text models, neither model is clearly the
 owner. Reject the plan; do not attempt to arbitrate with listener ordering.
 \end{pitfallbox}
@@ -772,7 +772,7 @@ This division is intentional:
 \item The presenter or form model owns state.
 \end{itemize}
 
-\begin{migrationbox}{from generated panel to generated behavior}
+\begin{migrationbox}{From Generated Panel to Generated Behavior}
 Do not require generation to own layout. Let MigLayout and the handwritten view
 own geometry. Let generated companions own the repetitive synchronization plan.
 \end{migrationbox}
@@ -1116,7 +1116,7 @@ assertThatThrownBy(() -> scope.install(nameField, List.of(
 
 \textbf{Worked example.}
 
-\begin{examplebox}{bindings}
+\begin{examplebox}{Bindings}
 \swingIntegrationExample{} contains direct bindings and behavior-style
 installation in compact form. Read it by following lifetimes: model lifetime,
 component lifetime, binding lifetime, and scope lifetime.

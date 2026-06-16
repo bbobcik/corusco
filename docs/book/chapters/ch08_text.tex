@@ -41,7 +41,7 @@ The document family has its own vocabulary. \api{PlainDocument} stores ordinary 
 
 \termdef{EditorKit}{the bundle that supplies document creation, actions, and a view factory for an editing mode} is the next level up. A full editor kit is a serious extension point, not a color hook. It becomes relevant when a text component needs a coherent content type: custom parsing, custom actions, custom views, serialization, and perhaps a specialized document.
 
-\begin{principlebox}{document first}
+\begin{principlebox}{Document First}
 For nontrivial text behavior, ask which layer owns it. Content mutation belongs near the \api{Document}; local syntactic constraints belong in a \api{DocumentFilter}; transient decorations belong in a \api{Highlighter}; persistent style may belong in a \api{StyledDocument}; key behavior belongs in actions and input maps; semantic validation belongs outside the widget.
 \end{principlebox}
 
@@ -60,8 +60,8 @@ Figure~\ref{fig:text-validation-state} shows this second truth: validation is no
 \label{fig:text-validation-state}
 \end{figure}
 
-\begin{examplebox}{Text figures and bindings}
-The screenshots in this chapter are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. Figures~\ref{fig:text-document-model}, \ref{fig:text-validation-state}, and~\ref{fig:text-mutation-pipeline} are generated Swing panels. The relevant runnable binding examples are \api{SwingBindingExample} and \api{BehaviorExample}; the screenshot harness is \screenshotHarnessExample. Class names are cited deliberately so the PDF does not contain fragile wrapped paths.
+\begin{examplebox}{Text Figures and Bindings}
+Figures~\ref{fig:text-document-model}, \ref{fig:text-validation-state}, and~\ref{fig:text-mutation-pipeline} use concrete Swing states to show document structure, validation state, and mutation flow. The related binding examples are \api{SwingBindingExample} and \api{BehaviorExample}.
 \end{examplebox}
 
 Text also has layout consequences. A \api{JTextField} computes a preferred size from its columns, font, margin, border, and UI delegate. A \api{JTextArea} inside a scroll pane contributes scrollable behavior. A text pane may become expensive to lay out when it contains many styled paragraphs. The later \miglayout{} chapter can align fields beautifully only if these components report honest sizes and are placed in sensible scrolling containers.
@@ -302,7 +302,7 @@ text on commit, the formatting may or may not be part of the user edit
 depending on the product. The chapter's rule is to decide, not to inherit the
 answer accidentally from whichever listener fired.
 
-\begin{detailbox}{listeners after, filters before}
+\begin{detailbox}{Listeners After, Filters Before}
 Use a \api{DocumentFilter} to control a mutation before it enters the document. Use a \api{DocumentListener} to observe the result and update other state. A listener that rewrites the same document on every event creates recursion and undo surprises; a filter that performs slow validation makes typing sluggish.
 \end{detailbox}
 
@@ -500,7 +500,7 @@ High-DPI rendering and font scaling matter because text is read, not admired. A 
 
 Testing international text does not require a complete translation project. Keep a small test set: accented Latin text, Czech or German labels with longer words, Arabic or Hebrew mixed with English, Japanese composition if an IME is available, emoji with skin-tone or joiner sequences, and combining marks. Run caret, deletion, selection, search, validation, and screenshot checks over that set.
 
-\begin{pitfallbox}{character equals char}
+\begin{pitfallbox}{Character Equals Char}
 Java \api{char} is a UTF-16 code unit, not a user-perceived character. Surrogate pairs, combining marks, emoji sequences, and bidirectional layout all break simple offset arithmetic. For many editor commands, use existing text component navigation or boundary analysis rather than subtracting one from the caret offset.
 \end{pitfallbox}
 
@@ -534,7 +534,7 @@ Parse is not validation. A converter for \api{BigDecimal} should report that \ap
 
 \api{ProblemSet} is the bridge from form state to visual treatment. A parse problem may become an inline message, tooltip, validation border, dialog summary, disabled OK button, table-cell marker, or test assertion. The text field should not directly decide all of those surfaces. It should expose structured state that behaviors can present consistently.
 
-\begin{coruscobox}{raw text without semantic damage}
+\begin{coruscobox}{Raw Text Without Semantic Damage}
 Corusco \api{TextFieldModel} preserves the user's raw text while protecting the last valid semantic value. Swing continues to provide the document and editor behavior; Corusco provides parse state, dirty/touched state, typed field identity, problems, and lifecycle-owned bindings. The result is less listener code and fewer accidental commits of invalid text.
 \end{coruscobox}
 
@@ -605,7 +605,7 @@ test should then verify that the same state appears through border, tooltip,
 inline message, or command disabled reason. This ladder from model to pixels is
 the recurring Corusco theme.
 
-\begin{migrationbox}{from document listeners to field models}
+\begin{migrationbox}{From Document Listeners to Field Models}
 Start with the existing \api{DocumentListener}. Identify the facts it updates: raw preview, parsed value, error label, command enablement, dirty flag, tooltip. Move raw text and parse state into a \api{TextFieldModel}. Move semantic validation into rules that produce \api{ProblemSet}. Bind the Swing document to the model, then bind visual surfaces to named state.
 \end{migrationbox}
 
@@ -704,7 +704,7 @@ trims old content. It can be written for a search field, with the difference
 that async search results need generation checks. Once the lifecycle is named,
 each text feature becomes a variation rather than a new pile of listeners.
 
-\begin{detailbox}{text review rule}
+\begin{detailbox}{Text Review Rule}
 A text feature is suspicious when it treats \api{getText} as the only truth. Ask about the document, raw text, semantic value, parse state, validation problems, undo, input methods, focus behavior, scrolling, and lifecycle. Not every feature needs every answer, but advanced code should know which questions it is intentionally not answering.
 \end{detailbox}
 

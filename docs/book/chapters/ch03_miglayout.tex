@@ -664,7 +664,7 @@ MigLayout begins with component size contracts. If a custom component reports a 
 
 This is the first bridge from Chapter~\ref{ch:components}. Parent constraints cannot repair a lying child. They can only decide how to use the child's reported sizes. When layout behaves strangely, inspect both sides: the component's preferred/minimum/maximum sizes and the parent constraints.
 
-\begin{pitfallbox}{fixing child lies in the parent}
+\begin{pitfallbox}{Fixing Child Lies in the Parent}
 It is possible to override sizes in MigLayout constraints, but doing so everywhere hides the real problem. If a reusable custom component always needs a better preferred size, fix the component. If one screen has a special visual policy, express that policy in the layout.
 \end{pitfallbox}
 
@@ -753,7 +753,7 @@ Button rows are not ordinary form rows. They represent decisions. In left-to-rig
 
 MigLayout can express command rows with \api{span}, \api{split}, \api{align right}, and push constraints. Corusco can supply the commands behind the buttons, but it should not decide the spatial convention. Layout remains part of application design.
 
-\begin{coruscobox}{commands and layout}
+\begin{coruscobox}{Commands and Layout}
 Use Corusco commands to remove duplicated action state. Use MigLayout to place the buttons. A generated command descriptor should not become a layout policy.
 \end{coruscobox}
 
@@ -917,7 +917,7 @@ The companion examples use \flatlaf{} because it gives consistent modern screens
 \textbf{Corusco and layout.}
 Corusco deliberately does not choose the layout. Generated form companions define fields, models, view contracts, and bindings. The application still builds the panel. This is the right division: generation should not become a GUI builder that hides geometry from the developer.
 
-\begin{coruscobox}{generated forms still need designed panels}
+\begin{coruscobox}{Generated Forms Still Need Designed Panels}
 Use generated view interfaces and binding facades to remove repetitive wiring. Use MigLayout to make the screen legible. The two tools solve different problems.
 \end{coruscobox}
 

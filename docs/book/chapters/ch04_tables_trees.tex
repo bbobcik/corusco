@@ -25,7 +25,7 @@ Use names such as \api{viewRow}, \api{modelRow}, \api{viewColumn}, and \api{mode
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.90\linewidth]{\largeDataFigure}
-\caption{A large-data table example rendered through the book screenshot harness. The table is visually ordinary on purpose: the interesting part is not decoration, but whether row identity, sorting, rendering, and update precision remain ordinary under load.}
+\caption{A large-data table example. The table is visually ordinary on purpose: the interesting part is not decoration, but whether row identity, sorting, rendering, and update precision remain ordinary under load.}
 \label{fig:large-data-table}
 \end{figure}
 
@@ -40,8 +40,8 @@ Figure~\ref{fig:large-data-table} is the kind of table that reveals bad contract
 
 Figure~\ref{fig:table-coordinate-systems} shows why a selected row must be converted before the model is consulted. A row sorter can move rows. A filter can hide rows. A column model can reorder columns. The table view is what the user sees now; the model is what the application stores; the domain identity is what should survive refresh. The three often point at the same object, but they are not the same thing.
 
-\begin{examplebox}{tables}
-\largeDataExample{} supplies the large table in Figure~\ref{fig:large-data-table}. \api{BookVisualFigures} supplies Figure~\ref{fig:table-coordinate-systems}, Figure~\ref{fig:table-refresh-identity}, and Figure~\ref{fig:tree-path-identity}. These figures are captured by \api{BookFigureGenerator} through \screenshotHarnessExample{} so the screenshots remain generated artifacts rather than detached illustrations.
+\begin{examplebox}{Tables}
+\largeDataExample{} supplies the large table in Figure~\ref{fig:large-data-table}. The related coordinate, refresh, and tree-path figures use the same deterministic-example discipline: show a concrete state, keep identity visible, and avoid decorative screenshots that cannot be tied back to behavior.
 \end{examplebox}
 
 The ordinary selection pattern is therefore conversion first, interpretation second. The code may feel longer than direct model access, but it documents the boundary. It also makes tests and reviews easier because every line says whether it is still in view space or has crossed into model space.
@@ -360,7 +360,7 @@ Tree accessibility depends on the same identity discipline. A screen reader need
 
 Corusco does not replace \api{JTable} or \api{JTree}. It gives the application a way to name the facts that Swing otherwise exposes as integer positions and ad hoc listeners. A Corusco table descriptor can name columns, value readers, value types, resource keys, renderer/editor hints, validation targets, persistence ids, and help topics before the Swing table is created. That metadata makes Swing's moving parts easier to review.
 
-\begin{coruscobox}{descriptors before indexes}
+\begin{coruscobox}{Descriptors Before Indexes}
 Corusco table support is valuable because column meaning becomes explicit. Swing may still reorder columns, sort rows, and reuse renderers, but application code can talk about descriptor keys, row identity, problem targets, resources, and table state rather than whatever visual index exists at the moment.
 \end{coruscobox}
 

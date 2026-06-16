@@ -51,11 +51,11 @@ Figure~\ref{fig:transfer-flavor-workflow} names the whole chain. A visible gestu
 \label{fig:transfer-flavor-workflow}
 \end{figure}
 
-\begin{examplebox}{Transfer figures}
-The transfer screenshots are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. The screenshot harness is \screenshotHarnessExample. The figures deliberately cite compact class names rather than full paths, so the PDF documents the example contract without exposing repository layout. The three transfer figures capture drop feedback, import progress, and the flavor-to-workflow boundary.
+\begin{examplebox}{Transfer Figures}
+The three transfer figures capture drop feedback, import progress, and the flavor-to-workflow boundary. Compact example names are enough; full local paths would only distract from the transfer contract.
 \end{examplebox}
 
-\begin{principlebox}{separate gesture from transfer}
+\begin{principlebox}{Separate Gesture from Transfer}
 Mouse events may initiate drag feedback, but \api{TransferHandler} owns the data exchange. The application model owns the meaning of imported data. Keep those layers separate or the first sorted table, native paste, or failed import will expose the shortcut.
 \end{principlebox}
 
@@ -341,7 +341,7 @@ Autoscroll is another piece of import feedback. Large lists and trees should scr
 
 Autoscroll also changes the meaning of "current location." While the viewport scrolls, the same screen coordinate can refer to a different model row. A handler that caches the first drop location during drag-over and reuses it at release can import into the wrong place. The current location should be recomputed or obtained from the support object at the moment of import. In custom components, keep the painted preview and the final request derived from the same coordinate conversion code so they do not drift.
 
-\begin{detailbox}{canImport should be cheap and honest}
+\begin{detailbox}{Import Checks Should Be Cheap and Honest}
 \api{canImport} may be called many times during drag feedback. It should inspect offered flavors, proposed action, and current drop location. It should not perform slow I/O or mutate model state. Expensive validation belongs in the import command or task, where progress and failure can be reported.
 \end{detailbox}
 
@@ -408,7 +408,7 @@ Progress should name useful units. "Importing..." is weaker than "Parsed 4,800 o
 
 Diagnostics are part of production transfer. Support teams need to know which flavor was chosen, which file failed, which row was rejected, and whether the import was cancelled. Logging every copied value may violate privacy, so diagnostics should record metadata and problem summaries rather than blindly dumping payloads.
 
-\begin{pitfallbox}{blocking import feedback}
+\begin{pitfallbox}{Blocking Import Feedback}
 The user experiences drag feedback as live UI. Do not perform slow validation inside \api{canImport}, and do not parse large files on the EDT inside \api{importData}. Create an import request and report progress through ordinary application state.
 \end{pitfallbox}
 
@@ -462,7 +462,7 @@ Generation counters are a simple protection for transfer workflows. If import A 
 
 Typed keys help with transfer targets. A row problem can target a domain row and column. A field problem can target an import option. A command descriptor can provide resource-backed text for "Import selected rows" and help. The target can be stable even while the visible table is sorted or filtered. This is the same stable-identity lesson from tables applied to imported data.
 
-\begin{coruscobox}{what Corusco changes}
+\begin{coruscobox}{Transfer Workflow State}
 Swing handles desktop transfer mechanics. Corusco gives the resulting application facts stable homes: imported rows in observable lists, import failures in \api{ProblemSet}, copy and paste as commands, slow parsing in task services, and cleanup in scopes. The transfer handler becomes a boundary adapter rather than the whole workflow.
 \end{coruscobox}
 
@@ -480,7 +480,7 @@ Generated companions can help here too. A generated table descriptor can expose 
 
 There is also a useful migration path. First, move import logic out of mouse listeners into a command or service. Next, make the transfer handler create immutable import requests. Then publish accepted rows through observable lists and rejected rows through problem sets. Finally, bind progress and command state to the UI. The screen becomes easier to reason about at each step.
 
-\begin{migrationbox}{from drag callbacks to import workflow}
+\begin{migrationbox}{From Drag Callbacks to Import Workflow}
 Replace ad hoc mouse-driven transfer with a \api{TransferHandler} that negotiates flavors and creates an import request. Let a command or task validate and publish results. Use observable lists for accepted data, \api{ProblemSet} for rejected data, and command state for Copy, Paste, Import, and Cancel. Keep visual drop feedback separate from model mutation.
 \end{migrationbox}
 
@@ -540,7 +540,7 @@ A useful code review can walk the feature in protocol order. First inspect the s
 
 When the implementation is mature, the reviewer should be able to ask for one requirement change and predict the edit location. "Add spreadsheet paste" should touch flavor choice and parser tests. "Reject duplicate customer ids" should touch validation and problem targeting. "Show cancel progress" should touch task state and command state. "Keep source selection after copy" should touch source selection restoration. If every change points back to one large handler, the chapter's boundary lesson has not yet been applied.
 
-\begin{detailbox}{transfer review rule}
+\begin{detailbox}{Transfer Review Rule}
 A transfer feature has three checkpoints: desktop format negotiation, application validation, and model publication. If all three are implemented inside one mouse listener or one table handler, the feature is probably too tangled to test well.
 \end{detailbox}
 

@@ -71,7 +71,7 @@ persistence may know a localized header. Export may scrape renderer text.
 Descriptor-backed tables force these meanings into one typed contract before
 Swing is asked to display anything.
 
-\begin{pitfallbox}{the integer that lied}
+\begin{pitfallbox}{The Integer That Lied}
 An integer table coordinate is a position, not an identity. It can answer
 "where is this column or row now?" It cannot safely answer "which business fact
 is this?"
@@ -240,7 +240,7 @@ stronger than guessing help from the current header text. It also lets a
 command palette, documentation generator, or accessibility adapter discover
 help metadata without walking Swing components.
 
-\begin{coruscobox}{what the descriptor buys}
+\begin{coruscobox}{What the Descriptor Buys}
 The descriptor gives one durable place for row type, column identity, resource
 keys, help topics, value extraction, editing behavior, default widths,
 persistence ids, capabilities, generated tests, and documentation references.
@@ -283,7 +283,7 @@ becomes \api{fireTableRowsDeleted}. A replacement becomes
 source precision matters. The model cannot fire precise Swing events if the
 row source reports every small edit as "clear and refill everything."
 
-\begin{coruscobox}{list precision becomes table precision}
+\begin{coruscobox}{List Precision Becomes Table Precision}
 Corusco tables are not faster because they ignore Swing. They are faster and
 more stable when observable row sources report precise changes that Swing can
 translate into precise table events.
@@ -588,7 +588,7 @@ state inside renderer components. A renderer cost that seems trivial for one
 cell is paid for many visible cells and repeated repaints. Keep validation,
 service calls, filtering, and remote lookups out of renderers.
 
-\begin{pitfallbox}{renderer work is multiplied}
+\begin{pitfallbox}{Renderer Work Is Multiplied}
 A renderer cost that seems trivial for one cell is paid for many visible cells
 and repeated repaints. Keep validation, service calls, and row filtering out
 of renderers.
@@ -682,7 +682,7 @@ adapt the existing row list to an observable list. Then install
 Then add table state by stable ids. Then add tooltip, validation, export, and
 generated resources as needed. Each step should reduce one hidden convention.
 
-\begin{migrationbox}{from JTable conventions to descriptors}
+\begin{migrationbox}{From JTable Conventions to Descriptors}
 Do not migrate by rewriting every table at once. Migrate one table contract:
 row type, column keys, descriptor, observable model, selection binding, and
 state persistence. Keep the visible table recognizable while the internal

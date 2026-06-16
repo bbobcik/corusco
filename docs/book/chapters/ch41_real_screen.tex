@@ -44,7 +44,7 @@ architecture should be strong enough for the tenth concern.
 Figure~\ref{fig:bookapp-workspace-screens} is a visual contract. The table is
 not a placeholder for a future web grid. The detail form is not a mockup. The
 screen is a real Swing surface whose layout, components, and state can be
-constructed on the EDT, tested, and captured into the PDF. The chapter will
+constructed on the EDT, tested, and reviewed as a deterministic screenshot. The chapter will
 speak about generated form models, command descriptors, task services, and
 table-state controllers, but the reader should keep the visible workspace in
 mind. The abstractions are justified only if this kind of screen remains
@@ -92,9 +92,9 @@ There is also a reading contract. A future maintainer should be able to open
 the workspace and find the main facts quickly. The row type should be visible.
 The generated table descriptor should be visible. The form model should be
 visible. The command set should be visible. The task boundary should be
-visible. The view layout should be visible. The screenshot harness should be
+visible. The view layout should be visible. The visual test state should be
 visible. If understanding the screen requires following anonymous listeners
-through component construction order, the code may work but the chapter's
+through component construction order, the code may work but the design
 standard has not been met.
 
 \section{Stable facts before components}
@@ -215,7 +215,7 @@ column headers, tooltips, help topics, widths, and persistence ids. A generated
 action descriptor can carry command text, tooltip, mnemonic, accelerator, and
 selectable state.
 
-\begin{principlebox}{facts first}
+\begin{principlebox}{Facts First}
 Declare stable facts before constructing visible components. A screen that
 starts with keys, descriptors, models, and commands can change layout and text
 without losing meaning.
@@ -942,7 +942,7 @@ Wrap background work in task services. Add lifecycle scopes around listeners.
 Each step should reduce one class of hidden coupling while keeping the screen
 recognizable to users.
 
-\begin{migrationbox}{screen migration}
+\begin{migrationbox}{Screen Migration}
 Migrate by ownership, not by visual region. A row descriptor, command model,
 form model, or task boundary can improve a legacy screen without redesigning
 the whole view at once.
@@ -956,7 +956,7 @@ the best defense against both overuse and underuse. Use the library where
 repetition hides a stable concept. Keep application code where the domain
 decision is genuinely specific.
 
-\begin{examplebox}{book application}
+\begin{examplebox}{Book Application}
 \bookAppExample{} assembles the book's preferred screen shell with MigLayout,
 FlatLaf-oriented construction, deterministic table rows, and a detail form. It
 is the screenshot-oriented seed for the larger customer workspace described in
@@ -1102,8 +1102,8 @@ code. Generated resource keys make this easier, but only if naming is
 systematic. A resource map for the workspace can group command text, form
 labels, table headers, tooltips, disabled reasons, validation messages, and
 help hints. Tests can require the keys that must exist. Screenshot fixtures can
-use the same resource map so the PDF shows the text that the example actually
-resolves.
+use the same resource map so the visible example shows the text that the
+screen actually resolves.
 
 Tests should follow the same ownership. A form-model test belongs near the
 form model or generated source example. A presenter test belongs near the
@@ -1114,12 +1114,10 @@ only enough structure to prove construction. One \api{CustomerWorkspaceTest}
 file may contain several of these slices in a small example, but a large
 application should let test files name the boundary they protect.
 
-Screenshot generation should not be hidden in a manual recipe. The book uses
-figure files under the TeX tree, but their source should remain in companion
-examples or figure generators. A developer should be able to find the Java
-source for a figure, run the harness, and understand which screen state is
-being captured. The caption and surrounding text should then mention the short
-example name, not a long filesystem path that wraps in the PDF.
+Screenshot generation should not be hidden in a manual recipe. A developer
+should be able to find the Java source for a visual example, run the harness,
+and understand which screen state is being captured. Captions and surrounding
+text should mention the short example name, not a long filesystem path.
 
 Avoid utility packages as dumping grounds. A helper that creates command
 buttons from descriptors may belong in a Swing support package. A helper that
@@ -1302,9 +1300,9 @@ Keep layout, workflow, permissions, rendering, dynamic options, and failure
 policy in handwritten code. The generated code should make the screen easier
 to inspect, not harder to question.
 
-The seventh failure pattern is screenshot drift. The book or application has a
+The seventh failure pattern is screenshot drift. The application or its documentation has a
 figure, but the figure is no longer generated from the example. The screen in
-the PDF shows different labels, spacing, or state from the current code. The
+the figure shows different labels, spacing, or state from the current code. The
 reader sees a polished image and learns an obsolete screen. Recovery starts by
 making screenshot generation part of the example workflow. Use deterministic
 data, fixed sizes, FlatLaf setup, and a generated figure path. Add at least a
@@ -1366,7 +1364,7 @@ request.
 header text and verify that state restoration still works.
 \item Close the view scope and assert that a later model change does not update
 disposed components.
-\item Generate a screenshot and include it in a local PDF build.
+\item Generate a screenshot and review it with the local documentation output.
 \end{enumerate}
 \end{exercisebox}
 

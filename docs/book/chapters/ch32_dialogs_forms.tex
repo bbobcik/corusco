@@ -164,7 +164,7 @@ successful Apply. These choices affect dirty baselines and undo policy. They
 should be decided before the first button listener is written, because the
 listener will otherwise smuggle in the policy one branch at a time.
 
-\begin{coruscobox}{What Corusco changes}
+\begin{coruscobox}{Explicit Modal Protocols}
 Plain Swing gives excellent building blocks for modal windows, but it leaves
 the modal protocol implicit. Corusco makes the protocol explicit: a
 \api{FormDialog} coordinates commit, validation, result creation, Apply,
@@ -369,7 +369,7 @@ tables below the root to stop any active table editing. A false return means an
 editor rejected the commit, so OK and Apply remain blocked and the controller
 stays open.
 
-\begin{pitfallbox}{the last edit bug}
+\begin{pitfallbox}{The Last Edit Bug}
 If a dialog loses only the final table-cell or formatted-field edit when OK is
 pressed, active-editor commit is missing from the OK path.
 \end{pitfallbox}
@@ -621,7 +621,7 @@ and behavior scopes are intentionally small so a screen can install several
 presentations that all read the same \api{ProblemSet}. The result is richer UI
 with less duplicated validation code.
 
-\begin{coruscobox}{What Corusco changes}
+\begin{coruscobox}{Structured Validation State}
 Corusco treats validation as structured state rather than scattered strings.
 The dialog controller asks whether the form is committable; validation bindings
 present problem state; focus resolvers translate problem targets into Swing
@@ -744,7 +744,7 @@ components remain responsible for local editing behavior. This is the same
 architecture as painting and layout throughout Swing: local components keep
 their contracts, and shared containers coordinate only the surrounding policy.
 
-\begin{pitfallbox}{two cancel paths}
+\begin{pitfallbox}{Two Cancel Paths}
 If Escape discards edits immediately but the Cancel button asks for
 confirmation, the dialog has two cancellation paths. Route both through the same
 cancel command.
@@ -858,14 +858,14 @@ it is an accident. Because Corusco encourages stable resource keys, the visual
 text can change without changing the layout code, but the layout still must be
 tested with realistic strings.
 
-The book's example references are intentionally short. The printed chapter
-should say \dialogExample{} or \dialogValidationExample{}, not a full package
-path that wraps across the page. The repository structure can move; the class
-name remains a readable entry point. The same convention should be used in new
-chapters: name the example by the didactic program, and let the examples index
-or build system point to its physical location.
+Example references should be intentionally short. A reader should see
+\dialogExample{} or \dialogValidationExample{}, not a full package path that
+wraps across the page. The repository structure can move; the class name
+remains a readable entry point. Use the same convention for new examples: name
+the example by the didactic program, and let the examples index or build system
+point to its physical location.
 
-\begin{examplebox}{dialogs}
+\begin{examplebox}{Dialogs}
 \dialogValidationExample{} and \dialogActiveEditorExample{} are the compact
 examples behind the dialog figures. They use ordinary Swing components and
 short Corusco controllers so that chapter listings can stay small.
@@ -989,7 +989,7 @@ registered. When the dialog closes, the scope should restore component state
 that it changed, such as borders, tooltips, input maps, and listener lists. A
 dialog should leave the application as if its temporary view had never existed.
 
-\begin{coruscobox}{What Corusco changes}
+\begin{coruscobox}{Modal Cleanup as a First-class Object}
 Corusco makes modal cleanup a first-class object. \api{FormDialogLifecycle}
 lets presenters register bindings, disposables, detachables, and task services
 beside one controller, then close the whole activation in a predictable order.
@@ -1115,7 +1115,7 @@ it describes dirty cancel, there should be a test or example that vetoes and
 confirms cancellation. The screenshot is evidence of presentation; the tests
 are evidence of behavior.
 
-\begin{examplebox}{dialogs}
+\begin{examplebox}{Dialogs}
 \dialogExample{} demonstrates base OK, Apply, and Cancel controller semantics.
 \dialogDirtyCancelExample{} covers dirty confirmation. \dialogKeyboardExample{}
 covers Escape and default-button wiring. \dialogLifecycleExample{} covers

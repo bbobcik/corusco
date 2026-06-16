@@ -61,6 +61,26 @@ pre code {
   white-space: pre-wrap;
 }
 
+.tts-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.tts-code-summary {
+  margin: 0.9em 0;
+  padding: 0.65em 0.8em;
+  border-left: 0.25em solid #777;
+  background: rgba(127, 127, 127, 0.1);
+  font-style: italic;
+}
+
 figure {
   margin: 1em 0;
   page-break-inside: avoid;

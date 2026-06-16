@@ -53,7 +53,7 @@ presenter class named \api{CustomerPresenter} may produce
 \api{CustomerPresenterActions}. The names are long enough to say what they are
 and regular enough to be guessed during review.
 
-\begin{principlebox}{generated means inspectable}
+\begin{principlebox}{Generated Means Inspectable}
 Generated code may be repetitive. It should not be mysterious. If a binding,
 descriptor, key, or command factory is surprising, open the generated source
 and read it like Java.
@@ -153,7 +153,7 @@ source element is still present. A modular application does not need to open
 packages for reflective scanners merely so a UI framework can discover
 annotations at runtime. The generated companions are the runtime API.
 
-\begin{pitfallbox}{runtime annotation nostalgia}
+\begin{pitfallbox}{Runtime Annotation Nostalgia}
 Do not write runtime code that searches for \api{@SwingForm},
 \api{@SwingTable}, or \api{@UiAction}. Runtime code should use generated
 companions. The annotations are compile-time inputs.
@@ -502,7 +502,7 @@ same column. If the generated column id changes accidentally, saved state may
 be lost or applied to the wrong column. This is why column ids and
 persistence ids are generated metadata, not visible labels.
 
-\begin{migrationbox}{rename the resource, not the column}
+\begin{migrationbox}{Rename the Resource, Not the Column}
 If a table header changes for copyediting or localization, change the header
 resource. Change a generated column id only when the column's durable identity
 has changed and a table-state migration has been considered.
@@ -550,7 +550,7 @@ names, export labels, and screenshot diffs. If a generated header key is
 missing, a table may still render something, but the screenshot will review a
 fallback rather than the intended UI. A table-resource test can iterate the
 generated resources companion and require all headers. This is cheap compared
-with debugging a PDF figure that silently used placeholder text.
+with debugging a screenshot that silently used placeholder text.
 
 A table descriptor is also a documentation object. A developer reading the
 generated descriptor can see which columns exist, their order, widths, value
@@ -821,17 +821,17 @@ source jars for debugging; that is different from treating generated output as
 hand-maintained source. The rule is not universal, but the policy should be
 explicit.
 
-Generated sources are also useful for documentation and examples. The book's
-companion examples compile annotated sources through the real processor. The
-chapter can then refer to \generationExample{} as an anchor without copying a
-long generated class into the text. If a listing needs to show generated
-shape, it should show a small excerpt and tell the reader which example
-produces the full source. This prevents the book from becoming a second,
-stale copy of generated output.
+Generated sources are also useful for documentation and examples. Companion
+examples should compile annotated sources through the real processor. The text
+can then refer to \generationExample{} as an anchor without copying a long
+generated class into prose. If a listing needs to show generated shape, it
+should show a small excerpt and tell the reader which example produces the
+full source. This prevents documentation from becoming a second, stale copy of
+generated output.
 
-\begin{examplebox}{generation}
-\generationExample{} is the navigation anchor for the book's generated
-customer example. The annotated records \api{CustomerEdit} and
+\begin{examplebox}{Generation}
+\generationExample{} is the navigation anchor for the generated customer
+example. The annotated records \api{CustomerEdit} and
 \api{CustomerRow} live in the same package. Their generated companions are
 emitted next to those source types during the \api{corusco-examples} build.
 \end{examplebox}
@@ -944,8 +944,8 @@ companion often contains constants that can be listed directly or through a
 small project convention. The test should require all mandatory labels and
 headers in the sample resource set. Optional tooltips may be resolved with
 fallbacks, but a missing required command text should fail before the screen is
-opened. This is especially important for the book examples, because PDF
-screenshots should show deliberate text rather than missing-resource markers.
+opened. This is especially important for visual examples, because screenshots
+should show deliberate text rather than missing-resource markers.
 
 \begin{figure}[htbp]
 \centering
@@ -1080,8 +1080,8 @@ Generated naming should avoid clever compression. A file named
 longer name is clearer and matches the vocabulary used elsewhere. Generated
 code is read in moments of uncertainty: when a build fails, a binding behaves
 strangely, or a test cannot find a key. Clear generated names reduce the cost
-of those moments. They also make book listings and documentation easier to
-write without long explanations.
+of those moments. They also make examples and documentation easier to write
+without long explanations.
 
 Migration from handwritten metadata should leave bridges only temporarily. It
 is acceptable to introduce generated field keys while an old presenter still

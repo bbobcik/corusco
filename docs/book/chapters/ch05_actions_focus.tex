@@ -55,8 +55,8 @@ execute the handler if appropriate, and update all presenters from the same
 state. When a program skips this route, commands begin to depend on whichever
 widget happened to hear the event first.
 
-\begin{examplebox}{actions}
-\api{BookVisualFigures} contains the command-surface, focus-traversal, and command-routing figures used in this chapter. The screenshots are produced by \api{BookFigureGenerator} through \screenshotHarnessExample{}, keeping keyboard and command examples tied to executable Swing panels.
+\begin{examplebox}{Actions}
+The command-surface, focus-traversal, and command-routing figures keep keyboard and command examples tied to executable Swing panels. Each figure shows a state that can be constructed deliberately: visible commands, focus order, and routing scope.
 \end{examplebox}
 
 \textbf{Action properties describe the command.} Standard properties include \api{Name}, \api{SMALL\_ICON}, \api{SHORT\_DESCRIPTION}, \api{ACCELERATOR\_KEY}, \api{MNEMONIC\_KEY}, and \api{SELECTED\_KEY}. Presenters listen to property changes and update themselves. Custom properties can be useful, but they should be documented because only presenters that know the property will honor it.
@@ -575,7 +575,7 @@ tests are not UI theater. They prove the command layer's contract.
 
 Corusco command descriptors make command identity, resources, help, enablement, selected state, shortcuts, and generated metadata explicit outside concrete Swing presenters. Swing's \api{Action} remains the adapter to buttons, menus, and key bindings. Corusco's value is that the command contract becomes inspectable and testable before a toolbar happens to exist.
 
-\begin{coruscobox}{commands as data}
+\begin{coruscobox}{Commands as Data}
 Corusco treats command identity, resource keys, help topics, shortcuts, enablement, selected state, and lifecycle as named model facts. The Swing \api{Action} is then a presenter adapter, not the only place where command meaning lives.
 \end{coruscobox}
 

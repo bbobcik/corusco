@@ -37,10 +37,10 @@ Figure~\ref{fig:testing-swing-screens} shows two tools that look visual but serv
 
 The split also changes how failures read. If a model test fails, the rule is wrong or the model event is wrong. If a generated-source test fails, the annotation processor contract changed or the input annotation is invalid. If a Swing binding test fails, the model and component are not connected correctly. If a table-state test fails, the persisted stable ids or view-to-model conversions are wrong. If a screenshot fails, the rendered screen changed. These are different diagnoses. A single full-window click test can discover that something changed, but it rarely tells the maintainer where to look first.
 
-Corusco is designed to make this division practical. Observable values, form models, problem sets, commands, table descriptors, behavior scopes, typed keys, and generated companions are all testable objects before they become pixels. Swing integration then has a smaller job: prove that the right object was connected to the right component, on the EDT, through a lifecycle that can be closed. The book's examples follow the same pattern. They compile and test model-level claims, then use screenshot generation to keep visual claims honest.
+Corusco is designed to make this division practical. Observable values, form models, problem sets, commands, table descriptors, behavior scopes, typed keys, and generated companions are all testable objects before they become pixels. Swing integration then has a smaller job: prove that the right object was connected to the right component, on the EDT, through a lifecycle that can be closed. Good examples follow the same pattern. They compile and test model-level claims, then use screenshot generation to keep visual claims honest.
 
-\begin{examplebox}{testing examples}
-\api{SwingMvpTesterExample} shows key-based component lookup and command invocation. \api{SwingMvpTesterProblemExample} shows typed problem assertions. \api{SwingMvpTesterBehaviorExample} shows behavior-scope assertions. \api{SwingMvpTesterTableExample} and \api{SwingMvpTesterTableStateExample} show table coordinate and state tests. \screenshotHarnessExample{} renders the figures used by the book.
+\begin{examplebox}{Testing Examples}
+\api{SwingMvpTesterExample} shows key-based component lookup and command invocation. \api{SwingMvpTesterProblemExample} shows typed problem assertions. \api{SwingMvpTesterBehaviorExample} shows behavior-scope assertions. \api{SwingMvpTesterTableExample} and \api{SwingMvpTesterTableStateExample} show table coordinate and state tests. \screenshotHarnessExample{} renders deterministic visual examples.
 \end{examplebox}
 
 \section{Core Tests Before Swing}
@@ -167,7 +167,7 @@ tester.enterText(NAME_FIELD, "Alice")
 JButton save = tester.requireComponent(SAVE_BUTTON);
 \end{lstlisting}
 
-Stable lookup is not only for tests. The same key can appear in screenshot diagnostics, behavior installation reports, accessibility review, and generated companion APIs. A failed assertion that says \api{customer/name-field} is missing is useful. A failure that says "expected a text field at index 3" is a small puzzle. A screenshot that labels components by key can help the book, a QA report, or a support tool discuss a screen without relying on translated text.
+Stable lookup is not only for tests. The same key can appear in screenshot diagnostics, behavior installation reports, accessibility review, and generated companion APIs. A failed assertion that says \api{customer/name-field} is missing is useful. A failure that says "expected a text field at index 3" is a small puzzle. A screenshot that labels components by key can help a QA report, support tool, or example discuss a screen without relying on translated text.
 
 Keys should name roles, not current labels. \api{customer/name-field} is a role. \api{nameLabelText} is a resource detail. \api{thirdSearchBox} is a layout accident. A role can survive layout changes, wording changes, and even component-class changes if the generated contract changes deliberately. Tests become less coupled to presentation noise while still catching real connection failures.
 
@@ -369,7 +369,7 @@ assertThat(compilation.diagnosticsAsText())
 
 Generated-source tests should be small. One source fixture should demonstrate one contract. A test for field-model generation should not also test action generation, table generation, help topics, and resource validation. Those features can interact in a complete application test later. At the processor level, small sources make diagnostics easier to read and generated output easier to inspect.
 
-Generated names need special attention because names become the bridge between documentation, IDE navigation, and tests. If \api{CustomerEditFormModel} is the generated model and \api{CustomerEditSwingBindings} is the generated binding companion, the names should be stable enough for the book to mention them. A naming change is sometimes justified, but it should break a generation test and force the documentation to be updated deliberately.
+Generated names need special attention because names become the bridge between documentation, IDE navigation, and tests. If \api{CustomerEditFormModel} is the generated model and \api{CustomerEditSwingBindings} is the generated binding companion, the names should be stable enough for examples and support text to mention them. A naming change is sometimes justified, but it should break a generation test and force related examples to be updated deliberately.
 
 The generated-source layer also guards examples. Book examples that demonstrate \api{@SwingTable}, \api{@UiAction}, validation annotations, help annotations, or generated component keys should compile through the processor. A screenshot produced from a generated view is stronger when the generated companions were produced in the same build. The reader can then trust that the listing is not decorative pseudo-code.
 
@@ -377,11 +377,11 @@ Generation tests and Swing tests should meet only after each side has been teste
 
 \section{Screenshots as Tests, Not Decorations}
 
-Screenshots are essential for this book because Swing is visual and because visual chapters should show what they discuss. But screenshots are a poor substitute for model tests. A screenshot can prove that a figure is not blank, that a form is not clipped, that a table state is visible, that an overlay covers the intended region, or that FlatLaf and MigLayout produce a coherent screen. It cannot prove every validation rule, command rule, or generated descriptor by itself.
+Screenshots are essential for Swing examples because Swing is visual and visual claims should be shown. But screenshots are a poor substitute for model tests. A screenshot can prove that a figure is not blank, that a form is not clipped, that a table state is visible, that an overlay covers the intended region, or that FlatLaf and MigLayout produce a coherent screen. It cannot prove every validation rule, command rule, or generated descriptor by itself.
 
-\termdef{Screenshot smoke test}{a deterministic rendering test that verifies a screen state can be built, laid out, painted, and reviewed as pixels} is the right default for book figures. It should use seeded data, a fixed size, a known Look-and-Feel, stable fonts where practical, and explicit output paths. It should not require a human to open the application and manually arrange a window before the PDF can be built.
+\termdef{Screenshot smoke test}{a deterministic rendering test that verifies a screen state can be built, laid out, painted, and reviewed as pixels} is the right default for visual examples. It should use seeded data, a fixed size, a known Look-and-Feel, stable fonts where practical, and explicit output paths. It should not require a human to open the application and manually arrange a window before the image can be trusted.
 
-\api{BookScreenshotHarness} is the companion harness for this role. It installs the example Look-and-Feel, lays out component trees, paints them into images, and writes PNG files used by the LaTeX build. It is not a general visual-diff framework. It is a disciplined way to ensure that figures are generated from executable Swing examples rather than from copied mockups.
+\api{BookScreenshotHarness} is the companion harness for this role. It installs the example Look-and-Feel, lays out component trees, paints them into images, and writes PNG files for visual review. It is not a general visual-diff framework. It is a disciplined way to ensure that figures are generated from executable Swing examples rather than from copied mockups.
 
 \begin{lstlisting}[caption={The shape of a screenshot harness entry.}]
 BookScreenshotHarness.capture(
@@ -390,22 +390,22 @@ BookScreenshotHarness.capture(
         () -> BookVisualFigures.testingComponentKeys());
 \end{lstlisting}
 
-The important facts are visible: output name, deterministic size, and a factory for a real Swing component. A test can construct the same component and assert that the screenshot file is produced. A reviewer can inspect the PNG. The LaTeX chapter can include it. The code path stays connected from example to figure to PDF.
+The important facts are visible: output name, deterministic size, and a factory for a real Swing component. A test can construct the same component and assert that the screenshot file is produced. A reviewer can inspect the PNG. The code path stays connected from example to figure.
 
 Screenshots should have explicit state names. "normal", "busy", "invalid", "selected", "empty", "large data", "dark theme", and "narrow width" are useful because they state what the screenshot proves. A folder of images named \api{screen1.png}, \api{screen2.png}, and \api{screen3.png} becomes unreviewable as the book grows. The filename should carry the same semantic identity as a component key: enough to understand the role without reading the whole generator.
 
 Visual tests should be few but meaningful. A form chapter may need screenshots for valid, invalid, and dirty-cancel states. A table chapter may need descriptor, state, coordinate, and large-data images. A painting chapter may need several Composite figures because the difference between source-over, group opacity, clear masks, and rule comparison is visual. A testing chapter needs screenshots for the harness and keys because those are the visual testing tools. More screenshots are justified when the concept is visual; fewer are justified when the concept is pure model behavior.
 
-Determinism is the first screenshot requirement. Use seeded data. Avoid live dates unless the date is the example. Avoid network images. Avoid background tasks that may complete halfway through capture. Avoid animations unless the frame is chosen deliberately. Set component sizes. Lay out before painting. Use FlatLaf consistently for book figures. Keep generated screenshot outputs either committed as book figures or written to an ignored generated directory according to a clear policy.
+Determinism is the first screenshot requirement. Use seeded data. Avoid live dates unless the date is the example. Avoid network images. Avoid background tasks that may complete halfway through capture. Avoid animations unless the frame is chosen deliberately. Set component sizes. Lay out before painting. Use FlatLaf consistently for visual examples. Keep generated screenshot outputs either committed as reviewed figures or written to an ignored generated directory according to a clear policy.
 
 The second requirement is visual honesty. A screenshot should show the real product, state, component, or diagram being discussed. A blurred placeholder or decorative background is not useful evidence. If the prose discusses column visibility, the screenshot should show column visibility. If the prose discusses a busy overlay, the screenshot should show the overlay. If the prose discusses component keys, the screenshot should make the keys readable enough to connect the text to the image.
 
 The third requirement is modest assertion. Pixel-perfect comparison is expensive across fonts, operating systems, rendering pipelines, and Look-and-Feels. The book does not need to turn every figure into a full visual-diff oracle. It does need smoke tests that produce nonblank images with expected dimensions, and it needs human review during book work. For application CI, a team may add perceptual diffs or golden images in a controlled environment. The concept is the same: screenshots test visual contracts, not hidden business rules.
 
-Screenshot tests often reveal documentation problems. A caption may look too much like body text. A figure may be too small to read. A long example path may wrap in an ugly way. A screenshot may contradict the prose because the code changed. These are real defects. Documentation is a user interface for ideas, and screenshots are part of that interface. The book build should therefore treat screenshot generation as a first-class acceptance step, not an afterthought.
+Screenshot tests often reveal documentation problems. A caption may look too much like body text. A figure may be too small to read. A long example path may wrap in an ugly way. A screenshot may contradict the prose because the code changed. These are real defects. Documentation is a user interface for ideas, and screenshots are part of that interface. Visual example generation should therefore be a first-class acceptance step, not an afterthought.
 
-\begin{migrationbox}{from manual figure capture to generated figures}
-Manual screenshots drift. A Corusco book example should expose a small component factory, the screenshot harness should render it under FlatLaf at a fixed size, and the chapter should include the generated PNG. Tests can then compile the example and smoke-test the harness before the PDF relies on the image.
+\begin{migrationbox}{From Manual Capture to Generated Figures}
+Manual screenshots drift. A Corusco example should expose a small component factory, the screenshot harness should render it under FlatLaf at a fixed size, and reviewed documentation should include the generated PNG. Tests can then compile the example and smoke-test the harness before the image is trusted.
 \end{migrationbox}
 
 \section{Test Data, Fixtures, and Failure Messages}
@@ -447,7 +447,7 @@ This fixture is not a prescription for class shape. It is a demonstration of voc
 
 Failure messages should identify stable facts. "Expected customer/name-field to contain Ada after model update" is useful. "Expected text field 2 to contain Ada" is not. "Expected table column orders width 140" is useful. "Expected column 0 width 140" is useful only if the test is explicitly about view column 0. "Expected problem validation/required for customer/name" is useful. "Expected one red border" is ambiguous unless the test is a screenshot or painting test.
 
-The strongest failure messages include the layer. A core model failure can say "form problem set." A Swing binding failure can say "component-to-model text binding." A generated-source failure can say "generated CustomerEditFormModel." A screenshot failure can say "book figure testing-component-keys.png was blank" or "expected output size 760 by 360." Layer words reduce the time between seeing a failure and opening the right file.
+The strongest failure messages include the layer. A core model failure can say "form problem set." A Swing binding failure can say "component-to-model text binding." A generated-source failure can say "generated CustomerEditFormModel." A screenshot failure can say "figure testing-component-keys.png was blank" or "expected output size 760 by 360." Layer words reduce the time between seeing a failure and opening the right file.
 
 Diagnostic output should avoid dumping the whole component tree by default. A full tree is useful when lookup fails, but it is noisy when a command state assertion fails. A good tester can report the key it searched for, the expected component type, and a compact list of marked keys that were present. The full tree can be available behind a debug flag or failure attachment. Tests should help the maintainer see the missing relationship, not drown the relationship in every label and panel.
 
@@ -457,7 +457,7 @@ Fake services should be smaller than real services but not dishonest. A fake rep
 
 Do not let fixtures become a second application. When a fixture grows enough behavior to need its own test suite, it may be hiding production design problems. Prefer small fixtures per layer: a form fixture, a command fixture, a Swing tester fixture, a screenshot fixture. Compose them only when a worked example or broad smoke test genuinely needs the composition. Small fixtures keep test setup readable and make failures easier to localize.
 
-The book examples should follow the same rules because readers copy structure as much as code. A didactic example with deterministic data, short class names, FlatLaf setup, MigLayout geometry, typed component keys, and a smoke test teaches a workflow. A didactic example that relies on manual screenshots, local databases, current dates, or long wrapped paths teaches the wrong habits even if the prose says otherwise.
+Examples should follow the same rules because readers copy structure as much as code. A didactic example with deterministic data, short class names, FlatLaf setup, MigLayout geometry, typed component keys, and a smoke test teaches a workflow. A didactic example that relies on manual screenshots, local databases, current dates, or long wrapped paths teaches the wrong habits even if the prose says otherwise.
 
 Reviewers should read fixtures with the same suspicion they apply to production code. Ask whether the fixture hides the EDT. Ask whether it creates resources that are not closed. Ask whether it depends on localized text when a key would be better. Ask whether fake services preserve important boundaries. Ask whether generated source is really generated. Ask whether screenshot data is seeded. A test fixture is part of the architecture's proof, and a sloppy fixture can make a disciplined design look unreliable.
 
@@ -481,7 +481,7 @@ For shared state, restore what you change. If a test installs a custom \api{Repa
 
 Headless mode should fail clearly when a test requires graphics. A screenshot test that cannot run without graphics should say so in its setup or task configuration. A core model test should never fail because a display server is unavailable. Keeping these categories separate prevents infrastructure failures from being mistaken for business-rule failures.
 
-The book build adds another CI-like constraint. Figures should be generated from examples, and the PDF should include them consistently. The TeX build should not depend on a developer's manually opened application window. Dockerized TeX can compile the book, but it cannot rescue a missing PNG or a screenshot that was never generated. Example tests and screenshot harness tests protect this path before LaTeX runs.
+Visual documentation adds another CI-like constraint. Figures should be generated from examples and included consistently. The documentation path should not depend on a developer's manually opened application window. Example tests and screenshot harness tests protect this path before an image is trusted.
 
 \section{Cleanup and Lifecycle Tests}
 
@@ -511,7 +511,7 @@ Task cleanup needs generation discipline. Suppose a user opens Customer A, start
 
 Dialog cleanup includes active editors. A table cell editor or formatted text field may hold a value that is not committed until editing stops. An OK action should commit active editors before validation and close semantics run. A cancel action may need to discard active edits. Tests should exercise these boundaries because they are easy to get wrong and hard to notice in screenshots. The dialog chapter covers workflow details; the testing chapter names the proof: commit behavior is an EDT Swing test, validation result is a model test, dirty-cancel confirmation is a dialog workflow test.
 
-Resource cleanup should be explicit when examples generate screenshots. If a screenshot harness installs a Look-and-Feel, creates images, writes files, or temporarily changes UI defaults, the harness should confine those effects. A book figure generator that leaves global state changed can affect later figures in subtle ways. This is the documentation version of the same lifecycle rule.
+Resource cleanup should be explicit when examples generate screenshots. If a screenshot harness installs a Look-and-Feel, creates images, writes files, or temporarily changes UI defaults, the harness should confine those effects. A figure generator that leaves global state changed can affect later figures in subtle ways. This is the documentation version of the same lifecycle rule.
 
 Cleanup tests should be added for patterns, not necessarily duplicated for every field. One generic text-binding cleanup test can defend the text-binding implementation. One behavior-scope cleanup test can defend installed-key cleanup. One table-controller cleanup test can defend state listener removal. A screen-specific test is needed when the screen composes those patterns in a new way or owns additional resources.
 
@@ -531,7 +531,7 @@ The fifth rung is table behavior. Construct the customer table with descriptor-b
 
 The sixth rung is task and busy behavior. Use a controlled task service or fake completion source. Start a refresh, assert busy state, assert overlay behavior or busy component state, complete a stale generation, and assert it is ignored. Complete the current generation and assert rows appear. A screenshot can show the busy overlay, but the test that suppresses stale results should be model/task-level or presenter-level.
 
-The seventh rung is screenshot smoke. Render the normal workspace and busy-detail workspace under FlatLaf at fixed sizes. Assert the files exist and are nonblank, then review the images in the book. The screenshots prove that the assembled screen looks like the prose says it looks. They are late in the ladder because they are broad and visual.
+The seventh rung is screenshot smoke. Render the normal workspace and busy-detail workspace under FlatLaf at fixed sizes. Assert the files exist and are nonblank, then review the images. The screenshots prove that the assembled screen looks like the prose says it looks. They are late in the ladder because they are broad and visual.
 
 \begin{figure}[htbp]
 \centering
@@ -594,7 +594,7 @@ The matrix is deliberately modest. It does not say every feature needs every pro
 
 When a test must be broad, name it as broad. A smoke test can open the full customer workspace, select a row, edit a field, execute Save, and render a screenshot. That test is useful as a final assembly check. It should not be the only proof of selection, editing, command execution, validation, and rendering. Broad tests are strongest when they confirm that already-tested parts still meet. They are weakest when they are the only place any part is specified.
 
-The final review habit is to read the tests after changing the book. If a chapter cites \api{SwingMvpTesterTableStateExample}, there should be a test for that example. If a chapter includes \testingHarnessFigure{}, the screenshot harness should generate it. If a chapter says generated examples compile through the processor, a generated-source test should exist. The book's acceptance criteria and the code's acceptance criteria should reinforce each other; otherwise the PDF can become more confident than the source deserves.
+The final review habit is to read the tests after changing an example. If documentation cites \api{SwingMvpTesterTableStateExample}, there should be a test for that example. If documentation includes \testingHarnessFigure{}, the screenshot harness should generate it. If documentation says generated examples compile through the processor, a generated-source test should exist. The documentation's acceptance criteria and the code's acceptance criteria should reinforce each other; otherwise prose can become more confident than the source deserves.
 
 \begin{exercisebox}
 \begin{enumerate}
@@ -620,7 +620,7 @@ The final review habit is to read the tests after changing the book. If a chapte
 \item Assert commands by \api{ActionKey}; test visual command surfaces separately.
 \item State table coordinate systems explicitly: view row, model row, row identity, descriptor column, or persisted column id.
 \item Test behavior scopes by behavior keys and observable effects, not private listener arrays.
-\item Use screenshot smoke tests for visual coherence, book figures, layout, theme, density, overlays, and nonblank rendering.
+\item Use screenshot smoke tests for visual coherence, figures, layout, theme, density, overlays, and nonblank rendering.
 \item Keep screenshot examples deterministic: seeded data, fixed sizes, FlatLaf setup, and stable output names.
 \item Close scopes, controllers, task handles, dialogs, and global test changes.
 \item Prefer many small diagnostic tests over one broad click-through test that owns every failure.

@@ -72,7 +72,7 @@ compile. This is small type discipline, but small type discipline pays off
 when the same screen facts appear in generated code, runtime bindings, tests,
 and documentation.
 
-\begin{principlebox}{stable id, changing presentation}
+\begin{principlebox}{Stable Id, Changing Presentation}
 The identity of a command, field, column, component, resource, or help topic
 should survive localization, Look-and-Feel changes, and layout rearrangement.
 Visible text is presentation; keys are identity.
@@ -228,7 +228,7 @@ should be stable, ASCII-friendly, searchable, and insensitive to copyediting.
 The two purposes conflict often enough that combining them is not economy; it
 is deferred maintenance.
 
-\begin{pitfallbox}{string-compatible is not stringly typed}
+\begin{pitfallbox}{String-compatible Is Not Stringly Typed}
 Typed keys are backed by strings so they can cross resource, persistence, and
 diagnostic boundaries. That does not mean application code should pass raw
 strings everywhere. Cross the boundary once, then keep the typed key.
@@ -291,7 +291,7 @@ should delegate slow work to a task service. This rule keeps command identity
 separate from task policy. The command may start a task; it should not perform
 slow I/O merely because it is a command.
 
-\begin{pitfallbox}{commands are not background workers}
+\begin{pitfallbox}{Commands Are Not Background Workers}
 A command may start a background task. It should not perform slow I/O directly
 on the EDT merely because it is a command.
 \end{pitfallbox}
@@ -358,7 +358,7 @@ button selection back into the command before the handler runs. Other controls
 then see the same selected state. This is the same model as ordinary command
 enablement: the operation state has one owner, and presentations mirror it.
 
-\begin{migrationbox}{one toggle owner}
+\begin{migrationbox}{One Toggle Owner}
 When two toggle controls must stay synchronized, do not add listeners that copy
 state between controls. Introduce one selectable command or value, then bind
 both controls to it.
@@ -587,7 +587,7 @@ keep its own adapter for the same command if the command itself is shared at
 the application level. This keeps lifecycle local without duplicating
 operation state.
 
-\begin{pitfallbox}{two operation paths}
+\begin{pitfallbox}{Two Operation Paths}
 If a shortcut can run while the button is disabled, or if a menu item and
 toolbar button disagree about selected state, the screen probably has duplicate
 operation paths. Route every presentation through the same command.
@@ -635,7 +635,7 @@ resource is cheap to fix before release and annoying to discover in an
 installer. Use fallbacks for optional help, experimental examples, diagnostics,
 or soft metadata where absence is part of the policy.
 
-\begin{pitfallbox}{localized text is not identity}
+\begin{pitfallbox}{Localized Text Is Not Identity}
 Do not use a visible table header, button text, or tooltip as a persistence
 key, test selector, command id, or help topic. Localization and copyediting will
 break it.

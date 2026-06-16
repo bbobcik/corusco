@@ -16,8 +16,63 @@ local callout_prefixes = {
   example = "Companion example: "
 }
 
+local tts_mode = os.getenv("CORUSCO_EPUB_TTS_MODE") or ""
+local tts_metadata_experiment = tts_mode == "metadata"
+local tts_replace_code_blocks = tts_mode == "replace-code-blocks"
+
+local function meta_bool(value)
+  if value == nil then
+    return false
+  end
+  if value == true then
+    return true
+  end
+  if value == false then
+    return false
+  end
+  if value.t == "MetaBool" then
+    return value[1] == true
+  end
+  local text = pandoc.utils.stringify(value):lower()
+  return text == "true" or text == "yes" or text == "1"
+end
+
 local function stringify(blocks)
   return pandoc.utils.stringify(blocks):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function codeblock_tts_summary(block)
+  local lines = 0
+  local text = block.text or ""
+  for _ in (text .. "\n"):gmatch("([^\n]*)\n") do
+    lines = lines + 1
+  end
+
+  local caption = block.attributes["data-caption"]
+  if caption and caption ~= "" then
+    return "Code listing skipped: " .. caption
+  end
+
+  if lines <= 2 then
+    return "Short code fragment skipped."
+  end
+
+  local language = block.classes[1]
+  if language and language ~= "" then
+    return "Code listing skipped. It contains " .. tostring(lines) .. " lines of " .. language .. " code."
+  end
+
+  return "Code listing skipped. It contains " .. tostring(lines) .. " lines."
+end
+
+function Meta(meta)
+  if meta["tts-metadata-experiment"] ~= nil then
+    tts_metadata_experiment = meta_bool(meta["tts-metadata-experiment"])
+  end
+  if meta["tts-replace-code-blocks"] ~= nil then
+    tts_replace_code_blocks = meta_bool(meta["tts-replace-code-blocks"])
+  end
+  return meta
 end
 
 local function first_plain_text(blocks)
@@ -109,6 +164,32 @@ function Image(img)
 end
 
 function CodeBlock(block)
+  if tts_replace_code_blocks then
+    local summary = codeblock_tts_summary(block)
+    block.attributes["data-caption"] = nil
+    return pandoc.Div({
+      pandoc.Para({ pandoc.Str(summary) })
+    }, pandoc.Attr("", { "tts-code-summary" }, {}))
+  end
+
+  if tts_metadata_experiment then
+    local summary = codeblock_tts_summary(block)
+    block.attributes["data-caption"] = nil
+    block.attributes["aria-hidden"] = "true"
+    block.attributes["role"] = "presentation"
+    block.attributes["data-tts-summary"] = summary
+
+    return pandoc.Div({
+      pandoc.Plain({
+        pandoc.Span(
+          { pandoc.Str(summary) },
+          pandoc.Attr("", { "tts-only" }, { ["aria-label"] = summary })
+        )
+      }),
+      block
+    }, pandoc.Attr("", { "tts-code-experiment" }, {}))
+  end
+
   block.attributes["data-caption"] = nil
   return block
 end

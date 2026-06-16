@@ -40,7 +40,7 @@ captures a component can keep repainting a dead view.
 
 The rule is simple enough to memorize:
 
-\begin{principlebox}{the cleanup law}
+\begin{principlebox}{The Cleanup Law}
 The object that installs a callback should either close it directly or register
 it in a scope that closes with the same lifecycle.
 \end{principlebox}
@@ -72,7 +72,7 @@ end. If the view closes while the task is still running, the task may continue
 or be cancelled according to policy, but it must not retain the closed view as
 a callback target.
 
-\begin{pitfallbox}{closed is not collected}
+\begin{pitfallbox}{Closed Is Not Collected}
 Calling \api{dispose} on a window removes the native peer. It does not
 magically remove every listener, subscription, task callback, timer, or service
 reference that points at the window's object graph.
@@ -144,7 +144,7 @@ application shuts down, user prompts and cleanup may follow a different policy
 from ordinary close. The code should make these differences visible instead of
 using one \api{disposeEverything} method for every boundary.
 
-\begin{coruscobox}{What Corusco changes}
+\begin{coruscobox}{Owned Cleanup Handles}
 Corusco gives callback ownership small, reusable names. A listener attachment
 can return a \api{Subscription}; a set of cleanup handles can live in a
 \api{SubscriptionScope}; reusable cached state can implement \api{Detachable};
@@ -636,7 +636,7 @@ at useful boundaries. The task service also attempts executor-level
 cancellation where supported. Neither mechanism proves that every blocking
 driver, remote service, or computation stopped instantly.
 
-\begin{pitfallbox}{cancellation is cooperative}
+\begin{pitfallbox}{Cancellation Is Cooperative}
 Calling \api{cancel} requests cancellation. It does not prove that a blocking
 driver, remote service, or task body has stopped instantly. Task code should
 check its token at useful boundaries.
@@ -669,7 +669,7 @@ field validation for an old value may return after a validation for the new
 value. A detail load for a previously selected row may finish after the
 selection changed. The old result is not wrong in isolation; it is obsolete.
 
-\begin{principlebox}{two gates}
+\begin{principlebox}{Two Gates}
 Use cancellation to stop doing useless work. Use generation checks to prevent
 obsolete work from becoming visible state.
 \end{principlebox}
@@ -998,7 +998,7 @@ throws, the aggregate exception should retain suppressed failures so the
 developer sees all broken cleanup handles. Good diagnostics use lifecycle
 vocabulary; poor diagnostics merely say that a null component was updated.
 
-\begin{examplebox}{lifecycle}
+\begin{examplebox}{Lifecycle}
 \lifecycleExample{} demonstrates deterministic cleanup of listener-style
 registrations. \asyncTaskExample{} demonstrates core task execution and busy
 state. \generationCounterExample{} demonstrates stale-result suppression

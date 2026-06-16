@@ -66,7 +66,7 @@ should not corrupt the last meaningful value. A validation rule such as "credit
 limit must not exceed 10000" should run after a decimal value exists, not while
 the text is unparsable.
 
-\begin{pitfallbox}{the exception-shaped form}
+\begin{pitfallbox}{The Exception-shaped Form}
 Normal user input mistakes are not exceptional program failures. Treat parse
 and validation failures as data. Reserve exceptions for broken converters,
 services, or programmer errors.
@@ -141,7 +141,7 @@ the field. A field can be touched but not dirty if the user changes a value and
 changes it back. A field can be dirty because a model load changed it, even
 though the user did not touch it.
 
-\begin{principlebox}{dirty is not touched}
+\begin{principlebox}{Dirty Is Not Touched}
 Dirty protects data from accidental loss. Touched protects the user from
 premature scolding. Use both.
 \end{principlebox}
@@ -186,7 +186,7 @@ descriptors or application presentation code. The stable code and target are the
 important contract. They let tests assert the problem without depending on a
 translated sentence.
 
-\begin{coruscobox}{structured failure}
+\begin{coruscobox}{Structured Failure}
 Corusco forms return problem sets for ordinary user mistakes. They do not force
 normal validation paths into exceptions, labels, or component client properties.
 \end{coruscobox}
@@ -249,7 +249,7 @@ This is a maintenance advantage. In ordinary Swing code, a document listener on
 one field may remember to validate a second field. In generated or model-backed
 code, the dependency is declared where the rule is defined.
 
-\begin{migrationbox}{validation dependencies}
+\begin{migrationbox}{Validation Dependencies}
 When a listener in field A updates the error label for field B, write down the
 rule dependency. That dependency belongs in validation metadata or a form model,
 not in the document listener.
@@ -346,7 +346,7 @@ ReadableValue<ProblemSet> asyncProblems = uniqueName.problems();
 The exact field accessor depends on the model. The policy does not: launch work
 away from the EDT, cancel or ignore stale work, and publish structured problems.
 
-\begin{pitfallbox}{stale validation}
+\begin{pitfallbox}{Stale Validation}
 If the user types "Ada" and then "Adal", the result for "Ada" must not overwrite
 the current field state when it completes late.
 \end{pitfallbox}
@@ -392,7 +392,7 @@ state decorates the component; pressing OK follows dialog policy.
 
 \textbf{Worked example.}
 
-\begin{examplebox}{forms}
+\begin{examplebox}{Forms}
 \swingIntegrationExample{} includes form and binding code that can be read beside
 this chapter. The core lesson is not the visual layout; it is the separation
 between raw text, semantic value, problems, and dialog behavior.
@@ -611,7 +611,7 @@ the form's blocking problems were absent at the time the result was created.
 The exception raised by \api{toResult} on an uncommittable form is the model
 refusing to pretend.
 
-\begin{detailbox}{result creation is not validation}
+\begin{detailbox}{Result Creation Is Not Validation}
 The \api{createResult} method of an \api{AbstractFormModel} should normally
 assemble already-validated semantic values. It should not discover ordinary
 parse or validation failures for the first time. Those failures belong in
@@ -725,7 +725,7 @@ code, or raw token, and the remote lookup is validation or enrichment. Keeping
 conversion local keeps editing responsive and testable. A slow converter is
 just another way to block the EDT.
 
-\begin{pitfallbox}{formatting as validation}
+\begin{pitfallbox}{Formatting as Validation}
 Do not silently repair user text and call that validation. Trimming surrounding
 space may be harmless in one field and destructive in another. Normalization is
 a domain policy. If it changes meaning, make it visible in the model or result.
@@ -833,7 +833,7 @@ duplicating messages. If parse failed, semantic validation for that field
 should usually be skipped. If async validation failed unexpectedly, the UI may
 show a different tone from an ordinary "name already exists" validation result.
 
-\begin{coruscobox}{problem sets are presentation-neutral}
+\begin{coruscobox}{Problem Sets Are Presentation-neutral}
 Corusco does not say whether a problem appears as a red border, icon, tooltip,
 summary row, accessible description, or disabled reason. It gives those
 presentations one structured fact to observe.
@@ -1050,7 +1050,7 @@ those three presentations would either become uniform and awkward or require a
 second set of layout escape hatches. Keeping layout handwritten preserves the
 MigLayout discipline established earlier.
 
-\begin{migrationbox}{generated form adoption}
+\begin{migrationbox}{Generated Form Adoption}
 Do not introduce generation by asking it to redesign a screen. First extract
 stable field keys, result type, converters, validation rules, and resource
 keys. Then let generation compile those stable facts into model and binding
@@ -1223,9 +1223,9 @@ state, and commit result. For async validation, the story should include stale
 completion. For dialogs, the story should include active-editor commit and OK
 failure focus. For generated forms, the story should include annotation
 processor output compiling and the generated model producing the expected
-record. These tests make the book examples trustworthy.
+record. These tests make the examples trustworthy.
 
-\begin{detailbox}{a useful form review sentence}
+\begin{detailbox}{A Useful Form Review Sentence}
 For each field, say: this is the raw editor state, this is the semantic value,
 this is the converter, this is the validation policy, this is the problem
 target, this is the baseline, and this is how the result uses the value. If the

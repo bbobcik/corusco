@@ -24,7 +24,7 @@ This is why custom painting is never the end of component work. A component that
 
 \termdef{Accessible role}{the kind of object a component represents} is equally important. A push button, slider, table, tree, progress bar, text field, and panel are different objects. If a custom control behaves like a slider but exposes itself as a panel, a screen reader cannot offer useful interaction. Choose the closest role and implement the related value, action, selection, or text semantics where appropriate.
 
-\begin{principlebox}{semantics must not depend on pixels}
+\begin{principlebox}{Semantics Must Not Depend on Pixels}
 Every meaningful visual state should have a semantic equivalent: accessible name, role, state, value, description, relation, action, selection, text, command state, or problem. Pixels are presentation, not the accessibility contract.
 \end{principlebox}
 
@@ -50,7 +50,7 @@ The opposite failure is a visually rich but semantically empty screen. A custom 
 
 Accessibility is therefore not merely compassion, although it is that. It is also engineering honesty. Important facts deserve stable owners. A validation problem should be a problem object before it is a red border. A command should be a command before it is a toolbar icon. A field label should be a resource before it is a literal string. A selected data point should be model state before it is a highlighted pixel.
 
-\begin{detailbox}{rendered text is not necessarily accessible text}
+\begin{detailbox}{Rendered Text Is Not Necessarily Accessible Text}
 A renderer may paint status text, icons, badges, or custom graphics, but the renderer component is reused as a stamp. Important row or cell semantics should usually come from the model and table accessibility path, not from transient renderer state alone.
 \end{detailbox}
 
@@ -157,7 +157,7 @@ Disabled state also needs explanation. A disabled Save button can mean "nothing 
 
 Progress and busy state belong here too. A progress bar should have an accessible name and value. A busy overlay should not merely dim the screen. It should explain what is happening, whether input is blocked, whether cancellation is available, and when state changes. If the overlay blocks mouse input but leaves keyboard focus in a hidden field, the visual and semantic states have diverged.
 
-\begin{coruscobox}{descriptor-derived accessible text}
+\begin{coruscobox}{Descriptor-derived Accessible Text}
 Corusco's accessible text behavior can derive a component's accessible name from a field descriptor's label key and the accessible description from an optional tooltip key. The binding writes to the component's \api{AccessibleContext} and restores previous values when the view scope closes.
 \end{coruscobox}
 
@@ -244,8 +244,8 @@ Figure~\ref{fig:accessibility-focus-order} shows the companion workflow idea. A 
 \label{fig:accessibility-focus-order}
 \end{figure}
 
-\begin{examplebox}{Accessibility figures and examples}
-The accessibility screenshots are produced by \api{BookVisualFigures} through \api{BookFigureGenerator}. The runnable descriptor example is \api{AccessibleTextExample}, and the screenshot harness is \screenshotHarnessExample. The chapter cites compact class names so the PDF stays readable.
+\begin{examplebox}{Accessibility Figures and Examples}
+The accessibility figures show label relationships, semantic channels, and focus order as visible states. The runnable descriptor example is \api{AccessibleTextExample}.
 \end{examplebox}
 
 \section{Keyboard Completeness and Focus Workflow}
@@ -451,7 +451,7 @@ Accessibility for virtual children requires careful indexing. A custom component
 
 Hit testing and accessibility should share geometry. A custom component that maps a mouse point to a timeline event should use the same mapping to provide accessible child bounds and tooltips. If painting uses one coordinate transform, mouse hit testing another, and accessibility a third, users will encounter inconsistent selection and focus behavior.
 
-\begin{pitfallbox}{focus indicators removed for aesthetics}
+\begin{pitfallbox}{Focus Indicators Removed for Aesthetics}
 Removing focus painting because it looks noisy is a regression unless an equivalent visible focus indicator remains. Keyboard users need to know where actions will apply. Custom components must paint focus deliberately and consistently.
 \end{pitfallbox}
 
@@ -568,7 +568,7 @@ tests, but each one is small when the component has a semantic inventory.
 
 Standard Swing text components handle input methods. Custom text-like components must implement \api{InputMethodRequests} if they want full participation. They must report text location for candidate windows, committed text, selected text, insertion offset, and related information. This is real editor work. If a component merely needs a text field, use a text field.
 
-\begin{detailbox}{do not build text input from keyPressed}
+\begin{detailbox}{Do Not Build Text Input from keyPressed}
 For serious text input, use Swing text components or implement the input method contracts. Handling \api{keyPressed} and appending characters is not a multilingual text editor.
 \end{detailbox}
 
@@ -720,7 +720,7 @@ The keyboard drill should record timing too. If a user can technically reach a c
 
 The same evidence helps sighted power users, because efficient keyboard paths are practical productivity features as well.
 
-\begin{migrationbox}{from visual hints to semantic behaviors}
+\begin{migrationbox}{From Visual Hints to Semantic Behaviors}
 Start by identifying visual states that carry meaning: required, invalid, selected, busy, disabled, warning, focused, and current. Move those meanings into descriptors, commands, values, or problem sets. Then install scoped Swing behaviors for visual decoration, accessible text, tooltip composition, help, and status. The visual hints remain, but they no longer own the facts.
 \end{migrationbox}
 
@@ -799,7 +799,7 @@ IME composition. A generated form may also have a custom renderer and busy
 overlay. Splitting these topics too aggressively makes each one look smaller
 than it is. In a working screen they meet at the same contracts.
 
-\begin{detailbox}{accessibility review rule}
+\begin{detailbox}{Accessibility Review Rule}
 For every meaningful state, ask how it is perceived visually, by keyboard, by accessible context, by tests, and under high contrast. If the answer exists in only one channel, the state is fragile.
 \end{detailbox}
 
