@@ -83,6 +83,14 @@
   margin=1.3em,
   skip=0.55em
 }
+\captionsetup[lstlisting]{
+  font={small,it},
+  labelfont={bf,sf},
+  justification=raggedright,
+  singlelinecheck=false,
+  margin=1.3em,
+  skip=0.55em
+}
 
 \lstdefinestyle{javaswing}{
   language=Java,
@@ -98,6 +106,7 @@
   xrightmargin=0.4em,
   aboveskip=0.8em,
   belowskip=0.8em,
+  captionpos=b,
   showstringspaces=false,
   breaklines=true,
   breakatwhitespace=false,
@@ -136,6 +145,11 @@
 \newtcolorbox{detailbox}[1]{
   enhanced, breakable, colback=white, colframe=RuleGray,
   title={Less-known detail: #1}, fonttitle=\bfseries, boxrule=0.28pt,
+  left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
+}
+\newtcolorbox{roadmapbox}{
+  enhanced, breakable, colback=white, colframe=RuleGray,
+  title={Roadmap outline}, fonttitle=\bfseries, boxrule=0.28pt,
   left=1.0em,right=1.0em,top=0.6em,bottom=0.6em
 }
 \newtcolorbox{coruscobox}[1]{
@@ -213,6 +227,7 @@
 \part{Generation and Complete Applications}
 \include{chapters/ch40_compile_time_generation}
 \include{chapters/ch41_real_screen}
+\include{chapters/ch42_practical_components}
 \include{chapters/ch12_packaging}
 \backmatter
 \include{backmatter/glossary}

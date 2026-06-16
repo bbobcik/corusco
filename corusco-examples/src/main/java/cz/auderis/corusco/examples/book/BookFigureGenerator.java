@@ -187,6 +187,20 @@ public final class BookFigureGenerator {
                         outputDir.resolve("bookapp-workspace.png"));
                 BookScreenshotHarness.capture(BookVisualFigures.bookappBusyDetail(), new Dimension(820, 500),
                         outputDir.resolve("bookapp-busy-detail.png"));
+                BookScreenshotHarness.capture(BookVisualFigures.practicalSplitButtons(), new Dimension(760, 360),
+                        outputDir.resolve("practical-split-buttons.png"));
+                BookScreenshotHarness.capture(BookVisualFigures.practicalBuddyAndUnitFields(), new Dimension(760, 390),
+                        outputDir.resolve("practical-buddy-unit-fields.png"));
+                BookScreenshotHarness.capture(BookVisualFigures.practicalTableHeader(), new Dimension(760, 430),
+                        outputDir.resolve("practical-table-header.png"));
+                BookScreenshotHarness.capture(BookVisualFigures.practicalTemporalSelection(), new Dimension(760, 430),
+                        outputDir.resolve("practical-temporal-selection.png"));
+                BookScreenshotHarness.capture(BookVisualFigures.practicalTagCloud(), new Dimension(760, 390),
+                        outputDir.resolve("practical-tag-cloud.png"));
+                BookScreenshotHarness.capture(BookVisualFigures.practicalInteractiveCells(), new Dimension(760, 390),
+                        outputDir.resolve("practical-interactive-cells.png"));
+                BookScreenshotHarness.capture(BookVisualFigures.practicalBusinessWidgets(), new Dimension(760, 390),
+                        outputDir.resolve("practical-business-widgets.png"));
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }

@@ -41,6 +41,49 @@ local function stringify(blocks)
   return pandoc.utils.stringify(blocks):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+local function codeblock_caption(block)
+  local caption = block.attributes["caption"] or block.attributes["data-caption"]
+  if caption and caption ~= "" then
+    return caption
+  end
+  return nil
+end
+
+local function clear_codeblock_caption(block)
+  block.attributes["caption"] = nil
+  block.attributes["data-caption"] = nil
+end
+
+local function text_inlines(text)
+  local inlines = {}
+  local first = true
+  for word in text:gmatch("%S+") do
+    if not first then
+      table.insert(inlines, pandoc.Space())
+    end
+    table.insert(inlines, pandoc.Str(word))
+    first = false
+  end
+  return inlines
+end
+
+local function code_listing_div(block, caption)
+  clear_codeblock_caption(block)
+  if caption == nil or caption == "" then
+    return block
+  end
+
+  return pandoc.Div({
+    block,
+    pandoc.Para({
+      pandoc.Span(
+        text_inlines(caption),
+        pandoc.Attr("", { "code-caption" }, {})
+      )
+    })
+  }, pandoc.Attr("", { "code-listing" }, {}))
+end
+
 local function codeblock_tts_summary(block)
   local lines = 0
   local text = block.text or ""
@@ -48,8 +91,8 @@ local function codeblock_tts_summary(block)
     lines = lines + 1
   end
 
-  local caption = block.attributes["data-caption"]
-  if caption and caption ~= "" then
+  local caption = codeblock_caption(block)
+  if caption ~= nil then
     return "Code listing skipped: " .. caption
   end
 
@@ -166,20 +209,22 @@ end
 function CodeBlock(block)
   if tts_replace_code_blocks then
     local summary = codeblock_tts_summary(block)
-    block.attributes["data-caption"] = nil
+    clear_codeblock_caption(block)
     return pandoc.Div({
       pandoc.Para({ pandoc.Str(summary) })
     }, pandoc.Attr("", { "tts-code-summary" }, {}))
   end
 
+  local caption = codeblock_caption(block)
+
   if tts_metadata_experiment then
     local summary = codeblock_tts_summary(block)
-    block.attributes["data-caption"] = nil
+    clear_codeblock_caption(block)
     block.attributes["aria-hidden"] = "true"
     block.attributes["role"] = "presentation"
     block.attributes["data-tts-summary"] = summary
 
-    return pandoc.Div({
+    local blocks = {
       pandoc.Plain({
         pandoc.Span(
           { pandoc.Str(summary) },
@@ -187,11 +232,21 @@ function CodeBlock(block)
         )
       }),
       block
-    }, pandoc.Attr("", { "tts-code-experiment" }, {}))
+    }
+
+    if caption ~= nil then
+      table.insert(blocks, pandoc.Para({
+        pandoc.Span(
+          text_inlines(caption),
+          pandoc.Attr("", { "code-caption" }, {})
+        )
+      }))
+    end
+
+    return pandoc.Div(blocks, pandoc.Attr("", { "tts-code-experiment", "code-listing" }, {}))
   end
 
-  block.attributes["data-caption"] = nil
-  return block
+  return code_listing_div(block, caption)
 end
 
 function Figure(fig)

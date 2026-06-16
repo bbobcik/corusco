@@ -34,6 +34,7 @@ import javax.swing.JComponent;
 import javax.swing.JLayer;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
@@ -2214,6 +2215,421 @@ final class BookVisualFigures {
         panel.add(detail, "grow, wrap");
         panel.add(tag("Loading refreshed rows; selected customer remains visible", BLUE),
                 "span 2, growx");
+        return panel;
+    }
+
+    static JPanel practicalSplitButtons() {
+        BookExampleSupport.requireEdt();
+        JPanel panel = figurePanel("Split button command surfaces",
+                "[grow,fill][230!]", "[][grow][]");
+
+        JPanel toolbar = cardPanel();
+        toolbar.setLayout(new MigLayout("fillx, insets 12", "[][][][grow]", "[][]"));
+        toolbar.add(strong("Order commands"), "span 4, growx, wrap");
+        toolbar.add(new JButton("Refresh"));
+        toolbar.add(splitButtonPreview("Export PDF", "v"));
+        toolbar.add(new JButton("Print"));
+        toolbar.add(new JLabel("Action keys feed every surface"), "right, growx, wrap");
+
+        JPanel popup = cardPanel();
+        popup.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][][]"));
+        popup.add(strong("Export"), "growx, wrap");
+        popup.add(new JMenuItem("Export CSV"), "growx, wrap");
+        popup.add(new JMenuItem("Export XLSX"), "growx, wrap");
+        popup.add(new JMenuItem("Print preview"), "growx");
+
+        JPanel commandModel = cardPanel();
+        commandModel.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][][]"));
+        commandModel.add(strong("Corusco metadata"), "growx, wrap");
+        commandModel.add(new JLabel("ActionKey: export.pdf"), "growx, wrap");
+        commandModel.add(new JLabel("ActionKey: export.csv"), "growx, wrap");
+        commandModel.add(new JLabel("ResourceKey: export.more"), "growx, wrap");
+        commandModel.add(new JLabel("Scope closes menu bindings"), "growx");
+
+        panel.add(toolbar, "growx, wrap");
+        panel.add(popup, "grow");
+        panel.add(commandModel, "grow, wrap");
+        panel.add(note("Review path",
+                "Generated commands create Swing actions; the split button presents primary and secondary paths."),
+                "span 2, growx");
+        return panel;
+    }
+
+    static JPanel practicalBuddyAndUnitFields() {
+        BookExampleSupport.requireEdt();
+        JPanel panel = figurePanel("Buddy fields and integral unit entry",
+                "[grow,fill][230!]", "[][grow][]");
+
+        JPanel form = cardPanel();
+        form.setLayout(new MigLayout("fillx, insets 14", "[120!][grow,fill][]", "[][][][][]"));
+        form.add(strong("Shipment filter"), "span 3, growx, wrap");
+        form.add(new JLabel("Customer"));
+        form.add(new JTextField("Acme"));
+        form.add(new JButton("Search"), "wrap");
+        form.add(new JLabel("Weight"));
+        form.add(unitFieldPreview("120.00", "kg"));
+        form.add(new JLabel("FieldKey: shipping.weight"), "wrap");
+        form.add(new JLabel("Report folder"));
+        form.add(new JTextField("D:\\reports\\june"));
+        form.add(new JButton("Browse"), "wrap");
+        form.add(new JLabel());
+        JLabel problem = new JLabel("Amount is required before shipping can be estimated.");
+        problem.setForeground(RED);
+        form.add(problem, "span 2, growx");
+
+        JPanel model = cardPanel();
+        model.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][][][]"));
+        model.add(strong("Field model"), "growx, wrap");
+        model.add(new JLabel("rawAmount"), "growx, wrap");
+        model.add(new JLabel("selectedUnit"), "growx, wrap");
+        model.add(new JLabel("ProblemSet"), "growx, wrap");
+        model.add(new JLabel("BindingScope"), "growx");
+
+        panel.add(form, "grow");
+        panel.add(model, "grow, wrap");
+        panel.add(note("Construction rule",
+                "Visible Swing children stay ordinary; Corusco keys and problem codes name the logical field."),
+                "span 2, growx");
+        return panel;
+    }
+
+    static JPanel practicalTableHeader() {
+        BookExampleSupport.requireEdt();
+        JPanel panel = figurePanel("Advanced JTable header behavior",
+                "[grow,fill][230!]", "[][grow][]");
+
+        DefaultTableModel model = new DefaultTableModel(new Object[][] {
+                {"Acme Manufacturing", "Active", "2026-06-22", "$12,450"},
+                {"Northstar Retail", "Hold", "2026-07-04", "$8,125"},
+                {"Lumen Services", "Active", "2026-07-17", "$19,980"},
+                {"Cedar Logistics", "Warning", "2026-08-02", "$6,410"}
+        }, new Object[] {"Customer", "Status", "Due date v", "Amount"});
+        JTable table = new JTable(model);
+        table.setRowHeight(28);
+        table.setShowGrid(true);
+        table.setGridColor(new Color(0xe1e6eb));
+        table.getTableHeader().setReorderingAllowed(true);
+        table.getColumnModel().getColumn(0).setPreferredWidth(210);
+        table.getColumnModel().getColumn(1).setPreferredWidth(90);
+        table.getColumnModel().getColumn(2).setPreferredWidth(120);
+        table.getColumnModel().getColumn(3).setPreferredWidth(100);
+
+        JPanel tableSurface = cardPanel();
+        tableSurface.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][]"));
+        tableSurface.add(strong("Orders by descriptor-backed column"), "growx, wrap");
+        tableSurface.add(table.getTableHeader(), "growx, wrap");
+        tableSurface.add(table, "growx, wrap");
+        tableSurface.add(tag("ColumnKey.dueDate owns sort, filter, help, visibility", BLUE),
+                "growx");
+
+        JPanel menu = cardPanel();
+        menu.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][][][][]"));
+        menu.add(strong("Header popup: Due date"), "growx, wrap");
+        menu.add(menuRow("Sort ascending"), "growx, wrap");
+        menu.add(menuRow("Sort descending"), "growx, wrap");
+        menu.add(menuRow("Filter by range..."), "growx, wrap");
+        menu.add(menuRow("Hide column"), "growx, wrap");
+        menu.add(menuRow("Help for due date"), "growx");
+
+        JPanel descriptor = cardPanel();
+        descriptor.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][][][][]"));
+        descriptor.add(strong("Descriptor path"), "growx, wrap");
+        descriptor.add(new JLabel("view column"), "growx, wrap");
+        descriptor.add(new JLabel("model column"), "growx, wrap");
+        descriptor.add(new JLabel("ColumnKey.dueDate"), "growx, wrap");
+        descriptor.add(new JLabel("SortKey + RowSorter"), "growx, wrap");
+        descriptor.add(new JLabel("resource/help/state ids"), "growx, wrap");
+        descriptor.add(tag("localized header is display only", AMBER), "growx");
+
+        JPanel side = new JPanel(new MigLayout("fill, insets 0", "[grow]", "[grow][grow]"));
+        side.setOpaque(false);
+        side.add(menu, "grow, wrap");
+        side.add(descriptor, "grow");
+
+        panel.add(tableSurface, "grow");
+        panel.add(side, "grow, wrap");
+        panel.add(note("Header rule",
+                "Pointer location resolves to a descriptor column before sort, filter, help, or visibility commands run."),
+                "span 2, growx");
+        return panel;
+    }
+
+    static JPanel practicalTemporalSelection() {
+        BookExampleSupport.requireEdt();
+        JPanel panel = figurePanel("Temporal selection panels",
+                "[grow,fill][grow,fill]", "[][grow][]");
+        panel.add(calendarPreview(), "grow");
+        panel.add(dateTimeSpanPreview(), "grow, wrap");
+        panel.add(note("Temporal contract",
+                "Draft date, draft time, quick range, zone, endpoint policy, and committed value are separate facts."),
+                "span 2, growx");
+        return panel;
+    }
+
+    static JPanel practicalTagCloud() {
+        BookExampleSupport.requireEdt();
+        JPanel panel = figurePanel("Catalog-backed tag cloud",
+                "[grow,fill][250!]", "[][grow][]");
+
+        JPanel editor = cardPanel();
+        editor.setLayout(new MigLayout("fillx, insets 14", "[grow]", "[][][][][]"));
+        editor.add(strong("Customer labels"), "growx, wrap");
+        JPanel chips = new JPanel(new MigLayout("insets 0, gap 6", "[][][][]", "[][]"));
+        chips.setOpaque(false);
+        chips.add(tag("priority", RED));
+        chips.add(tag("renewal", BLUE));
+        chips.add(tag("finance", GREEN));
+        chips.add(tag("manual review", AMBER), "wrap");
+        chips.add(new JTextField("add catalog tag"), "span 3, growx");
+        chips.add(new JButton("Add"));
+        editor.add(chips, "growx, wrap");
+        editor.add(tag("Problem: duplicate tag 'finance'", RED), "growx, wrap");
+        editor.add(new JLabel("Focused chip: renewal; query: \"ris\""), "growx, wrap");
+        editor.add(new JLabel("FieldKey: customer.tags"), "growx");
+
+        JPanel suggestions = cardPanel();
+        suggestions.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][][][][]"));
+        suggestions.add(strong("Suggestions"), "growx, wrap");
+        suggestions.add(menuRow("risk - catalog id TAG-204"), "growx, wrap");
+        suggestions.add(menuRow("risk review - catalog id TAG-512"), "growx, wrap");
+        suggestions.add(menuRow("region restricted - disabled"), "growx, wrap");
+        suggestions.add(new JSeparator(), "growx, wrap");
+        suggestions.add(new JLabel("generation 18, stale replies ignored"), "growx");
+
+        panel.add(editor, "grow");
+        panel.add(suggestions, "grow, wrap");
+        panel.add(note("Model path",
+                "selected ids + query + suggestions + focused chip + ProblemSet drive ordinary Swing children."),
+                "span 2, growx");
+        return panel;
+    }
+
+    static JPanel practicalInteractiveCells() {
+        BookExampleSupport.requireEdt();
+        JPanel panel = figurePanel("Interactive cells in JTable",
+                "[grow,fill][240!]", "[][grow][]");
+
+        DefaultTableModel model = new DefaultTableModel(new Object[][] {
+                {"ORD-1042", "Acme Manufacturing", "Pending", "Approve", "rowId=1042"},
+                {"ORD-1043", "Northstar Retail", "Blocked", "Resolve", "rowId=1043"},
+                {"ORD-1044", "Lumen Services", "Ready", "Ship", "rowId=1044"},
+                {"ORD-1045", "Cedar Logistics", "Review", "Open", "rowId=1045"}
+        }, new Object[] {"Order", "Customer", "Status", "Action", "Identity"});
+        JTable table = new JTable(model);
+        table.setRowHeight(28);
+        table.getColumnModel().getColumn(0).setPreferredWidth(80);
+        table.getColumnModel().getColumn(1).setPreferredWidth(180);
+        table.getColumnModel().getColumn(2).setPreferredWidth(85);
+        table.getColumnModel().getColumn(3).setPreferredWidth(80);
+        table.getColumnModel().getColumn(4).setPreferredWidth(105);
+
+        JPanel tableCard = cardPanel();
+        tableCard.setLayout(new MigLayout("fill, insets 10", "[grow]", "[][grow][]"));
+        tableCard.add(strong("Approval queue"), "growx, wrap");
+        tableCard.add(new JScrollPane(table), "grow, wrap");
+        tableCard.add(tag("Selected cell invokes CommandKey.order.approve through RowId + ColumnKey", BLUE),
+                "growx");
+
+        JPanel route = cardPanel();
+        route.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][][][][]"));
+        route.add(strong("Event route"), "growx, wrap");
+        route.add(new JLabel("view row 2"), "growx, wrap");
+        route.add(new JLabel("convertRowIndexToModel"), "growx, wrap");
+        route.add(new JLabel("RowId ORD-1044"), "growx, wrap");
+        route.add(new JLabel("ColumnKey.action"), "growx, wrap");
+        route.add(tag("renderer paints; action map invokes", GREEN), "growx");
+
+        panel.add(tableCard, "grow");
+        panel.add(route, "grow, wrap");
+        panel.add(note("Interaction rule",
+                "Painted buttons and badges are not live children; commands are routed by table coordinates."),
+                "span 2, growx");
+        return panel;
+    }
+
+    static JPanel practicalBusinessWidgets() {
+        BookExampleSupport.requireEdt();
+        JPanel panel = figurePanel("Business widget catalog",
+                "[grow,fill][grow,fill]", "[][grow][grow][]");
+        panel.add(tokenFieldPreview(), "grow");
+        panel.add(statusAndTriStatePreview(), "grow, wrap");
+        panel.add(stepPanelPreview(), "grow");
+        panel.add(commandOverflowPreview(), "grow, wrap");
+        panel.add(note("Reuse rule",
+                "Small widgets stay maintainable when state, commands, resources, problems, and component keys are explicit."),
+                "span 2, growx");
+        return panel;
+    }
+
+    private static void addHeaderCell(JPanel panel, String text) {
+        addHeaderCell(panel, text, "");
+    }
+
+    private static void addHeaderCell(JPanel panel, String text, String constraints) {
+        JLabel label = strong(text);
+        label.setOpaque(true);
+        label.setBackground(new Color(0xe9eef4));
+        label.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xc6d0da)),
+                BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+        panel.add(label, constraints);
+    }
+
+    private static void addTableRow(JPanel panel, String customer, String status, String dueDate, String amount) {
+        panel.add(tableCell(customer));
+        panel.add(tableCell(status));
+        panel.add(tableCell(dueDate));
+        panel.add(tableCell(amount), "wrap");
+    }
+
+    private static JLabel tableCell(String text) {
+        JLabel label = new JLabel(text);
+        label.setOpaque(true);
+        label.setBackground(Color.WHITE);
+        label.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xe1e6eb)),
+                BorderFactory.createEmptyBorder(5, 8, 5, 8)));
+        return label;
+    }
+
+    private static JLabel menuRow(String text) {
+        JLabel label = new JLabel(text);
+        label.setOpaque(true);
+        label.setBackground(Color.WHITE);
+        label.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        return label;
+    }
+
+    private static JPanel splitButtonPreview(String text, String arrow) {
+        JPanel split = new JPanel(new MigLayout("insets 0, gap 0", "[]0[26!]", "[fill]"));
+        split.setOpaque(false);
+        JButton main = new JButton(text);
+        JButton secondary = new JButton(arrow);
+        secondary.setFocusable(false);
+        split.add(main, "growy");
+        split.add(secondary, "growy");
+        return split;
+    }
+
+    private static JPanel unitFieldPreview(String amount, String unit) {
+        JPanel field = new JPanel(new MigLayout("insets 0, gap 0", "[grow,fill]0[64!]", "[fill]"));
+        field.setOpaque(true);
+        field.setBackground(Color.WHITE);
+        field.setBorder(UIManager.getBorder("TextField.border"));
+        JTextField amountField = new JTextField(amount);
+        amountField.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+        JButton unitButton = new JButton(unit + " v");
+        unitButton.setFocusable(false);
+        field.add(amountField, "grow");
+        field.add(unitButton, "growy");
+        return field;
+    }
+
+    private static JPanel calendarPreview() {
+        JPanel calendar = cardPanel();
+        calendar.setLayout(new MigLayout("fill, insets 12", "[grow]", "[][][grow]"));
+        calendar.add(strong("June 2026"), "center, wrap");
+        calendar.add(new JLabel("Mon   Tue   Wed   Thu   Fri   Sat   Sun"), "center, wrap");
+        calendar.add(new PaintPanel((g, c) -> {
+            g.setColor(Color.WHITE);
+            g.fillRect(0, 0, c.getWidth(), c.getHeight());
+            int cellWidth = c.getWidth() / 7;
+            int cellHeight = c.getHeight() / 5;
+            int day = 1;
+            for (int row = 0; row < 5; row++) {
+                for (int col = 0; col < 7 && day <= 30; col++) {
+                    int x = col * cellWidth + 4;
+                    int y = row * cellHeight + 4;
+                    g.setColor(day == 16 ? new Color(0xdff2ea) : new Color(0xf8fafc));
+                    g.fillRoundRect(x, y, cellWidth - 8, cellHeight - 8, 10, 10);
+                    g.setColor(day == 16 ? GREEN : LINE);
+                    g.drawRoundRect(x, y, cellWidth - 8, cellHeight - 8, 10, 10);
+                    g.setColor(INK);
+                    drawCentered(g, Integer.toString(day), new Rectangle(x, y, cellWidth - 8, cellHeight - 8));
+                    day++;
+                }
+            }
+        }), "grow");
+        return calendar;
+    }
+
+    private static JPanel dateTimeSpanPreview() {
+        JPanel span = cardPanel();
+        span.setLayout(new MigLayout("fillx, insets 12", "[100!][grow,fill]", "[][][][][][]"));
+        span.add(strong("Date-time span"), "span 2, growx, wrap");
+        span.add(new JLabel("Start"));
+        span.add(new JTextField("2026-06-16 09:00"), "growx, wrap");
+        span.add(new JLabel("End"));
+        span.add(new JTextField("2026-06-16 17:00"), "growx, wrap");
+        span.add(new JLabel("Quick"));
+        span.add(splitButtons("Today", "This week", "Custom"), "growx, wrap");
+        span.add(new JLabel("Zone"));
+        span.add(tag("Europe/Prague, end exclusive", AMBER), "growx, wrap");
+        span.add(new JButton("Apply draft"), "span 2, split 2");
+        span.add(new JButton("Cancel"));
+        return span;
+    }
+
+    private static JPanel tokenFieldPreview() {
+        JPanel panel = cardPanel();
+        panel.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][]"));
+        panel.add(strong("Token field"), "growx, wrap");
+        JPanel tokens = new JPanel(new MigLayout("insets 0", "[][][][grow]", "[]"));
+        tokens.setOpaque(false);
+        tokens.add(tag("urgent", GREEN));
+        tokens.add(tag("renewal", BLUE));
+        tokens.add(tag("credit review", AMBER));
+        tokens.add(new JTextField("add tag"), "growx");
+        panel.add(tokens, "growx, wrap");
+        panel.add(new JLabel("tokens + query + focused token"), "growx");
+        return panel;
+    }
+
+    private static JPanel statusAndTriStatePreview() {
+        JPanel panel = cardPanel();
+        panel.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][]"));
+        panel.add(strong("Status and nullable facts"), "growx, wrap");
+        JPanel row = new JPanel(new MigLayout("insets 0", "[][][][grow]", "[]"));
+        row.setOpaque(false);
+        row.add(tag("Active", GREEN));
+        row.add(tag("Warning", AMBER));
+        row.add(new JComboBox<>(new String[] {"Unknown", "Yes", "No"}));
+        panel.add(row, "growx, wrap");
+        panel.add(new JLabel("severity + accessible text + explicit tri-state"), "growx");
+        return panel;
+    }
+
+    private static JPanel stepPanelPreview() {
+        JPanel panel = cardPanel();
+        panel.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][]"));
+        panel.add(strong("Wizard step panel"), "growx, wrap");
+        panel.add(splitButtons("Import", "Map", "Validate", "Finish"), "growx, wrap");
+        panel.add(new JLabel("current step, visited state, problems, commands"), "growx");
+        return panel;
+    }
+
+    private static JPanel commandOverflowPreview() {
+        JPanel panel = cardPanel();
+        panel.setLayout(new MigLayout("fillx, insets 10", "[grow]", "[][][]"));
+        panel.add(strong("Command bar with overflow"), "growx, wrap");
+        JPanel bar = new JPanel(new MigLayout("insets 0", "[][][][grow]push[]", "[]"));
+        bar.setOpaque(false);
+        bar.add(new JButton("Save"));
+        bar.add(new JButton("Refresh"));
+        bar.add(new JButton("Export"));
+        bar.add(new JLabel());
+        bar.add(new JButton("..."));
+        panel.add(bar, "growx, wrap");
+        panel.add(new JLabel("same command keys when visible or overflowed"), "growx");
+        return panel;
+    }
+
+    private static JPanel splitButtons(String... labels) {
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[]4[]4[]4[]", "[]"));
+        panel.setOpaque(false);
+        for (String label : labels) {
+            panel.add(new JButton(label));
+        }
         return panel;
     }
 
