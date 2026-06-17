@@ -10,7 +10,7 @@ plugins {
 
 if (gradle.startParameter.taskNames.any { taskName ->
     def plainTaskName = taskName.tokenize(':').last()
-    plainTaskName.startsWith('release') || ['beforeReleaseBuild', 'afterReleaseBuild'].contains(plainTaskName)
+    ['release', 'beforeReleaseBuild', 'afterReleaseBuild'].contains(plainTaskName)
 }) {
     apply plugin: libs.plugins.release.get().pluginId
 }
@@ -384,6 +384,8 @@ if (project.hasProperty('LOCAL_CREDENTIALS')) {
     nexusPublishing {
         repositories {
             sonatype {
+                nexusUrl = uri('https://ossrh-staging-api.central.sonatype.com/service/local/')
+                snapshotRepositoryUrl = uri('https://central.sonatype.com/repository/maven-snapshots/')
                 def creds = project.ext['LOCAL_CREDENTIALS']?.sonatype
                 username = creds?.userName
                 password = creds?.password
@@ -396,4 +398,20 @@ allprojects {
     for (def plugin in ['reproducibleBuilds', 'dependencyCheck', 'cycloneDx']) {
         apply plugin: libs.plugins[plugin].get().pluginId
     }
+}
+
+tasks.matching { task ->
+    [
+            'initializeSonatypeStagingRepository',
+            'findSonatypeStagingRepository',
+            'closeSonatypeStagingRepository',
+            'releaseSonatypeStagingRepository',
+            'closeAndReleaseSonatypeStagingRepository',
+            'closeAndReleaseStagingRepositories',
+            'closeStagingRepositories',
+            'releaseStagingRepositories',
+            'publishToSonatype'
+    ].contains(task.name)
+}.configureEach {
+    notCompatibleWithConfigurationCache('Sonatype Nexus publishing tasks keep runtime Nexus state that is not configuration-cache serializable.')
 }
