@@ -22,7 +22,7 @@ The project follows three core ideas:
 | Optional interop | `corusco-glazedlists` | Adapts mature Glazed Lists `EventList` instances to Corusco `ObservableList` row sources. |
 | Compile-time API | `corusco-annotations` | Source annotations for forms, tables, actions, help, and simple local constraints. |
 | Code generation | `corusco-processor` | Annotation processor that emits typed Java companion classes using `javax.lang.model` APIs instead of reflection. |
-| Testing support | `corusco-test` | Shared generated-source compiler helpers and future cross-module testing utilities. |
+| Testing support | `corusco-test` | Internal generated-source compiler helpers and cross-module testing utilities. |
 | Examples | `corusco-examples` | Compiling examples and regression fixtures that show the intended usage of each completed roadmap slice. |
 
 Dependencies flow downward from application/example code into runtime modules.
@@ -186,14 +186,14 @@ tests, example regression tests, and local verification commands.
 
 ## Current Limits
 
-The project is in its first preview line. The following areas are intentionally
-still being finalized:
+The project is in the `1.0.0-SNAPSHOT` development line. The following areas
+are intentionally still being finalized before a stable `1.0.0` tag:
 
-- automated binary compatibility checks;
+- generated-source compatibility checks beyond the runtime binary gate;
 - any optional legacy reflection adapter.
 
 Local Maven publication, source/Javadoc artifacts, JPMS module names, and the
-preview compatibility policy are now documented in [Release Policy](release-policy.md).
+compatibility policy are now documented in [Release Policy](release-policy.md).
 
 The active rule remains the same: keep runtime APIs typed and explicit, keep
 generated code readable, and keep Swing behavior observable to an experienced

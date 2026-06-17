@@ -303,5 +303,5 @@ source records, generated companion classes, and review checklist.
 - Generated action classes include descriptor metadata and command factories for
   annotated no-argument owner methods.
 - Generated class names, annotation members, generated key ids, and generated
-  descriptor shapes are part of the preview compatibility surface described in
+  descriptor shapes are part of the compatibility surface described in
   [Release Policy](release-policy.md).

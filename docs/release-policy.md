@@ -1,8 +1,8 @@
 # Release Policy
 
-Corusco is still in the preview line. The policy below explains what version
-numbers mean before the first stable `1.0.0` release and what compatibility
-breaks are allowed.
+Corusco is in the `1.0.0-SNAPSHOT` development line. The policy below explains
+the published compatibility surface and the checks that must pass before a
+stable release tag.
 
 ## Version Scheme
 
@@ -12,13 +12,11 @@ Published artifacts use semantic-version shaped coordinates:
 MAJOR.MINOR.PATCH[-QUALIFIER]
 ```
 
-The first preview version is `0.1.0-preview`, tagged as
-`v0.1.0-preview`.
-
-During the `0.x` line, each minor version represents a preview compatibility
-line. A patch release should be compatible with the previous patch release in
-the same minor line. A minor release may make breaking changes, but those
-changes must be called out in the changelog.
+Snapshot versions are development coordinates and must not be treated as stable
+consumer contracts. Stable releases use semantic versioning. Patch releases
+preserve binary and source compatibility for the published API. Minor releases
+may add API while preserving compatibility. Breaking changes require a new
+major version and migration notes in the changelog.
 
 ## Compatibility Surface
 
@@ -29,12 +27,11 @@ The compatibility contract applies to published library modules:
 - `corusco-swing`
 - `corusco-annotations`
 - `corusco-processor`
-- `corusco-test`
 
-`corusco-examples` is a source consumer and regression suite. It is not a
-published compatibility surface.
+`corusco-test` and `corusco-examples` are in-repository test/example modules.
+They are not published compatibility surfaces.
 
-The preview JPMS module names are:
+The JPMS module names are:
 
 | Artifact | JPMS module |
 | --- | --- |
@@ -43,7 +40,6 @@ The preview JPMS module names are:
 | `corusco-swing` | `cz.auderis.corusco.swing` |
 | `corusco-annotations` | `cz.auderis.corusco.annotations` |
 | `corusco-processor` | `cz.auderis.corusco.processor` |
-| `corusco-test` | `cz.auderis.corusco.test` |
 
 `corusco-glazedlists` currently publishes this name through
 `Automatic-Module-Name` rather than `module-info.java` because Glazed Lists
@@ -59,9 +55,9 @@ expected to call generated classes directly. Examples include generated field
 key classes, descriptor classes, form models, table column classes, action
 descriptor classes, view contracts, and behavior plans.
 
-## Allowed Patch Changes
+## Allowed Compatible Changes
 
-Patch releases in a preview minor line may:
+Compatible releases may:
 
 - fix bugs without changing documented behavior;
 - add overloads, new helper methods, or new generated constants;
@@ -69,15 +65,15 @@ Patch releases in a preview minor line may:
 - add optional metadata that existing source can ignore;
 - improve documentation, examples, tests, or packaging metadata.
 
-Patch releases must not remove or rename public API, change annotation member
-defaults incompatibly, alter generated class names, or change generated member
-types in a way that breaks recompilation of existing consumers.
+Compatible releases must not remove or rename public API, change annotation
+member defaults incompatibly, alter generated class names, or change generated
+member types in a way that breaks recompilation of existing consumers.
 
 ## Breaking Changes
 
-Breaking changes after `v0.1.0-preview` are allowed only in a new preview minor
-line. They must be recorded in `CHANGELOG.md` under `Breaking Changes` with
-migration notes.
+Breaking changes after a stable release are allowed only in a new major line.
+They must be recorded in `CHANGELOG.md` under `Breaking Changes` with migration
+notes.
 
 Examples of breaking changes:
 
@@ -91,30 +87,27 @@ Examples of breaking changes:
 - changing problem-code or resource-key IDs in a way that invalidates consumer
   resources or assertions.
 
-## Binary Compatibility Checks
+## Compatibility Checks
 
-The project does not yet run an automated binary compatibility plugin. Until
-that is added, each Stage 21 API-polish commit must review public API changes
-manually and explain intentional breaks in the stage plan or changelog.
-
-Before the first stable release, add an automated compatibility gate comparing
-published artifacts against the previous preview release. The gate should check
-binary compatibility for runtime modules and source compatibility for generated
-API shapes where binary checking is not enough.
+The project runs a JApiCmp-based binary compatibility gate for published
+runtime modules. Generated source shape is reviewed through processor tests,
+example compilation against Maven-local artifacts, Javadoc generation, and
+manual API review because binary compatibility alone cannot describe generated
+source contracts.
 
 ## Release Checklist
 
-Before tagging a preview release:
+Before tagging a release:
 
 1. Run the AudEnv-recommended test and build commands.
-2. Run `verifyPreviewReleaseReadiness`.
-3. Review [Preview API Review](api-review.md) for public package boundaries and
+2. Run `verifyReleaseReadiness`.
+3. Review [API Review](api-review.md) for public package boundaries and
    runtime reflection policy.
 4. Update `CHANGELOG.md` with additions, fixes, breaking changes, and migration
    notes.
 5. Create the release tag only after the working tree is clean.
 
-`verifyPreviewReleaseReadiness` aggregates local publication, module metadata,
-published-artifact example compilation, API/package audit, and generated
-Javadoc checks. It is not a substitute for reading release notes and reviewing
-intentional API changes.
+`verifyReleaseReadiness` aggregates local publication, module metadata,
+published-artifact example compilation, API/package audit, generated Javadoc
+checks, and binary compatibility checks. It is not a substitute for reading
+release notes and reviewing intentional API changes.

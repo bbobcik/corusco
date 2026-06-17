@@ -1,6 +1,6 @@
-# Preview API Review
+# API Review
 
-This review freezes the package-level public surface for the `0.2.0-preview`
+This review records the package-level public surface for the `1.0.0-SNAPSHOT`
 line. Type and method-level compatibility is governed by
 [Release Policy](release-policy.md); this document records the package names and
 runtime policy decisions that are stable enough to guard in the build.
@@ -43,7 +43,7 @@ runtime policy decisions that are stable enough to guard in the build.
 - `cz.auderis.corusco.swing.task`
 - `cz.auderis.corusco.swing.testing`
 
-### Compile-Time and Test Modules
+### Compile-Time Modules
 
 - `cz.auderis.corusco.annotations`
 - `cz.auderis.corusco.annotations.command`
@@ -52,10 +52,9 @@ runtime policy decisions that are stable enough to guard in the build.
 - `cz.auderis.corusco.annotations.table`
 - `cz.auderis.corusco.annotations.validation`
 - `cz.auderis.corusco.processor`
-- `cz.auderis.corusco.test`
 
-`corusco-examples` is intentionally excluded because it is not a published
-compatibility surface.
+`corusco-examples` and `corusco-test` are intentionally excluded because they
+are not published compatibility surfaces.
 
 ## Package Naming Review
 
@@ -64,8 +63,7 @@ The package names follow the module boundaries from the roadmap:
 - core runtime concepts live below `cz.auderis.corusco.core`;
 - Swing/AWT integration lives below `cz.auderis.corusco.swing`;
 - Glazed Lists interop is isolated in `cz.auderis.corusco.glazedlists`;
-- annotation API and processor implementation are separate packages;
-- generated-source test support is isolated in `cz.auderis.corusco.test`.
+- annotation API and processor implementation are separate packages.
 
 No package uses JavaBeans, reflection, legacy, or implementation-detail naming
 as part of the public surface.
@@ -79,7 +77,7 @@ Runtime modules are:
 - `corusco-swing`
 
 They must not depend on JavaBeans introspection, reflective member access,
-runtime annotation scanning, or classpath scanning. The preview build verifies
+runtime annotation scanning, or classpath scanning. The build verifies
 this with `verifyRuntimeReflectionPolicy`.
 
 The annotation processor may use `Element.getAnnotation(...)` because it runs
@@ -91,10 +89,10 @@ not runtime annotation scanning.
 Run:
 
 ```bash
-./gradlew verifyPreviewApiAudit --quiet --stacktrace
+./gradlew verifyApiAudit --quiet --stacktrace
 ```
 
 This aggregates:
 
-- `verifyPreviewPackageSurface`
+- `verifyPublishedPackageSurface`
 - `verifyRuntimeReflectionPolicy`

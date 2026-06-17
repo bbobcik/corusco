@@ -17,11 +17,11 @@ if (gradle.startParameter.taskNames.any { taskName ->
 
 allprojects {
     group = 'cz.auderis.corusco'
-    version = '0.2.0-SNAPSHOT'
+    version = '1.0.0-SNAPSHOT'
 }
 
 def publishableProjects = subprojects.findAll {
-    it.buildFile.exists() && !['corusco-examples', 'corusco-manual'].contains(it.name)
+    it.buildFile.exists() && !['corusco-examples', 'corusco-manual', 'corusco-test'].contains(it.name)
 }
 def publishableProjectNames = publishableProjects.collect { it.name }
 def binaryCompatibilityProjectNames = [
@@ -30,12 +30,12 @@ def binaryCompatibilityProjectNames = [
     'corusco-swing'
 ]
 def binaryCompatibilityProjects = publishableProjects.findAll { binaryCompatibilityProjectNames.contains(it.name) }
-def binaryCompatibilityBaselineVersion = 'v0.2.0'
+def binaryCompatibilityBaselineVersion = 'v1.0.0'
 def binaryCompatibilityBaselineDir = new File(rootDir, ".machine_env/api-baselines/${binaryCompatibilityBaselineVersion}")
 def publicationGroupPath = group.toString().replace('.', File.separator)
 def publicationVersion = version.toString()
 def projectRootPath = rootDir.absolutePath
-def previewPackageSurface = [
+def publishedPackageSurface = [
     'corusco-core': [
         'cz.auderis.corusco.core',
         'cz.auderis.corusco.core.collection',
@@ -80,9 +80,6 @@ def previewPackageSurface = [
     ],
     'corusco-processor': [
         'cz.auderis.corusco.processor'
-    ],
-    'corusco-test': [
-        'cz.auderis.corusco.test'
     ]
 ]
 def runtimeReflectionScanRoots = [
@@ -135,9 +132,11 @@ tasks.register('verifyMavenLocalPublication') {
             }
         }
 
-        def examplesDir = new File(repository, "${publicationGroupPath}/corusco-examples/${publicationVersion}")
-        if (examplesDir.exists()) {
-            throw new GradleException("corusco-examples must remain unpublished, but ${examplesDir} exists")
+        ['corusco-examples', 'corusco-test'].each { unpublishedProjectName ->
+            def unpublishedDir = new File(repository, "${publicationGroupPath}/${unpublishedProjectName}/${publicationVersion}")
+            if (unpublishedDir.exists()) {
+                throw new GradleException("${unpublishedProjectName} must remain unpublished, but ${unpublishedDir} exists")
+            }
         }
     }
 }
@@ -186,12 +185,12 @@ tasks.register('verifyExamplesAgainstPublishedArtifacts') {
     dependsOn tasks.named('compileExamplesAgainstPublishedArtifacts')
 }
 
-tasks.register('verifyPreviewPackageSurface') {
+tasks.register('verifyPublishedPackageSurface') {
     group = 'verification'
-    description = 'Verifies that published source packages match the reviewed preview API surface.'
+    description = 'Verifies that published source packages match the reviewed API surface.'
 
     doLast {
-        previewPackageSurface.each { projectName, expectedPackages ->
+        publishedPackageSurface.each { projectName, expectedPackages ->
             def sourceRoot = new File(projectRootPath, "${projectName}/src/main/java")
             def actualPackages = [] as Set
             java.nio.file.Files.walk(sourceRoot.toPath()).withCloseable { stream ->
@@ -215,11 +214,17 @@ tasks.register('verifyPreviewPackageSurface') {
                         Preview package surface mismatch for ${projectName}.
                         Unexpected packages: ${unexpected}
                         Missing packages: ${missing}
-                        Update docs/api-review.md and previewPackageSurface intentionally.
+                        Update docs/api-review.md and publishedPackageSurface intentionally.
                         """.stripIndent())
             }
         }
     }
+}
+
+tasks.register('verifyPreviewPackageSurface') {
+    group = 'verification'
+    description = 'Compatibility alias for verifyPublishedPackageSurface.'
+    dependsOn 'verifyPublishedPackageSurface'
 }
 
 tasks.register('verifyRuntimeReflectionPolicy') {
@@ -251,20 +256,26 @@ tasks.register('verifyRuntimeReflectionPolicy') {
     }
 }
 
+tasks.register('verifyApiAudit') {
+    group = 'verification'
+    description = 'Runs API/package surface and runtime reflection policy checks.'
+    dependsOn 'verifyPublishedPackageSurface'
+    dependsOn 'verifyRuntimeReflectionPolicy'
+}
+
 tasks.register('verifyPreviewApiAudit') {
     group = 'verification'
-    description = 'Runs preview API/package surface and runtime reflection policy checks.'
-    dependsOn 'verifyPreviewPackageSurface'
-    dependsOn 'verifyRuntimeReflectionPolicy'
+    description = 'Compatibility alias for verifyApiAudit.'
+    dependsOn 'verifyApiAudit'
 }
 
 tasks.register('verifyGeneratedJavadocs') {
     group = 'verification'
-    description = 'Verifies generated Javadocs include indexes and package pages for the preview API surface.'
+    description = 'Verifies generated Javadocs include indexes and package pages for the published API surface.'
     dependsOn publishableProjects.collect { it.tasks.named('javadoc') }
 
     doLast {
-        previewPackageSurface.each { projectName, expectedPackages ->
+        publishedPackageSurface.each { projectName, expectedPackages ->
             def javadocDir = new File(projectRootPath, "${projectName}/build/docs/javadoc")
             def indexFile = new File(javadocDir, 'index.html')
             if (!indexFile.isFile()) {
@@ -322,7 +333,7 @@ def binaryCompatibilityTasks = binaryCompatibilityProjects.collect { comparedPro
 
 tasks.register('establishBinaryCompatibilityBaseline') {
     group = 'verification'
-    description = 'Creates the v0.2.0 binary compatibility baseline jars when they do not exist yet.'
+    description = 'Creates the v1.0.0 binary compatibility baseline jars when they do not exist yet.'
     dependsOn binaryCompatibilityProjects.collect { it.tasks.named('jar') }
 
     doLast {
@@ -345,21 +356,27 @@ binaryCompatibilityTasks.each {
 
 tasks.register('verifyBinaryCompatibility') {
     group = 'verification'
-    description = 'Checks binary compatibility of published runtime modules, establishing the v0.2.0 baseline on first run.'
+    description = 'Checks binary compatibility of published runtime modules, establishing the v1.0.0 baseline on first run.'
     dependsOn 'establishBinaryCompatibilityBaseline'
     dependsOn binaryCompatibilityTasks
 }
 
-tasks.register('verifyPreviewReleaseReadiness') {
+tasks.register('verifyReleaseReadiness') {
     group = 'verification'
-    description = 'Runs the local preview release readiness gate before tagging.'
+    description = 'Runs the local release readiness gate before tagging.'
     dependsOn subprojects.findAll { it.buildFile.exists() }.collect { it.tasks.named('build') }
     dependsOn 'verifyMavenLocalPublication'
     dependsOn 'verifyPublishedModuleMetadata'
     dependsOn 'verifyExamplesAgainstPublishedArtifacts'
-    dependsOn 'verifyPreviewApiAudit'
+    dependsOn 'verifyApiAudit'
     dependsOn 'verifyGeneratedJavadocs'
     dependsOn 'verifyBinaryCompatibility'
+}
+
+tasks.register('verifyPreviewReleaseReadiness') {
+    group = 'verification'
+    description = 'Compatibility alias for verifyReleaseReadiness.'
+    dependsOn 'verifyReleaseReadiness'
 }
 
 

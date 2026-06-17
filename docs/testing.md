@@ -220,5 +220,5 @@ committing.
   runtime behavior unless a separate test instantiates that code.
 - There is no screenshot, accessibility tree, or visual regression test helper
   yet.
-- There is no automated binary compatibility checker yet. Until one is added,
-  preview API changes are reviewed against [Release Policy](release-policy.md).
+- Binary compatibility is checked for published runtime modules; generated API
+  shape changes are still reviewed against [Release Policy](release-policy.md).

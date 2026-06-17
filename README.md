@@ -5,7 +5,7 @@ applications. It is built around typed presentation models, generated metadata,
 lifecycle-aware Swing behaviors, table helpers, and UI tests that can exercise
 generated wiring without falling back to reflection or string property paths.
 
-The current repository contains the first preview runtime across the modules:
+The current repository contains the 1.0 development runtime across the modules:
 observable values and lists, field models, validation and problem reporting,
 Swing bindings, generated form/table metadata, table-state persistence,
 dialogs, async helpers, Glazed Lists interop, and the Swing MVP test harness.
@@ -34,18 +34,18 @@ For a full verification pass:
 ./gradlew build --quiet --stacktrace
 ```
 
-To exercise the preview-style artifacts locally:
+To exercise the publication-style artifacts locally:
 
 ```bash
 ./gradlew publishToMavenLocal --quiet --stacktrace
 ./gradlew verifyMavenLocalPublication --quiet --stacktrace
 ./gradlew verifyExamplesAgainstPublishedArtifacts --quiet --stacktrace
-./gradlew verifyPreviewReleaseReadiness --quiet --stacktrace
+./gradlew verifyReleaseReadiness --quiet --stacktrace
 ```
 
 This publishes the library modules with source and Javadoc jars under the
-`cz.auderis.corusco` group. The examples module remains an in-repository
-consumer and is not published as a reusable artifact.
+`cz.auderis.corusco` group. The examples and test-support modules remain
+in-repository consumers and are not published as reusable artifacts.
 
 ## Modules
 
@@ -56,7 +56,7 @@ consumer and is not published as a reusable artifact.
 | `corusco-swing` | Swing/AWT integration: bindings, EDT utilities, behaviors, table models, dialog helpers, task callbacks, and MVP test harness. |
 | `corusco-annotations` | Compile-time annotation API for generated form, table, and action metadata. |
 | `corusco-processor` | Annotation processor implementation and generated-source tests. |
-| `corusco-test` | Shared test support, including generated-source compiler helpers. |
+| `corusco-test` | Internal test support, including generated-source compiler helpers. |
 | `corusco-examples` | Focused examples and regression fixtures for every completed roadmap slice. |
 
 ## Documentation
@@ -73,7 +73,7 @@ consumer and is not published as a reusable artifact.
 - [Testing guide](docs/testing.md)
 - [Generated code examples](docs/generated-code-examples.md)
 - [Release policy](docs/release-policy.md)
-- [Preview API review](docs/api-review.md)
+- [API review](docs/api-review.md)
 - [Changelog](CHANGELOG.md)
 - [Implementation stage plans](docs/implementation-stage-plans/README.md)
 - [Architecture decision records](docs/adr/README.md)

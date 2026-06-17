@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to Corusco are recorded here. The project follows the
-preview compatibility rules in [docs/release-policy.md](docs/release-policy.md).
+compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
 ## Unreleased
 
@@ -14,12 +14,15 @@ preview compatibility rules in [docs/release-policy.md](docs/release-policy.md).
   `@UiAction` owners.
 - `FormDialogShell` as a minimal native `JDialog` host for `FormDialog`.
 - JApiCmp-based binary compatibility gate for runtime modules, with first-run
-  `v0.2.0` baseline establishment under `.machine_env/api-baselines`.
+  `v1.0.0` baseline establishment under `.machine_env/api-baselines`.
 
 ### Changed
 
-- Development version is now `0.2.0-SNAPSHOT` after the already-tagged
-  `v0.1.0-preview`.
+- Development version is now `1.0.0-SNAPSHOT`.
+- Local release readiness is exposed as `verifyReleaseReadiness`; the former
+  `verifyPreviewReleaseReadiness` task remains as a compatibility alias.
+- `corusco-test` is internal test support and is no longer part of the
+  published artifact set.
 - Preview package-surface review now includes the annotation subpackages:
   `annotations.command`, `annotations.form`, `annotations.help`,
   `annotations.table`, and `annotations.validation`.
