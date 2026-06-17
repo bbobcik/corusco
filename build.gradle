@@ -1,42 +1,23 @@
 plugins {
-    id 'me.champeau.gradle.japicmp' version '0.4.6'
+    alias libs.plugins.reproducibleBuilds apply false
+    alias libs.plugins.dependencyCheck apply false
+    alias libs.plugins.cycloneDx apply false
+
+    alias libs.plugins.japiCmp
+    alias libs.plugins.nexusPublish
+    alias libs.plugins.release apply false
+}
+
+if (gradle.startParameter.taskNames.any { taskName ->
+    def plainTaskName = taskName.tokenize(':').last()
+    plainTaskName.startsWith('release') || ['beforeReleaseBuild', 'afterReleaseBuild'].contains(plainTaskName)
+}) {
+    apply plugin: libs.plugins.release.get().pluginId
 }
 
 allprojects {
     group = 'cz.auderis.corusco'
     version = '0.2.0-SNAPSHOT'
-}
-
-configure(subprojects.findAll { it.buildFile.exists() && it.name != 'corusco-manual' }) {
-    apply plugin: 'java-library'
-
-    java {
-        modularity.inferModulePath = true
-
-        toolchain {
-            languageVersion = JavaLanguageVersion.of(25)
-        }
-    }
-
-    tasks.withType(JavaCompile).configureEach {
-        options.encoding = 'UTF-8'
-        options.release = 25
-        options.compilerArgs.addAll(['-Xlint:all', '-Xlint:-processing'])
-    }
-
-    tasks.withType(Test).configureEach {
-        useJUnitPlatform()
-        systemProperty 'java.awt.headless', 'true'
-        testLogging {
-            events 'failed'
-            exceptionFormat = 'full'
-        }
-    }
-
-    dependencies {
-        testImplementation libs.bundles.testPlatform
-        testRuntimeOnly libs.bundles.testPlatformRuntime
-    }
 }
 
 def publishableProjects = subprojects.findAll {
@@ -128,60 +109,6 @@ def publishedModuleChecks = publishableProjectNames.collectEntries { projectName
         jarPath: "${projectName}/build/libs/${projectName}-${publicationVersion}.jar",
         moduleName: "cz.auderis.${projectName.replace('-', '.')}"
     ]]
-}
-
-configure(publishableProjects) {
-    apply plugin: 'maven-publish'
-
-    java {
-        withSourcesJar()
-        withJavadocJar()
-    }
-
-    tasks.withType(Javadoc).configureEach {
-        options.encoding = 'UTF-8'
-        options.addBooleanOption('Xdoclint:all,-missing', true)
-    }
-
-    tasks.named('jar').configure {
-        manifest {
-            attributes('Automatic-Module-Name': "cz.auderis.${project.name.replace('-', '.')}")
-        }
-    }
-
-    publishing {
-        publications {
-            mavenJava(MavenPublication) {
-                from components.java
-
-                pom {
-                    name = "Auderis Corusco ${project.name}"
-                    description = 'Typed Swing presentation-model, binding, table, behavior, and annotation-processing framework.'
-                    url = 'https://github.com/auderis/corusco'
-
-                    licenses {
-                        license {
-                            name = 'Apache License, Version 2.0'
-                            url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
-                        }
-                    }
-
-                    developers {
-                        developer {
-                            id = 'auderis'
-                            name = 'Auderis'
-                        }
-                    }
-
-                    scm {
-                        connection = 'scm:git:https://github.com/auderis/corusco.git'
-                        developerConnection = 'scm:git:https://github.com/auderis/corusco.git'
-                        url = 'https://github.com/auderis/corusco'
-                    }
-                }
-            }
-        }
-    }
 }
 
 tasks.register('verifyMavenLocalPublication') {
@@ -433,4 +360,23 @@ tasks.register('verifyPreviewReleaseReadiness') {
     dependsOn 'verifyPreviewApiAudit'
     dependsOn 'verifyGeneratedJavadocs'
     dependsOn 'verifyBinaryCompatibility'
+}
+
+
+if (project.hasProperty('LOCAL_CREDENTIALS')) {
+    nexusPublishing {
+        repositories {
+            sonatype {
+                def creds = project.ext['LOCAL_CREDENTIALS']?.sonatype
+                username = creds?.userName
+                password = creds?.password
+            }
+        }
+    }
+}
+
+allprojects {
+    for (def plugin in ['reproducibleBuilds', 'dependencyCheck', 'cycloneDx']) {
+        apply plugin: libs.plugins[plugin].get().pluginId
+    }
 }

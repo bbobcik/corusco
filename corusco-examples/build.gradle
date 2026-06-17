@@ -1,3 +1,7 @@
+plugins {
+    id 'project.java-conventions'
+}
+
 sourceSets {
     publishedArtifacts {
         java.srcDirs = sourceSets.main.java.srcDirs

@@ -1,1 +1,26 @@
+plugins {
+    id 'project.java-conventions'
+    id 'project.publication-conventions'
+}
+
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'Auderis Corusco Core',
+                'Implementation-Version': archiveVersion,
+                'Implementation-Vendor': 'Auderis',
+        )
+    }
+}
+
+publishing {
+    publications.mainLibrary.pom {
+        name = 'Auderis Corusco Core'
+        description = '''
+            Core presentation-model contracts for Corusco applications, including observable
+            values, commands, validation, resources, table metadata, lifecycle utilities, and
+            background-task coordination without Swing dependencies.
+            '''
+    }
+}
 

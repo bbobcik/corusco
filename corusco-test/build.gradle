@@ -1,3 +1,28 @@
+plugins {
+    id 'project.java-conventions'
+    id 'project.publication-conventions'
+}
+
 dependencies {
     api project(':corusco-core')
+}
+
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'Auderis Corusco Test Support',
+                'Implementation-Version': archiveVersion,
+                'Implementation-Vendor': 'Auderis',
+        )
+    }
+}
+
+publishing {
+    publications.mainLibrary.pom {
+        name = 'Auderis Corusco Test Support'
+        description = '''
+            Test support utilities for Corusco libraries and applications, including reusable
+            fixtures and assertions for presentation-model and observable-state behavior.
+            '''
+    }
 }

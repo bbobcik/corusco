@@ -1,3 +1,29 @@
+plugins {
+    id 'project.java-conventions'
+    id 'project.publication-conventions'
+}
+
 dependencies {
     api project(':corusco-core')
+}
+
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'Auderis Corusco Swing Implementation',
+                'Implementation-Version': archiveVersion,
+                'Implementation-Vendor': 'Auderis',
+        )
+    }
+}
+
+publishing {
+    publications.mainLibrary.pom {
+        name = 'Auderis Corusco Swing Implementation'
+        description = '''
+            Swing integration layer for Corusco presentation models, providing bindings,
+            command adapters, dialog helpers, table utilities, EDT coordination, and testing
+            support for desktop applications.
+            '''
+    }
 }

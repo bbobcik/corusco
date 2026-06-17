@@ -1,0 +1,64 @@
+/**
+ * -----------------------------------------------
+ * DEFAULT CONFIGURATION OF JAVA COMPILATION TASKS
+ * -----------------------------------------------
+ */
+
+plugins {
+    id 'java-library'
+}
+
+group = rootProject.group
+version = rootProject.version
+
+java {
+    modularity.inferModulePath = true
+
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+
+    withJavadocJar()
+    withSourcesJar()
+}
+
+dependencies {
+    // Default set of dependencies for unit tests
+    testImplementation libs.bundles.testPlatform
+    testRuntimeOnly libs.bundles.testPlatformRuntime
+}
+
+tasks.withType(JavaCompile) {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    options.release = 25
+    options.encoding = java.nio.charset.StandardCharsets.UTF_8.name()
+    options.debug = project.hasProperty('java.debug') ? project.property('java.debug') : true
+    options.warnings = true
+    options.javaModuleVersion = provider { version }
+}
+
+tasks.withType(Test) {
+    final def runTests = providers.gradleProperty('runTests')
+    onlyIf('runTests enabled') {
+        final def runFlag = runTests.getOrElse('true').toLowerCase()
+        return !['false', 'no'].contains(runFlag)
+    }
+
+    useJUnitPlatform()
+    systemProperty 'java.awt.headless', 'true'
+    jvmArgs += [
+            '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.io=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.util=ALL-UNNAMED',
+    ]
+    testLogging {
+        events 'failed'
+        exceptionFormat = 'full'
+    }
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = java.nio.charset.StandardCharsets.UTF_8.name()
+    options.addBooleanOption('Xdoclint:all,-missing', true)
+}

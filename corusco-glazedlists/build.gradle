@@ -1,4 +1,30 @@
+plugins {
+    id 'project.java-conventions'
+    id 'project.publication-conventions'
+}
+
 dependencies {
     api project(':corusco-core')
     api libs.glazedlists
+}
+
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'Auderis Corusco GlazedLists Extension',
+                'Implementation-Version': archiveVersion,
+                'Implementation-Vendor': 'Auderis',
+        )
+    }
+}
+
+publishing {
+    publications.mainLibrary.pom {
+        name = 'Auderis Corusco GlazedLists Extension'
+        description = '''
+            Glazed Lists integration for Corusco table and collection models, bridging
+            observable Corusco data with sorted, filtered, and event-driven Swing table
+            workflows.
+            '''
+    }
 }

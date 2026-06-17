@@ -1,0 +1,67 @@
+/**
+ * --------------------------------------------------
+ * DEFAULT CONFIGURATION OF LIBRARY PUBLICATION TASKS
+ * --------------------------------------------------
+ */
+
+plugins {
+    id 'maven-publish'
+    id 'signing'
+}
+
+tasks.withType(AbstractArchiveTask) {
+    reproducibleFileOrder = true
+    preserveFileTimestamps = false
+}
+
+tasks.named('jar') {
+    manifest {
+        attributes('Automatic-Module-Name': "cz.auderis.${project.name.replace('-', '.')}")
+    }
+}
+
+publishing {
+    publications {
+        mainLibrary(MavenPublication) {
+            from components.java
+
+            pom {
+                url = 'https://github.com/bbobcik/corusco'
+                inceptionYear = '2026'
+                packaging = 'jar'
+
+                licenses {
+                    license {
+                        name = 'Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+
+                organization {
+                    name = 'Boleslav Bobcik - Auderis'
+                }
+
+                developers {
+                    developer {
+                        name = 'Boleslav Bobcik'
+                        email = 'bbobcik@gmail.com'
+                        organization = 'Auderis'
+                        organizationUrl = 'https://github.com/bbobcik'
+                    }
+                }
+
+                scm {
+                    url = 'https://github.com/bbobcik/corusco.git'
+                    connection = 'scm:git:https://github.com/bbobcik/corusco.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/bbobcik/corusco.git'
+                }
+            }
+        }
+    }
+}
+
+if (!version.toString().endsWith('-SNAPSHOT')) {
+    signing {
+        sign publishing.publications.mainLibrary
+    }
+}

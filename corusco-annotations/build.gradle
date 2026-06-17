@@ -1,1 +1,24 @@
+plugins {
+    id 'project.java-conventions'
+    id 'project.publication-conventions'
+}
 
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'Auderis Corusco Annotations',
+                'Implementation-Version': archiveVersion,
+                'Implementation-Vendor': 'Auderis',
+        )
+    }
+}
+
+publishing {
+    publications.mainLibrary.pom {
+        name = 'Auderis Corusco Annotations'
+        description = '''
+            Source-level annotations used by Corusco annotation processors to describe forms,
+            commands, help metadata, tables, and validation rules in a type-safe way.
+            '''
+    }
+}

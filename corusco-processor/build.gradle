@@ -1,6 +1,31 @@
+plugins {
+    id 'project.java-conventions'
+    id 'project.publication-conventions'
+}
+
 dependencies {
     implementation project(':corusco-annotations')
     testImplementation project(':corusco-core')
     testImplementation project(':corusco-swing')
     testImplementation project(':corusco-test')
+}
+
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'Auderis Corusco Annotation Processor',
+                'Implementation-Version': archiveVersion,
+                'Implementation-Vendor': 'Auderis',
+        )
+    }
+}
+
+publishing {
+    publications.mainLibrary.pom {
+        name = 'Auderis Corusco Annotation Processor'
+        description = '''
+            Annotation processor that generates Corusco companion classes for annotated forms,
+            commands, help metadata, tables, and validation declarations.
+            '''
+    }
 }
