@@ -3,7 +3,7 @@
 All notable changes to Corusco are recorded here. The project follows the
 compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
-## Unreleased
+## 1.0.0 - 2026-06-17
 
 ### Added
 
@@ -18,7 +18,7 @@ compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
 ### Changed
 
-- Development version is now `1.0.0-SNAPSHOT`.
+- Development version is now `1.0.0`.
 - Local release readiness is exposed as `verifyReleaseReadiness`; the former
   `verifyPreviewReleaseReadiness` task remains as a compatibility alias.
 - `corusco-test` is internal test support and is no longer part of the

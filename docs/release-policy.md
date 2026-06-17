@@ -1,8 +1,7 @@
 # Release Policy
 
-Corusco is in the `1.0.0-SNAPSHOT` development line. The policy below explains
-the published compatibility surface and the checks that must pass before a
-stable release tag.
+Corusco is in the `1.0.0` release line. The policy below explains the published
+compatibility surface and the checks that must pass before a stable release tag.
 
 ## Version Scheme
 

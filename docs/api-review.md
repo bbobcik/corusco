@@ -1,7 +1,7 @@
 # API Review
 
-This review records the package-level public surface for the `1.0.0-SNAPSHOT`
-line. Type and method-level compatibility is governed by
+This review records the package-level public surface for the `1.0.0` line. Type
+and method-level compatibility is governed by
 [Release Policy](release-policy.md); this document records the package names and
 runtime policy decisions that are stable enough to guard in the build.
 

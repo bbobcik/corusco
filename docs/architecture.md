@@ -186,8 +186,8 @@ tests, example regression tests, and local verification commands.
 
 ## Current Limits
 
-The project is in the `1.0.0-SNAPSHOT` development line. The following areas
-are intentionally still being finalized before a stable `1.0.0` tag:
+The project is in the `1.0.0` release line. The following areas remain
+candidates for future releases:
 
 - generated-source compatibility checks beyond the runtime binary gate;
 - any optional legacy reflection adapter.
