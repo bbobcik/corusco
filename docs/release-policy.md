@@ -1,7 +1,8 @@
 # Release Policy
 
-Corusco is in the `1.0.0` release line. The policy below explains the published
-compatibility surface and the checks that must pass before a stable release tag.
+Corusco is in the stable `1.x` release line. The policy below explains the
+published compatibility surface and the checks that must pass before a stable
+release tag.
 
 ## Version Scheme
 
@@ -62,6 +63,7 @@ Compatible releases may:
 - add overloads, new helper methods, or new generated constants;
 - improve diagnostics and generated source readability;
 - add optional metadata that existing source can ignore;
+- retain deprecated aliases for source compatibility across 1.x upgrades;
 - improve documentation, examples, tests, or packaging metadata.
 
 Compatible releases must not remove or rename public API, change annotation

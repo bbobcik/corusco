@@ -118,7 +118,7 @@ public final class TableCellValidationBinding<R> implements Binding {
                 || modelColumn < 0 || modelColumn >= model.getColumnCount()) {
             return null;
         }
-        R row = model.rows().get(modelRow);
+        R row = model.readableRows().get(modelRow);
         Column<R, ?> column = model.descriptor().column(modelColumn);
         return TableCellProblems.mostSevere(problems.value(), row, column.key());
     }

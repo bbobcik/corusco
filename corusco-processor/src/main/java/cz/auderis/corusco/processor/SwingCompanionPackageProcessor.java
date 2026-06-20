@@ -2,7 +2,9 @@ package cz.auderis.corusco.processor;
 
 import cz.auderis.corusco.annotations.SwingCompanionPackage;
 import cz.auderis.corusco.annotations.form.CoruscoForm;
+import cz.auderis.corusco.annotations.form.SwingForm;
 import cz.auderis.corusco.annotations.table.CoruscoTable;
+import cz.auderis.corusco.annotations.table.SwingTable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -78,12 +80,23 @@ final class SwingCompanionPackageProcessor {
         if (!generated.add(formType.getQualifiedName().toString())) {
             return;
         }
-        if (formType.getAnnotation(CoruscoForm.class) == null) {
-            error(formType, "@SwingCompanionPackage forms must reference @CoruscoForm types");
+        CoruscoForm coruscoForm = formType.getAnnotation(CoruscoForm.class);
+        SwingForm swingForm = formType.getAnnotation(SwingForm.class);
+        if (coruscoForm == null && swingForm == null) {
+            error(formType, "@SwingCompanionPackage forms must reference @CoruscoForm or @SwingForm types");
+            return;
+        }
+        if (coruscoForm != null && swingForm != null) {
+            error(formType, "Use either @CoruscoForm or @SwingForm, not both");
+            return;
+        }
+        if (swingForm != null && targetPackageName.contentEquals(elements.getPackageOf(formType).getQualifiedName())) {
             return;
         }
         FormProcessor processor = new FormProcessor(elements, types, filer, messager);
-        FormSpec form = processor.createSpec(formType);
+        FormSpec form = coruscoForm != null
+                ? processor.createSpec(formType)
+                : processor.createSpec(formType, swingForm.id(), "@SwingForm", false);
         if (form != null) {
             new GeneratedSourceWriter(elements, filer, messager)
                     .writeFormSwingSources(formType, form, targetPackageName);
@@ -94,12 +107,23 @@ final class SwingCompanionPackageProcessor {
         if (!generated.add(tableType.getQualifiedName().toString())) {
             return;
         }
-        if (tableType.getAnnotation(CoruscoTable.class) == null) {
-            error(tableType, "@SwingCompanionPackage tables must reference @CoruscoTable types");
+        CoruscoTable coruscoTable = tableType.getAnnotation(CoruscoTable.class);
+        SwingTable swingTable = tableType.getAnnotation(SwingTable.class);
+        if (coruscoTable == null && swingTable == null) {
+            error(tableType, "@SwingCompanionPackage tables must reference @CoruscoTable or @SwingTable types");
+            return;
+        }
+        if (coruscoTable != null && swingTable != null) {
+            error(tableType, "Use either @CoruscoTable or @SwingTable, not both");
+            return;
+        }
+        if (swingTable != null && targetPackageName.contentEquals(elements.getPackageOf(tableType).getQualifiedName())) {
             return;
         }
         TableProcessor processor = new TableProcessor(elements, types, filer, messager);
-        TableSpec table = processor.createSpec(tableType);
+        TableSpec table = coruscoTable != null
+                ? processor.createSpec(tableType)
+                : processor.createSpec(tableType, swingTable.id(), "@SwingTable");
         if (table != null) {
             new TableSourceWriter(elements, filer, messager)
                     .writeTableSwingSources(tableType, table, targetPackageName);

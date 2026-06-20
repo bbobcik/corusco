@@ -1,6 +1,6 @@
 # API Review
 
-This review records the package-level public surface for the `1.0.0` line. Type
+This review records the package-level public surface for the stable `1.x` line. Type
 and method-level compatibility is governed by
 [Release Policy](release-policy.md); this document records the package names and
 runtime policy decisions that are stable enough to guard in the build.
@@ -40,6 +40,7 @@ runtime policy decisions that are stable enough to guard in the build.
 - `cz.auderis.corusco.swing.command`
 - `cz.auderis.corusco.swing.dialog`
 - `cz.auderis.corusco.swing.table`
+- `cz.auderis.corusco.swing.table.render`
 - `cz.auderis.corusco.swing.task`
 - `cz.auderis.corusco.swing.testing`
 
@@ -52,9 +53,19 @@ runtime policy decisions that are stable enough to guard in the build.
 - `cz.auderis.corusco.annotations.table`
 - `cz.auderis.corusco.annotations.validation`
 - `cz.auderis.corusco.processor`
+- `cz.auderis.corusco.processor.source`
 
 `corusco-examples` and `corusco-test` are intentionally excluded because they
 are not published compatibility surfaces.
+
+`@SwingForm` and `@SwingTable` remain published as deprecated source-compatible
+aliases for Corusco 1.0 consumers. New code should use `@CoruscoForm` and
+`@CoruscoTable`; the aliases are retained to keep 1.x upgrades recompilable.
+
+`cz.auderis.corusco.processor.source` is packaged in the processor artifact for
+the processor's source-template implementation. The JPMS module exports only
+`cz.auderis.corusco.processor`; application code should treat the source helper
+package as processor implementation detail.
 
 ## Package Naming Review
 

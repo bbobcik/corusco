@@ -2,6 +2,7 @@ package cz.auderis.corusco.swing.collection;
 
 import cz.auderis.corusco.core.collection.ListChange;
 import cz.auderis.corusco.core.collection.ListChangeSet;
+import cz.auderis.corusco.core.collection.ObservableList;
 import cz.auderis.corusco.core.collection.ObservableReadableCollection;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import cz.auderis.corusco.swing.binding.Binding;
@@ -33,9 +34,23 @@ import javax.swing.AbstractListModel;
  */
 public class ObservableListModel<E> extends AbstractListModel<E> implements Binding {
 
+    private static final long serialVersionUID = 8502923115430530483L;
+
     private final ObservableReadableCollection<E> source;
     private final Subscription subscription;
     private boolean closed;
+
+    /**
+     * Creates a list model backed by {@code source}.
+     *
+     * <p>The constructor subscribes immediately. The source collection should not be
+     * mutated off the EDT unless it already dispatches changes on the EDT.</p>
+     *
+     * @param source observable source collection
+     */
+    public ObservableListModel(ObservableList<E> source) {
+        this((ObservableReadableCollection<E>) source);
+    }
 
     /**
      * Creates a list model backed by {@code source}.
@@ -49,6 +64,17 @@ public class ObservableListModel<E> extends AbstractListModel<E> implements Bind
         SwingEdt.requireEdt();
         this.source = Objects.requireNonNull(source, "source");
         this.subscription = source.subscribe(this::sourceChanged);
+    }
+
+    /**
+     * Creates a list model backed by {@code source}.
+     *
+     * @param source observable source collection
+     * @param <E> element type
+     * @return list model
+     */
+    public static <E> ObservableListModel<E> of(ObservableList<E> source) {
+        return new ObservableListModel<>(source);
     }
 
     /**

@@ -32,6 +32,8 @@ import javax.swing.MutableComboBoxModel;
  */
 public final class ObservableComboBoxModel<E> extends ObservableListModel<E> implements MutableComboBoxModel<E> {
 
+    private static final long serialVersionUID = -2632725478545469038L;
+
     private Object selectedItem;
     private final ObservableList<E> mutableSource;
 

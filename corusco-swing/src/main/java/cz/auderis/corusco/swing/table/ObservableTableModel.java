@@ -43,6 +43,8 @@ import javax.swing.table.AbstractTableModel;
  */
 public final class ObservableTableModel<R> extends AbstractTableModel implements Binding {
 
+    private static final long serialVersionUID = -5049576461875382557L;
+
     private final ObservableReadableCollection<R> rows;
     private final ObservableList<R> mutableRows;
     private final TableDescriptor<R> descriptor;
@@ -173,11 +175,28 @@ public final class ObservableTableModel<R> extends AbstractTableModel implements
     }
 
     /**
+     * Returns mutable row source used by editable models.
+     *
+     * <p>This method preserves the Corusco 1.0 binary API for models backed by
+     * {@link ObservableList}. Read-only models created from a general
+     * {@link ObservableReadableCollection} have no mutable source; use
+     * {@link #readableRows()} when mutation is not required.</p>
+     *
+     * @return rows
+     */
+    public ObservableList<R> rows() {
+        if (mutableRows == null) {
+            throw new IllegalStateException("Model was created from a read-only row source; use readableRows()");
+        }
+        return mutableRows;
+    }
+
+    /**
      * Returns observable row source used by this model.
      *
      * @return rows
      */
-    public ObservableReadableCollection<R> rows() {
+    public ObservableReadableCollection<R> readableRows() {
         return rows;
     }
 

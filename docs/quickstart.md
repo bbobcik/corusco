@@ -29,11 +29,11 @@ repositories {
 }
 
 dependencies {
-    implementation 'cz.auderis.corusco:corusco-core:1.0.0'
-    implementation 'cz.auderis.corusco:corusco-glazedlists:1.0.0'
-    implementation 'cz.auderis.corusco:corusco-swing:1.0.0'
-    implementation 'cz.auderis.corusco:corusco-annotations:1.0.0'
-    annotationProcessor 'cz.auderis.corusco:corusco-processor:1.0.0'
+    implementation 'cz.auderis.corusco:corusco-core:1.1.0-SNAPSHOT'
+    implementation 'cz.auderis.corusco:corusco-glazedlists:1.1.0-SNAPSHOT'
+    implementation 'cz.auderis.corusco:corusco-swing:1.1.0-SNAPSHOT'
+    implementation 'cz.auderis.corusco:corusco-annotations:1.1.0-SNAPSHOT'
+    annotationProcessor 'cz.auderis.corusco:corusco-processor:1.1.0-SNAPSHOT'
 }
 ```
 

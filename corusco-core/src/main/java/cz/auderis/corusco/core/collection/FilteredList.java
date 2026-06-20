@@ -40,12 +40,34 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
      * @param source source collection
      * @param predicate visibility predicate
      */
+    public FilteredList(ObservableList<E> source, Predicate<? super E> predicate) {
+        this((ObservableReadableCollection<E>) source, predicate);
+    }
+
+    /**
+     * Creates a filtered view.
+     *
+     * @param source source collection
+     * @param predicate visibility predicate
+     */
     public FilteredList(ObservableReadableCollection<E> source, Predicate<? super E> predicate) {
         Objects.requireNonNull(source, "source");
         this.predicate = Objects.requireNonNull(predicate, "predicate");
         this.sourceSnapshot = new ArrayList<>(source.snapshot());
         this.visible = filter(sourceSnapshot);
         this.subscription = source.subscribe(this::sourceChanged);
+    }
+
+    /**
+     * Creates a filtered view.
+     *
+     * @param source source collection
+     * @param predicate visibility predicate
+     * @param <E> element type
+     * @return filtered view
+     */
+    public static <E> FilteredList<E> of(ObservableList<E> source, Predicate<? super E> predicate) {
+        return new FilteredList<>(source, predicate);
     }
 
     /**

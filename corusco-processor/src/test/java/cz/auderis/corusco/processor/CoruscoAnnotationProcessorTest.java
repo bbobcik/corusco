@@ -1193,6 +1193,104 @@ class CoruscoAnnotationProcessorTest {
     }
 
     @Test
+    void legacySwingFormStillGeneratesSamePackageSwingCompanions() throws Exception {
+        GeneratedSourceCompilation result = GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile("demo/CustomerEdit.java", """
+                        package demo;
+
+                        import cz.auderis.corusco.annotations.form.SwingForm;
+                        import cz.auderis.corusco.annotations.form.TextField;
+
+                        @SwingForm(id = "customer")
+                        public record CustomerEdit(@TextField String name) {
+                        }
+                        """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditFields.java",
+                "public final class CustomerEditFields",
+                "TextFieldKey.of(\"customer/name\", CustomerEdit.class, java.lang.String.class)"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditView.java",
+                "public interface CustomerEditView",
+                "JTextField nameField();"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditBindings.java",
+                "public static void install(CustomerEditView view, CustomerEditPresentationModel model, BehaviorScope scope)",
+                "public static void install(CustomerEditView view, CustomerEditFormModel form, BehaviorScope scope)"
+        );
+    }
+
+    @Test
+    void legacySwingTableStillGeneratesSamePackageSwingBindings() throws Exception {
+        GeneratedSourceCompilation result = GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile("demo/CustomerEdit.java", """
+                        package demo;
+
+                        import cz.auderis.corusco.annotations.table.Column;
+                        import cz.auderis.corusco.annotations.table.SwingTable;
+
+                        @SwingTable(id = "customer/search")
+                        public record CustomerEdit(@Column String name) {
+                        }
+                        """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditTableDescriptor.java",
+                "public final class CustomerEditTableDescriptor",
+                "public static final cz.auderis.corusco.core.table.TableDescriptor<CustomerEdit> DESCRIPTOR"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditTableBindings.java",
+                "public final class CustomerEditTableBindings",
+                "ObservableTableModel.of(rows, CustomerEditTableDescriptor.DESCRIPTOR)"
+        );
+    }
+
+    @Test
+    void rejectsMixedCurrentAndLegacyFormAnnotations() throws Exception {
+        GeneratedSourceCompilation result = GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile("demo/CustomerEdit.java", """
+                        package demo;
+
+                        import cz.auderis.corusco.annotations.form.CoruscoForm;
+                        import cz.auderis.corusco.annotations.form.SwingForm;
+                        import cz.auderis.corusco.annotations.form.TextField;
+
+                        @CoruscoForm(id = "customer")
+                        @SwingForm(id = "customer")
+                        public record CustomerEdit(@TextField String name) {
+                        }
+                        """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Use either @CoruscoForm or @SwingForm, not both");
+    }
+
+    @Test
+    void rejectsMixedCurrentAndLegacyTableAnnotations() throws Exception {
+        GeneratedSourceCompilation result = GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile("demo/CustomerEdit.java", """
+                        package demo;
+
+                        import cz.auderis.corusco.annotations.table.Column;
+                        import cz.auderis.corusco.annotations.table.CoruscoTable;
+                        import cz.auderis.corusco.annotations.table.SwingTable;
+
+                        @CoruscoTable(id = "customer/search")
+                        @SwingTable(id = "customer/search")
+                        public record CustomerEdit(@Column String name) {
+                        }
+                        """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Use either @CoruscoTable or @SwingTable, not both");
+    }
+
+    @Test
     void generatesActionDescriptorsForUiActionMethods() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;

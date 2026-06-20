@@ -83,8 +83,9 @@ patterns, validation rules, reset, baseline acceptance, and testing.
 
 The processor currently generates companion classes for three source shapes:
 
-- `@CoruscoForm` records: field keys, resources, problems, descriptors, form
-  models, view contracts, and behavior plans.
+- `@CoruscoForm` records and abstract classes: field keys, resources, problems,
+  descriptors, form models, presentation models, option metadata, view
+  contracts, and behavior plans.
 - `@CoruscoTable` records: table keys, column descriptors, resources, row updater
   helpers, table descriptors, model installers, and selection binders.
 - `@UiAction` methods: action keys, resource keys, and action descriptors.
@@ -186,10 +187,14 @@ tests, example regression tests, and local verification commands.
 
 ## Current Limits
 
-The project is in the `1.0.0` release line. The following areas remain
-candidates for future releases:
+The project is preparing the `1.1.0` stable release in the `1.x` line. The
+current branch adds observable readable collections, richer generated form
+metadata, abstract-class form sources, and multi-form dialog state handling.
+The following areas remain candidates for future releases:
 
 - generated-source compatibility checks beyond the runtime binary gate;
+- later editor families such as numeric range controls, checkbox groups, picker
+  components, and custom rich-value editors;
 - any optional legacy reflection adapter.
 
 Local Maven publication, source/Javadoc artifacts, JPMS module names, and the

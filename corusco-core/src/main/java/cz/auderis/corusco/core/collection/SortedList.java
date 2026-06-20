@@ -43,11 +43,33 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
      * @param source source collection
      * @param comparator sort comparator
      */
+    public SortedList(ObservableList<E> source, Comparator<? super E> comparator) {
+        this((ObservableReadableCollection<E>) source, comparator);
+    }
+
+    /**
+     * Creates a sorted view.
+     *
+     * @param source source collection
+     * @param comparator sort comparator
+     */
     public SortedList(ObservableReadableCollection<E> source, Comparator<? super E> comparator) {
         this.source = Objects.requireNonNull(source, "source");
         this.comparator = Objects.requireNonNull(comparator, "comparator");
         this.sorted = sorted(source.snapshot());
         this.subscription = source.subscribe(this::sourceChanged);
+    }
+
+    /**
+     * Creates a sorted view.
+     *
+     * @param source source collection
+     * @param comparator sort comparator
+     * @param <E> element type
+     * @return sorted view
+     */
+    public static <E> SortedList<E> of(ObservableList<E> source, Comparator<? super E> comparator) {
+        return new SortedList<>(source, comparator);
     }
 
     /**

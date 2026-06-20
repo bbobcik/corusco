@@ -39,6 +39,8 @@ class ObservableTableModelTest {
             assertThat(model.getValueAt(0, 1)).isEqualTo(2);
             assertThat(model.isCellEditable(0, 0)).isTrue();
             assertThat(model.isCellEditable(0, 1)).isFalse();
+            assertThat(model.rows()).isSameAs(rows);
+            assertThat(model.readableRows()).isSameAs(rows);
             model.close();
         });
     }
@@ -104,6 +106,10 @@ class ObservableTableModelTest {
             assertThat(model.getValueAt(0, 0)).isEqualTo("Acme");
             assertThat(model.isCellEditable(0, 0)).isFalse();
             assertThat(mapped.get(0)).isEqualTo(new CustomerRow("Acme", 2));
+            assertThat(model.readableRows()).isSameAs(mapped);
+            assertThatThrownBy(model::rows)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("readableRows");
             assertThat(events).containsExactly(
                     new EventRecord(TableModelEvent.INSERT, 2, 2, TableModelEvent.ALL_COLUMNS)
             );

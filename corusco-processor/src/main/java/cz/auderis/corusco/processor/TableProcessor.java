@@ -48,20 +48,24 @@ final class TableProcessor {
 
     TableSpec createSpec(TypeElement tableType) {
         CoruscoTable annotation = tableType.getAnnotation(CoruscoTable.class);
+        return createSpec(tableType, annotation.id(), "@CoruscoTable");
+    }
+
+    TableSpec createSpec(TypeElement tableType, String tableId, String annotationName) {
         if (tableType.getKind() != ElementKind.RECORD) {
-            error(tableType, "@CoruscoTable is supported only on records");
+            error(tableType, annotationName + " is supported only on records");
             return null;
         }
-        if (annotation.id().isBlank()) {
-            error(tableType, "@CoruscoTable id must not be blank");
+        if (tableId.isBlank()) {
+            error(tableType, annotationName + " id must not be blank");
             return null;
         }
-        if (!isStableId(annotation.id())) {
-            error(tableType, "@CoruscoTable id must contain only letters, digits, dots, underscores, dashes, or slashes");
+        if (!isStableId(tableId)) {
+            error(tableType, annotationName + " id must contain only letters, digits, dots, underscores, dashes, or slashes");
             return null;
         }
         if (!tableType.getTypeParameters().isEmpty()) {
-            error(tableType, "@CoruscoTable generic records are not supported by this processor stage");
+            error(tableType, annotationName + " generic records are not supported by this processor stage");
             return null;
         }
 
@@ -83,7 +87,7 @@ final class TableProcessor {
                 continue;
             }
             String id = annotationColumn.id().isBlank()
-                    ? annotation.id() + "/" + kebab(component.getSimpleName().toString())
+                    ? tableId + "/" + kebab(component.getSimpleName().toString())
                     : annotationColumn.id();
             if (!isStableId(id)) {
                 error(component, "@Column id must contain only letters, digits, dots, underscores, dashes, or slashes");
@@ -158,7 +162,7 @@ final class TableProcessor {
             return null;
         }
         return new TableSpec(
-                annotation.id(),
+                tableId,
                 tableType.getSimpleName().toString(),
                 components,
                 columns

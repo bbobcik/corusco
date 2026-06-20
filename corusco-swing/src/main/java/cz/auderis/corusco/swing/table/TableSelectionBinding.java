@@ -175,7 +175,7 @@ public final class TableSelectionBinding<R> implements Binding {
             return;
         }
         int modelRow = table.convertRowIndexToModel(viewRow);
-        R row = modelRow >= 0 && modelRow < model.getRowCount() ? model.rows().get(modelRow) : null;
+        R row = modelRow >= 0 && modelRow < model.getRowCount() ? model.readableRows().get(modelRow) : null;
         updateValues(modelRow, row, origin);
     }
 
@@ -203,12 +203,12 @@ public final class TableSelectionBinding<R> implements Binding {
             int viewRow = table.convertRowIndexToView(modelRow);
             if (viewRow < 0) {
                 clearTableSelection();
-                updateValues(modelRow, model.rows().get(modelRow), ChangeOrigin.MODEL);
+                updateValues(modelRow, model.readableRows().get(modelRow), ChangeOrigin.MODEL);
                 return;
             }
             table.getSelectionModel().setSelectionInterval(viewRow, viewRow);
             if (selectedRow != null) {
-                selectedRow.setValue(model.rows().get(modelRow), ChangeOrigin.MODEL);
+                selectedRow.setValue(model.readableRows().get(modelRow), ChangeOrigin.MODEL);
             }
         } finally {
             updatingFromValue = false;

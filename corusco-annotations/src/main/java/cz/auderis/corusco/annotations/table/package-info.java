@@ -18,6 +18,12 @@
  * can still participate in generated editable-row constructors, but they do
  * not become columns.</p>
  *
+ * <p>{@link cz.auderis.corusco.annotations.table.SwingTable} remains as a
+ * deprecated Corusco 1.0 source-compatible alias for table records that expect
+ * same-package Swing bindings. New code should use {@link
+ * cz.auderis.corusco.annotations.table.CoruscoTable} and request Swing
+ * companions with {@link cz.auderis.corusco.annotations.SwingCompanionPackage}.</p>
+ *
  * <p>For example, this source record:</p>
  *
  * <pre>{@code

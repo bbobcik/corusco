@@ -1,11 +1,12 @@
 # Corusco Annotation Reference
 
 Corusco annotations are compile-time inputs for `corusco-processor`. They are
-read through `javax.lang.model` during javac annotation processing. Form and
-table metadata annotations are retained in class files so Swing adapter modules
-can generate companions for already compiled model classes. Runtime framework
-code must not scan annotations reflectively; it should consume generated
-companions and descriptors.
+read through `javax.lang.model` during javac annotation processing. Current form
+and table metadata annotations are retained in class files so Swing adapter
+modules can generate companions for already compiled model classes. Deprecated
+1.0 aliases keep their original source retention. Runtime framework code must
+not scan annotations reflectively; it should consume generated companions and
+descriptors.
 
 Use annotations to describe stable UI contracts. Put business behavior,
 cross-field validation, persistence, and presenter logic in ordinary Java code.
@@ -16,8 +17,8 @@ Annotation types are grouped by authoring concern:
 
 | Package | Use for |
 | --- | --- |
-| `cz.auderis.corusco.annotations.form` | `@CoruscoForm` and field-kind annotations such as `@TextField`, `@DateField`, `@ComboBox`, `@RadioGroup`, and `@CheckBox`. |
-| `cz.auderis.corusco.annotations.table` | `@CoruscoTable` and `@Column`. |
+| `cz.auderis.corusco.annotations.form` | `@CoruscoForm`, deprecated `@SwingForm`, and field-kind annotations such as `@TextField`, `@DateField`, `@ComboBox`, `@RadioGroup`, and `@CheckBox`. |
+| `cz.auderis.corusco.annotations.table` | `@CoruscoTable`, deprecated `@SwingTable`, and `@Column`. |
 | `cz.auderis.corusco.annotations.validation` | Field constraints such as `@Required`, `@Length`, `@Regex`, `@DecimalRange`, and `@IntRange`. |
 | `cz.auderis.corusco.annotations.command` | `@UiAction` action descriptor metadata. |
 | `cz.auderis.corusco.annotations.help` | `@Help` tooltip and help-topic metadata. |
@@ -94,6 +95,11 @@ Current processor limits:
 - generic records and generic abstract classes are rejected;
 - at least one component must use a field-kind annotation;
 - a component may use only one field-kind annotation.
+
+`@SwingForm` is a deprecated Corusco 1.0 alias kept for source compatibility.
+It supports legacy record sources and keeps generating same-package Swing
+companions. New sources should use `@CoruscoForm`; Swing companions for new
+sources are requested with `@SwingCompanionPackage`.
 
 ### Field-Kind Annotations
 
@@ -179,6 +185,11 @@ Current processor limits:
 - column value types must be primitive or declared types;
 - generated row updater helpers call the record constructor for editable
   columns.
+
+`@SwingTable` is a deprecated Corusco 1.0 alias kept for source compatibility.
+It supports legacy record sources and keeps generating same-package Swing table
+bindings. New sources should use `@CoruscoTable`; Swing companions for new
+sources are requested with `@SwingCompanionPackage`.
 
 ### `@Column`
 
@@ -278,7 +289,9 @@ become presenter-owned commands and Swing entry points.
 Generated core type names are deterministic and live in the same package as the
 annotated source type. Swing companion names are generated in packages annotated
 with `@SwingCompanionPackage`; the same package is auto-discovered, and cross-package
-source types can be listed explicitly.
+source types can be listed explicitly. Deprecated `@SwingForm` and `@SwingTable`
+sources keep the Corusco 1.0 behavior of generating same-package Swing
+companions.
 
 | Source | Generated names |
 | --- | --- |

@@ -21,6 +21,12 @@
  * carry misplaced state metadata. Abstract value accessors must have a
  * field-kind annotation.</p>
  *
+ * <p>{@link cz.auderis.corusco.annotations.form.SwingForm} remains as a
+ * deprecated Corusco 1.0 source-compatible alias for record forms that expect
+ * same-package Swing companions. New code should use {@link
+ * cz.auderis.corusco.annotations.form.CoruscoForm} and request Swing companions
+ * with {@link cz.auderis.corusco.annotations.SwingCompanionPackage}.</p>
+ *
  * <p>For example, this source record:</p>
  *
  * <pre>{@code

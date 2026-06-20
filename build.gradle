@@ -17,7 +17,7 @@ if (gradle.startParameter.taskNames.any { taskName ->
 
 allprojects {
     group = 'cz.auderis.corusco'
-    version = '1.1.0-SNAPSHOT'
+    version = '1.1.0'
 }
 
 def publishableProjects = subprojects.findAll {
@@ -79,7 +79,8 @@ def publishedPackageSurface = [
         'cz.auderis.corusco.annotations.validation'
     ],
     'corusco-processor': [
-        'cz.auderis.corusco.processor'
+        'cz.auderis.corusco.processor',
+        'cz.auderis.corusco.processor.source'
     ]
 ]
 def runtimeReflectionScanRoots = [

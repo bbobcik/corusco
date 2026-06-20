@@ -68,25 +68,37 @@ final class FormProcessor {
 
     FormSpec createSpec(TypeElement formType) {
         CoruscoForm annotation = formType.getAnnotation(CoruscoForm.class);
-        if (formType.getKind() != ElementKind.RECORD && formType.getKind() != ElementKind.CLASS) {
-            error(formType, "@CoruscoForm is supported only on records or abstract classes");
+        return createSpec(formType, annotation.id(), "@CoruscoForm", true);
+    }
+
+    FormSpec createSpec(
+            TypeElement formType,
+            String formId,
+            String annotationName,
+            boolean allowAbstractClasses
+    ) {
+        boolean supportedKind = formType.getKind() == ElementKind.RECORD
+                || (allowAbstractClasses && formType.getKind() == ElementKind.CLASS);
+        if (!supportedKind) {
+            String supportedShapes = allowAbstractClasses ? "records or abstract classes" : "records";
+            error(formType, annotationName + " is supported only on " + supportedShapes);
             return null;
         }
-        if (annotation.id().isBlank()) {
-            error(formType, "@CoruscoForm id must not be blank");
+        if (formId.isBlank()) {
+            error(formType, annotationName + " id must not be blank");
             return null;
         }
-        if (!isStableId(annotation.id())) {
-            error(formType, "@CoruscoForm id must contain only letters, digits, dots, underscores, dashes, or slashes");
+        if (!isStableId(formId)) {
+            error(formType, annotationName + " id must contain only letters, digits, dots, underscores, dashes, or slashes");
             return null;
         }
         if (!formType.getTypeParameters().isEmpty()) {
-            error(formType, "@CoruscoForm generic source types are not supported by this processor stage");
+            error(formType, annotationName + " generic source types are not supported by this processor stage");
             return null;
         }
 
         if (formType.getKind() == ElementKind.CLASS && !formType.getModifiers().contains(Modifier.ABSTRACT)) {
-            error(formType, "@CoruscoForm classes must be abstract");
+            error(formType, annotationName + " classes must be abstract");
             return null;
         }
 
@@ -178,7 +190,7 @@ final class FormProcessor {
                 failed = true;
                 continue;
             }
-            FieldSpec field = fieldSpec(formType, annotation.id(), source, textField, checkBox, comboBox,
+            FieldSpec field = fieldSpec(formType, formId, source, textField, checkBox, comboBox,
                     radioGroup, dateField);
             if (!fieldNames.add(field.componentName)) {
                 error(source.element(), "Duplicate @CoruscoForm field name in " + formType.getSimpleName() + ": "
@@ -244,7 +256,7 @@ final class FormProcessor {
             return null;
         }
         return new FormSpec(
-                annotation.id(),
+                formId,
                 sourceType,
                 resultImplementationType,
                 fields,

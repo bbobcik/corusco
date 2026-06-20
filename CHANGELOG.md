@@ -3,6 +3,45 @@
 All notable changes to Corusco are recorded here. The project follows the
 compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
+## 1.1.0 - Unreleased
+
+### Added
+
+- Observable readable collection APIs, including sorted-set and mapped
+  read-only collection views for business screens that expose ordered data
+  without granting mutation rights.
+- Read-only table-model and Glazed Lists bridge support for observable readable
+  collections.
+- `@CoruscoForm` support for abstract class sources, including generated
+  immutable result implementations.
+- Richer generated form metadata: presentation models, enum option descriptors,
+  radio-group behavior, component-state models, dependency metadata, and
+  generated behavior bindings.
+- `@CoruscoForm`, `@CoruscoTable`, and `@SwingCompanionPackage` as the current
+  form/table annotation model with separate core metadata and Swing companion
+  generation.
+- Multi-form dialog session helpers, including composite form models, Apply,
+  Revert, Cancel, dirty-state helpers, action-state models, and active-editor
+  focus support.
+- Optimized table renderer helpers for high-volume business tables.
+
+### Changed
+
+- The annotation processor is split into focused form, table, action, option,
+  dependency, and Swing-companion generation paths.
+- Generated form bindings now install through presentation models so field
+  values and visual component state can evolve separately.
+- Dialog cancel/apply behavior now distinguishes original, current, and last
+  applied baselines.
+
+### Compatibility
+
+- Deprecated `@SwingForm` and `@SwingTable` aliases remain available for Corusco
+  1.0 source compatibility. They keep the 1.0 same-package Swing companion
+  behavior while new code should migrate to `@CoruscoForm`, `@CoruscoTable`, and
+  `@SwingCompanionPackage`.
+- No intentional breaking changes from `1.0.0`.
+
 ## 1.0.0 - 2026-06-17
 
 ### Added

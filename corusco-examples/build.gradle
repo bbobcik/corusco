@@ -29,6 +29,13 @@ dependencies {
     publishedArtifactsAnnotationProcessor "cz.auderis.corusco:corusco-processor:${project.version}"
 }
 
+tasks.withType(JavaCompile).configureEach {
+    // Example sources intentionally import companions generated from the same
+    // source set. Full compilation keeps those generated types fresh after
+    // processor or upstream API changes.
+    options.incremental = false
+}
+
 tasks.named('compilePublishedArtifactsJava') {
     description = 'Compiles example sources against Maven-local Corusco artifacts instead of project dependencies.'
 }

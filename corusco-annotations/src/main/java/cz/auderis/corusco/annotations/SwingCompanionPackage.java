@@ -13,7 +13,10 @@ import java.lang.annotation.Target;
  * separate adapter package depends on {@code corusco-swing}. The processor
  * auto-discovers {@code @CoruscoForm} and {@code @CoruscoTable} types declared in
  * this same package. Explicit targets add cross-package source types whose
- * Swing companions should also be generated in this package.</p>
+ * Swing companions should also be generated in this package. Deprecated
+ * {@code @SwingForm} and {@code @SwingTable} sources keep their Corusco 1.0
+ * same-package generation behavior and are accepted as explicit migration
+ * targets when their annotation metadata is available to javac.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.PACKAGE)
