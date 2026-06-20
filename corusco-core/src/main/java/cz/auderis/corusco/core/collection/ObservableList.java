@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Subscription;
+
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -27,13 +28,14 @@ import java.util.function.Consumer;
  *
  * @param <E> element type
  */
-public interface ObservableList<E> {
+public interface ObservableList<E> extends ObservableReadableCollection<E> {
 
     /**
      * Returns current size.
      *
      * @return element count
      */
+    @Override
     int size();
 
     /**
@@ -49,6 +51,7 @@ public interface ObservableList<E> {
      *
      * @return snapshot
      */
+    @Override
     List<E> snapshot();
 
     /**
@@ -116,5 +119,6 @@ public interface ObservableList<E> {
      * @param listener listener
      * @return subscription removing listener when closed
      */
+    @Override
     Subscription subscribe(ListChangeListener<E> listener);
 }

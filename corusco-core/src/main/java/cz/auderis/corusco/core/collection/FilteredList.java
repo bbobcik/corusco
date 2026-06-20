@@ -3,30 +3,31 @@ package cz.auderis.corusco.core.collection;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
- * Read-only filtered view over an {@link ObservableList}.
+ * Read-only filtered view over an {@link ObservableReadableCollection}.
  *
- * <p>The view subscribes to a source list, exposes only elements accepted by a
+ * <p>The view subscribes to a source collection, exposes only elements accepted by a
  * predicate, and emits change events with indices relative to the filtered
- * view. Dispatch is synchronous on the source-list mutating thread. Like the
- * source list primitives, this class is not synchronized.</p>
+ * view. Dispatch is synchronous on the source collection's change-delivery
+ * thread. Like the source collection primitives, this class is not
+ * synchronized.</p>
  *
  * <p>Direct mutation methods throw {@link UnsupportedOperationException}. The
- * source list remains the mutation owner so source indices, filtering, and
+ * source collection remains the mutation owner so source indices, filtering, and
  * later transformed views stay coherent. Call {@link #close()} when the view is
- * no longer needed to release its source-list subscription.</p>
+ * no longer needed to release its source subscription.</p>
  *
  * @param <E> element type
  */
 public final class FilteredList<E> implements ObservableList<E>, Disposable {
 
-    private final List<ListChangeListener<E>> listeners = new ArrayList<>();
+    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
     private final Subscription subscription;
     private Predicate<? super E> predicate;
     private final List<E> sourceSnapshot;
@@ -36,10 +37,10 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
     /**
      * Creates a filtered view.
      *
-     * @param source source list
+     * @param source source collection
      * @param predicate visibility predicate
      */
-    public FilteredList(ObservableList<E> source, Predicate<? super E> predicate) {
+    public FilteredList(ObservableReadableCollection<E> source, Predicate<? super E> predicate) {
         Objects.requireNonNull(source, "source");
         this.predicate = Objects.requireNonNull(predicate, "predicate");
         this.sourceSnapshot = new ArrayList<>(source.snapshot());
@@ -50,12 +51,12 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
     /**
      * Creates a filtered view.
      *
-     * @param source source list
+     * @param source source collection
      * @param predicate visibility predicate
      * @param <E> element type
      * @return filtered view
      */
-    public static <E> FilteredList<E> of(ObservableList<E> source, Predicate<? super E> predicate) {
+    public static <E> FilteredList<E> of(ObservableReadableCollection<E> source, Predicate<? super E> predicate) {
         return new FilteredList<>(source, predicate);
     }
 
@@ -71,7 +72,7 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
 
     @Override
     public List<E> snapshot() {
-        return Collections.unmodifiableList(new ArrayList<>(visible));
+        return List.copyOf(visible);
     }
 
     /**
@@ -79,7 +80,7 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
      *
      * <p>Predicate replacement is reported as a reset: removed visible
      * contents followed by inserted new visible contents where applicable. The
-     * source list remains unchanged; only the filtered view and its listeners
+     * source collection remains unchanged; only the filtered view and its listeners
      * observe the reset.</p>
      *
      * @param predicate new visibility predicate
@@ -275,14 +276,13 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
             return;
         }
         ListChangeSet<E> changeSet = new ListChangeSet<>(changes);
-        List<ListChangeListener<E>> snapshot = List.copyOf(listeners);
-        for (ListChangeListener<E> listener : snapshot) {
+        for (ListChangeListener<E> listener : listeners) {
             listener.listChanged(changeSet);
         }
     }
 
     private UnsupportedOperationException readOnly() {
-        return new UnsupportedOperationException("FilteredList is a read-only view; mutate the source list");
+        return new UnsupportedOperationException("FilteredList is a read-only view; mutate the source collection");
     }
 
     private List<E> singleton(E element) {

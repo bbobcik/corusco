@@ -33,6 +33,7 @@ import javax.swing.MutableComboBoxModel;
 public final class ObservableComboBoxModel<E> extends ObservableListModel<E> implements MutableComboBoxModel<E> {
 
     private Object selectedItem;
+    private final ObservableList<E> mutableSource;
 
     /**
      * Creates a combo-box model backed by {@code source}.
@@ -44,6 +45,7 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
      */
     public ObservableComboBoxModel(ObservableList<E> source) {
         super(source);
+        this.mutableSource = Objects.requireNonNull(source, "source");
     }
 
     /**
@@ -87,7 +89,7 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
      */
     @Override
     public void addElement(E item) {
-        source().add(item);
+        mutableSource.add(item);
     }
 
     /**
@@ -95,9 +97,9 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
      */
     @Override
     public void removeElement(Object obj) {
-        for (int i = 0; i < source().size(); i++) {
-            if (Objects.equals(source().get(i), obj)) {
-                source().remove(i);
+        for (int i = 0; i < mutableSource.size(); i++) {
+            if (Objects.equals(mutableSource.get(i), obj)) {
+                mutableSource.remove(i);
                 return;
             }
         }
@@ -105,12 +107,12 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
 
     @Override
     public void insertElementAt(E item, int index) {
-        source().add(index, item);
+        mutableSource.add(index, item);
     }
 
     @Override
     public void removeElementAt(int index) {
-        source().remove(index);
+        mutableSource.remove(index);
     }
 
     @Override
@@ -154,8 +156,8 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
     }
 
     private boolean sourceContainsSelection() {
-        for (int i = 0; i < source().size(); i++) {
-            if (Objects.equals(source().get(i), selectedItem)) {
+        for (int i = 0; i < mutableSource.size(); i++) {
+            if (Objects.equals(mutableSource.get(i), selectedItem)) {
                 return true;
             }
         }

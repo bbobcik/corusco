@@ -3,11 +3,13 @@
  *
  * <h2>When To Use This Package</h2>
  *
- * <p>Use this package when an application already owns data in a Glazed Lists
- * {@code EventList} and wants to expose that data through Corusco's
- * {@code ObservableList} API. This is common during migration or in
- * applications that already rely on Glazed Lists sorting, filtering, or event
- * infrastructure.</p>
+ * <p>Use this package when an application needs to bridge Corusco observable
+ * collections and Glazed Lists {@code EventList} instances. It supports both
+ * directions: exposing an application-owned {@code EventList} through
+ * Corusco's {@code ObservableList} API, and mirroring a Corusco readable
+ * collection into a read-only {@code EventList}. This is common during
+ * migration or in applications that already rely on Glazed Lists sorting,
+ * filtering, or event infrastructure.</p>
  *
  * <p>Do not use this package just to create a normal Corusco list. If the
  * application does not already need Glazed Lists, start with
@@ -21,13 +23,23 @@
  *
  * <h2>Mental Model</h2>
  *
- * <p>The Glazed Lists {@code EventList} remains the storage owner. Corusco does
- * not copy the elements into a separate list. Instead, the adapter presents a
- * Corusco observable-list view over the existing event list.</p>
+ * <p>For {@code EventList -> ObservableList} adaptation, the Glazed Lists
+ * {@code EventList} remains the storage owner. Corusco does not copy the
+ * elements into a separate list. Instead, the adapter presents a Corusco
+ * observable-list view over the existing event list.</p>
+ *
+ * <p>For {@code ObservableReadableCollection -> EventList} mirroring,
+ * {@link cz.auderis.corusco.glazedlists.GlazedReadableCollectionMirror} owns
+ * an internal event list initialized from the Corusco source order and keeps
+ * it synchronized from Corusco change events. Callers receive a read-only
+ * Glazed Lists view; the Corusco source remains the owner.</p>
  *
  * <p>{@link cz.auderis.corusco.glazedlists.GlazedObservableList} is the
- * adapter. {@link cz.auderis.corusco.glazedlists.GlazedListsAdapters} is the
- * small factory entry point.</p>
+ * mutable adapter from Glazed Lists to Corusco.
+ * {@link cz.auderis.corusco.glazedlists.GlazedReadableCollectionMirror} is the
+ * read-only mirror from Corusco to Glazed Lists.
+ * {@link cz.auderis.corusco.glazedlists.GlazedListsAdapters} is the small
+ * factory entry point.</p>
  *
  * <p>Think of the adapter as a view over the event list. Reading through the
  * adapter reads the source. Mutating through the adapter mutates the source.
@@ -45,17 +57,34 @@
  * rows.close();
  * }</pre>
  *
+ * <pre>{@code
+ * ObservableReadableCollection<CustomerRow> sortedRows = sortedCustomers;
+ * GlazedReadableCollectionMirror<CustomerRow> mirror =
+ *         GlazedListsAdapters.eventListMirror(sortedRows);
+ *
+ * EventList<CustomerRow> readOnlyEventList = mirror.eventList();
+ *
+ * mirror.close();
+ * }</pre>
+ *
  * <h2>Event Translation</h2>
  *
- * <p>The adapter listens to Glazed Lists events and translates them into
- * Corusco {@link cz.auderis.corusco.core.collection.ListChangeSet}
- * notifications. Inserts, deletes, updates, moves, clears, and reorder-like
- * changes are delivered through the Corusco observable-list contract.</p>
+ * <p>{@link cz.auderis.corusco.glazedlists.GlazedObservableList} listens to
+ * Glazed Lists events and translates them into Corusco
+ * {@link cz.auderis.corusco.core.collection.ListChangeSet} notifications.
+ * Inserts, deletes, updates, moves, clears, and reorder-like changes are
+ * delivered through the Corusco observable-list contract.</p>
+ *
+ * <p>{@link cz.auderis.corusco.glazedlists.GlazedReadableCollectionMirror}
+ * performs the reverse translation. It applies Corusco inserts, removals,
+ * replacements, moves, and clears to its internal event list using source
+ * coordinates.</p>
  *
  * <p>Corusco listeners are retained until their returned subscriptions are
  * closed. Closing the adapter removes the adapter's listener from the source
- * event list. Closing the adapter does not dispose the source event list,
- * because ownership remains with the application.</p>
+ * event list. Closing the mirror removes its listener from the Corusco source.
+ * Closing either object does not dispose the source collection, because
+ * ownership remains with the application.</p>
  *
  * <p>Batching follows the Corusco observable-list contract. A batch can group
  * several adapter mutations into one Corusco change delivery. Glazed Lists
@@ -64,8 +93,10 @@
  * <h2>Locking And Threading</h2>
  *
  * <p>Adapter reads and direct adapter mutations use the Glazed Lists
- * read/write lock. External code that mutates the same {@code EventList}
- * should still follow Glazed Lists' own locking and threading rules.</p>
+ * read/write lock. Mirror updates lock the internally owned event list while
+ * applying Corusco changes. External code that mutates a shared
+ * {@code EventList} should still follow Glazed Lists' own locking and
+ * threading rules.</p>
  *
  * <p>If the adapted list is later connected to Swing, Swing rules still apply.
  * Mutations that affect Swing models must be delivered on the Event Dispatch
@@ -90,14 +121,20 @@
  *
  * <p>This boundary keeps optional dependencies optional. Most Corusco packages
  * can remain unaware of Glazed Lists, while applications that need Glazed
- * Lists can still feed Corusco table and list consumers.</p>
+ * Lists can still feed Corusco table and list consumers, or feed Glazed Lists
+ * consumers from Corusco readable collections.</p>
  *
  * <h2>Migration Pattern</h2>
  *
- * <p>During migration, keep the existing {@code EventList} as the source of
- * truth. Wrap it once near the presentation boundary, pass the Corusco
- * observable-list view to Corusco consumers, and close the adapter with the
- * view or presenter that owns the integration.</p>
+ * <p>During migration from Glazed Lists to Corusco, keep the existing
+ * {@code EventList} as the source of truth. Wrap it once near the presentation
+ * boundary, pass the Corusco observable-list view to Corusco consumers, and
+ * close the adapter with the view or presenter that owns the integration.</p>
+ *
+ * <p>During migration in the opposite direction, keep the Corusco collection as
+ * the source of truth. Create one mirror near the Glazed Lists boundary, pass
+ * the read-only event list to Glazed Lists consumers, and close the mirror with
+ * the owner of that boundary.</p>
  *
  * <p>Avoid wrapping the same source list repeatedly for the same screen unless
  * each adapter has a clear owner and cleanup path. Multiple adapters mean
@@ -108,7 +145,9 @@
  * <p>Adapter tests should verify both directions that matter to the
  * application. Mutating the source event list should notify Corusco listeners.
  * Mutating through the adapter should update the source event list and notify
- * listeners according to the observable-list contract.</p>
+ * listeners according to the observable-list contract. Mirror tests should
+ * verify initialization order, source-change translation, read-only event-list
+ * exposure, and close-time detachment.</p>
  *
  * <p>Tests should also close subscriptions and the adapter. This confirms that
  * listeners are not retained after the view or presenter using the adapter has

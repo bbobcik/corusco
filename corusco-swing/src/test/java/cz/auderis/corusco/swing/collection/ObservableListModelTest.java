@@ -1,8 +1,11 @@
 package cz.auderis.corusco.swing.collection;
 
 import cz.auderis.corusco.core.collection.ObservableArrayList;
+import cz.auderis.corusco.core.collection.MappedReadableCollection;
+import cz.auderis.corusco.core.collection.ObservableSortedSet;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.event.ListDataEvent;
@@ -72,6 +75,25 @@ class ObservableListModelTest {
 
             assertThat(model.getSize()).isOne();
             assertThat(events).isEmpty();
+        });
+    }
+
+    @Test
+    void acceptsReadableCollectionSource() {
+        SwingEdt.runAndWait(() -> {
+            ObservableSortedSet<Integer> source = ObservableSortedSet.of(List.of(2, 1), Comparator.naturalOrder());
+            MappedReadableCollection<Integer, String> mapped =
+                    MappedReadableCollection.of(source, value -> "v" + value);
+            ObservableListModel<String> model = ObservableListModel.of(mapped);
+            List<EventRecord> events = recordEvents(model);
+
+            source.add(3);
+
+            assertThat(model.getSize()).isEqualTo(3);
+            assertThat(model.getElementAt(2)).isEqualTo("v3");
+            assertThat(events).containsExactly(new EventRecord(ListDataEvent.INTERVAL_ADDED, 2, 2));
+            model.close();
+            mapped.close();
         });
     }
 

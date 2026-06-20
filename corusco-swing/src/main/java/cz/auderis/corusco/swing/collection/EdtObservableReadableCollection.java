@@ -2,41 +2,35 @@ package cz.auderis.corusco.swing.collection;
 
 import cz.auderis.corusco.core.collection.ListChangeListener;
 import cz.auderis.corusco.core.collection.ListChangeSet;
-import cz.auderis.corusco.core.collection.ObservableList;
+import cz.auderis.corusco.core.collection.ObservableReadableCollection;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.Subscription;
-import org.jspecify.annotations.NonNull;
-
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Consumer;
 import javax.swing.SwingUtilities;
 
 /**
- * {@link ObservableList} wrapper that delivers listener callbacks on the EDT.
+ * {@link ObservableReadableCollection} wrapper that delivers listener callbacks
+ * on the EDT.
  *
- * <p>The wrapped list remains the storage and mutation owner. This adapter
- * delegates reads and mutations directly to the source list; it only changes
- * where wrapper subscribers receive source change sets. If the source fires on
- * the EDT, delivery is immediate. If the source fires on another thread,
- * delivery is queued with {@link SwingUtilities#invokeLater(Runnable)}.</p>
+ * <p>The wrapper delegates reads directly to the source collection and
+ * subscribes to source changes immediately. If a source change arrives on a
+ * background thread, delivery to this wrapper's listeners is scheduled with
+ * {@link SwingUtilities#invokeLater(Runnable)}. Changes already delivered on
+ * the EDT are forwarded synchronously.</p>
  *
- * <p>This class does not make the source list thread-safe. Applications that
- * mutate the source from background threads must still use a source
- * implementation and ownership policy that allow those mutations.</p>
- *
- * <p>Closing the wrapper removes the source subscription, clears wrapper
- * listeners, and suppresses queued callbacks that have not reached the EDT yet.
- * Closing does not close or clear the wrapped source list.</p>
+ * <p>Closing the wrapper removes the source subscription and clears this
+ * wrapper's listener list. It does not close, clear, or otherwise own the
+ * source collection. Subscribers added after close receive an inert
+ * subscription.</p>
  *
  * @param <E> element type
  */
-public final class EdtObservableList<E> implements ObservableList<E>, Disposable {
+public final class EdtObservableReadableCollection<E> implements ObservableReadableCollection<E>, Disposable {
 
     private final Object monitor = new Object();
-    private final ObservableList<E> source;
+    private final ObservableReadableCollection<E> source;
     private final Subscription sourceSubscription;
     private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
     private boolean closed;
@@ -44,9 +38,9 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
     /**
      * Creates an EDT-dispatching wrapper around {@code source}.
      *
-     * @param source source observable list
+     * @param source source observable collection
      */
-    public EdtObservableList(ObservableList<E> source) {
+    public EdtObservableReadableCollection(ObservableReadableCollection<E> source) {
         this.source = Objects.requireNonNull(source, "source");
         this.sourceSubscription = source.subscribe(this::sourceChanged);
     }
@@ -54,12 +48,12 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
     /**
      * Creates an EDT-dispatching wrapper around {@code source}.
      *
-     * @param source source observable list
+     * @param source source observable collection
      * @param <E> element type
      * @return EDT-dispatching wrapper
      */
-    public static <E> EdtObservableList<E> of(ObservableList<E> source) {
-        return new EdtObservableList<>(source);
+    public static <E> EdtObservableReadableCollection<E> of(ObservableReadableCollection<E> source) {
+        return new EdtObservableReadableCollection<>(source);
     }
 
     @Override
@@ -74,55 +68,16 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
 
     @Override
     public List<E> snapshot() {
-        return Collections.unmodifiableList(source.snapshot());
+        return source.snapshot();
     }
 
     /**
-     * Returns the wrapped source list.
+     * Returns the wrapped source collection.
      *
-     * @return source list
+     * @return source collection
      */
-    public ObservableList<E> source() {
+    public ObservableReadableCollection<E> source() {
         return source;
-    }
-
-    @Override
-    public void add(@NonNull E element) {
-        Objects.requireNonNull(element, "element");
-        source.add(element);
-    }
-
-    @Override
-    public void add(int index, E element) {
-        Objects.requireNonNull(element, "element");
-        source.add(index, element);
-    }
-
-    @Override
-    public E set(int index, E element) {
-        Objects.requireNonNull(element, "element");
-        return source.set(index, element);
-    }
-
-    @Override
-    public E remove(int index) {
-        return source.remove(index);
-    }
-
-    @Override
-    public void move(int fromIndex, int toIndex) {
-        source.move(fromIndex, toIndex);
-    }
-
-    @Override
-    public void clear() {
-        source.clear();
-    }
-
-    @Override
-    public void batch(Consumer<ObservableList<E>> work) {
-        Objects.requireNonNull(work, "work");
-        source.batch(ignored -> work.accept(this));
     }
 
     @Override

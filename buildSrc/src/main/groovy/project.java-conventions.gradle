@@ -23,6 +23,9 @@ java {
 }
 
 dependencies {
+    compileOnlyApi libs.jetbrains.annotations
+    compileOnlyApi libs.jspecify
+
     // Default set of dependencies for unit tests
     testImplementation libs.bundles.testPlatform
     testRuntimeOnly libs.bundles.testPlatformRuntime

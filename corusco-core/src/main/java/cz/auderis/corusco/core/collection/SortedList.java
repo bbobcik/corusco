@@ -3,35 +3,35 @@ package cz.auderis.corusco.core.collection;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * Read-only sorted view over an {@link ObservableList}.
+ * Read-only sorted view over an {@link ObservableReadableCollection}.
  *
- * <p>The view subscribes to a source list, stores a sorted snapshot, and emits
+ * <p>The view subscribes to a source collection, stores a sorted snapshot, and emits
  * changes with indices relative to the sorted view. Source ownership remains
- * unchanged: callers mutate the source list, while this view provides stable
- * sorted reads for presentation code, adapters, and tests that should not own
- * collection storage.</p>
+ * unchanged: callers mutate the source collection owner, while this view
+ * provides stable sorted reads for presentation code, adapters, and tests that
+ * should not own collection storage.</p>
  *
  * <p>Sorting makes many source mutations ambiguous to translate as a precise
  * single insert, remove, replace, or move in view coordinates. For deterministic
  * behavior, every visible content change is therefore reported as a reset:
  * cleared previous contents followed by inserted current contents where
  * applicable. Comparator replacement uses the same reset rule. Call
- * {@link #close()} when the view is no longer needed to release its source-list
+ * {@link #close()} when the view is no longer needed to release its source
  * subscription.</p>
  *
  * @param <E> element type
  */
 public final class SortedList<E> implements ObservableList<E>, Disposable {
 
-    private final ObservableList<E> source;
-    private final List<ListChangeListener<E>> listeners = new ArrayList<>();
+    private final ObservableReadableCollection<E> source;
+    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
     private final Subscription subscription;
     private Comparator<? super E> comparator;
     private List<E> sorted;
@@ -40,10 +40,10 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
     /**
      * Creates a sorted view.
      *
-     * @param source source list
+     * @param source source collection
      * @param comparator sort comparator
      */
-    public SortedList(ObservableList<E> source, Comparator<? super E> comparator) {
+    public SortedList(ObservableReadableCollection<E> source, Comparator<? super E> comparator) {
         this.source = Objects.requireNonNull(source, "source");
         this.comparator = Objects.requireNonNull(comparator, "comparator");
         this.sorted = sorted(source.snapshot());
@@ -53,12 +53,12 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
     /**
      * Creates a sorted view.
      *
-     * @param source source list
+     * @param source source collection
      * @param comparator sort comparator
      * @param <E> element type
      * @return sorted view
      */
-    public static <E> SortedList<E> of(ObservableList<E> source, Comparator<? super E> comparator) {
+    public static <E> SortedList<E> of(ObservableReadableCollection<E> source, Comparator<? super E> comparator) {
         return new SortedList<>(source, comparator);
     }
 
@@ -74,7 +74,7 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
 
     @Override
     public List<E> snapshot() {
-        return Collections.unmodifiableList(new ArrayList<>(sorted));
+        return List.copyOf(sorted);
     }
 
     /**
@@ -177,13 +177,12 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
             return;
         }
         ListChangeSet<E> changeSet = new ListChangeSet<>(changes);
-        List<ListChangeListener<E>> snapshot = List.copyOf(listeners);
-        for (ListChangeListener<E> listener : snapshot) {
+        for (ListChangeListener<E> listener : listeners) {
             listener.listChanged(changeSet);
         }
     }
 
     private UnsupportedOperationException readOnly() {
-        return new UnsupportedOperationException("SortedList is a read-only view; mutate the source list");
+        return new UnsupportedOperationException("SortedList is a read-only view; mutate the source collection");
     }
 }

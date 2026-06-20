@@ -1,24 +1,22 @@
 package cz.auderis.corusco.glazedlists;
 
 import ca.odell.glazedlists.EventList;
+import cz.auderis.corusco.core.collection.ObservableReadableCollection;
 
 /**
  * Entry point for adapting Glazed Lists collections to Corusco collection APIs.
  *
- * <p>Use this utility when an application already owns data in a Glazed Lists
- * {@link EventList} and wants to reuse Corusco consumers such as observable
- * list bindings or typed table models. The adapter keeps the EventList as the
- * storage owner and presents a Corusco {@code ObservableList} view; it does not
- * copy the list into a separate model or take responsibility for disposing the
- * EventList.</p>
+ * <p>Use this utility at the boundary between Corusco observable collections
+ * and Glazed Lists. {@link #observableList(EventList)} adapts an existing
+ * Glazed Lists source as a mutable Corusco observable list.
+ * {@link #eventListMirror(ObservableReadableCollection)} mirrors a Corusco
+ * readable collection into a read-only Glazed Lists event list.</p>
  *
- * <p>The returned adapters follow the detailed contract documented by
- * {@link GlazedObservableList}: direct adapter reads and mutations use the
- * EventList read/write lock, Glazed Lists events are translated to Corusco
- * change sets, listeners are retained until their subscriptions are closed,
- * and the adapter itself must be closed to remove its source-list listener.
- * External code that mutates the same EventList must still follow Glazed
- * Lists' own threading and locking rules.</p>
+ * <p>The returned objects follow the detailed contracts documented by
+ * {@link GlazedObservableList} and {@link GlazedReadableCollectionMirror}.
+ * Both register listeners and must be closed when no longer needed. Source
+ * ownership stays with the caller; adapters remove subscriptions on close but
+ * do not dispose application-owned collections.</p>
  */
 public final class GlazedListsAdapters {
 
@@ -39,5 +37,23 @@ public final class GlazedListsAdapters {
      */
     public static <E> GlazedObservableList<E> observableList(EventList<E> source) {
         return GlazedObservableList.of(source);
+    }
+
+    /**
+     * Mirrors a Corusco readable collection into a read-only Glazed Lists event
+     * list.
+     *
+     * <p>The returned mirror owns an internal event list and must be closed
+     * when no longer needed. Ownership of the source collection stays with the
+     * caller.</p>
+     *
+     * @param source source observable collection, not {@code null}
+     * @param <E> element type
+     * @return event-list mirror
+     */
+    public static <E> GlazedReadableCollectionMirror<E> eventListMirror(
+            ObservableReadableCollection<E> source
+    ) {
+        return GlazedReadableCollectionMirror.of(source);
     }
 }

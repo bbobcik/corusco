@@ -110,6 +110,7 @@ final class TableSourceWriter {
         StringBuilder source = sourceBuilder(packageName);
         source.append("""
                 import cz.auderis.corusco.core.collection.ObservableList;
+                import cz.auderis.corusco.core.collection.ObservableReadableCollection;
                 import cz.auderis.corusco.swing.table.ObservableTableModel;
                 import java.util.List;
 
@@ -147,8 +148,20 @@ final class TableSourceWriter {
                     public static ObservableTableModel<%s> tableModel(ObservableList<%s> rows) {
                         return ObservableTableModel.of(rows, DESCRIPTOR);
                     }
+
+                    /**
+                     * Creates a read-only observable Swing table model.
+                     *
+                     * @param rows observable row source
+                     * @return read-only table model
+                     */
+                    public static ObservableTableModel<%s> readOnlyTableModel(
+                            ObservableReadableCollection<%s> rows
+                    ) {
+                        return ObservableTableModel.readOnly(rows, DESCRIPTOR);
+                    }
                 }
-                """.formatted(table.ownerType, table.ownerType));
+                """.formatted(table.ownerType, table.ownerType, table.ownerType, table.ownerType));
         writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table descriptor");
     }
 
@@ -160,6 +173,7 @@ final class TableSourceWriter {
         StringBuilder source = sourceBuilder(packageName);
         source.append("""
                 import cz.auderis.corusco.core.collection.ObservableList;
+                import cz.auderis.corusco.core.collection.ObservableReadableCollection;
                 import cz.auderis.corusco.core.value.WritableValue;
                 import cz.auderis.corusco.swing.binding.BindingScope;
                 import cz.auderis.corusco.swing.table.ObservableTableModel;
@@ -188,6 +202,25 @@ final class TableSourceWriter {
                             BindingScope scope
                     ) {
                         ObservableTableModel<%s> model = %s.tableModel(rows);
+                        table.setModel(model);
+                        scope.add(model);
+                        return model;
+                    }
+
+                    /**
+                     * Creates, installs, and scopes the generated read-only table model.
+                     *
+                     * @param table Swing table receiving the generated model
+                     * @param rows observable row source
+                     * @param scope owner for model cleanup
+                     * @return installed table model
+                     */
+                    public static ObservableTableModel<%s> installReadOnlyModel(
+                            JTable table,
+                            ObservableReadableCollection<%s> rows,
+                            BindingScope scope
+                    ) {
+                        ObservableTableModel<%s> model = %s.readOnlyTableModel(rows);
                         table.setModel(model);
                         scope.add(model);
                         return model;
@@ -231,7 +264,11 @@ final class TableSourceWriter {
                         return scope.add(TableSelectionBinding.bind(table, model, selectedModelRow, selectedRow));
                     }
                 }
-                """.formatted(
+        """.formatted(
+                table.ownerType,
+                table.ownerType,
+                table.ownerType,
+                descriptorType,
                 table.ownerType,
                 table.ownerType,
                 table.ownerType,

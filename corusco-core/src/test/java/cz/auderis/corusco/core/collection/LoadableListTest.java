@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LoadableListTest {
 
@@ -121,6 +122,14 @@ class LoadableListTest {
     }
 
     @Test
+    void nullLoadedElementsAreRejected() {
+        LoadableList<String> list = LoadableList.of(LoadableListTest::singletonNull);
+
+        assertThatThrownBy(list::snapshot)
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
     void detachAllowsCachedRowsToBeGarbageCollectedWherePractical() {
         DetachedRows detached = detachedRows();
 
@@ -153,6 +162,12 @@ class LoadableListTest {
             }
         }
         return reference.get() == null;
+    }
+
+    private static List<String> singletonNull() {
+        List<String> result = new ArrayList<>();
+        result.add(null);
+        return result;
     }
 
     private record Payload(byte[] data) {

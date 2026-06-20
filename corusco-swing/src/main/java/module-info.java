@@ -29,6 +29,7 @@
 module cz.auderis.corusco.swing {
     requires transitive java.desktop;
     requires transitive cz.auderis.corusco.core;
+    requires static org.jspecify;
 
     exports cz.auderis.corusco.swing;
     exports cz.auderis.corusco.swing.behavior;

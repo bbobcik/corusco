@@ -10,10 +10,13 @@ import cz.auderis.corusco.core.collection.ListChangeSet;
 import cz.auderis.corusco.core.collection.ObservableList;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import org.jspecify.annotations.NonNull;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
@@ -38,7 +41,7 @@ import java.util.function.Consumer;
 public final class GlazedObservableList<E> implements ObservableList<E>, Disposable {
 
     private final EventList<E> source;
-    private final List<ListChangeListener<E>> listeners = new ArrayList<>();
+    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
     private final List<ListChange<E>> batchedChanges = new ArrayList<>();
     private final ListEventListener<E> sourceListener = this::sourceChanged;
     private List<E> sourceSnapshot;
@@ -92,7 +95,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
 
     @Override
     public List<E> snapshot() {
-        return Collections.unmodifiableList(snapshotSource());
+        return List.copyOf(snapshotSource());
     }
 
     /**
@@ -105,7 +108,8 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
     }
 
     @Override
-    public void add(E element) {
+    public void add(@NonNull E element) {
+        Objects.requireNonNull(element, "element");
         Lock lock = source.getReadWriteLock().writeLock();
         lock.lock();
         try {
@@ -117,6 +121,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
 
     @Override
     public void add(int index, E element) {
+        Objects.requireNonNull(element, "element");
         Lock lock = source.getReadWriteLock().writeLock();
         lock.lock();
         try {
@@ -128,6 +133,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
 
     @Override
     public E set(int index, E element) {
+        Objects.requireNonNull(element, "element");
         Lock lock = source.getReadWriteLock().writeLock();
         lock.lock();
         try {
@@ -236,7 +242,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
     }
 
     private void applyInsert(int index, List<ListChange<E>> changes) {
-        E element = source.get(index);
+        E element = Objects.requireNonNull(source.get(index), "element");
         sourceSnapshot.add(index, element);
         changes.add(new ListChange.Inserted<>(index, singleton(element)));
     }
@@ -247,7 +253,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
     }
 
     private void applyUpdate(int index, List<ListChange<E>> changes) {
-        E oldElement = sourceSnapshot.set(index, source.get(index));
+        E oldElement = sourceSnapshot.set(index, Objects.requireNonNull(source.get(index), "element"));
         changes.add(new ListChange.Replaced<>(index, oldElement, sourceSnapshot.get(index)));
     }
 
@@ -268,7 +274,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
         Lock lock = source.getReadWriteLock().readLock();
         lock.lock();
         try {
-            return new ArrayList<>(source);
+            return new ArrayList<>(List.copyOf(source));
         } finally {
             lock.unlock();
         }
@@ -294,8 +300,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
     }
 
     private void fire(ListChangeSet<E> changeSet) {
-        List<ListChangeListener<E>> snapshot = List.copyOf(listeners);
-        for (ListChangeListener<E> listener : snapshot) {
+        for (ListChangeListener<E> listener : listeners) {
             listener.listChanged(changeSet);
         }
     }

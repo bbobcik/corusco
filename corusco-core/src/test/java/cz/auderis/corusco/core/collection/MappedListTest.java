@@ -77,6 +77,19 @@ class MappedListTest {
     }
 
     @Test
+    void nullMappedElementsAreRejected() {
+        ObservableArrayList<Integer> source = ObservableArrayList.of(List.of(1));
+
+        assertThatThrownBy(() -> MappedList.of(source, ignored -> null))
+                .isInstanceOf(NullPointerException.class);
+
+        MappedList<Integer, String> mapped = MappedList.of(source, value -> value == 2 ? null : "v" + value);
+        assertThatThrownBy(() -> source.set(0, 2))
+                .isInstanceOf(NullPointerException.class);
+        assertThat(mapped.snapshot()).containsExactly("v1");
+    }
+
+    @Test
     void directMutationsFailFast() {
         MappedList<Integer, String> mapped = MappedList.of(ObservableArrayList.empty(), Object::toString);
 

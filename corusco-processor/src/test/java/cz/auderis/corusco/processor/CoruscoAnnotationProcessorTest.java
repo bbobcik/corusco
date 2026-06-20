@@ -449,7 +449,10 @@ class CoruscoAnnotationProcessorTest {
                 "List.of(",
                 "CustomerEditColumns.NAME",
                 "CustomerEditColumns.ORDERS",
-                "public static ObservableTableModel<CustomerEdit> tableModel(ObservableList<CustomerEdit> rows)"
+                "public static ObservableTableModel<CustomerEdit> tableModel(ObservableList<CustomerEdit> rows)",
+                "public static ObservableTableModel<CustomerEdit> readOnlyTableModel(",
+                "ObservableReadableCollection<CustomerEdit> rows",
+                "return ObservableTableModel.readOnly(rows, DESCRIPTOR)"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditTableBindings.java",
                 "public final class CustomerEditTableBindings",
@@ -457,6 +460,9 @@ class CoruscoAnnotationProcessorTest {
                 "ObservableList<CustomerEdit> rows",
                 "BindingScope scope",
                 "ObservableTableModel<CustomerEdit> model = CustomerEditTableDescriptor.tableModel(rows)",
+                "public static ObservableTableModel<CustomerEdit> installReadOnlyModel(",
+                "ObservableReadableCollection<CustomerEdit> rows",
+                "ObservableTableModel<CustomerEdit> model = CustomerEditTableDescriptor.readOnlyTableModel(rows)",
                 "table.setModel(model)",
                 "scope.add(model)",
                 "public static TableSelectionBinding<CustomerEdit> bindSelection(",

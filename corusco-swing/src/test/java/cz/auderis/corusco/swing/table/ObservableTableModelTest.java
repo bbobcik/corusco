@@ -1,6 +1,8 @@
 package cz.auderis.corusco.swing.table;
 
 import cz.auderis.corusco.core.collection.ObservableArrayList;
+import cz.auderis.corusco.core.collection.MappedReadableCollection;
+import cz.auderis.corusco.core.collection.ObservableSortedSet;
 import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.table.Column;
 import cz.auderis.corusco.core.table.ColumnCapabilities;
@@ -11,6 +13,7 @@ import cz.auderis.corusco.core.table.TableDescriptor;
 import cz.auderis.corusco.core.table.TableKey;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.event.TableModelEvent;
@@ -79,6 +82,33 @@ class ObservableTableModelTest {
                     new EventRecord(TableModelEvent.UPDATE, 0, 0, 0)
             );
             model.close();
+        });
+    }
+
+    @Test
+    void readOnlyModelAcceptsReadableRowsAndIgnoresEditing() {
+        SwingEdt.runAndWait(() -> {
+            ObservableSortedSet<CustomerRow> rows = ObservableSortedSet.of(
+                    List.of(new CustomerRow("Globex", 5), new CustomerRow("Acme", 2)),
+                    Comparator.comparing(CustomerRow::name)
+            );
+            MappedReadableCollection<CustomerRow, CustomerRow> mapped =
+                    MappedReadableCollection.of(rows, row -> row);
+            ObservableTableModel<CustomerRow> model = ObservableTableModel.readOnly(mapped, customerTable());
+            List<EventRecord> events = recordEvents(model);
+
+            rows.add(new CustomerRow("Initech", 1));
+            model.setValueAt("Ignored", 0, 0);
+
+            assertThat(model.getRowCount()).isEqualTo(3);
+            assertThat(model.getValueAt(0, 0)).isEqualTo("Acme");
+            assertThat(model.isCellEditable(0, 0)).isFalse();
+            assertThat(mapped.get(0)).isEqualTo(new CustomerRow("Acme", 2));
+            assertThat(events).containsExactly(
+                    new EventRecord(TableModelEvent.INSERT, 2, 2, TableModelEvent.ALL_COLUMNS)
+            );
+            model.close();
+            mapped.close();
         });
     }
 

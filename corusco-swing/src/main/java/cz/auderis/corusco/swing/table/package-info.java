@@ -13,10 +13,10 @@
  * <p>Use this package when a table should be assembled from a generated or
  * handwritten {@link cz.auderis.corusco.core.table.TableDescriptor}. It is a
  * good fit for immutable record rows, generated {@code @SwingTable} metadata,
- * observable row lists, persisted column layout, and tables whose selection is
- * part of presenter state. Use plain Swing table models only when the table is
- * completely ad hoc and does not need Corusco keys, descriptors, validation, or
- * state persistence.</p>
+ * observable row collections, persisted column layout, and tables whose
+ * selection is part of presenter state. Use plain Swing table models only when
+ * the table is completely ad hoc and does not need Corusco keys, descriptors,
+ * validation, or state persistence.</p>
  *
  * <p>The package assumes the descriptor is the source of truth for table
  * identity. Column model indexes, view indexes, localized headers, and current
@@ -25,13 +25,23 @@
  * localization, column movement, and model refreshes.</p>
  *
  * <p>The first step is to create or obtain a descriptor and an observable row
- * list, then adapt them through {@link
+ * collection, then adapt them through {@link
  * cz.auderis.corusco.swing.table.ObservableTableModel}:</p>
  *
  * <pre>{@code
  * ObservableList<CustomerRow> rows = ObservableArrayList.empty();
  * ObservableTableModel<CustomerRow> model =
  *         ObservableTableModel.of(rows, CustomerRowTableDescriptor.DESCRIPTOR);
+ * table.setModel(model);
+ * }</pre>
+ *
+ * <p>When the source is already an ordered read-only collection, such as a
+ * sorted set or mapped projection, create a read-only model instead:</p>
+ *
+ * <pre>{@code
+ * ObservableReadableCollection<CustomerRow> rows = sortedCustomers;
+ * ObservableTableModel<CustomerRow> model =
+ *         ObservableTableModel.readOnly(rows, CustomerRowTableDescriptor.DESCRIPTOR);
  * table.setModel(model);
  * }</pre>
  *
@@ -68,15 +78,18 @@
  * rather than through current view coordinates alone.</p>
  *
  * <p>For editable tables, remember that editing calls the column updater and
- * replaces the row in the observable source. This is suitable for immutable
- * records and generated row constructors. If rows are mutable objects, make
- * sure the updater and source list still publish a meaningful change so Swing
- * repaint and downstream observers stay coherent.</p>
+ * replaces the row in the observable source list. This is suitable for
+ * immutable records and generated row constructors. If rows are mutable
+ * objects, make sure the updater and source list still publish a meaningful
+ * change so Swing repaint and downstream observers stay coherent. Read-only
+ * models observe source changes but do not call column updaters.</p>
  *
- * <p>Types in this package are EDT-confined. Mutate the source list on the EDT
- * while a Swing table model is subscribed, or wrap it with
+ * <p>Types in this package are EDT-confined. Mutate the source on the EDT while
+ * a Swing table model is subscribed, or wrap readable sources with
+ * {@link cz.auderis.corusco.swing.collection.EdtObservableReadableCollection}
+ * and mutable lists with
  * {@link cz.auderis.corusco.swing.collection.EdtObservableList} before binding
- * it to Swing. Close table models, state controllers, and selection bindings
+ * them to Swing. Close table models, state controllers, and selection bindings
  * when the owning view is disposed.</p>
  *
  * <p>Testing table screens is usually clearer when split by layer: core tests

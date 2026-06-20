@@ -23,6 +23,8 @@
  */
 module cz.auderis.corusco.core {
     requires java.prefs;
+    requires static org.jspecify;
+    requires static org.jetbrains.annotations;
 
     exports cz.auderis.corusco.core;
     exports cz.auderis.corusco.core.collection;

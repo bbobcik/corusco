@@ -2,12 +2,13 @@ package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Detachable;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -37,9 +38,9 @@ import java.util.function.Supplier;
 public final class LoadableList<E> implements ObservableList<E>, Detachable {
 
     private final Supplier<? extends Collection<? extends E>> loader;
-    private final List<ListChangeListener<E>> listeners = new ArrayList<>();
-    private ObservableArrayList<E> cache;
-    private Subscription cacheSubscription;
+    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
+    private @Nullable ObservableArrayList<E> cache;
+    private @Nullable Subscription cacheSubscription;
 
     /**
      * Creates a lazy observable list.
@@ -172,7 +173,7 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
 
     private List<E> loadSnapshot() {
         Collection<? extends E> loaded = Objects.requireNonNull(loader.get(), "loaded elements");
-        return Collections.unmodifiableList(new ArrayList<>(loaded));
+        return List.copyOf(loaded);
     }
 
     private void replaceCache(Collection<? extends E> elements) {
@@ -195,8 +196,7 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
     }
 
     private void fire(ListChangeSet<E> changeSet) {
-        List<ListChangeListener<E>> snapshot = List.copyOf(listeners);
-        for (ListChangeListener<E> listener : snapshot) {
+        for (ListChangeListener<E> listener : listeners) {
             listener.listChanged(changeSet);
         }
     }

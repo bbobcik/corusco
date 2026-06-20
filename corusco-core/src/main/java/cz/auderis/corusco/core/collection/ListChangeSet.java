@@ -1,7 +1,5 @@
 package cz.auderis.corusco.core.collection;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -24,10 +22,10 @@ public record ListChangeSet<E>(List<ListChange<E>> changes) {
      */
     public ListChangeSet {
         Objects.requireNonNull(changes, "changes");
-        changes = Collections.unmodifiableList(new ArrayList<>(changes));
         if (changes.isEmpty()) {
             throw new IllegalArgumentException("changes must not be empty");
         }
+        changes = List.copyOf(changes);
     }
 
     /**
@@ -38,6 +36,7 @@ public record ListChangeSet<E>(List<ListChange<E>> changes) {
      * @return change set
      */
     public static <E> ListChangeSet<E> of(ListChange<E> change) {
-        return new ListChangeSet<>(List.of(Objects.requireNonNull(change, "change")));
+        Objects.requireNonNull(change, "change");
+        return new ListChangeSet<>(List.of(change));
     }
 }

@@ -3,9 +3,9 @@ package cz.auderis.corusco.core.collection;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Mutable {@link ObservableList} implementation backed by an {@link ArrayList}.
@@ -27,7 +27,7 @@ import java.util.Objects;
 public final class ObservableArrayList<E> implements ObservableList<E> {
 
     private final List<E> elements = new ArrayList<>();
-    private final List<ListChangeListener<E>> listeners = new ArrayList<>();
+    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
     private final List<ListChange<E>> batchedChanges = new ArrayList<>();
     private int batchDepth;
 
@@ -47,7 +47,7 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
      * @param initialElements initial elements, not {@code null}
      */
     public ObservableArrayList(Collection<? extends E> initialElements) {
-        elements.addAll(Objects.requireNonNull(initialElements, "initialElements"));
+        elements.addAll(List.copyOf(Objects.requireNonNull(initialElements, "initialElements")));
     }
 
     /**
@@ -83,7 +83,7 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
 
     @Override
     public List<E> snapshot() {
-        return Collections.unmodifiableList(new ArrayList<>(elements));
+        return List.copyOf(elements);
     }
 
     @Override
@@ -93,12 +93,14 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
 
     @Override
     public void add(int index, E element) {
+        Objects.requireNonNull(element, "element");
         elements.add(index, element);
         record(new ListChange.Inserted<>(index, singleton(element)));
     }
 
     @Override
     public E set(int index, E element) {
+        Objects.requireNonNull(element, "element");
         E oldElement = elements.set(index, element);
         record(new ListChange.Replaced<>(index, oldElement, element));
         return oldElement;
@@ -163,8 +165,7 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
     }
 
     private void fire(ListChangeSet<E> changeSet) {
-        List<ListChangeListener<E>> snapshot = List.copyOf(listeners);
-        for (ListChangeListener<E> listener : snapshot) {
+        for (ListChangeListener<E> listener : listeners) {
             listener.listChanged(changeSet);
         }
     }

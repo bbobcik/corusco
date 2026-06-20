@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.collection;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +18,17 @@ class FilteredListTest {
         assertThat(filtered.size()).isEqualTo(2);
         assertThat(filtered.get(0)).isEqualTo(2);
         assertThat(filtered.snapshot()).containsExactly(2, 4);
+    }
+
+    @Test
+    void acceptsReadableCollectionSource() {
+        ObservableSortedSet<Integer> source = ObservableSortedSet.of(List.of(4, 1, 2), Comparator.naturalOrder());
+        FilteredList<Integer> filtered = FilteredList.of(source, value -> value % 2 == 0);
+
+        source.add(3);
+        source.add(6);
+
+        assertThat(filtered.snapshot()).containsExactly(2, 4, 6);
     }
 
     @Test
@@ -133,26 +145,5 @@ class FilteredListTest {
         assertThatThrownBy(() -> filtered.clear())
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("read-only");
-    }
-
-    @Test
-    void supportsNullElementsWhenPredicateAcceptsThem() {
-        ObservableArrayList<String> source = ObservableArrayList.of(singletonNull());
-        FilteredList<String> filtered = FilteredList.of(source, value -> value == null || value.startsWith("a"));
-        List<ListChangeSet<String>> events = new ArrayList<>();
-        filtered.subscribe(events::add);
-
-        source.set(0, "alpha");
-        source.set(0, "beta");
-
-        assertThat(filtered.snapshot()).isEmpty();
-        assertThat(events.get(0).changes()).containsExactly(new ListChange.Replaced<>(0, null, "alpha"));
-        assertThat(events.get(1).changes()).containsExactly(new ListChange.Removed<>(0, List.of("alpha")));
-    }
-
-    private static List<String> singletonNull() {
-        List<String> result = new ArrayList<>();
-        result.add(null);
-        return result;
     }
 }

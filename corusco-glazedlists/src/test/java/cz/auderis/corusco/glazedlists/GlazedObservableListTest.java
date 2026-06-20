@@ -1,15 +1,19 @@
 package cz.auderis.corusco.glazedlists;
 
 import ca.odell.glazedlists.BasicEventList;
+import ca.odell.glazedlists.EventList;
 import ca.odell.glazedlists.SortedList;
 import cz.auderis.corusco.core.collection.ListChange;
 import cz.auderis.corusco.core.collection.ListChangeSet;
+import cz.auderis.corusco.core.collection.MappedReadableCollection;
+import cz.auderis.corusco.core.collection.ObservableSortedSet;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GlazedObservableListTest {
 
@@ -119,21 +123,53 @@ class GlazedObservableListTest {
     }
 
     @Test
-    void supportsNullElements() {
+    void nullElementsAreRejected() {
         BasicEventList<String> source = new BasicEventList<>();
         GlazedObservableList<String> adapter = GlazedObservableList.of(source);
         List<ListChangeSet<String>> events = new ArrayList<>();
         adapter.subscribe(events::add);
 
-        adapter.add(null);
-        adapter.set(0, "value");
+        assertThatThrownBy(() -> adapter.add(null))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> adapter.add(0, null))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> GlazedObservableList.of(eventListWithNull()))
+                .isInstanceOf(NullPointerException.class);
 
-        assertThat(events.get(0).changes()).containsExactly(new ListChange.Inserted<>(0, singletonNull()));
-        assertThat(events.get(1).changes()).containsExactly(new ListChange.Replaced<>(0, null, "value"));
+        adapter.add("value");
+        assertThatThrownBy(() -> adapter.set(0, null))
+                .isInstanceOf(NullPointerException.class);
+
+        assertThat(source).containsExactly("value");
+        assertThat(events).containsExactly(new ListChangeSet<>(List.of(new ListChange.Inserted<>(0, List.of("value")))));
     }
 
-    private static List<String> singletonNull() {
-        List<String> result = new ArrayList<>();
+    @Test
+    void mirrorsReadableCollectionIntoReadOnlyEventList() {
+        ObservableSortedSet<Integer> source = ObservableSortedSet.of(List.of(3, 1), Comparator.naturalOrder());
+        MappedReadableCollection<Integer, String> mapped = MappedReadableCollection.of(source, value -> "v" + value);
+        GlazedReadableCollectionMirror<String> mirror = GlazedListsAdapters.eventListMirror(mapped);
+        EventList<String> eventList = mirror.eventList();
+
+        source.add(2);
+        source.remove(1);
+        source.clear();
+        source.add(4);
+
+        assertThat(eventList).containsExactly("v4");
+        assertThatThrownBy(() -> eventList.add("blocked"))
+                .isInstanceOf(UnsupportedOperationException.class);
+
+        mirror.close();
+        mirror.close();
+        source.add(5);
+
+        assertThat(eventList).containsExactly("v4");
+        mapped.close();
+    }
+
+    private static BasicEventList<String> eventListWithNull() {
+        BasicEventList<String> result = new BasicEventList<>();
         result.add(null);
         return result;
     }

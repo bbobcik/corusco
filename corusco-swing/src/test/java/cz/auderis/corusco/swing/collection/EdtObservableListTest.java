@@ -147,6 +147,31 @@ class EdtObservableListTest {
         edtList.close();
     }
 
+    @Test
+    void readableWrapperDeliversBackgroundSourceChangesOnEdt() throws InterruptedException {
+        ObservableArrayList<String> source = ObservableArrayList.empty();
+        EdtObservableReadableCollection<String> edtCollection = EdtObservableReadableCollection.of(source);
+        CountDownLatch delivered = new CountDownLatch(1);
+        AtomicBoolean deliveredOnEdt = new AtomicBoolean();
+        AtomicReference<ListChangeSet<String>> deliveredChanges = new AtomicReference<>();
+        edtCollection.subscribe(changes -> {
+            deliveredOnEdt.set(SwingUtilities.isEventDispatchThread());
+            deliveredChanges.set(changes);
+            delivered.countDown();
+        });
+
+        Thread worker = new Thread(() -> source.add("background"), "corusco-edt-readable-test");
+        worker.start();
+        worker.join();
+
+        assertThat(delivered.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(deliveredOnEdt).isTrue();
+        assertThat(deliveredChanges.get().changes())
+                .containsExactly(new ListChange.Inserted<>(0, List.of("background")));
+        assertThat(edtCollection.get(0)).isEqualTo("background");
+        edtCollection.close();
+    }
+
     private record EventRecord(int type, int index0, int index1) {
 
         static EventRecord from(ListDataEvent event) {

@@ -81,17 +81,24 @@ class ObservableArrayListTest {
     }
 
     @Test
-    void nullElementsAreReportedConsistently() {
+    void nullElementsAreRejectedBeforeMutation() {
         ObservableArrayList<String> list = ObservableArrayList.empty();
         List<ListChangeSet<String>> events = new ArrayList<>();
         list.subscribe(events::add);
 
-        list.add(null);
-        String removed = list.remove(0);
+        assertThatThrownBy(() -> list.add(null))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> list.add(0, null))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> ObservableArrayList.of(singletonNull()))
+                .isInstanceOf(NullPointerException.class);
 
-        assertThat(removed).isNull();
-        assertThat(events.get(0).changes()).containsExactly(new ListChange.Inserted<>(0, singletonNull()));
-        assertThat(events.get(1).changes()).containsExactly(new ListChange.Removed<>(0, singletonNull()));
+        list.add("a");
+        assertThatThrownBy(() -> list.set(0, null))
+                .isInstanceOf(NullPointerException.class);
+
+        assertThat(list.snapshot()).containsExactly("a");
+        assertThat(events).containsExactly(new ListChangeSet<>(List.of(new ListChange.Inserted<>(0, List.of("a")))));
     }
 
     @Test

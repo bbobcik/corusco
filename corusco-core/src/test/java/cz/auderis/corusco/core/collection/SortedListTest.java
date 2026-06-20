@@ -21,6 +21,16 @@ class SortedListTest {
     }
 
     @Test
+    void acceptsReadableCollectionSource() {
+        ObservableSortedSet<Integer> source = ObservableSortedSet.of(List.of(1, 2, 3), Comparator.naturalOrder());
+        SortedList<Integer> sorted = SortedList.of(source, Comparator.reverseOrder());
+
+        source.add(4);
+
+        assertThat(sorted.snapshot()).containsExactly(4, 3, 2, 1);
+    }
+
+    @Test
     void sourceInsertRemoveReplaceMoveAndBatchPublishDeterministicResets() {
         ObservableArrayList<Integer> source = ObservableArrayList.of(List.of(3, 1, 2));
         SortedList<Integer> sorted = SortedList.of(source, Comparator.naturalOrder());

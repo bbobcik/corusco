@@ -1,16 +1,15 @@
 package cz.auderis.corusco.core.collection;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
  * One precise observable-list mutation.
  *
- * <p>{@link ObservableList} implementations publish these values so adapters
- * can update derived views, Swing list models, and table models without
- * reloading the entire list. Indices are expressed in the coordinate system of
- * the list that emits the change, not necessarily an underlying storage list.
+ * <p>{@link ObservableReadableCollection} implementations publish these values
+ * so adapters can update derived views, Swing list models, and table models
+ * without reloading the entire source. Indices are expressed in the coordinate
+ * system of the collection that emits the change, not necessarily an
+ * underlying storage list.
  * For insertions the index is the first inserted position after mutation. For
  * removals the index is the position the removed elements occupied before
  * mutation. For replacements the index is the replaced position. Move indices
@@ -86,6 +85,6 @@ public sealed interface ListChange<E>
     }
 
     private static <E> List<E> immutableCopy(List<E> elements) {
-        return Collections.unmodifiableList(new ArrayList<>(elements));
+        return List.copyOf(elements);
     }
 }
