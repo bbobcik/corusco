@@ -1,0 +1,22 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.convert.Converters;
+import cz.auderis.corusco.core.convert.EmptyTextPolicy;
+import cz.auderis.corusco.core.form.AbstractFormModel;
+import cz.auderis.corusco.core.form.ComponentStateModel;
+import cz.auderis.corusco.core.form.FieldModel;
+import cz.auderis.corusco.core.form.TextFieldModel;
+import cz.auderis.corusco.core.meta.FieldDescriptor;
+import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.validation.RuleSet;
+import cz.auderis.corusco.core.validation.Validators;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.regex.Pattern;
+
+/**
+ * Generated form model for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE extends AbstractFormModel<OWNER_TYPE> {
+
+/* <<< SPLIT >>> =========================================================== */
+}

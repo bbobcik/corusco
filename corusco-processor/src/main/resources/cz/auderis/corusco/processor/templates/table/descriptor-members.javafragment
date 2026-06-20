@@ -1,0 +1,33 @@
+    /**
+     * Generated table descriptor.
+     */
+    public static final cz.auderis.corusco.core.table.TableDescriptor<OWNER_TYPE> DESCRIPTOR =
+            new cz.auderis.corusco.core.table.TableDescriptor<>(
+                    COLUMNS_TYPE.TABLE,
+                    List.of(
+COLUMN_ENTRIES
+                    )
+            );
+
+    /**
+     * Creates an observable Swing table model.
+     *
+     * @param rows observable row source
+     * @return table model
+     */
+    public static ObservableTableModel<OWNER_TYPE> tableModel(ObservableList<OWNER_TYPE> rows) {
+        return ObservableTableModel.of(rows, DESCRIPTOR);
+    }
+
+    /**
+     * Creates a read-only observable Swing table model.
+     *
+     * @param rows observable row source
+     * @return read-only table model
+     */
+    public static ObservableTableModel<OWNER_TYPE> readOnlyTableModel(
+            ObservableReadableCollection<OWNER_TYPE> rows
+    ) {
+        return ObservableTableModel.readOnly(rows, DESCRIPTOR);
+    }
+

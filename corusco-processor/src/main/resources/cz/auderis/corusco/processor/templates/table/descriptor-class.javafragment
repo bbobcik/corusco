@@ -1,0 +1,13 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.collection.ObservableList;
+import cz.auderis.corusco.core.collection.ObservableReadableCollection;
+import cz.auderis.corusco.swing.table.ObservableTableModel;
+import java.util.List;
+
+/**
+ * Generated table descriptor for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

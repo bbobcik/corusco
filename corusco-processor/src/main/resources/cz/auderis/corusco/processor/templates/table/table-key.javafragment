@@ -1,0 +1,6 @@
+    /**
+     * Table key for {@code TABLE_ID}.
+     */
+    public static final TableKey<OWNER_TYPE> TABLE =
+            TableKey.of(TABLE_ID_LITERAL, OWNER_TYPE.class);
+

@@ -1,0 +1,6 @@
+    private static OWNER_TYPE UPDATER_NAME(OWNER_TYPE row, VALUE_TYPE value) {
+        return new OWNER_TYPE(
+UPDATER_ARGUMENTS
+        );
+    }
+

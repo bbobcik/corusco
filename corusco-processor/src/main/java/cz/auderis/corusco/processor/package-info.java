@@ -8,8 +8,8 @@
  * {@code cz.auderis.corusco.annotations} during compilation and writes ordinary
  * Java source files. Those generated files contain field keys, table keys,
  * column keys, action keys, resource keys, field descriptions, table
- * descriptions, form models, command factories, behavior plans, and binding
- * facades.</p>
+ * descriptions, form models, option metadata, dependency metadata, command
+ * factories, behavior plans, and binding facades.</p>
  *
  * <p>A field description, table description, or action description is an
  * immutable object that records the stable facts of a screen. The processor
@@ -72,10 +72,10 @@
  * <h2>What Gets Generated</h2>
  *
  * <p>Form annotations generate field keys, resource keys, field descriptions,
- * validation descriptions, problem codes, a form model, a view interface,
- * behavior-plan code, and a bindings facade. The generated form model belongs
- * to the core model layer; the generated bindings facade belongs to the Swing
- * installation layer.</p>
+ * validation descriptions, problem codes, option descriptors, dependency
+ * descriptors, a form model, a view interface, behavior-plan code, and a
+ * bindings facade. The generated form model belongs to the core model layer;
+ * the generated bindings facade belongs to the Swing installation layer.</p>
  *
  * <p>Table annotations generate a table key, column keys, column descriptions,
  * executable column objects, resource keys, a table descriptor, and Swing table
@@ -89,6 +89,11 @@
  * <p>Validation annotations generate declarative constraint descriptions and
  * validator wiring for supported field constraints. Complex business rules
  * should remain handwritten validators or presenter logic.</p>
+ *
+ * <p>Component-state and dependency annotations generate explicit state model
+ * members and dependency companions. They describe what a presenter or binding
+ * layer can control; they do not make the processor a GUI builder or hide
+ * application workflow logic behind annotations.</p>
  *
  * <h2>Validation And Diagnostics</h2>
  *

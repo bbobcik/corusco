@@ -1,0 +1,10 @@
+    /**
+     * Creates a command bound to {@link OWNER_TYPE#METHOD_NAME()}.
+     *
+     * @param owner action owner
+     * @return mutable command
+     */
+    public static MutableCommand FACTORY_METHOD(OWNER_TYPE owner) {
+        java.util.Objects.requireNonNull(owner, "owner");
+        return CommandFactory.FACTORY_EXPRESSION;
+    }

@@ -1,0 +1,11 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.key.FieldKey;
+import cz.auderis.corusco.core.key.TextFieldKey;
+
+/**
+ * Generated field keys for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

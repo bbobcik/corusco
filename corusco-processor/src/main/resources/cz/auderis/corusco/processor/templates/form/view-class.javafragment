@@ -1,0 +1,13 @@
+PACKAGE_DECLARATION
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JTextField;
+
+/**
+ * Generated Swing view contract for {@link OWNER_TYPE}.
+ */
+public interface GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

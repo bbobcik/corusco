@@ -1,0 +1,11 @@
+    /**
+     * Installs generated bindings for the form view and model.
+     *
+     * @param view generated view contract
+     * @param model generated form model
+     * @param scope owning behavior scope
+     */
+    public static void install(VIEW_TYPE view, FORM_MODEL_TYPE model, BehaviorScope scope) {
+        BEHAVIOR_PLAN_TYPE.install(view, model, scope);
+    }
+

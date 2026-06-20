@@ -1,0 +1,13 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.meta.OptionDescriptor;
+import cz.auderis.corusco.core.meta.OptionKey;
+import cz.auderis.corusco.core.meta.OptionResourcePrefix;
+import java.util.List;
+
+/**
+ * Generated option metadata for enum option fields in {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

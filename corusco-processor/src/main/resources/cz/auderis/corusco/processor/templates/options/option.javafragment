@@ -1,0 +1,18 @@
+    /**
+     * Option key for {@code OPTION_KEY}.
+     */
+    public static final OptionKey KEY_CONSTANT =
+            OptionKey.of(OPTION_KEY_LITERAL);
+
+    /**
+     * Option descriptor for {@code OPTION_DESCRIPTOR_ID}.
+     */
+    public static final OptionDescriptor<VALUE_TYPE> DESCRIPTOR_CONSTANT =
+            OptionDescriptor.of(
+                    VALUE_TYPE.ENUM_CONSTANT,
+                    KEY_CONSTANT,
+                    FIELD_CONSTANT_RESOURCES.label(KEY_CONSTANT),
+                    FIELD_CONSTANT_RESOURCES.description(KEY_CONSTANT),
+                    null
+            );
+

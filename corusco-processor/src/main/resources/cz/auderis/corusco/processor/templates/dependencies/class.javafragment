@@ -1,0 +1,12 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.meta.DependencyEffect;
+import cz.auderis.corusco.core.meta.FieldDependency;
+import java.util.List;
+
+/**
+ * Generated field dependency metadata for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

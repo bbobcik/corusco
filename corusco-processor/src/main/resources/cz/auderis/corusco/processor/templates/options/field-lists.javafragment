@@ -1,0 +1,12 @@
+    /**
+     * Option descriptors for {@code FIELD_KEY_ID} in generated order.
+     */
+    public static final List<OptionDescriptor<VALUE_TYPE>> FIELD_CONSTANT_DESCRIPTORS =
+            List.of(OPTION_DESCRIPTORS);
+
+    /**
+     * Enum values for {@code FIELD_KEY_ID} in generated order.
+     */
+    public static final List<VALUE_TYPE> FIELD_CONSTANT =
+            List.of(OPTION_VALUES);
+

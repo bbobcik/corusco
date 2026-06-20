@@ -1,0 +1,10 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.problem.ProblemCode;
+
+/**
+ * Generated problem codes for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

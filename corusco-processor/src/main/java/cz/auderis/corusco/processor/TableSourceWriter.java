@@ -1,8 +1,13 @@
 package cz.auderis.corusco.processor;
 
+import cz.auderis.corusco.processor.source.BasicStructuredFragment;
+import cz.auderis.corusco.processor.source.SimpleMutableFragment;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.List;
+import java.util.Map;
+
+import static java.util.Map.entry;
 import javax.annotation.processing.Filer;
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.TypeElement;
@@ -43,25 +48,16 @@ final class TableSourceWriter {
         String packageName = elements.getPackageOf(tableType).getQualifiedName().toString();
         String generatedType = table.ownerType + "TableResources";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.key.ResourceKey;
-
-                /**
-                 * Generated table resource keys for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(table.ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
+        BasicStructuredFragment source = tableClassSource("table/resources-class.javafragment", packageName,
+                table.ownerType, generatedType);
+        source.addFragment(ProcessorSourceTemplates.privateConstructorSource(TableSourceWriter.class, generatedType));
         for (TableColumnSpec column : table.columns) {
-            source.append(resourceKeySource(column.headerConstant, column.headerId));
+            source.addFragment(resourceKeySource(column.headerConstant, column.headerId));
             if (column.tooltipConstant != null) {
-                source.append(resourceKeySource(column.tooltipConstant, column.tooltipId));
+                source.addFragment(resourceKeySource(column.tooltipConstant, column.tooltipId));
             }
         }
-        source.append("}\n");
-        writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table resource keys");
+        writeSource(tableType, qualifiedName, source.asString(), "Could not write generated table resource keys");
     }
 
     private void writeColumnsClass(TypeElement tableType, TableSpec table) {
@@ -69,37 +65,18 @@ final class TableSourceWriter {
         String generatedType = table.ownerType + "Columns";
         String resourcesType = table.ownerType + "TableResources";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.key.HelpTopic;
-                import cz.auderis.corusco.core.table.Column;
-                import cz.auderis.corusco.core.table.ColumnCapabilities;
-                import cz.auderis.corusco.core.table.ColumnDefaults;
-                import cz.auderis.corusco.core.table.ColumnDescriptor;
-                import cz.auderis.corusco.core.table.ColumnKey;
-                import cz.auderis.corusco.core.table.ColumnPersistence;
-                import cz.auderis.corusco.core.table.TableKey;
-
-                /**
-                 * Generated table column metadata for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(table.ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
-        source.append("""
-                    /**
-                     * Table key for {@code %s}.
-                     */
-                    public static final TableKey<%s> TABLE =
-                            TableKey.of(%s, %s.class);
-
-                """.formatted(table.id, table.ownerType, stringLiteralOrNull(table.id), table.ownerType));
+        BasicStructuredFragment source = tableClassSource("table/columns-class.javafragment", packageName,
+                table.ownerType, generatedType);
+        source.addFragment(ProcessorSourceTemplates.privateConstructorSource(TableSourceWriter.class, generatedType));
+        source.addFragment(ProcessorSourceTemplates.fragment(TableSourceWriter.class, "table/table-key.javafragment", Map.of(
+                "TABLE_ID", table.id,
+                "OWNER_TYPE", table.ownerType,
+                "TABLE_ID_LITERAL", stringLiteralOrNull(table.id)
+        )));
         for (TableColumnSpec column : table.columns) {
-            source.append(columnSource(table, resourcesType, column));
+            source.addFragment(columnSource(table, resourcesType, column));
         }
-        source.append("}\n");
-        writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table columns");
+        writeSource(tableType, qualifiedName, source.asString(), "Could not write generated table columns");
     }
 
     private void writeTableDescriptorClass(TypeElement tableType, TableSpec table) {
@@ -107,62 +84,21 @@ final class TableSourceWriter {
         String generatedType = table.ownerType + "TableDescriptor";
         String columnsType = table.ownerType + "Columns";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.collection.ObservableList;
-                import cz.auderis.corusco.core.collection.ObservableReadableCollection;
-                import cz.auderis.corusco.swing.table.ObservableTableModel;
-                import java.util.List;
-
-                /**
-                 * Generated table descriptor for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(table.ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
-        source.append("""
-                    /**
-                     * Generated table descriptor.
-                     */
-                    public static final cz.auderis.corusco.core.table.TableDescriptor<%s> DESCRIPTOR =
-                            new cz.auderis.corusco.core.table.TableDescriptor<>(
-                                    %s.TABLE,
-                                    List.of(
-                """.formatted(table.ownerType, columnsType));
+        BasicStructuredFragment source = tableClassSource("table/descriptor-class.javafragment", packageName,
+                table.ownerType, generatedType);
+        source.addFragment(ProcessorSourceTemplates.privateConstructorSource(TableSourceWriter.class, generatedType));
+        SimpleMutableFragment columnEntries = new SimpleMutableFragment();
         for (int i = 0; i < table.columns.size(); i++) {
             String suffix = i == table.columns.size() - 1 ? "\n" : ",\n";
-            source.append("                        ").append(columnsType).append(".")
+            columnEntries.append("                        ").append(columnsType).append(".")
                     .append(table.columns.get(i).constantName).append(suffix);
         }
-        source.append("""
-                                    )
-                            );
-
-                    /**
-                     * Creates an observable Swing table model.
-                     *
-                     * @param rows observable row source
-                     * @return table model
-                     */
-                    public static ObservableTableModel<%s> tableModel(ObservableList<%s> rows) {
-                        return ObservableTableModel.of(rows, DESCRIPTOR);
-                    }
-
-                    /**
-                     * Creates a read-only observable Swing table model.
-                     *
-                     * @param rows observable row source
-                     * @return read-only table model
-                     */
-                    public static ObservableTableModel<%s> readOnlyTableModel(
-                            ObservableReadableCollection<%s> rows
-                    ) {
-                        return ObservableTableModel.readOnly(rows, DESCRIPTOR);
-                    }
-                }
-                """.formatted(table.ownerType, table.ownerType, table.ownerType, table.ownerType));
-        writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table descriptor");
+        source.addFragment(ProcessorSourceTemplates.fragment(TableSourceWriter.class, "table/descriptor-members.javafragment", Map.of(
+                "OWNER_TYPE", table.ownerType,
+                "COLUMNS_TYPE", columnsType,
+                "COLUMN_ENTRIES", columnEntries.asString()
+        )));
+        writeSource(tableType, qualifiedName, source.asString(), "Could not write generated table descriptor");
     }
 
     private void writeTableBindingsClass(TypeElement tableType, TableSpec table) {
@@ -170,271 +106,113 @@ final class TableSourceWriter {
         String generatedType = table.ownerType + "TableBindings";
         String descriptorType = table.ownerType + "TableDescriptor";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.collection.ObservableList;
-                import cz.auderis.corusco.core.collection.ObservableReadableCollection;
-                import cz.auderis.corusco.core.value.WritableValue;
-                import cz.auderis.corusco.swing.binding.BindingScope;
-                import cz.auderis.corusco.swing.table.ObservableTableModel;
-                import cz.auderis.corusco.swing.table.TableSelectionBinding;
-                import javax.swing.JTable;
-
-                /**
-                 * Generated table binding helpers for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(table.ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
-        source.append("""
-                    /**
-                     * Creates, installs, and scopes the generated table model.
-                     *
-                     * @param table Swing table receiving the generated model
-                     * @param rows observable row source
-                     * @param scope owner for model cleanup
-                     * @return installed table model
-                     */
-                    public static ObservableTableModel<%s> installModel(
-                            JTable table,
-                            ObservableList<%s> rows,
-                            BindingScope scope
-                    ) {
-                        ObservableTableModel<%s> model = %s.tableModel(rows);
-                        table.setModel(model);
-                        scope.add(model);
-                        return model;
-                    }
-
-                    /**
-                     * Creates, installs, and scopes the generated read-only table model.
-                     *
-                     * @param table Swing table receiving the generated model
-                     * @param rows observable row source
-                     * @param scope owner for model cleanup
-                     * @return installed table model
-                     */
-                    public static ObservableTableModel<%s> installReadOnlyModel(
-                            JTable table,
-                            ObservableReadableCollection<%s> rows,
-                            BindingScope scope
-                    ) {
-                        ObservableTableModel<%s> model = %s.readOnlyTableModel(rows);
-                        table.setModel(model);
-                        scope.add(model);
-                        return model;
-                    }
-
-                    /**
-                     * Binds table selection to a selected model-row value.
-                     *
-                     * @param table Swing table
-                     * @param model generated table model installed on the table
-                     * @param selectedModelRow selected model-row value
-                     * @param scope owner for binding cleanup
-                     * @return selection binding
-                     */
-                    public static TableSelectionBinding<%s> bindSelection(
-                            JTable table,
-                            ObservableTableModel<%s> model,
-                            WritableValue<Integer> selectedModelRow,
-                            BindingScope scope
-                    ) {
-                        return scope.add(TableSelectionBinding.bind(table, model, selectedModelRow));
-                    }
-
-                    /**
-                     * Binds table selection to selected model-row and row values.
-                     *
-                     * @param table Swing table
-                     * @param model generated table model installed on the table
-                     * @param selectedModelRow selected model-row value
-                     * @param selectedRow selected row value
-                     * @param scope owner for binding cleanup
-                     * @return selection binding
-                     */
-                    public static TableSelectionBinding<%s> bindSelection(
-                            JTable table,
-                            ObservableTableModel<%s> model,
-                            WritableValue<Integer> selectedModelRow,
-                            WritableValue<%s> selectedRow,
-                            BindingScope scope
-                    ) {
-                        return scope.add(TableSelectionBinding.bind(table, model, selectedModelRow, selectedRow));
-                    }
-                }
-        """.formatted(
-                table.ownerType,
-                table.ownerType,
-                table.ownerType,
-                descriptorType,
-                table.ownerType,
-                table.ownerType,
-                table.ownerType,
-                descriptorType,
-                table.ownerType,
-                table.ownerType,
-                table.ownerType,
-                table.ownerType,
-                table.ownerType
-        ));
-        writeSource(tableType, qualifiedName, source.toString(), "Could not write generated table bindings");
+        BasicStructuredFragment source = tableClassSource("table/bindings-class.javafragment", packageName,
+                table.ownerType, generatedType);
+        source.addFragment(ProcessorSourceTemplates.privateConstructorSource(TableSourceWriter.class, generatedType));
+        source.addFragment(ProcessorSourceTemplates.fragment(TableSourceWriter.class, "table/binding-members.javafragment", Map.of(
+                "OWNER_TYPE", table.ownerType,
+                "DESCRIPTOR_TYPE", descriptorType
+        )));
+        writeSource(tableType, qualifiedName, source.asString(), "Could not write generated table bindings");
     }
 
     private String columnSource(TableSpec table, String resourcesType, TableColumnSpec column) {
         String tooltip = column.tooltipConstant == null ? "null" : resourcesType + "." + column.tooltipConstant;
         String helpTopic = column.helpTopicId == null ? "null" : "HelpTopic.of(" + stringLiteralOrNull(column.helpTopicId) + ")";
-        String columnFactory = column.editable ? editableColumnSource(column) : readOnlyColumnSource(column);
-        return """
-                    /**
-                     * Column key for {@code %s}.
-                     */
-                    public static final ColumnKey<%s, %s> %s_KEY =
-                            ColumnKey.of(%s, %s.class, %s);
-
-                    /**
-                     * Column descriptor for {@code %s}.
-                     */
-                    public static final ColumnDescriptor<%s, %s> %s_DESCRIPTOR =
-                            new ColumnDescriptor<>(
-                                    %s_KEY,
-                                    %s.%s,
-                                    %s,
-                                    %s,
-                                    ColumnPersistence.of(%s, %d, %s),
-                                    new ColumnDefaults(%d, %d, %s),
-                                    new ColumnCapabilities(%s, %s, %s, %s)
-                            );
-
-                %s\
-                """.formatted(
-                column.keyId,
-                column.ownerType,
-                column.valueType,
-                column.constantName,
-                stringLiteralOrNull(column.keyId),
-                column.ownerType,
-                column.valueClass,
-                column.keyId,
-                column.ownerType,
-                column.valueType,
-                column.constantName,
-                column.constantName,
-                resourcesType,
-                column.headerConstant,
-                tooltip,
-                helpTopic,
-                stringLiteralOrNull(column.persistenceId),
-                column.minWidth,
-                intLiteral(column.maxWidth),
-                column.width,
-                column.order,
-                Boolean.toString(column.visible),
-                Boolean.toString(column.sortable),
-                Boolean.toString(column.filterable),
-                Boolean.toString(column.editable),
-                Boolean.toString(column.hideable),
-                columnFactory
-        ) + updaterSource(table, column);
+        BasicStructuredFragment source = new BasicStructuredFragment();
+        try {
+            source.loadResource(TableSourceWriter.class, "templates/table/column.javafragment");
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not read generated source template table/column.javafragment", e);
+        }
+        source.replaceLocal(Map.ofEntries(
+                entry("COLUMN_KEY_ID", column.keyId),
+                entry("OWNER_TYPE", column.ownerType),
+                entry("VALUE_TYPE", column.valueType),
+                entry("CONSTANT_NAME", column.constantName),
+                entry("COLUMN_KEY_ID_LITERAL", stringLiteralOrNull(column.keyId)),
+                entry("VALUE_CLASS", column.valueClass),
+                entry("RESOURCES_TYPE", resourcesType),
+                entry("HEADER_CONSTANT", column.headerConstant),
+                entry("TOOLTIP_EXPRESSION", tooltip),
+                entry("HELP_TOPIC_EXPRESSION", helpTopic),
+                entry("PERSISTENCE_ID_LITERAL", stringLiteralOrNull(column.persistenceId)),
+                entry("MIN_WIDTH", Integer.toString(column.minWidth)),
+                entry("MAX_WIDTH", intLiteral(column.maxWidth)),
+                entry("WIDTH", Integer.toString(column.width)),
+                entry("ORDER", Integer.toString(column.order)),
+                entry("VISIBLE", Boolean.toString(column.visible)),
+                entry("SORTABLE", Boolean.toString(column.sortable)),
+                entry("FILTERABLE", Boolean.toString(column.filterable)),
+                entry("EDITABLE", Boolean.toString(column.editable)),
+                entry("HIDEABLE", Boolean.toString(column.hideable))
+        ));
+        source.addFragment(column.editable ? editableColumnSource(column) : readOnlyColumnSource(column));
+        source.addFragment(updaterSource(table, column));
+        return source.asString();
     }
 
     private String readOnlyColumnSource(TableColumnSpec column) {
-        return """
-                    /**
-                     * Read-only column for {@code %s}.
-                     */
-                    public static final Column<%s, %s> %s =
-                            Column.readOnly(%s_DESCRIPTOR, %s::%s);
-
-                """.formatted(
-                column.keyId,
-                column.ownerType,
-                column.valueType,
-                column.constantName,
-                column.constantName,
-                column.ownerType,
-                column.componentName
-        );
+        return ProcessorSourceTemplates.fragment(TableSourceWriter.class, "table/read-only-column.javafragment", Map.of(
+                "COLUMN_KEY_ID", column.keyId,
+                "OWNER_TYPE", column.ownerType,
+                "VALUE_TYPE", column.valueType,
+                "CONSTANT_NAME", column.constantName,
+                "COMPONENT_NAME", column.componentName
+        )).asString();
     }
 
     private String editableColumnSource(TableColumnSpec column) {
-        return """
-                    /**
-                     * Editable column for {@code %s}.
-                     */
-                    public static final Column<%s, %s> %s =
-                            Column.editable(%s_DESCRIPTOR, %s::%s, %s::%s);
-
-                """.formatted(
-                column.keyId,
-                column.ownerType,
-                column.valueType,
-                column.constantName,
-                column.constantName,
-                column.ownerType,
-                column.componentName,
-                column.ownerType + "Columns",
-                updaterName(column)
-        );
+        return ProcessorSourceTemplates.fragment(TableSourceWriter.class, "table/editable-column.javafragment", Map.of(
+                "COLUMN_KEY_ID", column.keyId,
+                "OWNER_TYPE", column.ownerType,
+                "VALUE_TYPE", column.valueType,
+                "CONSTANT_NAME", column.constantName,
+                "COMPONENT_NAME", column.componentName,
+                "COLUMNS_TYPE", column.ownerType + "Columns",
+                "UPDATER_NAME", updaterName(column)
+        )).asString();
     }
 
     private String updaterSource(TableSpec table, TableColumnSpec column) {
         if (!column.editable) {
             return "";
         }
-        StringBuilder arguments = new StringBuilder();
+        SimpleMutableFragment arguments = new SimpleMutableFragment();
         for (int i = 0; i < table.components.size(); i++) {
             TableComponentSpec component = table.components.get(i);
             String suffix = i == table.components.size() - 1 ? "\n" : ",\n";
             String expression = component.name.equals(column.componentName)
                     ? "value"
                     : "row." + component.name + "()";
-            arguments.append("                ").append(expression).append(suffix);
+            arguments.appendFormatted("                %s%s", expression, suffix);
         }
-        return """
-                    private static %s %s(%s row, %s value) {
-                        return new %s(
-                %s\
-                        );
-                    }
-
-                """.formatted(
-                column.ownerType,
-                updaterName(column),
-                column.ownerType,
-                column.valueType,
-                column.ownerType,
-                arguments
-        );
+        return ProcessorSourceTemplates.fragment(TableSourceWriter.class, "table/updater.javafragment", Map.of(
+                "OWNER_TYPE", column.ownerType,
+                "UPDATER_NAME", updaterName(column),
+                "VALUE_TYPE", column.valueType,
+                "UPDATER_ARGUMENTS", arguments.asString()
+        )).asString();
     }
 
     private static String resourceKeySource(String constantName, String resourceId) {
-        return """
-                    /**
-                     * Resource key for {@code %s}.
-                     */
-                    public static final ResourceKey<String> %s =
-                            ResourceKey.of(%s, String.class);
-
-                """.formatted(resourceId, constantName, stringLiteralOrNull(resourceId));
+        return ProcessorSourceTemplates.fragment(TableSourceWriter.class, "common/resource-key.javafragment", Map.of(
+                "RESOURCE_ID", resourceId,
+                "CONSTANT_NAME", constantName,
+                "RESOURCE_ID_LITERAL", stringLiteralOrNull(resourceId)
+        )).asString();
     }
 
-    private static StringBuilder sourceBuilder(String packageName) {
-        StringBuilder source = new StringBuilder();
-        if (!packageName.isEmpty()) {
-            source.append("package ").append(packageName).append(";\n\n");
-        }
-        return source;
-    }
-
-    private static String privateConstructorSource(String generatedType) {
-        return """
-                    private %s() {
-                        throw new AssertionError("No instances");
-                    }
-
-                """.formatted(generatedType);
+    private static BasicStructuredFragment tableClassSource(
+            String resourceName,
+            String packageName,
+            String ownerType,
+            String generatedType
+    ) {
+        return ProcessorSourceTemplates.structuredClass(TableSourceWriter.class, resourceName, packageName, Map.of(
+                "OWNER_TYPE", ownerType,
+                "GENERATED_TYPE", generatedType
+        ));
     }
 
     private static String updaterName(TableColumnSpec column) {

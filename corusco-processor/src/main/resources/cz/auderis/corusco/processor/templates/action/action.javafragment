@@ -1,0 +1,19 @@
+    /**
+     * Action key for {@code ACTION_ID}.
+     */
+    public static final ActionKey CONSTANT_NAME_KEY =
+            ActionKey.of(ACTION_ID_LITERAL);
+
+    /**
+     * Text resource key for {@code TEXT_ID}.
+     */
+    public static final ResourceKey<String> CONSTANT_NAME_TEXT =
+            ResourceKey.of(TEXT_ID_LITERAL, String.class);
+
+/* <<< SPLIT >>> =========================================================== */
+    /**
+     * Action descriptor for {@code ACTION_ID}.
+     */
+    public static final ActionDescriptor CONSTANT_NAME =
+            ACTION_DESCRIPTOR;
+

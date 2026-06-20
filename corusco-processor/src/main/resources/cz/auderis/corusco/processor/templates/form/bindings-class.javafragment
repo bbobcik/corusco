@@ -1,0 +1,10 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.swing.behavior.BehaviorScope;
+
+/**
+ * Generated binding facade for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

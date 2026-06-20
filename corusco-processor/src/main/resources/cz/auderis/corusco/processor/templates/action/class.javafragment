@@ -1,0 +1,17 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.command.AcceleratorDescriptor;
+import cz.auderis.corusco.core.command.ActionDescriptor;
+import cz.auderis.corusco.core.command.CommandFactory;
+import cz.auderis.corusco.core.command.CommandSet;
+import cz.auderis.corusco.core.command.MutableCommand;
+import cz.auderis.corusco.core.key.ActionKey;
+import cz.auderis.corusco.core.key.ResourceKey;
+import java.util.List;
+
+/**
+ * Generated action metadata and command factories for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

@@ -1,0 +1,3 @@
+    private static final OptionResourcePrefix FIELD_CONSTANT_RESOURCES =
+            OptionResourcePrefix.of(OWNER_TYPEFields.FIELD_CONSTANT);
+

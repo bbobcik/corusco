@@ -1,0 +1,6 @@
+    /**
+     * Tooltip resource key for {@code TOOLTIP_ID}.
+     */
+    public static final ResourceKey<String> CONSTANT_NAME_TOOLTIP =
+            ResourceKey.of(TOOLTIP_ID_LITERAL, String.class);
+

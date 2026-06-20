@@ -1,0 +1,11 @@
+    /**
+     * Returns all generated dependencies in source declaration order.
+     *
+     * @return dependency list
+     */
+    public static List<FieldDependency> all() {
+        return List.of(
+DEPENDENCY_ENTRIES
+        );
+    }
+

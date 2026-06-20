@@ -17,12 +17,20 @@ final class FormSpec {
     final String sourceType;
     final String resultImplementationType;
     final List<FieldSpec> fields;
+    final List<ComponentStateSpec> componentStates;
 
-    FormSpec(String formId, String sourceType, String resultImplementationType, List<FieldSpec> fields) {
+    FormSpec(
+            String formId,
+            String sourceType,
+            String resultImplementationType,
+            List<FieldSpec> fields,
+            List<ComponentStateSpec> componentStates
+    ) {
         this.formId = formId;
         this.sourceType = sourceType;
         this.resultImplementationType = resultImplementationType;
         this.fields = List.copyOf(fields);
+        this.componentStates = List.copyOf(componentStates);
     }
 
     boolean hasGeneratedResultImplementation() {

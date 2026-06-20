@@ -1,0 +1,29 @@
+    /**
+     * Returns generated action descriptors in declaration order.
+     *
+     * @return descriptor list
+     */
+    public static List<ActionDescriptor> descriptors() {
+        return List.of(
+DESCRIPTOR_ENTRIES
+        );
+    }
+
+    /**
+     * Returns menu action descriptors in declaration order.
+     *
+     * @return menu descriptor list
+     */
+    public static List<ActionDescriptor> menuDescriptors() {
+        return descriptors();
+    }
+
+    /**
+     * Returns toolbar action descriptors in declaration order.
+     *
+     * @return toolbar descriptor list
+     */
+    public static List<ActionDescriptor> toolbarDescriptors() {
+        return descriptors();
+    }
+

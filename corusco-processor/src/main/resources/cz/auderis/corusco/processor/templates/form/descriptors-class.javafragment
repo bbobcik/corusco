@@ -1,0 +1,14 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.key.HelpTopic;
+import cz.auderis.corusco.core.meta.ConstraintDescriptor;
+import cz.auderis.corusco.core.meta.EditorDescriptor;
+import cz.auderis.corusco.core.meta.FieldDescriptor;
+import java.util.List;
+
+/**
+ * Generated field descriptors for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

@@ -1,0 +1,76 @@
+    /**
+     * Creates, installs, and scopes the generated table model.
+     *
+     * @param table Swing table receiving the generated model
+     * @param rows observable row source
+     * @param scope owner for model cleanup
+     * @return installed table model
+     */
+    public static ObservableTableModel<OWNER_TYPE> installModel(
+            JTable table,
+            ObservableList<OWNER_TYPE> rows,
+            BindingScope scope
+    ) {
+        ObservableTableModel<OWNER_TYPE> model = DESCRIPTOR_TYPE.tableModel(rows);
+        table.setModel(model);
+        scope.add(model);
+        return model;
+    }
+
+    /**
+     * Creates, installs, and scopes the generated read-only table model.
+     *
+     * @param table Swing table receiving the generated model
+     * @param rows observable row source
+     * @param scope owner for model cleanup
+     * @return installed table model
+     */
+    public static ObservableTableModel<OWNER_TYPE> installReadOnlyModel(
+            JTable table,
+            ObservableReadableCollection<OWNER_TYPE> rows,
+            BindingScope scope
+    ) {
+        ObservableTableModel<OWNER_TYPE> model = DESCRIPTOR_TYPE.readOnlyTableModel(rows);
+        table.setModel(model);
+        scope.add(model);
+        return model;
+    }
+
+    /**
+     * Binds table selection to a selected model-row value.
+     *
+     * @param table Swing table
+     * @param model generated table model installed on the table
+     * @param selectedModelRow selected model-row value
+     * @param scope owner for binding cleanup
+     * @return selection binding
+     */
+    public static TableSelectionBinding<OWNER_TYPE> bindSelection(
+            JTable table,
+            ObservableTableModel<OWNER_TYPE> model,
+            WritableValue<Integer> selectedModelRow,
+            BindingScope scope
+    ) {
+        return scope.add(TableSelectionBinding.bind(table, model, selectedModelRow));
+    }
+
+    /**
+     * Binds table selection to selected model-row and row values.
+     *
+     * @param table Swing table
+     * @param model generated table model installed on the table
+     * @param selectedModelRow selected model-row value
+     * @param selectedRow selected row value
+     * @param scope owner for binding cleanup
+     * @return selection binding
+     */
+    public static TableSelectionBinding<OWNER_TYPE> bindSelection(
+            JTable table,
+            ObservableTableModel<OWNER_TYPE> model,
+            WritableValue<Integer> selectedModelRow,
+            WritableValue<OWNER_TYPE> selectedRow,
+            BindingScope scope
+    ) {
+        return scope.add(TableSelectionBinding.bind(table, model, selectedModelRow, selectedRow));
+    }
+

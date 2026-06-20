@@ -1,0 +1,6 @@
+    /**
+     * Resource key for {@code RESOURCE_ID}.
+     */
+    public static final ResourceKey<String> CONSTANT_NAME =
+            ResourceKey.of(RESOURCE_ID_LITERAL, String.class);
+

@@ -1,0 +1,16 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.collection.ObservableList;
+import cz.auderis.corusco.core.collection.ObservableReadableCollection;
+import cz.auderis.corusco.core.value.WritableValue;
+import cz.auderis.corusco.swing.binding.BindingScope;
+import cz.auderis.corusco.swing.table.ObservableTableModel;
+import cz.auderis.corusco.swing.table.TableSelectionBinding;
+import javax.swing.JTable;
+
+/**
+ * Generated table binding helpers for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

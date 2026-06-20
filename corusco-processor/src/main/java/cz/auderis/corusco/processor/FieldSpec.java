@@ -31,7 +31,9 @@ final class FieldSpec {
     final String converterExpression;
     final String viewComponentType;
     final String viewMethodName;
+    final boolean componentState;
     final List<String> enumOptionConstants;
+    final List<OptionSpec> options;
     final List<ConstraintSpec> constraints;
 
     FieldSpec(
@@ -52,7 +54,9 @@ final class FieldSpec {
             String converterExpression,
             String viewComponentType,
             String viewMethodName,
+            boolean componentState,
             List<String> enumOptionConstants,
+            List<OptionSpec> options,
             List<ConstraintSpec> constraints
     ) {
         this.constantName = constantName;
@@ -72,7 +76,9 @@ final class FieldSpec {
         this.converterExpression = converterExpression;
         this.viewComponentType = viewComponentType;
         this.viewMethodName = viewMethodName;
+        this.componentState = componentState;
         this.enumOptionConstants = List.copyOf(enumOptionConstants);
+        this.options = List.copyOf(options);
         this.constraints = List.copyOf(constraints);
     }
 }

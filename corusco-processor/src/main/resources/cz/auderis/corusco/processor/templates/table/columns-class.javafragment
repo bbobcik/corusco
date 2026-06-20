@@ -1,0 +1,17 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.key.HelpTopic;
+import cz.auderis.corusco.core.table.Column;
+import cz.auderis.corusco.core.table.ColumnCapabilities;
+import cz.auderis.corusco.core.table.ColumnDefaults;
+import cz.auderis.corusco.core.table.ColumnDescriptor;
+import cz.auderis.corusco.core.table.ColumnKey;
+import cz.auderis.corusco.core.table.ColumnPersistence;
+import cz.auderis.corusco.core.table.TableKey;
+
+/**
+ * Generated table column metadata for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

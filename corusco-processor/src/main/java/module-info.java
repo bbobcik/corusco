@@ -17,6 +17,8 @@ import javax.annotation.processing.Processor;
 module cz.auderis.corusco.processor {
     requires transitive java.compiler;
     requires cz.auderis.corusco.annotations;
+    requires org.jetbrains.annotations;
+    requires java.desktop;
 
     exports cz.auderis.corusco.processor;
 

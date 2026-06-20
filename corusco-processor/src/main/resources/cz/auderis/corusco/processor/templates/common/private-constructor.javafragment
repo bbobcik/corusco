@@ -1,0 +1,4 @@
+    private GENERATED_TYPE() {
+        throw new AssertionError("No instances");
+    }
+

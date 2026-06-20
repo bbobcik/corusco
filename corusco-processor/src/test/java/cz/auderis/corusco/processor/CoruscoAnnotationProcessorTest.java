@@ -80,7 +80,7 @@ class CoruscoAnnotationProcessorTest {
                 "public static final FieldDescriptor<CustomerEdit, java.lang.String> NAME",
                 "\"customer/name\"",
                 "\"name\"",
-                "FieldKind.TEXT",
+                "EditorDescriptor.text()",
                 "CustomerEditResources.NAME_LABEL",
                 "CustomerEditResources.NAME_TOOLTIP",
                 "HelpTopic.of(\"customer/name\")",
@@ -90,11 +90,11 @@ class CoruscoAnnotationProcessorTest {
                 "ConstraintDescriptor.decimalRange(CustomerEditProblems.CREDIT_LIMIT_DECIMAL_RANGE, \"0.00\", null)",
                 "ConstraintDescriptor.intRange(CustomerEditProblems.AGE_INT_RANGE, 0, 120)",
                 "public static final FieldDescriptor<CustomerEdit, java.time.LocalDate> VALID_FROM",
-                "FieldKind.DATE",
+                "EditorDescriptor.date()",
                 "public static final FieldDescriptor<CustomerEdit, demo.CustomerType> TYPE",
-                "FieldKind.COMBO_BOX",
+                "EditorDescriptor.comboBox()",
                 "public static final FieldDescriptor<CustomerEdit, java.lang.Boolean> ACTIVE",
-                "FieldKind.CHECK_BOX"
+                "EditorDescriptor.checkBox()"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
                 "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>",
@@ -141,8 +141,57 @@ class CoruscoAnnotationProcessorTest {
         );
         result.assertGeneratedSourceContains("demo/CustomerEditOptions.java",
                 "public final class CustomerEditOptions",
+                "public static final OptionDescriptor<demo.CustomerType> TYPE_RETAIL",
+                "OptionKey.of(\"retail\")",
+                "TYPE_RESOURCES.label(TYPE_RETAIL_KEY)",
                 "public static final List<demo.CustomerType> TYPE",
                 "List.of(demo.CustomerType.RETAIL, demo.CustomerType.BUSINESS)"
+        );
+    }
+
+    @Test
+    void generatesRadioGroupDescriptorsAndResourceBackedOptionMetadata() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.Option;
+                import cz.auderis.corusco.annotations.form.RadioGroup;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+
+                @SwingForm(id = "customer/security")
+                public record CustomerEdit(@RadioGroup AuthenticationMode authenticationMode) {
+                }
+
+                enum AuthenticationMode {
+                    @Option(key = "password", order = 2)
+                    PASSWORD,
+                    @Option(key = "certificate", order = 1)
+                    CERTIFICATE,
+                    EXTERNAL
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditDescriptors.java",
+                "public static final FieldDescriptor<CustomerEdit, demo.AuthenticationMode> AUTHENTICATION_MODE",
+                "EditorDescriptor.radioGroup()"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditView.java",
+                "JComponent authenticationModeGroup();"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditOptions.java",
+                "private static final OptionResourcePrefix AUTHENTICATION_MODE_RESOURCES",
+                "OptionResourcePrefix.of(CustomerEditFields.AUTHENTICATION_MODE)",
+                "public static final OptionKey AUTHENTICATION_MODE_CERTIFICATE_KEY",
+                "OptionKey.of(\"certificate\")",
+                "public static final OptionDescriptor<demo.AuthenticationMode> AUTHENTICATION_MODE_CERTIFICATE",
+                "AUTHENTICATION_MODE_RESOURCES.label(AUTHENTICATION_MODE_CERTIFICATE_KEY)",
+                "public static final OptionKey AUTHENTICATION_MODE_EXTERNAL_KEY",
+                "OptionKey.of(\"external\")",
+                "public static final List<OptionDescriptor<demo.AuthenticationMode>> AUTHENTICATION_MODE_DESCRIPTORS",
+                "List.of(AUTHENTICATION_MODE_CERTIFICATE, AUTHENTICATION_MODE_PASSWORD, AUTHENTICATION_MODE_EXTERNAL)",
+                "public static final List<demo.AuthenticationMode> AUTHENTICATION_MODE",
+                "List.of(demo.AuthenticationMode.CERTIFICATE, demo.AuthenticationMode.PASSWORD, demo.AuthenticationMode.EXTERNAL)"
         );
     }
 
@@ -221,6 +270,176 @@ class CoruscoAnnotationProcessorTest {
                 "type.value().value()",
                 "active.value().value()"
         );
+    }
+
+    @Test
+    void generatesComponentStateModelsForFieldsAndAuxiliaryStateAccessors() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.ComboBox;
+                import cz.auderis.corusco.annotations.form.ComponentState;
+                import cz.auderis.corusco.annotations.form.DependencyEffect;
+                import cz.auderis.corusco.annotations.form.DependsOn;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+                import cz.auderis.corusco.core.form.ComponentStateModel;
+
+                @SwingForm(id = "customer/security")
+                public abstract class CustomerEdit {
+                    @ComboBox
+                    public abstract AuthenticationMode authenticationMode();
+
+                    @TextField
+                    @ComponentState
+                    @DependsOn(field = "authenticationMode", values = "PASSWORD", effect = DependencyEffect.VISIBLE)
+                    public abstract String password();
+
+                    @ComponentState
+                    public abstract ComponentStateModel advancedSection();
+                }
+
+                enum AuthenticationMode {
+                    PASSWORD, CERTIFICATE
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
+                "import cz.auderis.corusco.core.form.ComponentStateModel;",
+                "public final ComponentStateModel passwordState;",
+                "public final ComponentStateModel advancedSection;",
+                "this.passwordState = new ComponentStateModel();",
+                "this.advancedSection = new ComponentStateModel();",
+                "public ComponentStateModel passwordState()",
+                "return passwordState;",
+                "public ComponentStateModel advancedSection()",
+                "return advancedSection;",
+                "return new GeneratedCustomerEdit(",
+                "authenticationMode.value().value()",
+                "password.value()"
+        );
+        result.assertGeneratedSourceContains("demo/GeneratedCustomerEdit.java",
+                "private final demo.AuthenticationMode authenticationMode;",
+                "private final java.lang.String password;",
+                "private final ComponentStateModel advancedSection = new ComponentStateModel();",
+                "public demo.AuthenticationMode authenticationMode()",
+                "public java.lang.String password()",
+                "public ComponentStateModel advancedSection()"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditDependencies.java",
+                "public final class CustomerEditDependencies",
+                "public static final FieldDependency PASSWORD_STATE_DEPENDS_ON_AUTHENTICATION_MODE",
+                "FieldDependency.of(",
+                "CustomerEditFields.AUTHENTICATION_MODE,",
+                "\"passwordState\"",
+                "List.of(\"PASSWORD\")",
+                "DependencyEffect.VISIBLE",
+                "public static List<FieldDependency> all()",
+                "List.of(",
+                "PASSWORD_STATE_DEPENDS_ON_AUTHENTICATION_MODE"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditBehaviorPlan.java",
+                "StandardBehaviors.componentState(model.passwordState)",
+                "scope.add(dependencyBinding(",
+                "model.authenticationMode.value()",
+                "model.passwordState",
+                "DependencyEffect.VISIBLE",
+                "private static Binding dependencyBinding(",
+                "case VISIBLE -> target.visible().setValue(active, ChangeOrigin.GENERATED)"
+        );
+        assertThat(result.generatedSource("demo/GeneratedCustomerEdit.java"))
+                .doesNotContain("ComponentStateModel passwordState")
+                .doesNotContain("ComponentStateModel advancedSection)");
+    }
+
+    @Test
+    void rejectsAuxiliaryComponentStateAccessorWithWrongReturnType() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.ComponentState;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @SwingForm(id = "customer/security")
+                public abstract class CustomerEdit {
+                    @TextField
+                    public abstract String password();
+
+                    @ComponentState
+                    public abstract String advancedSection();
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@ComponentState auxiliary accessors must return ComponentStateModel");
+    }
+
+    @Test
+    void rejectsStateOnlyRecordComponent() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.ComponentState;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.core.form.ComponentStateModel;
+
+                @SwingForm(id = "customer/security")
+                public record CustomerEdit(@ComponentState ComponentStateModel advancedSection) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Record component @ComponentState must accompany a field kind annotation");
+    }
+
+    @Test
+    void rejectsDependencyWithoutComponentState() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.DependsOn;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @SwingForm(id = "customer/security")
+                public abstract class CustomerEdit {
+                    @TextField
+                    public abstract String authenticationMode();
+
+                    @TextField
+                    @DependsOn(field = "authenticationMode", values = "PASSWORD")
+                    public abstract String password();
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@DependsOn requires @ComponentState");
+    }
+
+    @Test
+    void rejectsDependencyOnUnknownField() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.ComponentState;
+                import cz.auderis.corusco.annotations.form.DependsOn;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @SwingForm(id = "customer/security")
+                public abstract class CustomerEdit {
+                    @TextField
+                    @ComponentState
+                    @DependsOn(field = "authenticationMode", values = "PASSWORD")
+                    public abstract String password();
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages())
+                .contains("@DependsOn field does not match a generated form field in CustomerEdit: authenticationMode");
     }
 
     @Test

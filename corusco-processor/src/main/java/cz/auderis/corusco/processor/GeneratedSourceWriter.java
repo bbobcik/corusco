@@ -1,9 +1,12 @@
 package cz.auderis.corusco.processor;
 
+import cz.auderis.corusco.processor.source.BasicStructuredFragment;
+import cz.auderis.corusco.processor.source.SimpleMutableFragment;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import javax.annotation.processing.Filer;
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.TypeElement;
@@ -49,70 +52,43 @@ final class GeneratedSourceWriter {
         writeViewClass(formType, form);
         writeBehaviorPlanClass(formType, form);
         writeBindingsClass(formType, form);
-        writeOptionsClass(formType, form);
-    }
-
-    void writeActionsClass(TypeElement ownerType, List<ActionSpec> actions) {
-        String packageName = elements.getPackageOf(ownerType).getQualifiedName().toString();
-        String ownerName = ownerType.getSimpleName().toString();
-        String generatedType = ownerName + "Actions";
-        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.command.AcceleratorDescriptor;
-                import cz.auderis.corusco.core.command.ActionDescriptor;
-                import cz.auderis.corusco.core.command.CommandFactory;
-                import cz.auderis.corusco.core.command.CommandSet;
-                import cz.auderis.corusco.core.command.MutableCommand;
-                import cz.auderis.corusco.core.key.ActionKey;
-                import cz.auderis.corusco.core.key.ResourceKey;
-                import java.util.List;
-
-                /**
-                 * Generated action metadata and command factories for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(ownerName, generatedType));
-        source.append(privateConstructorSource(generatedType));
-        for (ActionSpec action : actions) {
-            source.append(actionSource(action));
-        }
-        source.append(actionDescriptorListSource(actions));
-        source.append(commandFactorySource(ownerName, actions));
-        source.append("}\n");
-        writeSource(ownerType, qualifiedName, source.toString(), "Could not write generated action descriptors");
+        new FormOptionsSourceWriter(elements, filer, messager).writeOptionsClass(formType, form);
+        new FormDependenciesSourceWriter(elements, filer, messager).writeDependenciesClass(formType, form);
     }
 
     private void writeResultImplementationClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
         String generatedType = form.resultImplementationType;
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import java.util.Objects;
-
-                /**
-                 * Generated immutable result implementation for {@link %s}.
-                 */
-                public final class %s extends %s {
-
-                """.formatted(form.sourceType, generatedType, form.sourceType));
+        BasicStructuredFragment source = formClassSource("form/result-class.javafragment", packageName,
+                form.sourceType, generatedType);
         for (FieldSpec field : form.fields) {
-            source.append("""
+            source.addFragment("""
                     private final %s %s;
 
                     """.formatted(field.accessorType, field.componentName));
         }
-        source.append(resultConstructorSource(generatedType, form.fields));
-        for (FieldSpec field : form.fields) {
-            source.append(resultAccessorSource(field));
+        for (ComponentStateSpec state : form.componentStates) {
+            if (state.resultAccessor) {
+                source.addFragment("""
+                    private final ComponentStateModel %s = new ComponentStateModel();
+
+                    """.formatted(state.componentName));
+            }
         }
-        source.append(resultEqualsSource(form));
-        source.append(resultHashCodeSource(form.fields));
-        source.append(resultToStringSource(generatedType, form.fields));
-        source.append("}\n");
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated form result implementation");
+        source.addFragment(resultConstructorSource(generatedType, form.fields));
+        for (FieldSpec field : form.fields) {
+            source.addFragment(resultAccessorSource(field));
+        }
+        for (ComponentStateSpec state : form.componentStates) {
+            if (state.resultAccessor) {
+                source.addFragment(resultComponentStateAccessorSource(state));
+            }
+        }
+        source.addFragment(resultEqualsSource(form));
+        source.addFragment(resultHashCodeSource(form.fields));
+        source.addFragment(resultToStringSource(generatedType, form.fields));
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated form result implementation");
     }
 
     private void writeFieldsClass(TypeElement formType, FormSpec form) {
@@ -120,23 +96,13 @@ final class GeneratedSourceWriter {
         String ownerType = form.sourceType;
         String generatedType = ownerType + "Fields";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.key.FieldKey;
-                import cz.auderis.corusco.core.key.TextFieldKey;
-
-                /**
-                 * Generated field keys for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
+        BasicStructuredFragment source = formClassSource("form/fields-class.javafragment", packageName,
+                ownerType, generatedType);
+        source.addFragment(privateConstructorSource(generatedType));
         for (FieldSpec field : form.fields) {
-            source.append(fieldSource(field));
+            source.addFragment(fieldSource(field));
         }
-        source.append("}\n");
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated field keys");
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated field keys");
     }
 
     private void writeResourcesClass(TypeElement formType, FormSpec form) {
@@ -144,25 +110,16 @@ final class GeneratedSourceWriter {
         String ownerType = form.sourceType;
         String generatedType = ownerType + "Resources";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.key.ResourceKey;
-
-                /**
-                 * Generated resource keys for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
+        BasicStructuredFragment source = formClassSource("form/resources-class.javafragment", packageName,
+                ownerType, generatedType);
+        source.addFragment(privateConstructorSource(generatedType));
         for (FieldSpec field : form.fields) {
-            source.append(resourceKeySource(field.labelConstant, field.keyId + "/label"));
+            source.addFragment(resourceKeySource(field.labelConstant, field.keyId + "/label"));
             if (field.tooltipConstant != null) {
-                source.append(resourceKeySource(field.tooltipConstant, field.tooltipId));
+                source.addFragment(resourceKeySource(field.tooltipConstant, field.tooltipId));
             }
         }
-        source.append("}\n");
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated resource keys");
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated resource keys");
     }
 
     private void writeProblemsClass(TypeElement formType, FormSpec form) {
@@ -170,24 +127,15 @@ final class GeneratedSourceWriter {
         String ownerType = form.sourceType;
         String generatedType = ownerType + "Problems";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.problem.ProblemCode;
-
-                /**
-                 * Generated problem codes for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
+        BasicStructuredFragment source = formClassSource("form/problems-class.javafragment", packageName,
+                ownerType, generatedType);
+        source.addFragment(privateConstructorSource(generatedType));
         for (FieldSpec field : form.fields) {
             for (ConstraintSpec constraint : field.constraints) {
-                source.append(problemCodeSource(constraint));
+                source.addFragment(problemCodeSource(constraint));
             }
         }
-        source.append("}\n");
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated problem codes");
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated problem codes");
     }
 
     private void writeDescriptorsClass(TypeElement formType, FormSpec form) {
@@ -197,26 +145,13 @@ final class GeneratedSourceWriter {
         String resourcesType = ownerType + "Resources";
         String problemsType = ownerType + "Problems";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.key.HelpTopic;
-                import cz.auderis.corusco.core.meta.ConstraintDescriptor;
-                import cz.auderis.corusco.core.meta.FieldDescriptor;
-                import cz.auderis.corusco.core.meta.FieldKind;
-                import java.util.List;
-
-                /**
-                 * Generated field descriptors for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
+        BasicStructuredFragment source = formClassSource("form/descriptors-class.javafragment", packageName,
+                ownerType, generatedType);
+        source.addFragment(privateConstructorSource(generatedType));
         for (FieldSpec field : form.fields) {
-            source.append(descriptorSource(field, resourcesType, problemsType));
+            source.addFragment(descriptorSource(field, resourcesType, problemsType));
         }
-        source.append("}\n");
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated field descriptors");
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated field descriptors");
     }
 
     private void writeFormModelClass(TypeElement formType, FormSpec form) {
@@ -232,31 +167,15 @@ final class GeneratedSourceWriter {
                 ? "original immutable form result"
                 : "original immutable record";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.core.convert.Converters;
-                import cz.auderis.corusco.core.convert.EmptyTextPolicy;
-                import cz.auderis.corusco.core.form.AbstractFormModel;
-                import cz.auderis.corusco.core.form.FieldModel;
-                import cz.auderis.corusco.core.form.TextFieldModel;
-                import cz.auderis.corusco.core.meta.FieldDescriptor;
-                import cz.auderis.corusco.core.problem.ProblemSet;
-                import cz.auderis.corusco.core.validation.RuleSet;
-                import cz.auderis.corusco.core.validation.Validators;
-                import java.math.BigDecimal;
-                import java.util.List;
-                import java.util.regex.Pattern;
-
-                /**
-                 * Generated form model for {@link %s}.
-                 */
-                public final class %s extends AbstractFormModel<%s> {
-
-                """.formatted(ownerType, generatedType, ownerType));
+        BasicStructuredFragment source = formClassSource("form/model-class.javafragment", packageName,
+                ownerType, generatedType);
         for (FieldSpec field : form.fields) {
-            source.append(fieldModelDeclarationSource(field));
+            source.addFragment(fieldModelDeclarationSource(field));
         }
-        source.append("""
+        for (ComponentStateSpec state : form.componentStates) {
+            source.addFragment(componentStateDeclarationSource(state));
+        }
+        source.addFragment("""
                     private final RuleSet<%s> rules;
 
                     /**
@@ -268,16 +187,22 @@ final class GeneratedSourceWriter {
                         java.util.Objects.requireNonNull(original, "original");
                 """.formatted(generatedType, originalDescription, generatedType, ownerType));
         for (FieldSpec field : form.fields) {
-            source.append(fieldModelInitializationSource(field, fieldsType));
+            source.addFragment(fieldModelInitializationSource(field, fieldsType));
         }
-        source.append("""
+        for (ComponentStateSpec state : form.componentStates) {
+            source.addFragment(componentStateInitializationSource(state));
+        }
+        source.addFragment("""
                         this.rules = buildRules();
                     }
 
                 """);
-        source.append(descriptorListSource(form.fields, descriptorsType));
-        source.append(buildRulesSource(form.fields, generatedType, fieldsType));
-        source.append("""
+        for (ComponentStateSpec state : form.componentStates) {
+            source.addFragment(componentStateAccessorSource(state));
+        }
+        source.addFragment(descriptorListSource(form.fields, descriptorsType));
+        source.addFragment(buildRulesSource(form.fields, generatedType, fieldsType));
+        source.addFragment("""
                     @Override
                     protected ProblemSet validationProblems() {
                         return rules.validateAll(this);
@@ -290,14 +215,13 @@ final class GeneratedSourceWriter {
         for (int i = 0; i < form.fields.size(); i++) {
             FieldSpec field = form.fields.get(i);
             String suffix = i == form.fields.size() - 1 ? "\n" : ",\n";
-            source.append("                ").append(resultValueExpression(field)).append(suffix);
+            source.addFragment("                " + resultValueExpression(field) + suffix);
         }
-        source.append("""
+        source.addFragment("""
                         );
                     }
-                }
                 """);
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated form model");
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated form model");
     }
 
     private void writeViewClass(TypeElement formType, FormSpec form) {
@@ -305,23 +229,12 @@ final class GeneratedSourceWriter {
         String ownerType = form.sourceType;
         String generatedType = ownerType + "View";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import javax.swing.JCheckBox;
-                import javax.swing.JComboBox;
-                import javax.swing.JTextField;
-
-                /**
-                 * Generated Swing view contract for {@link %s}.
-                 */
-                public interface %s {
-
-                """.formatted(ownerType, generatedType));
+        BasicStructuredFragment source = formClassSource("form/view-class.javafragment", packageName,
+                ownerType, generatedType);
         for (FieldSpec field : form.fields) {
-            source.append(viewMethodSource(field));
+            source.addFragment(viewMethodSource(field));
         }
-        source.append("}\n");
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated view contract");
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated view contract");
     }
 
     private void writeBehaviorPlanClass(TypeElement formType, FormSpec form) {
@@ -331,20 +244,10 @@ final class GeneratedSourceWriter {
         String viewType = ownerType + "View";
         String formModelType = ownerType + "FormModel";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.swing.behavior.BehaviorScope;
-                import cz.auderis.corusco.swing.behavior.StandardBehaviors;
-                import java.util.List;
-
-                /**
-                 * Generated behavior installation plan for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
-        source.append("""
+        BasicStructuredFragment source = formClassSource("form/behavior-plan-class.javafragment", packageName,
+                ownerType, generatedType);
+        source.addFragment(privateConstructorSource(generatedType));
+        source.addFragment("""
                     /**
                      * Installs supported generated behaviors.
                      *
@@ -358,13 +261,21 @@ final class GeneratedSourceWriter {
                         java.util.Objects.requireNonNull(scope, "scope");
                 """.formatted(viewType, formModelType));
         for (FieldSpec field : form.fields) {
-            source.append(behaviorInstallSource(field));
+            source.addFragment(behaviorInstallSource(field));
         }
-        source.append("""
+        for (ComponentStateSpec state : form.componentStates) {
+            for (DependencySpec dependency : state.dependencies) {
+                source.addFragment(dependencyInstallSource(dependency));
+            }
+        }
+        source.addFragment("""
                     }
-                }
+
                 """);
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated behavior plan");
+        if (hasDependencies(form)) {
+            source.addFragment(dependencyBindingSupportSource());
+        }
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated behavior plan");
     }
 
     private void writeBindingsClass(TypeElement formType, FormSpec form) {
@@ -375,56 +286,15 @@ final class GeneratedSourceWriter {
         String formModelType = ownerType + "FormModel";
         String behaviorPlanType = ownerType + "BehaviorPlan";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import cz.auderis.corusco.swing.behavior.BehaviorScope;
-
-                /**
-                 * Generated binding facade for {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
-        source.append("""
-                    /**
-                     * Installs generated bindings for the form view and model.
-                     *
-                     * @param view generated view contract
-                     * @param model generated form model
-                     * @param scope owning behavior scope
-                     */
-                    public static void install(%s view, %s model, BehaviorScope scope) {
-                        %s.install(view, model, scope);
-                    }
-                }
-                """.formatted(viewType, formModelType, behaviorPlanType));
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated binding facade");
-    }
-
-    private void writeOptionsClass(TypeElement formType, FormSpec form) {
-        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = form.sourceType;
-        String generatedType = ownerType + "Options";
-        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
-        StringBuilder source = sourceBuilder(packageName);
-        source.append("""
-                import java.util.List;
-
-                /**
-                 * Generated option metadata for enum combo-box fields in {@link %s}.
-                 */
-                public final class %s {
-
-                """.formatted(ownerType, generatedType));
-        source.append(privateConstructorSource(generatedType));
-        for (FieldSpec field : form.fields) {
-            if (!field.enumOptionConstants.isEmpty()) {
-                source.append(enumOptionSource(field));
-            }
-        }
-        source.append("}\n");
-        writeSource(formType, qualifiedName, source.toString(), "Could not write generated option metadata");
+        BasicStructuredFragment source = formClassSource("form/bindings-class.javafragment", packageName,
+                ownerType, generatedType);
+        source.addFragment(privateConstructorSource(generatedType));
+        source.addFragment(ProcessorSourceTemplates.fragment(GeneratedSourceWriter.class, "form/bindings-install.javafragment", Map.of(
+                "VIEW_TYPE", viewType,
+                "FORM_MODEL_TYPE", formModelType,
+                "BEHAVIOR_PLAN_TYPE", behaviorPlanType
+        )));
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated binding facade");
     }
 
     private String fieldSource(FieldSpec field) {
@@ -451,29 +321,29 @@ final class GeneratedSourceWriter {
     }
 
     private String resultConstructorSource(String generatedType, List<FieldSpec> fields) {
-        StringBuilder source = new StringBuilder("""
+        SimpleMutableFragment source = new SimpleMutableFragment();
+        source.appendFormatted("""
                     /**
                      * Creates an immutable generated form result.
                      */
                     public %s(
-                """.formatted(generatedType));
+                """, generatedType);
         for (int i = 0; i < fields.size(); i++) {
             FieldSpec field = fields.get(i);
             String suffix = i == fields.size() - 1 ? "\n" : ",\n";
-            source.append("            ").append(field.accessorType).append(' ').append(field.componentName).append(suffix);
+            source.appendFormatted("            %s %s%s", field.accessorType, field.componentName, suffix);
         }
         source.append("""
                     ) {
                 """);
         for (FieldSpec field : fields) {
-            source.append("        this.").append(field.componentName).append(" = ")
-                    .append(field.componentName).append(";\n");
+            source.appendFormatted("        this.%s = %s;%n", field.componentName, field.componentName);
         }
         source.append("""
                     }
 
                 """);
-        return source.toString();
+        return source.asString();
     }
 
     private String resultAccessorSource(FieldSpec field) {
@@ -486,8 +356,19 @@ final class GeneratedSourceWriter {
                 """.formatted(field.accessorType, field.componentName, field.componentName);
     }
 
+    private String resultComponentStateAccessorSource(ComponentStateSpec state) {
+        return """
+                    @Override
+                    public ComponentStateModel %s() {
+                        return %s;
+                    }
+
+                """.formatted(state.componentName, state.componentName);
+    }
+
     private String resultEqualsSource(FormSpec form) {
-        StringBuilder source = new StringBuilder("""
+        SimpleMutableFragment source = new SimpleMutableFragment();
+        source.appendFormatted("""
                     @Override
                     public boolean equals(Object obj) {
                         if (this == obj) {
@@ -496,20 +377,19 @@ final class GeneratedSourceWriter {
                         if (!(obj instanceof %s other)) {
                             return false;
                         }
-                        return%s""".formatted(form.sourceType, " "));
+                        return%s""", form.sourceType, " ");
         for (int i = 0; i < form.fields.size(); i++) {
             FieldSpec field = form.fields.get(i);
             String prefix = i == 0 ? "" : "\n                && ";
-            source.append(prefix).append("Objects.equals(")
-                    .append(field.componentName).append("(), other.")
-                    .append(field.componentName).append("())");
+            source.appendFormatted("%sObjects.equals(%s(), other.%s())",
+                    prefix, field.componentName, field.componentName);
         }
         source.append("""
                 ;
                     }
 
                 """);
-        return source.toString();
+        return source.asString();
     }
 
     private String resultHashCodeSource(List<FieldSpec> fields) {
@@ -527,185 +407,32 @@ final class GeneratedSourceWriter {
     }
 
     private String resultToStringSource(String generatedType, List<FieldSpec> fields) {
-        StringBuilder source = new StringBuilder("""
+        SimpleMutableFragment source = new SimpleMutableFragment();
+        source.appendFormatted("""
                     @Override
                     public String toString() {
                         return "%s["
-                """.formatted(generatedType));
+                """, generatedType);
         for (int i = 0; i < fields.size(); i++) {
             FieldSpec field = fields.get(i);
             String prefix = i == 0 ? " + \"" : " + \", ";
-            source.append("                ").append(prefix)
-                    .append(field.componentName).append("=\" + ")
-                    .append(field.componentName).append("()\n");
+            source.appendFormatted("                %s%s=\" + %s()%n",
+                    prefix, field.componentName, field.componentName);
         }
         source.append("""
                                 + "]";
                     }
 
                 """);
-        return source.toString();
-    }
-
-    private String actionSource(ActionSpec action) {
-        StringBuilder source = new StringBuilder("""
-                    /**
-                     * Action key for {@code %s}.
-                     */
-                    public static final ActionKey %s_KEY =
-                            ActionKey.of(%s);
-
-                    /**
-                     * Text resource key for {@code %s}.
-                     */
-                    public static final ResourceKey<String> %s_TEXT =
-                            ResourceKey.of(%s, String.class);
-
-                """.formatted(
-                action.id,
-                action.constantName,
-                stringLiteralOrNull(action.id),
-                action.textId,
-                action.constantName,
-                stringLiteralOrNull(action.textId)
-        ));
-        if (action.tooltipId != null) {
-            source.append("""
-                    /**
-                     * Tooltip resource key for {@code %s}.
-                     */
-                    public static final ResourceKey<String> %s_TOOLTIP =
-                            ResourceKey.of(%s, String.class);
-
-                """.formatted(action.tooltipId, action.constantName, stringLiteralOrNull(action.tooltipId)));
-        }
-        source.append("""
-                    /**
-                     * Action descriptor for {@code %s}.
-                     */
-                    public static final ActionDescriptor %s =
-                            %s;
-
-                """.formatted(action.id, action.constantName, actionDescriptorExpression(action)));
-        return source.toString();
-    }
-
-    private String actionDescriptorListSource(List<ActionSpec> actions) {
-        StringBuilder source = new StringBuilder("""
-                    /**
-                     * Returns generated action descriptors in declaration order.
-                     *
-                     * @return descriptor list
-                     */
-                    public static List<ActionDescriptor> descriptors() {
-                        return List.of(
-                """);
-        for (int i = 0; i < actions.size(); i++) {
-            String suffix = i == actions.size() - 1 ? "\n" : ",\n";
-            source.append("                ").append(actions.get(i).constantName).append(suffix);
-        }
-        source.append("""
-                        );
-                    }
-
-                    /**
-                     * Returns menu action descriptors in declaration order.
-                     *
-                     * @return menu descriptor list
-                     */
-                    public static List<ActionDescriptor> menuDescriptors() {
-                        return descriptors();
-                    }
-
-                    /**
-                     * Returns toolbar action descriptors in declaration order.
-                     *
-                     * @return toolbar descriptor list
-                     */
-                    public static List<ActionDescriptor> toolbarDescriptors() {
-                        return descriptors();
-                    }
-
-                """);
-        return source.toString();
-    }
-
-    private String commandFactorySource(String ownerName, List<ActionSpec> actions) {
-        StringBuilder source = new StringBuilder();
-        for (ActionSpec action : actions) {
-            source.append(singleCommandFactorySource(ownerName, action));
-        }
-        source.append("""
-                    /**
-                     * Creates commands bound to an owner instance.
-                     *
-                     * @param owner action owner
-                     * @return command set in declaration order
-                     */
-                    public static CommandSet commands(%s owner) {
-                        java.util.Objects.requireNonNull(owner, "owner");
-                        return CommandSet.of(
-                """.formatted(ownerName));
-        for (int i = 0; i < actions.size(); i++) {
-            String suffix = i == actions.size() - 1 ? "\n" : ",\n";
-            source.append("                ").append(factoryMethodName(actions.get(i))).append("(owner)").append(suffix);
-        }
-        source.append("""
-                        );
-                    }
-                """);
-        return source.toString();
-    }
-
-    private String singleCommandFactorySource(String ownerName, ActionSpec action) {
-        String factory = action.selectable ? "toggle(" + action.constantName + ", false, command -> owner."
-                : "command(" + action.constantName + ", command -> owner.";
-        return """
-                    /**
-                     * Creates a command bound to {@link %s#%s()}.
-                     *
-                     * @param owner action owner
-                     * @return mutable command
-                     */
-                    public static MutableCommand %s(%s owner) {
-                        java.util.Objects.requireNonNull(owner, "owner");
-                        return CommandFactory.%s%s());
-                    }
-
-                """.formatted(
-                ownerName,
-                action.methodName,
-                factoryMethodName(action),
-                ownerName,
-                factory,
-                action.methodName
-        );
-    }
-
-    private String enumOptionSource(FieldSpec field) {
-        List<String> options = new ArrayList<>();
-        for (String enumConstant : field.enumOptionConstants) {
-            options.add(field.valueType + "." + enumConstant);
-        }
-        return """
-                    /**
-                     * Enum options for {@code %s} in declaration order.
-                     */
-                    public static final List<%s> %s =
-                            List.of(%s);
-
-                """.formatted(field.keyId, field.valueType, field.constantName, String.join(", ", options));
+        return source.asString();
     }
 
     private String resourceKeySource(String constantName, String id) {
-        return """
-                    /**
-                     * Resource key for {@code %s}.
-                     */
-                    public static final ResourceKey<String> %s =
-                            ResourceKey.of(%s, String.class);
-
-                """.formatted(id, constantName, stringLiteralOrNull(id));
+        return ProcessorSourceTemplates.fragment(GeneratedSourceWriter.class, "common/resource-key.javafragment", Map.of(
+                "RESOURCE_ID", id,
+                "CONSTANT_NAME", constantName,
+                "RESOURCE_ID_LITERAL", stringLiteralOrNull(id)
+        )).asString();
     }
 
     private String problemCodeSource(ConstraintSpec constraint) {
@@ -733,7 +460,7 @@ final class GeneratedSourceWriter {
                             new FieldDescriptor<>(
                                     %s,
                                     %s,
-                                    FieldKind.%s,
+                                    %s,
                                     %s,
                                     %s.%s,
                                     %s,
@@ -748,7 +475,7 @@ final class GeneratedSourceWriter {
                 field.constantName,
                 stringLiteralOrNull(field.keyId),
                 stringLiteralOrNull(field.componentName),
-                field.kind,
+                editorDescriptorExpression(field.kind),
                 field.valueClass,
                 resourcesType,
                 field.labelConstant,
@@ -756,6 +483,17 @@ final class GeneratedSourceWriter {
                 helpTopicExpression(field),
                 constraintsExpression(field, problemsType)
         );
+    }
+
+    private String editorDescriptorExpression(String kind) {
+        return switch (kind) {
+            case "TEXT" -> "EditorDescriptor.text()";
+            case "DATE" -> "EditorDescriptor.date()";
+            case "CHECK_BOX" -> "EditorDescriptor.checkBox()";
+            case "COMBO_BOX" -> "EditorDescriptor.comboBox()";
+            case "RADIO_GROUP" -> "EditorDescriptor.radioGroup()";
+            default -> throw new IllegalStateException("Unknown field kind: " + kind);
+        };
     }
 
     private String fieldModelDeclarationSource(FieldSpec field) {
@@ -799,8 +537,39 @@ final class GeneratedSourceWriter {
                 .indent(4);
     }
 
+    private String componentStateDeclarationSource(ComponentStateSpec state) {
+        return """
+                    /**
+                     * Component state model for {@code %s}.
+                     */
+                    public final ComponentStateModel %s;
+
+                """.formatted(state.componentName, state.componentName);
+    }
+
+    private String componentStateInitializationSource(ComponentStateSpec state) {
+        return """
+                    this.%s = new ComponentStateModel();
+                """.formatted(state.componentName).indent(4);
+    }
+
+    private String componentStateAccessorSource(ComponentStateSpec state) {
+        return """
+                    /**
+                     * Returns component state model for {@code %s}.
+                     *
+                     * @return component state model
+                     */
+                    public ComponentStateModel %s() {
+                        return %s;
+                    }
+
+                """.formatted(state.componentName, state.componentName, state.componentName);
+    }
+
     private String descriptorListSource(List<FieldSpec> fields, String descriptorsType) {
-        StringBuilder source = new StringBuilder("""
+        SimpleMutableFragment source = new SimpleMutableFragment();
+        source.append("""
                     /**
                      * Returns generated field descriptors in source declaration order.
                      *
@@ -811,22 +580,22 @@ final class GeneratedSourceWriter {
                 """);
         for (int i = 0; i < fields.size(); i++) {
             String suffix = i == fields.size() - 1 ? "\n" : ",\n";
-            source.append("                ").append(descriptorsType).append(".")
-                    .append(fields.get(i).constantName).append(suffix);
+            source.appendFormatted("                %s.%s%s", descriptorsType, fields.get(i).constantName, suffix);
         }
         source.append("""
                         );
                     }
 
                 """);
-        return source.toString();
+        return source.asString();
     }
 
     private String buildRulesSource(List<FieldSpec> fields, String generatedType, String fieldsType) {
-        StringBuilder source = new StringBuilder("""
+        SimpleMutableFragment source = new SimpleMutableFragment();
+        source.appendFormatted("""
                     private static RuleSet<%s> buildRules() {
                         RuleSet.Builder<%s> rules = RuleSet.builder();
-                """.formatted(generatedType, generatedType));
+                """, generatedType, generatedType);
         for (FieldSpec field : fields) {
             for (ConstraintSpec constraint : field.constraints) {
                 source.append(ruleSource(field, constraint, fieldsType));
@@ -837,7 +606,7 @@ final class GeneratedSourceWriter {
                     }
 
                 """);
-        return source.toString();
+        return source.asString();
     }
 
     private String ruleSource(FieldSpec field, ConstraintSpec constraint, String fieldsType) {
@@ -853,28 +622,105 @@ final class GeneratedSourceWriter {
     }
 
     private String behaviorInstallSource(FieldSpec field) {
+        String componentStateBehavior = field.componentState
+                ? ",\n                            StandardBehaviors.componentState(model." + field.componentName + "State)"
+                : "";
         if ("TextFieldModel".equals(field.modelType)) {
             return """
                         scope.install(view.%s(), List.of(
                                 StandardBehaviors.textFieldBinding(model.%s),
                                 StandardBehaviors.validationTooltip(model.%s.problemSet()),
                                 StandardBehaviors.validationBorder(model.%s.problemSet()),
-                                StandardBehaviors.selectAllOnFocus()
+                                StandardBehaviors.selectAllOnFocus()%s
                         ));
                     """.formatted(
                     field.viewMethodName,
                     field.componentName,
                     field.componentName,
-                    field.componentName
+                    field.componentName,
+                    componentStateBehavior
             );
         } else if ("CHECK_BOX".equals(field.kind)) {
             return """
                         scope.install(view.%s(), List.of(
-                                StandardBehaviors.checkBoxBinding(model.%s)
+                                StandardBehaviors.checkBoxBinding(model.%s)%s
+                        ));
+                    """.formatted(field.viewMethodName, field.componentName, componentStateBehavior);
+        } else if (field.componentState) {
+            return """
+                        scope.install(view.%s(), List.of(
+                                StandardBehaviors.componentState(model.%sState)
                         ));
                     """.formatted(field.viewMethodName, field.componentName);
         }
         return "";
+    }
+
+    private String dependencyInstallSource(DependencySpec dependency) {
+        String sourceValue = dependency.sourceTextField
+                ? dependency.sourceFieldName + ".rawText()"
+                : dependency.sourceFieldName + ".value()";
+        return """
+                        scope.add(dependencyBinding(
+                                model.%s,
+                                model.%s,
+                                List.of(%s),
+                                DependencyEffect.%s
+                        ));
+                """.formatted(
+                sourceValue,
+                dependency.targetStateModel,
+                dependencyValuesExpression(dependency.values),
+                dependency.effect
+        );
+    }
+
+    private static String dependencyValuesExpression(List<String> values) {
+        return values.stream()
+                .map(GeneratedSourceWriter::stringLiteralOrNull)
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private static boolean hasDependencies(FormSpec form) {
+        return form.componentStates.stream().anyMatch(state -> !state.dependencies.isEmpty());
+    }
+
+    private String dependencyBindingSupportSource() {
+        return """
+                    private static Binding dependencyBinding(
+                            ReadableValue<?> source,
+                            ComponentStateModel target,
+                            List<String> expectedValues,
+                            DependencyEffect effect
+                    ) {
+                        updateDependency(source.value(), target, expectedValues, effect);
+                        var subscription = source.subscribe(event ->
+                                updateDependency(event.newValue(), target, expectedValues, effect));
+                        return subscription::close;
+                    }
+
+                    private static void updateDependency(
+                            Object value,
+                            ComponentStateModel target,
+                            List<String> expectedValues,
+                            DependencyEffect effect
+                    ) {
+                        boolean active = expectedValues.contains(valueToken(value));
+                        switch (effect) {
+                            case ENABLED -> target.enabled().setValue(active, ChangeOrigin.GENERATED);
+                            case VISIBLE -> target.visible().setValue(active, ChangeOrigin.GENERATED);
+                            case RELEVANT -> target.relevant().setValue(active, ChangeOrigin.GENERATED);
+                        }
+                    }
+
+                    private static String valueToken(Object value) {
+                        if (value instanceof Enum<?> enumValue) {
+                            return enumValue.name();
+                        }
+                        return String.valueOf(value);
+                    }
+
+                """;
     }
 
     private String viewMethodSource(FieldSpec field) {
@@ -887,23 +733,6 @@ final class GeneratedSourceWriter {
                     %s %s();
 
                 """.formatted(field.keyId, field.viewComponentType, field.viewMethodName);
-    }
-
-    private String actionDescriptorExpression(ActionSpec action) {
-        String expression = action.selectable
-                ? "ActionDescriptor.toggle(" + action.constantName + "_KEY, " + action.constantName + "_TEXT)"
-                : "ActionDescriptor.action(" + action.constantName + "_KEY, " + action.constantName + "_TEXT)";
-        if (action.tooltipId != null) {
-            expression += ".withTooltip(" + action.constantName + "_TOOLTIP)";
-        }
-        if (action.mnemonic != 0) {
-            expression += ".withMnemonic(" + action.mnemonic + ")";
-        }
-        if (action.acceleratorKey != 0) {
-            expression += ".withAccelerator(AcceleratorDescriptor.of("
-                    + action.acceleratorKey + ", " + action.acceleratorModifiers + "))";
-        }
-        return expression;
     }
 
     private String validatorExpression(ConstraintSpec constraint) {
@@ -955,25 +784,20 @@ final class GeneratedSourceWriter {
         return "List.of(" + String.join(", ", expressions) + ")";
     }
 
-    private static StringBuilder sourceBuilder(String packageName) {
-        StringBuilder source = new StringBuilder();
-        if (!packageName.isEmpty()) {
-            source.append("package ").append(packageName).append(";\n\n");
-        }
-        return source;
-    }
-
     private static String privateConstructorSource(String generatedType) {
-        return """
-                    private %s() {
-                        throw new AssertionError("No instances");
-                    }
-
-                """.formatted(generatedType);
+        return ProcessorSourceTemplates.privateConstructorSource(GeneratedSourceWriter.class, generatedType);
     }
 
-    private static String factoryMethodName(ActionSpec action) {
-        return action.methodName + "Command";
+    private static BasicStructuredFragment formClassSource(
+            String resourceName,
+            String packageName,
+            String ownerType,
+            String generatedType
+    ) {
+        return ProcessorSourceTemplates.structuredClass(GeneratedSourceWriter.class, resourceName, packageName, Map.of(
+                "OWNER_TYPE", ownerType,
+                "GENERATED_TYPE", generatedType
+        ));
     }
 
     private void writeSource(TypeElement originatingType, String qualifiedName, String source, String errorPrefix) {

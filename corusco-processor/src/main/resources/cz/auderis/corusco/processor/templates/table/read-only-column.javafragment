@@ -1,0 +1,6 @@
+    /**
+     * Read-only column for {@code COLUMN_KEY_ID}.
+     */
+    public static final Column<OWNER_TYPE, VALUE_TYPE> CONSTANT_NAME =
+            Column.readOnly(CONSTANT_NAME_DESCRIPTOR, OWNER_TYPE::COMPONENT_NAME);
+

@@ -1,0 +1,17 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.form.ComponentStateModel;
+import cz.auderis.corusco.core.meta.DependencyEffect;
+import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.ReadableValue;
+import cz.auderis.corusco.swing.binding.Binding;
+import cz.auderis.corusco.swing.behavior.BehaviorScope;
+import cz.auderis.corusco.swing.behavior.StandardBehaviors;
+import java.util.List;
+
+/**
+ * Generated behavior installation plan for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

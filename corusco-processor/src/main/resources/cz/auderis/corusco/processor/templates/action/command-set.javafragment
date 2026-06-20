@@ -1,0 +1,12 @@
+    /**
+     * Creates commands bound to an owner instance.
+     *
+     * @param owner action owner
+     * @return command set in declaration order
+     */
+    public static CommandSet commands(OWNER_TYPE owner) {
+        java.util.Objects.requireNonNull(owner, "owner");
+        return CommandSet.of(
+COMMAND_ENTRIES
+        );
+    }
