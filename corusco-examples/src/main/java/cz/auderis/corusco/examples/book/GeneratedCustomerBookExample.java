@@ -1,4 +1,4 @@
-package cz.auderis.corusco.examples.generation;
+package cz.auderis.corusco.examples.book;
 
 /**
  * Navigation anchor for the generated book example.

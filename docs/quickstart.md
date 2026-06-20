@@ -47,7 +47,7 @@ Annotate an immutable record. Corusco uses these annotations at compile time to
 create typed keys, descriptors, problem codes, resource keys, and a form model.
 
 ```java
-@SwingForm(id = "generated-customer")
+@CoruscoForm(id = "generated-customer")
 record GeneratedCustomerEdit(
         @TextField
         @Required
@@ -71,10 +71,11 @@ record GeneratedCustomerEdit(
 }
 ```
 
-The processor writes companion classes such as
+The processor writes core companion classes such as
 `GeneratedCustomerEditFields`, `GeneratedCustomerEditDescriptors`,
 `GeneratedCustomerEditResources`, `GeneratedCustomerEditProblems`,
-`GeneratedCustomerEditFormModel`, `GeneratedCustomerEditView`, and
+and `GeneratedCustomerEditFormModel`. Add `@SwingCompanionPackage` to the package that
+should receive Swing companions such as `GeneratedCustomerEditView` and
 `GeneratedCustomerEditBehaviorPlan`.
 
 ## 3. Use the Generated Form Model
@@ -114,7 +115,7 @@ Table annotations generate typed column keys, descriptors, resource keys,
 row-updater helpers, table descriptors, and Swing binding helpers.
 
 ```java
-@SwingTable(id = "generated-customer-table")
+@CoruscoTable(id = "generated-customer-table")
 record GeneratedCustomerRow(
         @Column(
                 persistenceId = "generated-customer-table/customer-name",

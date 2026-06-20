@@ -18,11 +18,13 @@ import java.util.Objects;
 public final class GeneratedSourceCompilation {
 
     private final boolean success;
+    private final Path classes;
     private final Path generatedSources;
     private final String messages;
 
-    GeneratedSourceCompilation(boolean success, Path generatedSources, String messages) {
+    GeneratedSourceCompilation(boolean success, Path classes, Path generatedSources, String messages) {
         this.success = success;
+        this.classes = Objects.requireNonNull(classes, "classes");
         this.generatedSources = Objects.requireNonNull(generatedSources, "generatedSources");
         this.messages = Objects.requireNonNull(messages, "messages");
     }
@@ -34,6 +36,15 @@ public final class GeneratedSourceCompilation {
      */
     public boolean success() {
         return success;
+    }
+
+    /**
+     * Returns the directory containing compiled class files.
+     *
+     * @return class-output directory
+     */
+    public Path classes() {
+        return classes;
     }
 
     /**
@@ -69,6 +80,16 @@ public final class GeneratedSourceCompilation {
         Path source = generatedSources.resolve(relativePath(relativePath));
         String text = Files.readString(source, StandardCharsets.UTF_8);
         return text.replace("\r\n", "\n").replace('\r', '\n');
+    }
+
+    /**
+     * Returns whether a generated source file exists.
+     *
+     * @param relativePath slash-separated path under the generated-source root
+     * @return {@code true} when the source file exists
+     */
+    public boolean hasGeneratedSource(String relativePath) {
+        return Files.exists(generatedSources.resolve(relativePath(relativePath)));
     }
 
     /**

@@ -36,4 +36,8 @@ final class FormSpec {
     boolean hasGeneratedResultImplementation() {
         return resultImplementationType != null;
     }
+
+    String resultType() {
+        return hasGeneratedResultImplementation() ? resultImplementationType : sourceType;
+    }
 }

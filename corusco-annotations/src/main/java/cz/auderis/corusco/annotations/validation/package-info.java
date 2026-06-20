@@ -16,7 +16,7 @@
  * <p>For example, this source field:</p>
  *
  * <pre>{@code
- * @SwingForm(id = "customer")
+ * @CoruscoForm(id = "customer")
  * record CustomerEdit(
  *         @TextField @Required @Length(max = 80) String name
  * ) {
@@ -64,8 +64,9 @@
  * Java code. That keeps generated metadata simple and application policy
  * explicit.</p>
  *
- * <p>These annotations are source-retained. Runtime code should not look for
- * them reflectively; it should consume generated problem codes, descriptors,
- * and form-model validation results.</p>
+ * <p>These annotations are retained in class files so adapter modules can
+ * regenerate form companions from compiled form sources. Runtime code should
+ * not look for them reflectively; it should consume generated problem codes,
+ * descriptors, and form-model validation results.</p>
  */
 package cz.auderis.corusco.annotations.validation;

@@ -1,7 +1,8 @@
 package cz.auderis.corusco.processor;
 
-import cz.auderis.corusco.annotations.form.SwingForm;
-import cz.auderis.corusco.annotations.table.SwingTable;
+import cz.auderis.corusco.annotations.form.CoruscoForm;
+import cz.auderis.corusco.annotations.SwingCompanionPackage;
+import cz.auderis.corusco.annotations.table.CoruscoTable;
 import java.util.Set;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Filer;
@@ -19,16 +20,17 @@ import javax.lang.model.util.Types;
 /**
  * Annotation processor that generates Corusco form, table, and action metadata.
  *
- * <p>The processor consumes source-retained annotations using
- * {@code javax.lang.model}. It validates record and method contracts, reports
- * diagnostics at the annotated element, and writes strongly typed source files
- * that expose field keys, form models, table descriptors, table columns, and
- * action descriptors. Runtime code should depend on those generated artifacts
- * rather than scanning annotations reflectively.</p>
+ * <p>The processor consumes annotations using {@code javax.lang.model}. It
+ * validates record and method contracts, reports diagnostics at the annotated
+ * element, and writes strongly typed source files that expose field keys, form
+ * models, table descriptors, table columns, and action descriptors. Runtime
+ * code should depend on those generated artifacts rather than scanning
+ * annotations reflectively.</p>
  */
 @SupportedAnnotationTypes({
-        "cz.auderis.corusco.annotations.form.SwingForm",
-        "cz.auderis.corusco.annotations.table.SwingTable",
+        "cz.auderis.corusco.annotations.form.CoruscoForm",
+        "cz.auderis.corusco.annotations.SwingCompanionPackage",
+        "cz.auderis.corusco.annotations.table.CoruscoTable",
         "cz.auderis.corusco.annotations.command.UiAction"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
@@ -56,16 +58,17 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        for (Element element : roundEnv.getElementsAnnotatedWith(SwingForm.class)) {
+        for (Element element : roundEnv.getElementsAnnotatedWith(CoruscoForm.class)) {
             if (element instanceof TypeElement typeElement) {
                 new FormProcessor(elements, types, filer, messager).process(typeElement);
             }
         }
-        for (Element element : roundEnv.getElementsAnnotatedWith(SwingTable.class)) {
+        for (Element element : roundEnv.getElementsAnnotatedWith(CoruscoTable.class)) {
             if (element instanceof TypeElement typeElement) {
                 new TableProcessor(elements, types, filer, messager).process(typeElement);
             }
         }
+        new SwingCompanionPackageProcessor(elements, types, filer, messager).process(roundEnv);
         new ActionProcessor(messager, new ActionSourceWriter(elements, filer, messager)).process(roundEnv);
         return true;
     }

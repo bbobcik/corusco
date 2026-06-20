@@ -9,7 +9,7 @@ import java.util.Objects;
  * and resource/localization lookup. It is not a field name or expression.
  * Equality and hash code are based on the stable id.</p>
  *
- * <p>Generated {@code @SwingForm} records create {@code ProblemCode} constants
+ * <p>Generated {@code @CoruscoForm} records create {@code ProblemCode} constants
  * in problem-code companions such as {@code CustomerEditProblems} for supported validation annotations. Generated
  * field descriptors and generated form-model validation rules then refer to the
  * same constants, keeping diagnostics and descriptor metadata aligned.</p>

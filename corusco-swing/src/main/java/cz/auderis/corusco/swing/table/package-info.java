@@ -12,7 +12,7 @@
  *
  * <p>Use this package when a table should be assembled from a generated or
  * handwritten {@link cz.auderis.corusco.core.table.TableDescriptor}. It is a
- * good fit for immutable record rows, generated {@code @SwingTable} metadata,
+ * good fit for immutable record rows, generated {@code @CoruscoTable} metadata,
  * observable row collections, persisted column layout, and tables whose
  * selection is part of presenter state. Use plain Swing table models only when
  * the table is completely ad hoc and does not need Corusco keys, descriptors,
@@ -45,7 +45,7 @@
  * table.setModel(model);
  * }</pre>
  *
- * <p>Generated {@code @SwingTable} sources normally provide a row-specific
+ * <p>Generated {@code @CoruscoTable} sources normally provide a row-specific
  * bindings helper, such as {@code CustomerRowTableBindings}, that performs
  * this setup and registers the model with a binding scope. Prefer that helper
  * for generated tables. Use the direct {@code ObservableTableModel} factory

@@ -2,10 +2,14 @@ package cz.auderis.corusco.swing.binding;
 
 import cz.auderis.corusco.core.convert.Converters;
 import cz.auderis.corusco.core.convert.EmptyTextPolicy;
+import cz.auderis.corusco.core.form.ComponentStateModel;
 import cz.auderis.corusco.core.form.FieldModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.key.FieldKey;
+import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.key.TextFieldKey;
+import cz.auderis.corusco.core.meta.OptionDescriptor;
+import cz.auderis.corusco.core.meta.OptionKey;
 import cz.auderis.corusco.core.problem.Problem;
 import cz.auderis.corusco.core.problem.ProblemCode;
 import cz.auderis.corusco.core.problem.ProblemSet;
@@ -15,10 +19,13 @@ import cz.auderis.corusco.core.value.ChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import java.awt.event.FocusEvent;
 import java.math.BigDecimal;
+import java.util.List;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.border.Border;
@@ -35,6 +42,8 @@ class BindingFactoryTest {
             TextFieldKey.of("customer/notes", CustomerEdit.class, String.class);
     private static final FieldKey<CustomerEdit, Boolean> ACTIVE =
             FieldKey.of("customer/active", CustomerEdit.class, Boolean.class);
+    private static final FieldKey<CustomerEdit, AuthenticationMode> AUTHENTICATION_MODE =
+            FieldKey.of("customer/authentication-mode", CustomerEdit.class, AuthenticationMode.class);
     private static final ProblemCode REQUIRED = ProblemCode.of("required");
     private static final ProblemCode RANGE = ProblemCode.of("range");
 
@@ -122,6 +131,78 @@ class BindingFactoryTest {
             selected.close();
             labelBinding.close();
             enabled.close();
+        });
+    }
+
+    @Test
+    void radioGroupBindingUpdatesButtonsAndModel() {
+        SwingEdt.runAndWait(() -> {
+            FieldModel<CustomerEdit, AuthenticationMode> authenticationMode =
+                    new FieldModel<>(AUTHENTICATION_MODE, AuthenticationMode.PASSWORD);
+            JPanel panel = new JPanel();
+            JRadioButton password = new JRadioButton("Password");
+            password.setActionCommand("password");
+            JRadioButton certificate = new JRadioButton("Certificate");
+            certificate.setActionCommand("certificate");
+            ButtonGroup group = new ButtonGroup();
+            group.add(password);
+            group.add(certificate);
+            panel.add(password);
+            panel.add(certificate);
+
+            Binding binding = BindingFactory.radioGroup(panel, authenticationMode, List.of(
+                    option(AuthenticationMode.PASSWORD, "password"),
+                    option(AuthenticationMode.CERTIFICATE, "certificate")
+            ));
+
+            assertThat(password.isSelected()).isTrue();
+            assertThat(certificate.isSelected()).isFalse();
+
+            certificate.doClick();
+            assertThat(authenticationMode.value().value()).isEqualTo(AuthenticationMode.CERTIFICATE);
+
+            authenticationMode.setValue(AuthenticationMode.PASSWORD, ChangeOrigin.MODEL);
+            assertThat(password.isSelected()).isTrue();
+            assertThat(certificate.isSelected()).isFalse();
+
+            binding.close();
+            certificate.doClick();
+            assertThat(authenticationMode.value().value()).isEqualTo(AuthenticationMode.PASSWORD);
+        });
+    }
+
+    @Test
+    void componentStateBindingAppliesPresentationStateAndRestoresOnClose() {
+        SwingEdt.runAndWait(() -> {
+            ComponentStateModel state = new ComponentStateModel();
+            JTextField field = new JTextField();
+            field.setEnabled(true);
+            field.setVisible(true);
+            field.setEditable(true);
+
+            Binding binding = BindingFactory.componentState(field, state);
+
+            state.enabled().setValue(false, ChangeOrigin.MODEL);
+            assertThat(field.isEnabled()).isFalse();
+
+            state.enabled().setValue(true, ChangeOrigin.MODEL);
+            state.relevant().setValue(false, ChangeOrigin.MODEL);
+            assertThat(field.isEnabled()).isFalse();
+            assertThat(field.isVisible()).isFalse();
+
+            state.relevant().setValue(true, ChangeOrigin.MODEL);
+            state.protectedValue().setValue(true, ChangeOrigin.MODEL);
+            assertThat(field.isEditable()).isFalse();
+
+            state.protectedValue().setValue(false, ChangeOrigin.MODEL);
+            state.busy().setValue(true, ChangeOrigin.MODEL);
+            assertThat(field.isEnabled()).isFalse();
+            assertThat(field.isEditable()).isFalse();
+
+            binding.close();
+            assertThat(field.isEnabled()).isTrue();
+            assertThat(field.isVisible()).isTrue();
+            assertThat(field.isEditable()).isTrue();
         });
     }
 
@@ -286,11 +367,26 @@ class BindingFactoryTest {
                 .hasMessage("Swing binding code must run on the EDT");
     }
 
-    private record CustomerEdit(BigDecimal creditLimit, String notes, boolean active) {
+    private record CustomerEdit(BigDecimal creditLimit, String notes, boolean active, AuthenticationMode authenticationMode) {
+    }
+
+    private enum AuthenticationMode {
+        PASSWORD,
+        CERTIFICATE
     }
 
     private static Problem problem(ProblemCode code, ProblemSeverity severity, String message) {
         return Problem.validation(code, severity, ProblemTarget.form(), message);
+    }
+
+    private static OptionDescriptor<AuthenticationMode> option(AuthenticationMode value, String key) {
+        return OptionDescriptor.of(
+                value,
+                OptionKey.of(key),
+                ResourceKey.of("customer.authentication-mode." + key + ".label", String.class),
+                ResourceKey.of("customer.authentication-mode." + key + ".description", String.class),
+                ResourceKey.of("customer.authentication-mode." + key + ".help", String.class)
+        );
     }
 
     private static void focusGained(JTextField field) {

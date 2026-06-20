@@ -40,7 +40,7 @@ import java.lang.annotation.Target;
  * validators are wired in a generated form model such as
  * {@code CustomerEditFormModel}.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface Required {
 }

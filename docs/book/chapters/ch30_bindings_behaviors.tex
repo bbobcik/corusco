@@ -629,9 +629,11 @@ Generated behavior plans should remain direct. The processor-generated
 \api{CustomerEditBehaviorPlan} does not invent a runtime reflection engine. It
 calls view accessors and installs ordinary standard behaviors. For a text field
 it installs text binding, validation tooltip, validation border, and
-select-all-on-focus. For a checkbox it installs selected-state binding. The
-generated plan is valuable precisely because it is boring. A reader can open it
-and see the same calls a careful developer would have written by hand.
+select-all-on-focus. For a checkbox it installs selected-state binding. For a
+radio group it installs option-valued selected-state binding against generated
+option descriptors. The generated plan is valuable precisely because it is
+boring. A reader can open it and see the same calls a careful developer would
+have written by hand.
 
 \begin{lstlisting}[caption={The shape of a generated text-field plan.}]
 scope.install(view.nameField(), List.of(
@@ -758,7 +760,7 @@ globals. This keeps tests and generated plans predictable.
 
 \textbf{Generated behavior plans.}
 
-Generated \api{@SwingForm} companions can produce behavior plans for a view
+Generated \api{@CoruscoForm} companions can produce behavior plans for a view
 interface. The application still writes the panel and lays it out with
 MigLayout. The generated plan installs standard bindings and decorations based
 on descriptors.

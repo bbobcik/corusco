@@ -1,11 +1,11 @@
-package cz.auderis.corusco.examples.generation;
+package cz.auderis.corusco.examples.book;
 
-import cz.auderis.corusco.annotations.form.SwingForm;
+import cz.auderis.corusco.annotations.form.CoruscoForm;
 import cz.auderis.corusco.annotations.form.TextField;
 import cz.auderis.corusco.annotations.validation.Length;
 import cz.auderis.corusco.annotations.validation.Required;
 
-@SwingForm(id = "book/customer/edit")
+@CoruscoForm(id = "book/customer/edit")
 public record CustomerEdit(
         @TextField
         @Required

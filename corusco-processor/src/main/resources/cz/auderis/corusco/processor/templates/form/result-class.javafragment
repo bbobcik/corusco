@@ -1,11 +1,10 @@
 PACKAGE_DECLARATION
 import java.util.Objects;
-import cz.auderis.corusco.core.form.ComponentStateModel;
 
 /**
  * Generated immutable result implementation for {@link OWNER_TYPE}.
  */
-public final class GENERATED_TYPE extends OWNER_TYPE {
+public final class GENERATED_TYPE {
 
 /* <<< SPLIT >>> =========================================================== */
 }

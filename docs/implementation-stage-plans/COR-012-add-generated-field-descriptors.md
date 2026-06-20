@@ -43,7 +43,7 @@ Candidate public API:
 - `ConstraintDescriptor`
 - `FieldDescriptor`
 
-Extend generated processor output for each `@SwingForm` record:
+Extend generated processor output for each `@CoruscoForm` record:
 
 - `<RecordName>Resources`
 - `<RecordName>Problems`

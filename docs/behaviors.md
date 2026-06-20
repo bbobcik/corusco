@@ -182,7 +182,9 @@ Generated form behavior plans should install behavior lists that are explicit
 and readable:
 
 ```java
-CustomerEditBehaviorPlan.install(view, model, behaviors);
+CustomerEditPresentationModel presentation =
+        new CustomerEditPresentationModel(model);
+CustomerEditBehaviorPlan.install(view, presentation, behaviors);
 ```
 
 The generated plan should stay boring:

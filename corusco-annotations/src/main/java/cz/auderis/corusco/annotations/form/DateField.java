@@ -12,8 +12,8 @@ import java.lang.annotation.Target;
  * Marks a {@link java.time.LocalDate} form source member as a generated date
  * field.
  *
- * <p>Use this annotation on a component of a {@link SwingForm} record or on an
- * abstract accessor method of a {@link SwingForm} abstract class when the value
+ * <p>Use this annotation on a component of a {@link CoruscoForm} record or on an
+ * abstract accessor method of a {@link CoruscoForm} abstract class when the value
  * should be edited as a date. Date fields use text-field style raw-text editing
  * with a generated {@code LocalDate} converter, so invalid intermediate text
  * can be preserved by the form model without replacing the last valid date
@@ -42,7 +42,7 @@ import java.lang.annotation.Target;
  * descriptor is a {@code cz.auderis.corusco.core.meta.FieldDescriptor} with
  * date field kind.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface DateField {
 }

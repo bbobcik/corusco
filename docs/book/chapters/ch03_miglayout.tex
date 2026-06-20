@@ -947,10 +947,11 @@ The normal Corusco form shape is not a generated panel. It is an application pan
 
 \begin{lstlisting}[caption={The intended division: handwritten layout, generated binding.}]
 CustomerEditFormModel model = new CustomerEditFormModel(customer);
+CustomerEditPresentationModel presentation = new CustomerEditPresentationModel(model);
 CustomerEditPanel view = new CustomerEditPanel(); // MigLayout inside.
-BindingScope scope = new BindingScope();
+BehaviorScope scope = new BehaviorScope();
 
-CustomerEditBindings.install(view, model, scope);
+CustomerEditBindings.install(view, presentation, scope);
 \end{lstlisting}
 
 The generated call should be boring. The layout code should be visible. If the generated binding fails, inspect generated source. If the form looks wrong, inspect MigLayout constraints and component size contracts.

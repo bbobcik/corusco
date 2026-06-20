@@ -2,10 +2,10 @@ package cz.auderis.corusco.examples.showcase;
 
 import cz.auderis.corusco.annotations.help.Help;
 import cz.auderis.corusco.annotations.table.Column;
-import cz.auderis.corusco.annotations.table.SwingTable;
+import cz.auderis.corusco.annotations.table.CoruscoTable;
 import java.math.BigDecimal;
 
-@SwingTable(id = "showcase/timeseries")
+@CoruscoTable(id = "showcase/timeseries")
 record TimeseriesObservation(
         @Column(width = 70)
         long sequence,

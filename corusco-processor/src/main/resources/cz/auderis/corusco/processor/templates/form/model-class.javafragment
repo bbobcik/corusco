@@ -2,7 +2,6 @@ PACKAGE_DECLARATION
 import cz.auderis.corusco.core.convert.Converters;
 import cz.auderis.corusco.core.convert.EmptyTextPolicy;
 import cz.auderis.corusco.core.form.AbstractFormModel;
-import cz.auderis.corusco.core.form.ComponentStateModel;
 import cz.auderis.corusco.core.form.FieldModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.meta.FieldDescriptor;
@@ -16,7 +15,7 @@ import java.util.regex.Pattern;
 /**
  * Generated form model for {@link OWNER_TYPE}.
  */
-public final class GENERATED_TYPE extends AbstractFormModel<OWNER_TYPE> {
+public final class GENERATED_TYPE extends AbstractFormModel<RESULT_TYPE> {
 
 /* <<< SPLIT >>> =========================================================== */
 }

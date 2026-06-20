@@ -18,7 +18,7 @@ import javax.tools.JavaFileObject;
  * Writes generated form, field, resource, problem, descriptor, view, behavior,
  * and action sources.
  *
- * <p>This writer is the central generated-code contract for {@code @SwingForm}
+ * <p>This writer is the central generated-code contract for {@code @CoruscoForm}
  * and {@code @UiAction}. It receives validated {@link FieldSpec} and
  * {@link ActionSpec} values and writes deterministic source files whose public
  * APIs are consumed by core form models, Swing bindings, examples, and tests.
@@ -49,11 +49,16 @@ final class GeneratedSourceWriter {
         writeProblemsClass(formType, form);
         writeDescriptorsClass(formType, form);
         writeFormModelClass(formType, form);
-        writeViewClass(formType, form);
-        writeBehaviorPlanClass(formType, form);
-        writeBindingsClass(formType, form);
+        writePresentationModelClass(formType, form);
         new FormOptionsSourceWriter(elements, filer, messager).writeOptionsClass(formType, form);
         new FormDependenciesSourceWriter(elements, filer, messager).writeDependenciesClass(formType, form);
+    }
+
+    void writeFormSwingSources(TypeElement formType, FormSpec form, String targetPackageName) {
+        String sourcePackageName = elements.getPackageOf(formType).getQualifiedName().toString();
+        writeViewClass(formType, form, targetPackageName);
+        writeBehaviorPlanClass(formType, form, targetPackageName, sourcePackageName);
+        writeBindingsClass(formType, form, targetPackageName, sourcePackageName);
     }
 
     private void writeResultImplementationClass(TypeElement formType, FormSpec form) {
@@ -68,22 +73,9 @@ final class GeneratedSourceWriter {
 
                     """.formatted(field.accessorType, field.componentName));
         }
-        for (ComponentStateSpec state : form.componentStates) {
-            if (state.resultAccessor) {
-                source.addFragment("""
-                    private final ComponentStateModel %s = new ComponentStateModel();
-
-                    """.formatted(state.componentName));
-            }
-        }
         source.addFragment(resultConstructorSource(generatedType, form.fields));
         for (FieldSpec field : form.fields) {
             source.addFragment(resultAccessorSource(field));
-        }
-        for (ComponentStateSpec state : form.componentStates) {
-            if (state.resultAccessor) {
-                source.addFragment(resultComponentStateAccessorSource(state));
-            }
         }
         source.addFragment(resultEqualsSource(form));
         source.addFragment(resultHashCodeSource(form.fields));
@@ -160,6 +152,7 @@ final class GeneratedSourceWriter {
         String generatedType = ownerType + "FormModel";
         String fieldsType = ownerType + "Fields";
         String descriptorsType = ownerType + "Descriptors";
+        String resultType = form.resultType();
         String resultConstructorType = form.hasGeneratedResultImplementation()
                 ? form.resultImplementationType
                 : ownerType;
@@ -168,12 +161,9 @@ final class GeneratedSourceWriter {
                 : "original immutable record";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         BasicStructuredFragment source = formClassSource("form/model-class.javafragment", packageName,
-                ownerType, generatedType);
+                ownerType, generatedType, Map.of("RESULT_TYPE", resultType));
         for (FieldSpec field : form.fields) {
             source.addFragment(fieldModelDeclarationSource(field));
-        }
-        for (ComponentStateSpec state : form.componentStates) {
-            source.addFragment(componentStateDeclarationSource(state));
         }
         source.addFragment("""
                     private final RuleSet<%s> rules;
@@ -189,17 +179,11 @@ final class GeneratedSourceWriter {
         for (FieldSpec field : form.fields) {
             source.addFragment(fieldModelInitializationSource(field, fieldsType));
         }
-        for (ComponentStateSpec state : form.componentStates) {
-            source.addFragment(componentStateInitializationSource(state));
-        }
         source.addFragment("""
                         this.rules = buildRules();
                     }
 
                 """);
-        for (ComponentStateSpec state : form.componentStates) {
-            source.addFragment(componentStateAccessorSource(state));
-        }
         source.addFragment(descriptorListSource(form.fields, descriptorsType));
         source.addFragment(buildRulesSource(form.fields, generatedType, fieldsType));
         source.addFragment("""
@@ -211,7 +195,7 @@ final class GeneratedSourceWriter {
                     @Override
                     protected %s createResult() {
                         return new %s(
-                """.formatted(ownerType, resultConstructorType));
+                """.formatted(resultType, resultConstructorType));
         for (int i = 0; i < form.fields.size(); i++) {
             FieldSpec field = form.fields.get(i);
             String suffix = i == form.fields.size() - 1 ? "\n" : ",\n";
@@ -224,8 +208,53 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.asString(), "Could not write generated form model");
     }
 
-    private void writeViewClass(TypeElement formType, FormSpec form) {
+    private void writePresentationModelClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+        String ownerType = form.sourceType;
+        String generatedType = ownerType + "PresentationModel";
+        String formModelType = ownerType + "FormModel";
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        BasicStructuredFragment source = formClassSource("form/presentation-model-class.javafragment", packageName,
+                ownerType, generatedType);
+        source.addFragment("""
+                    private final %s form;
+
+                """.formatted(formModelType));
+        for (ComponentStateSpec state : form.componentStates) {
+            source.addFragment(componentStateDeclarationSource(state));
+        }
+        source.addFragment("""
+                    /**
+                     * Creates a generated presentation model.
+                     *
+                     * @param form generated semantic form model
+                     */
+                    public %s(%s form) {
+                        this.form = Objects.requireNonNull(form, "form");
+                """.formatted(generatedType, formModelType));
+        for (ComponentStateSpec state : form.componentStates) {
+            source.addFragment(componentStateInitializationSource(state));
+        }
+        source.addFragment("""
+                    }
+
+                    /**
+                     * Returns the semantic form model.
+                     *
+                     * @return generated form model
+                     */
+                    public %s form() {
+                        return form;
+                    }
+
+                """.formatted(formModelType));
+        for (ComponentStateSpec state : form.componentStates) {
+            source.addFragment(componentStateAccessorSource(state));
+        }
+        writeSource(formType, qualifiedName, source.asString(), "Could not write generated presentation model");
+    }
+
+    private void writeViewClass(TypeElement formType, FormSpec form, String packageName) {
         String ownerType = form.sourceType;
         String generatedType = ownerType + "View";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
@@ -237,12 +266,17 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.asString(), "Could not write generated view contract");
     }
 
-    private void writeBehaviorPlanClass(TypeElement formType, FormSpec form) {
-        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+    private void writeBehaviorPlanClass(
+            TypeElement formType,
+            FormSpec form,
+            String packageName,
+            String sourcePackageName
+    ) {
         String ownerType = form.sourceType;
         String generatedType = ownerType + "BehaviorPlan";
         String viewType = ownerType + "View";
-        String formModelType = ownerType + "FormModel";
+        String presentationModelType = generatedPeerType(sourcePackageName, packageName, ownerType + "PresentationModel");
+        String optionsType = generatedPeerType(sourcePackageName, packageName, ownerType + "Options");
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         BasicStructuredFragment source = formClassSource("form/behavior-plan-class.javafragment", packageName,
                 ownerType, generatedType);
@@ -252,16 +286,16 @@ final class GeneratedSourceWriter {
                      * Installs supported generated behaviors.
                      *
                      * @param view generated view contract
-                     * @param model generated form model
+                     * @param model generated presentation model
                      * @param scope owning behavior scope
                      */
                     public static void install(%s view, %s model, BehaviorScope scope) {
                         java.util.Objects.requireNonNull(view, "view");
                         java.util.Objects.requireNonNull(model, "model");
                         java.util.Objects.requireNonNull(scope, "scope");
-                """.formatted(viewType, formModelType));
+                """.formatted(viewType, presentationModelType));
         for (FieldSpec field : form.fields) {
-            source.addFragment(behaviorInstallSource(field));
+            source.addFragment(behaviorInstallSource(field, optionsType));
         }
         for (ComponentStateSpec state : form.componentStates) {
             for (DependencySpec dependency : state.dependencies) {
@@ -278,12 +312,17 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.asString(), "Could not write generated behavior plan");
     }
 
-    private void writeBindingsClass(TypeElement formType, FormSpec form) {
-        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+    private void writeBindingsClass(
+            TypeElement formType,
+            FormSpec form,
+            String packageName,
+            String sourcePackageName
+    ) {
         String ownerType = form.sourceType;
         String generatedType = ownerType + "Bindings";
         String viewType = ownerType + "View";
-        String formModelType = ownerType + "FormModel";
+        String formModelType = generatedPeerType(sourcePackageName, packageName, ownerType + "FormModel");
+        String presentationModelType = generatedPeerType(sourcePackageName, packageName, ownerType + "PresentationModel");
         String behaviorPlanType = ownerType + "BehaviorPlan";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         BasicStructuredFragment source = formClassSource("form/bindings-class.javafragment", packageName,
@@ -292,6 +331,7 @@ final class GeneratedSourceWriter {
         source.addFragment(ProcessorSourceTemplates.fragment(GeneratedSourceWriter.class, "form/bindings-install.javafragment", Map.of(
                 "VIEW_TYPE", viewType,
                 "FORM_MODEL_TYPE", formModelType,
+                "PRESENTATION_MODEL_TYPE", presentationModelType,
                 "BEHAVIOR_PLAN_TYPE", behaviorPlanType
         )));
         writeSource(formType, qualifiedName, source.asString(), "Could not write generated binding facade");
@@ -348,7 +388,6 @@ final class GeneratedSourceWriter {
 
     private String resultAccessorSource(FieldSpec field) {
         return """
-                    @Override
                     public %s %s() {
                         return %s;
                     }
@@ -356,18 +395,11 @@ final class GeneratedSourceWriter {
                 """.formatted(field.accessorType, field.componentName, field.componentName);
     }
 
-    private String resultComponentStateAccessorSource(ComponentStateSpec state) {
-        return """
-                    @Override
-                    public ComponentStateModel %s() {
-                        return %s;
-                    }
-
-                """.formatted(state.componentName, state.componentName);
-    }
-
     private String resultEqualsSource(FormSpec form) {
         SimpleMutableFragment source = new SimpleMutableFragment();
+        String comparisonType = form.hasGeneratedResultImplementation()
+                ? form.resultImplementationType
+                : form.sourceType;
         source.appendFormatted("""
                     @Override
                     public boolean equals(Object obj) {
@@ -377,7 +409,7 @@ final class GeneratedSourceWriter {
                         if (!(obj instanceof %s other)) {
                             return false;
                         }
-                        return%s""", form.sourceType, " ");
+                        return%s""", comparisonType, " ");
         for (int i = 0; i < form.fields.size(); i++) {
             FieldSpec field = form.fields.get(i);
             String prefix = i == 0 ? "" : "\n                && ";
@@ -621,16 +653,16 @@ final class GeneratedSourceWriter {
         return "        rules.semanticField(" + keyExpression + ", " + accessor + ", " + validator + ");\n";
     }
 
-    private String behaviorInstallSource(FieldSpec field) {
+    private String behaviorInstallSource(FieldSpec field, String optionsType) {
         String componentStateBehavior = field.componentState
                 ? ",\n                            StandardBehaviors.componentState(model." + field.componentName + "State)"
                 : "";
         if ("TextFieldModel".equals(field.modelType)) {
             return """
                         scope.install(view.%s(), List.of(
-                                StandardBehaviors.textFieldBinding(model.%s),
-                                StandardBehaviors.validationTooltip(model.%s.problemSet()),
-                                StandardBehaviors.validationBorder(model.%s.problemSet()),
+                                StandardBehaviors.textFieldBinding(model.form().%s),
+                                StandardBehaviors.validationTooltip(model.form().%s.problemSet()),
+                                StandardBehaviors.validationBorder(model.form().%s.problemSet()),
                                 StandardBehaviors.selectAllOnFocus()%s
                         ));
                     """.formatted(
@@ -643,9 +675,32 @@ final class GeneratedSourceWriter {
         } else if ("CHECK_BOX".equals(field.kind)) {
             return """
                         scope.install(view.%s(), List.of(
-                                StandardBehaviors.checkBoxBinding(model.%s)%s
+                                StandardBehaviors.checkBoxBinding(model.form().%s)%s
                         ));
                     """.formatted(field.viewMethodName, field.componentName, componentStateBehavior);
+        } else if ("RADIO_GROUP".equals(field.kind) && !field.options.isEmpty()) {
+            return """
+                        scope.install(view.%s(), List.of(
+                                StandardBehaviors.radioGroupBinding(model.form().%s, %s.%s_DESCRIPTORS)%s
+                        ));
+                    """.formatted(
+                    field.viewMethodName,
+                    field.componentName,
+                    optionsType,
+                    field.constantName,
+                    componentStateBehavior
+            );
+        } else if ("RADIO_GROUP".equals(field.kind)) {
+            return """
+                        scope.install(view.%s(), List.of(
+                                StandardBehaviors.radioGroupBinding(model.form().%s, %s.class)%s
+                        ));
+                    """.formatted(
+                    field.viewMethodName,
+                    field.componentName,
+                    field.valueType,
+                    componentStateBehavior
+            );
         } else if (field.componentState) {
             return """
                         scope.install(view.%s(), List.of(
@@ -658,8 +713,8 @@ final class GeneratedSourceWriter {
 
     private String dependencyInstallSource(DependencySpec dependency) {
         String sourceValue = dependency.sourceTextField
-                ? dependency.sourceFieldName + ".rawText()"
-                : dependency.sourceFieldName + ".value()";
+                ? "form()." + dependency.sourceFieldName + ".rawText()"
+                : "form()." + dependency.sourceFieldName + ".value()";
         return """
                         scope.add(dependencyBinding(
                                 model.%s,
@@ -670,15 +725,13 @@ final class GeneratedSourceWriter {
                 """.formatted(
                 sourceValue,
                 dependency.targetStateModel,
-                dependencyValuesExpression(dependency.values),
+                dependencyValuesExpression(dependency.valueExpressions),
                 dependency.effect
         );
     }
 
     private static String dependencyValuesExpression(List<String> values) {
-        return values.stream()
-                .map(GeneratedSourceWriter::stringLiteralOrNull)
-                .collect(java.util.stream.Collectors.joining(", "));
+        return values.stream().collect(java.util.stream.Collectors.joining(", "));
     }
 
     private static boolean hasDependencies(FormSpec form) {
@@ -690,7 +743,7 @@ final class GeneratedSourceWriter {
                     private static Binding dependencyBinding(
                             ReadableValue<?> source,
                             ComponentStateModel target,
-                            List<String> expectedValues,
+                            List<?> expectedValues,
                             DependencyEffect effect
                     ) {
                         updateDependency(source.value(), target, expectedValues, effect);
@@ -702,22 +755,15 @@ final class GeneratedSourceWriter {
                     private static void updateDependency(
                             Object value,
                             ComponentStateModel target,
-                            List<String> expectedValues,
+                            List<?> expectedValues,
                             DependencyEffect effect
                     ) {
-                        boolean active = expectedValues.contains(valueToken(value));
+                        boolean active = expectedValues.contains(value);
                         switch (effect) {
                             case ENABLED -> target.enabled().setValue(active, ChangeOrigin.GENERATED);
                             case VISIBLE -> target.visible().setValue(active, ChangeOrigin.GENERATED);
                             case RELEVANT -> target.relevant().setValue(active, ChangeOrigin.GENERATED);
                         }
-                    }
-
-                    private static String valueToken(Object value) {
-                        if (value instanceof Enum<?> enumValue) {
-                            return enumValue.name();
-                        }
-                        return String.valueOf(value);
                     }
 
                 """;
@@ -794,10 +840,27 @@ final class GeneratedSourceWriter {
             String ownerType,
             String generatedType
     ) {
-        return ProcessorSourceTemplates.structuredClass(GeneratedSourceWriter.class, resourceName, packageName, Map.of(
-                "OWNER_TYPE", ownerType,
-                "GENERATED_TYPE", generatedType
-        ));
+        return formClassSource(resourceName, packageName, ownerType, generatedType, Map.of());
+    }
+
+    private static BasicStructuredFragment formClassSource(
+            String resourceName,
+            String packageName,
+            String ownerType,
+            String generatedType,
+            Map<String, String> extraValues
+    ) {
+        java.util.Map<String, String> values = new java.util.LinkedHashMap<>(extraValues);
+        values.put("OWNER_TYPE", ownerType);
+        values.put("GENERATED_TYPE", generatedType);
+        return ProcessorSourceTemplates.structuredClass(GeneratedSourceWriter.class, resourceName, packageName, values);
+    }
+
+    private static String generatedPeerType(String sourcePackageName, String targetPackageName, String typeName) {
+        if (sourcePackageName.equals(targetPackageName) || sourcePackageName.isEmpty()) {
+            return typeName;
+        }
+        return sourcePackageName + "." + typeName;
     }
 
     private void writeSource(TypeElement originatingType, String qualifiedName, String source, String errorPrefix) {

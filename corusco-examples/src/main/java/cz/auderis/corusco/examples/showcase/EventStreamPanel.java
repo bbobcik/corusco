@@ -28,7 +28,8 @@ final class EventStreamPanel extends JPanel {
             new AuditEvent(1_766_000_060_000L, ObservationState.RUNNING, "Database table refreshed"),
             new AuditEvent(1_766_000_120_000L, ObservationState.CLOSED, "Table state saved")
     ));
-    private final ObservableTableModel<AuditEvent> model = AuditEventTableDescriptor.tableModel(rows);
+    private final ObservableTableModel<AuditEvent> model =
+            ObservableTableModel.of(rows, AuditEventTableDescriptor.DESCRIPTOR);
     final JTable table = new JTable(model);
     private final JLabel eventCountValue = new JLabel(Integer.toString(rows.size()));
     private final JLabel rendererValue = new JLabel("Cached");

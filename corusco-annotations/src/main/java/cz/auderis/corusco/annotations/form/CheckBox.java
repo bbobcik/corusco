@@ -13,8 +13,8 @@ import java.lang.annotation.Target;
 /**
  * Marks a boolean form source member as a generated checkbox field.
  *
- * <p>Use this annotation on a component of a {@link SwingForm} record or on an
- * abstract accessor method of a {@link SwingForm} abstract class when the value
+ * <p>Use this annotation on a component of a {@link CoruscoForm} record or on an
+ * abstract accessor method of a {@link CoruscoForm} abstract class when the value
  * should be edited as a selected/not-selected state. The processor accepts
  * primitive {@code boolean} and {@link java.lang.Boolean} values, emits typed
  * field and descriptor metadata, and adds a Swing {@code JCheckBox} entry to
@@ -41,7 +41,7 @@ import java.lang.annotation.Target;
  * {@code cz.auderis.corusco.core.meta.FieldDescriptor} with checkbox field
  * kind, and generated behavior plans install checkbox binding behavior.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface CheckBox {
 }

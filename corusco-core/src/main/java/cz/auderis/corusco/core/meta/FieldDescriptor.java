@@ -13,7 +13,7 @@ import java.util.Objects;
  * lookup or validation itself; generated form-model and view-plan stages consume
  * this metadata later.</p>
  *
- * <p>Generated {@code @SwingForm} sources create {@code FieldDescriptor}
+ * <p>Generated {@code @CoruscoForm} sources create {@code FieldDescriptor}
  * constants in a form-specific descriptor companion, for example
  * {@code CustomerEditDescriptors}, for each record component or abstract
  * accessor annotated
@@ -24,7 +24,7 @@ import java.util.Objects;
  *
  * @param id stable field id
  * @param componentName source component or accessor name
- * @param kind presentation kind
+ * @param editor presentation editor descriptor
  * @param valueType field value type
  * @param labelKey label resource key
  * @param tooltipKey optional tooltip resource key
@@ -36,7 +36,7 @@ import java.util.Objects;
 public record FieldDescriptor<O, T>(
         String id,
         String componentName,
-        FieldKind kind,
+        EditorDescriptor editor,
         Class<T> valueType,
         ResourceKey<String> labelKey,
         ResourceKey<String> tooltipKey,
@@ -49,7 +49,7 @@ public record FieldDescriptor<O, T>(
      *
      * @param id stable field id
      * @param componentName source component or accessor name
-     * @param kind presentation kind
+     * @param editor presentation editor descriptor
      * @param valueType field value type
      * @param labelKey label resource key
      * @param tooltipKey optional tooltip resource key
@@ -65,9 +65,43 @@ public record FieldDescriptor<O, T>(
         if (componentName.isBlank()) {
             throw new IllegalArgumentException("componentName must not be blank");
         }
-        Objects.requireNonNull(kind, "kind");
+        Objects.requireNonNull(editor, "editor");
         Objects.requireNonNull(valueType, "valueType");
         Objects.requireNonNull(labelKey, "labelKey");
         constraints = List.copyOf(Objects.requireNonNull(constraints, "constraints"));
+    }
+
+    /**
+     * Creates field metadata from the legacy field-kind value.
+     *
+     * @param id stable field id
+     * @param componentName source component or accessor name
+     * @param kind presentation kind
+     * @param valueType field value type
+     * @param labelKey label resource key
+     * @param tooltipKey optional tooltip resource key
+     * @param helpTopic optional help topic
+     * @param constraints constraints
+     */
+    public FieldDescriptor(
+            String id,
+            String componentName,
+            FieldKind kind,
+            Class<T> valueType,
+            ResourceKey<String> labelKey,
+            ResourceKey<String> tooltipKey,
+            HelpTopic helpTopic,
+            List<ConstraintDescriptor> constraints
+    ) {
+        this(id, componentName, EditorDescriptor.fromKind(kind), valueType, labelKey, tooltipKey, helpTopic, constraints);
+    }
+
+    /**
+     * Returns the legacy field kind for existing callers.
+     *
+     * @return legacy field kind
+     */
+    public FieldKind kind() {
+        return editor.legacyKind();
     }
 }

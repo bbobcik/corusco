@@ -5,24 +5,26 @@
  * ordinary Java source, and deriving the repetitive support code from that
  * declaration. A form record or abstract class names the values being edited.
  * Field-kind annotations say how each value should be represented in the
- * generated form model and Swing view contract. Validation and help annotations
- * add metadata without requiring runtime annotation scanning.</p>
+ * generated form model and optional Swing view contract. Validation and help
+ * annotations add metadata without requiring runtime annotation scanning.</p>
  *
- * <p>Start with {@link cz.auderis.corusco.annotations.form.SwingForm} on a
+ * <p>Start with {@link cz.auderis.corusco.annotations.form.CoruscoForm} on a
  * non-generic record that represents editable input, or on a non-generic
  * abstract class with abstract accessor methods. Then annotate each generated
  * component or accessor with exactly one field-kind annotation:
  * {@link cz.auderis.corusco.annotations.form.TextField},
  * {@link cz.auderis.corusco.annotations.form.DateField},
- * {@link cz.auderis.corusco.annotations.form.ComboBox}, or
- * {@link cz.auderis.corusco.annotations.form.CheckBox}. Record components
- * without a field-kind annotation are not part of generated form metadata.
- * Abstract accessors must have a field-kind annotation.</p>
+ * {@link cz.auderis.corusco.annotations.form.ComboBox}, {@link
+ * cz.auderis.corusco.annotations.form.RadioGroup}, or {@link
+ * cz.auderis.corusco.annotations.form.CheckBox}. Record components without a
+ * field-kind annotation are not part of generated form metadata unless they
+ * carry misplaced state metadata. Abstract value accessors must have a
+ * field-kind annotation.</p>
  *
  * <p>For example, this source record:</p>
  *
  * <pre>{@code
- * @SwingForm(id = "customer")
+ * @CoruscoForm(id = "customer")
  * record CustomerEdit(
  *         @TextField @Required String name,
  *         @CheckBox boolean active
@@ -34,17 +36,21 @@
  * {@code CustomerEdit}, such as {@code CustomerEditFields},
  * {@code CustomerEditResources}, {@code CustomerEditDescriptors},
  * {@code CustomerEditProblems}, {@code CustomerEditFormModel},
- * {@code CustomerEditView}, {@code CustomerEditBehaviorPlan}, and
- * {@code CustomerEditBindings}. The prefix comes from the source type name, so
- * renaming the source changes generated type names. Abstract class forms also
- * produce a generated immutable result implementation.</p>
+ * {@code CustomerEditPresentationModel}. Packages annotated with
+ * {@link cz.auderis.corusco.annotations.SwingCompanionPackage} also receive Swing
+ * companions such as {@code CustomerEditView},
+ * {@code CustomerEditBehaviorPlan}, and {@code CustomerEditBindings}. The
+ * prefix comes from the source type name, so renaming the source changes
+ * generated type names. Abstract class forms also produce a generated
+ * immutable result implementation.</p>
  *
  * <p>The first practical runtime step is usually to construct the generated
  * form model from an original record value:</p>
  *
  * <pre>{@code
  * CustomerEdit original = new CustomerEdit("Alice", true);
- * CustomerEditFormModel model = new CustomerEditFormModel(original);
+ * CustomerEditFormModel form = new CustomerEditFormModel(original);
+ * CustomerEditPresentationModel presentation = new CustomerEditPresentationModel(form);
  * }</pre>
  *
  * <p>Generated form key instances live in generated companions. A fields
@@ -56,21 +62,39 @@
  * and tooltips. Help topics from {@code @Help} are embedded in descriptors as
  * {@code cz.auderis.corusco.core.key.HelpTopic} values.</p>
  *
+ * <p>Selection editors can also expose generated option metadata. Enum
+ * constants may be annotated with {@link
+ * cz.auderis.corusco.annotations.form.CoruscoForm.Option} to assign stable option keys and
+ * ordering. The generated options companion derives localized label and
+ * description resource keys from the field key, keeping display text out of
+ * the enum itself.</p>
+ *
+ * <p>{@link cz.auderis.corusco.annotations.form.CoruscoForm.ComponentState}
+ * requests a generated {@code ComponentStateModel} in the presentation model
+ * for a field, or declares an auxiliary state member on an abstract form
+ * accessor that returns {@code ComponentStateModel}. {@link
+ * cz.auderis.corusco.annotations.form.CoruscoForm.DependsOn} can then describe
+ * dependency metadata from one form field to that state model. The dependency
+ * field name is validated against generated form members, so misspelled
+ * references fail during compilation.</p>
+ *
  * <p>Generated forms also expose
  * {@code cz.auderis.corusco.core.meta.FieldDescriptor},
  * {@code cz.auderis.corusco.core.problem.ProblemCode},
  * {@code cz.auderis.corusco.core.form.FieldModel}, and
  * {@code cz.auderis.corusco.core.form.TextFieldModel} based runtime objects
  * through companions such as {@code CustomerEditDescriptors},
- * {@code CustomerEditProblems}, and {@code CustomerEditFormModel}. Swing
- * behavior installation is generated in companions such as
+ * {@code CustomerEditProblems}, and {@code CustomerEditFormModel}. Visual
+ * state lives in {@code CustomerEditPresentationModel}. For packages annotated
+ * with {@link cz.auderis.corusco.annotations.SwingCompanionPackage}, Swing behavior
+ * installation is generated in companions such as
  * {@code CustomerEditBehaviorPlan} and surfaced through
  * {@code CustomerEditBindings}.</p>
  *
  * <p>The generated view contract is deliberately an interface. Applications
  * still own layout, component construction, resource loading, and dialog shell
  * policy. Implement {@code CustomerEditView} in a panel, dialog view, or test
- * fixture, then call the generated bindings facade with a
+ * fixture, then call the package-generated bindings facade with a
  * {@code cz.auderis.corusco.swing.behavior.BehaviorScope} to install supported
  * component behavior.</p>
  *
@@ -80,8 +104,9 @@
  * cz.auderis.corusco.annotations.form.DateField} for
  * {@link java.time.LocalDate} values edited through text conversion. Use
  * {@link cz.auderis.corusco.annotations.form.CheckBox} for booleans and
- * {@link cz.auderis.corusco.annotations.form.ComboBox} for selected reference
- * values or enums.</p>
+ * {@link cz.auderis.corusco.annotations.form.ComboBox} or {@link
+ * cz.auderis.corusco.annotations.form.RadioGroup} for selected reference values
+ * or enums.</p>
  *
  * <p>Validation annotations from
  * {@code cz.auderis.corusco.annotations.validation} are compiled into both

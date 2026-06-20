@@ -23,7 +23,7 @@ annotated form records.
 
 ## Scope
 
-For each `@SwingForm` record, generate:
+For each `@CoruscoForm` record, generate:
 
 - `<RecordName>View`
 - `<RecordName>BehaviorPlan`

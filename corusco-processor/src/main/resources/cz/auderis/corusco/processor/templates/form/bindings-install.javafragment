@@ -1,11 +1,24 @@
     /**
-     * Installs generated bindings for the form view and model.
+     * Installs generated bindings for the form view and presentation model.
      *
      * @param view generated view contract
-     * @param model generated form model
+     * @param model generated presentation model
      * @param scope owning behavior scope
      */
-    public static void install(VIEW_TYPE view, FORM_MODEL_TYPE model, BehaviorScope scope) {
+    public static void install(VIEW_TYPE view, PRESENTATION_MODEL_TYPE model, BehaviorScope scope) {
         BEHAVIOR_PLAN_TYPE.install(view, model, scope);
     }
 
+    /**
+     * Installs generated bindings for the form view and semantic model.
+     *
+     * <p>This convenience overload creates the generated presentation model that
+     * owns visual and session state for the binding lifecycle.</p>
+     *
+     * @param view generated view contract
+     * @param form generated form model
+     * @param scope owning behavior scope
+     */
+    public static void install(VIEW_TYPE view, FORM_MODEL_TYPE form, BehaviorScope scope) {
+        install(view, new PRESENTATION_MODEL_TYPE(form), scope);
+    }

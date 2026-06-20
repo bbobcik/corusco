@@ -24,7 +24,7 @@ runtime form, converter, descriptor, and validation primitives already present.
 
 ## Scope
 
-For each `@SwingForm` record, generate:
+For each `@CoruscoForm` record, generate:
 
 - `<RecordName>FormModel extends AbstractFormModel<RecordName>`
 - public final field members for generated field models

@@ -2,17 +2,17 @@ package cz.auderis.corusco.examples.generated;
 
 import cz.auderis.corusco.annotations.table.Column;
 import cz.auderis.corusco.annotations.help.Help;
-import cz.auderis.corusco.annotations.table.SwingTable;
+import cz.auderis.corusco.annotations.table.CoruscoTable;
 
 /**
  * Annotated sample row record used by generated table examples.
  *
  * <p>The record shows the split between row data and presentation metadata:
- * components store ordinary values, while {@link SwingTable}, {@link Column},
+ * components store ordinary values, while {@link CoruscoTable}, {@link Column},
  * and {@link Help} provide stable table ids, column persistence ids, sizing,
  * editability, and tooltip/help resources for generated descriptors.</p>
  */
-@SwingTable(id = "generated-customer-table")
+@CoruscoTable(id = "generated-customer-table")
 public record GeneratedCustomerRow(
         @Column(
                 persistenceId = "generated-customer-table/customer-name",

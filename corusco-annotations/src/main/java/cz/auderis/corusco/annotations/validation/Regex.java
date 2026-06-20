@@ -26,7 +26,7 @@ import java.lang.annotation.Target;
  * this rule as {@code cz.auderis.corusco.core.meta.ConstraintDescriptor}
  * metadata and generated form models wire the matching validator.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface Regex {
 

@@ -27,7 +27,7 @@ import java.lang.annotation.Target;
  * problem identity is exposed in problem-code companions such as
  * {@code CustomerEditProblems}.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface Length {
 

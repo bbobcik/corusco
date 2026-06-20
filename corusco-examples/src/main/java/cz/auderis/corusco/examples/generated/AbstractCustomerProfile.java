@@ -2,7 +2,7 @@ package cz.auderis.corusco.examples.generated;
 
 import cz.auderis.corusco.annotations.form.CheckBox;
 import cz.auderis.corusco.annotations.form.ComboBox;
-import cz.auderis.corusco.annotations.form.SwingForm;
+import cz.auderis.corusco.annotations.form.CoruscoForm;
 import cz.auderis.corusco.annotations.form.TextField;
 import cz.auderis.corusco.annotations.help.Help;
 import cz.auderis.corusco.annotations.validation.DecimalRange;
@@ -14,12 +14,13 @@ import java.math.BigDecimal;
  * Abstract annotated form source with handwritten domain logic.
  *
  * <p>Abstract form sources are useful when generated form infrastructure should
- * wrap a richer hand-maintained type instead of a plain record. The abstract
- * accessors below become generated fields, descriptors, a form model, Swing
- * view contracts, and an immutable result implementation. The concrete methods
- * stay handwritten and are inherited by the generated result.</p>
+ * read an existing hand-maintained source shape instead of a plain record. The
+ * abstract accessors below become generated fields, descriptors, a form model,
+ * Swing view contracts, and a separate immutable result implementation. The
+ * concrete methods remain source-side helpers; committed generated results
+ * contain only semantic field values.</p>
  */
-@SwingForm(id = "abstract-customer-profile")
+@CoruscoForm(id = "abstract-customer-profile")
 public abstract class AbstractCustomerProfile {
 
     private static final BigDecimal REVIEW_LIMIT = new BigDecimal("100000.00");

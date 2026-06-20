@@ -1,16 +1,16 @@
 package cz.auderis.corusco.annotations;
 
 import cz.auderis.corusco.annotations.command.UiAction;
-import cz.auderis.corusco.annotations.form.SwingForm;
-import cz.auderis.corusco.annotations.table.SwingTable;
+import cz.auderis.corusco.annotations.form.CoruscoForm;
+import cz.auderis.corusco.annotations.table.CoruscoTable;
 
 /**
  * Identifies the Corusco annotations module in smoke tests and diagnostics.
  *
  * <p>This class is not used by the annotation processor and does not describe
  * annotated source elements. It only exposes the published module name. Users
- * of the annotation API should start with {@link SwingForm},
- * {@link SwingTable}, field-kind annotations, constraint annotations, and
+ * of the annotation API should start with {@link CoruscoForm},
+ * {@link CoruscoTable}, field-kind annotations, constraint annotations, and
  * {@link UiAction}.</p>
  */
 public final class CoruscoAnnotations {

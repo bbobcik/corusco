@@ -13,8 +13,8 @@ import java.lang.annotation.Target;
 /**
  * Marks a form source member as a generated combo-box field.
  *
- * <p>Use this annotation on a component of a {@link SwingForm} record or on an
- * abstract accessor method of a {@link SwingForm} abstract class when the value
+ * <p>Use this annotation on a component of a {@link CoruscoForm} record or on an
+ * abstract accessor method of a {@link CoruscoForm} abstract class when the value
  * should be edited through a selection control. The processor emits typed field
  * keys, descriptor metadata, and a Swing {@code JComboBox<Value>} entry in
  * generated view plans. The component type becomes the value type used by
@@ -47,7 +47,7 @@ import java.lang.annotation.Target;
  * {@code cz.auderis.corusco.core.meta.FieldDescriptor} with combo-box field
  * kind.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface ComboBox {
 

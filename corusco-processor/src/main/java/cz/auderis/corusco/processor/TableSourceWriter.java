@@ -16,7 +16,7 @@ import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 
 /**
- * Writes generated sources for {@code @SwingTable} row records.
+ * Writes generated sources for {@code @CoruscoTable} row records.
  *
  * <p>The writer turns a validated {@link TableSpec} into resource-key,
  * column-metadata, descriptor, and Swing-binding source classes. Generated code
@@ -41,7 +41,11 @@ final class TableSourceWriter {
         writeTableResourcesClass(tableType, table);
         writeColumnsClass(tableType, table);
         writeTableDescriptorClass(tableType, table);
-        writeTableBindingsClass(tableType, table);
+    }
+
+    void writeTableSwingSources(TypeElement tableType, TableSpec table, String targetPackageName) {
+        String sourcePackageName = elements.getPackageOf(tableType).getQualifiedName().toString();
+        writeTableBindingsClass(tableType, table, targetPackageName, sourcePackageName);
     }
 
     private void writeTableResourcesClass(TypeElement tableType, TableSpec table) {
@@ -101,16 +105,21 @@ final class TableSourceWriter {
         writeSource(tableType, qualifiedName, source.asString(), "Could not write generated table descriptor");
     }
 
-    private void writeTableBindingsClass(TypeElement tableType, TableSpec table) {
-        String packageName = elements.getPackageOf(tableType).getQualifiedName().toString();
+    private void writeTableBindingsClass(
+            TypeElement tableType,
+            TableSpec table,
+            String packageName,
+            String sourcePackageName
+    ) {
         String generatedType = table.ownerType + "TableBindings";
-        String descriptorType = table.ownerType + "TableDescriptor";
+        String descriptorType = generatedPeerType(sourcePackageName, packageName, table.ownerType + "TableDescriptor");
+        String ownerType = generatedPeerType(sourcePackageName, packageName, table.ownerType);
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         BasicStructuredFragment source = tableClassSource("table/bindings-class.javafragment", packageName,
                 table.ownerType, generatedType);
         source.addFragment(ProcessorSourceTemplates.privateConstructorSource(TableSourceWriter.class, generatedType));
         source.addFragment(ProcessorSourceTemplates.fragment(TableSourceWriter.class, "table/binding-members.javafragment", Map.of(
-                "OWNER_TYPE", table.ownerType,
+                "OWNER_TYPE", ownerType,
                 "DESCRIPTOR_TYPE", descriptorType
         )));
         writeSource(tableType, qualifiedName, source.asString(), "Could not write generated table bindings");
@@ -213,6 +222,13 @@ final class TableSourceWriter {
                 "OWNER_TYPE", ownerType,
                 "GENERATED_TYPE", generatedType
         ));
+    }
+
+    private static String generatedPeerType(String sourcePackageName, String targetPackageName, String typeName) {
+        if (sourcePackageName.equals(targetPackageName) || sourcePackageName.isEmpty()) {
+            return typeName;
+        }
+        return sourcePackageName + "." + typeName;
     }
 
     private static String updaterName(TableColumnSpec column) {

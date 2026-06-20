@@ -15,8 +15,8 @@ import java.lang.annotation.Target;
 /**
  * Marks a form source member as a generated text-entry field.
  *
- * <p>Use this annotation on a component of a {@link SwingForm} record or on an
- * abstract accessor method of a {@link SwingForm} abstract class when the value
+ * <p>Use this annotation on a component of a {@link CoruscoForm} record or on an
+ * abstract accessor method of a {@link CoruscoForm} abstract class when the value
  * is edited through text. The processor accepts supported scalar types and
  * emits typed field keys, descriptor metadata, a generated field backed by
  * {@code TextFieldModel}, converter wiring, and a Swing text component entry in
@@ -46,7 +46,7 @@ import java.lang.annotation.Target;
  * {@code cz.auderis.corusco.core.meta.FieldDescriptor} with text field kind and
  * any supported {@code ConstraintDescriptor} metadata.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface TextField {
 }

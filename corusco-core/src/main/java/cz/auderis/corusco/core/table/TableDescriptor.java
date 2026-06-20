@@ -20,7 +20,7 @@ import java.util.Objects;
  * handwritten table definitions from mixing unrelated row models. Keep table
  * and column ids stable when persisted state or tests depend on them.</p>
  *
- * <p>Generated {@code @SwingTable} records create a {@code TableDescriptor}
+ * <p>Generated {@code @CoruscoTable} records create a {@code TableDescriptor}
  * constant in a row-specific descriptor companion, for example
  * {@code CustomerRowTableDescriptor}. That generated companion also
  * exposes a factory for the Swing {@code ObservableTableModel}; applications

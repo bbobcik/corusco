@@ -13,6 +13,5 @@
                     KEY_CONSTANT,
                     FIELD_CONSTANT_RESOURCES.label(KEY_CONSTANT),
                     FIELD_CONSTANT_RESOURCES.description(KEY_CONSTANT),
-                    null
+                    FIELD_CONSTANT_RESOURCES.help(KEY_CONSTANT)
             );
-

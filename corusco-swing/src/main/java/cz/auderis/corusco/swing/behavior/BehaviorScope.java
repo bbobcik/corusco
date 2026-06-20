@@ -39,7 +39,7 @@ import javax.swing.JComponent;
  * outside this scope, because the scope can only validate behaviors it knows
  * about.</p>
  *
- * <p>Generated {@code @SwingForm} records create form-specific companions,
+ * <p>Generated {@code @CoruscoForm} records create form-specific companions,
  * such as {@code CustomerEditBehaviorPlan} with direct calls to this scope and
  * {@code CustomerEditBindings} as a facade that delegates to that plan.
  * Handwritten views may call {@link #install(JComponent, List)} directly when
@@ -121,6 +121,22 @@ public final class BehaviorScope implements Binding {
                     .add(behavior.descriptor().key());
         }
         return installed;
+    }
+
+    /**
+     * Adds a lifecycle binding that is not tied to one Swing component.
+     *
+     * <p>Generated behavior plans use this for model-level dependencies whose
+     * subscriptions update component-state models. The binding is owned and
+     * closed with the same reverse-order lifecycle as component behaviors.</p>
+     *
+     * @param binding binding to own
+     * @param <B> binding type
+     * @return the same binding
+     */
+    public <B extends Binding> B add(B binding) {
+        SwingEdt.requireEdt();
+        return bindings.add(Objects.requireNonNull(binding, "binding"));
     }
 
     /**

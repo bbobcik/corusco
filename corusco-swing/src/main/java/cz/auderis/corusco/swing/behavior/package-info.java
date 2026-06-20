@@ -52,9 +52,10 @@
  * text, or command-specific keyboard shortcuts, to the same scope.</p>
  *
  * <p>Start with {@link cz.auderis.corusco.swing.behavior.StandardBehaviors} for
- * built-in form behaviors: text and checkbox bindings, validation feedback,
- * composed tooltips, accessible text, status text, help-on-F1, and busy
- * overlays. Use {@link cz.auderis.corusco.swing.behavior.CommandBehaviors} to
+ * built-in form behaviors: text, checkbox, and radio-group bindings, component-state
+ * bindings, validation feedback, composed tooltips, accessible text, status
+ * text, help-on-F1, and busy overlays. Use {@link
+ * cz.auderis.corusco.swing.behavior.CommandBehaviors} to
  * adapt core commands to buttons, menu items, and key bindings. Write a custom
  * {@link cz.auderis.corusco.swing.behavior.ViewBehavior} only when the standard
  * factories cannot express the component capability.</p>
@@ -78,17 +79,20 @@
  * cz.auderis.corusco.swing.behavior.DecorationBehavior} marks secondary UI
  * state such as tooltips, borders, accessible text, or busy overlays.</p>
  *
- * <p>Generated {@code @SwingForm} sources produce form-specific companions,
+ * <p>Generated {@code @CoruscoForm} sources produce form-specific companions,
  * such as {@code CustomerEditBehaviorPlan} and {@code CustomerEditBindings},
  * that install these behavior factories against the generated view contract.
  * For example, a source record named {@code CustomerEdit} annotated with
- * {@code @SwingForm} produces companions whose names start with
+ * {@code @CoruscoForm} produces companions whose names start with
  * {@code CustomerEdit}, including {@code CustomerEditBehaviorPlan} and
- * {@code CustomerEditBindings}.
- * For generated forms, call the generated bindings facade first, then add any
- * application specific behaviors to the same scope. For handwritten forms,
- * assemble the behavior lists directly in view construction or presenter
- * activation code.</p>
+ * {@code CustomerEditBindings}. Generated component-state and dependency
+ * metadata lives on {@code CustomerEditPresentationModel} and is installed by
+ * the same behavior plan, so presenters can either let generated dependencies
+ * drive enabled/visible/relevant state or override the exposed state models
+ * explicitly. For generated forms, call the generated bindings facade first,
+ * then add any application specific behaviors to the same scope. For
+ * handwritten forms, assemble the behavior lists directly in view construction
+ * or presenter activation code.</p>
  *
  * <p>Testing usually inspects effects rather than behavior objects. Use
  * {@link cz.auderis.corusco.swing.behavior.BehaviorScope#installedBehaviorKeys(javax.swing.JComponent)}

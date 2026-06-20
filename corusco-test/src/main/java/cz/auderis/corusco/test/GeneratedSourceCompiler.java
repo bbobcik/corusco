@@ -1,6 +1,7 @@
 package cz.auderis.corusco.test;
 
 import java.io.IOException;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -91,6 +92,25 @@ public final class GeneratedSourceCompiler {
     }
 
     /**
+     * Removes classpath entries whose path contains the supplied text.
+     *
+     * @param text case-sensitive path fragment
+     * @return this compiler harness
+     */
+    public GeneratedSourceCompiler withoutClasspathEntriesContaining(String text) {
+        Objects.requireNonNull(text, "text");
+        String[] entries = classpath.split(java.util.regex.Pattern.quote(File.pathSeparator));
+        List<String> retained = new ArrayList<>(entries.length);
+        for (String entry : entries) {
+            if (!entry.contains(text)) {
+                retained.add(entry);
+            }
+        }
+        this.classpath = String.join(File.pathSeparator, retained);
+        return this;
+    }
+
+    /**
      * Compiles a single sample source file.
      *
      * @param sourcePath slash-separated source path, for example {@code demo/CustomerEdit.java}
@@ -162,7 +182,7 @@ public final class GeneratedSourceCompiler {
             task.setProcessors(List.copyOf(processors));
 
             boolean success = Boolean.TRUE.equals(task.call());
-            return new GeneratedSourceCompilation(success, generatedSources, messages(diagnostics));
+            return new GeneratedSourceCompilation(success, classesDir, generatedSources, messages(diagnostics));
         }
     }
 

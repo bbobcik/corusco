@@ -18,10 +18,12 @@
  *
  * <p>A generated companion is one of those generated classes. For example, a
  * source record named {@code CustomerEdit} may produce classes such as
- * {@code CustomerEditFields}, {@code CustomerEditFormModel},
- * {@code CustomerEditView}, {@code CustomerEditBehaviorPlan}, and
- * {@code CustomerEditBindings}. They are generated next to the annotated
- * source and are consumed like normal Java API.</p>
+ * {@code CustomerEditFields} and {@code CustomerEditFormModel}. If its package,
+ * or a Swing adapter package that references it, is annotated with
+ * {@link cz.auderis.corusco.annotations.SwingCompanionPackage}, the processor also
+ * generates Swing companions such as {@code CustomerEditView},
+ * {@code CustomerEditBehaviorPlan}, and {@code CustomerEditBindings}. Generated
+ * companions are consumed like normal Java API.</p>
  *
  * <p>A descriptor is an immutable object that describes part of a screen before
  * any Swing component is created. A field descriptor says what field exists and
@@ -40,12 +42,12 @@
  *
  * <p>If the user edits values, start with {@link
  * cz.auderis.corusco.annotations.form}. A record annotated with
- * {@code @SwingForm} describes the values in the form. Record components
+ * {@code @CoruscoForm} describes the values in the form. Record components
  * annotated with {@code @TextField}, {@code @DateField}, {@code @CheckBox},
  * or {@code @ComboBox} describe the intended editor family.</p>
  *
  * <pre>{@code
- * @SwingForm(id = "customer/edit")
+ * @CoruscoForm(id = "customer/edit")
  * public record CustomerEdit(
  *         @TextField
  *         @Required
@@ -60,17 +62,19 @@
  *
  * <p>This form source gives the processor enough information to generate field
  * keys, label and tooltip resource keys, field descriptors, validation
- * descriptors, a form model, a Swing view contract, a behavior plan, and a
- * bindings facade. The generated form model owns editable state; the generated
- * bindings facade installs Swing bindings into an application-provided view.</p>
+ * descriptors and a form model. Add {@link
+ * cz.auderis.corusco.annotations.SwingCompanionPackage} to the package that should own
+ * Swing companions such as the view contract, behavior plan, and bindings
+ * facade. The generated form model owns editable state; the generated bindings
+ * facade installs Swing bindings into an application-provided view.</p>
  *
  * <p>If the user sees a list of rows in a {@code JTable}, start with {@link
  * cz.auderis.corusco.annotations.table}. A record annotated with
- * {@code @SwingTable} describes one row. Components annotated with
+ * {@code @CoruscoTable} describes one row. Components annotated with
  * {@code @Column} become table columns.</p>
  *
  * <pre>{@code
- * @SwingTable(id = "customer/list")
+ * @CoruscoTable(id = "customer/list")
  * public record CustomerRow(
  *         @Column(header = "customer/list/name/header", width = 180)
  *         String name,
@@ -158,9 +162,11 @@
  * the generated column can call the record constructor directly instead of
  * mutating a row by reflective property name.</p>
  *
- * <p>The annotations are source-retained for that reason. Runtime framework
- * code should not scan annotations reflectively. Runtime code should consume
- * the generated classes and the public core/Swing APIs.</p>
+ * <p>Form and table metadata annotations are retained in class files so a
+ * Swing adapter module can generate companions for already compiled model
+ * classes. They remain a compile-time contract: runtime framework code should
+ * not scan annotations reflectively, and should consume the generated classes
+ * and the public core/Swing APIs.</p>
  *
  * <h2>Typical Adoption Path</h2>
  *

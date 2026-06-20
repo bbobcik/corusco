@@ -1,11 +1,13 @@
 package cz.auderis.corusco.swing.behavior;
 
 import cz.auderis.corusco.core.form.FieldModel;
+import cz.auderis.corusco.core.form.ComponentStateModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.help.HelpService;
 import cz.auderis.corusco.core.key.HelpTopic;
 import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.meta.FieldDescriptor;
+import cz.auderis.corusco.core.meta.OptionDescriptor;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.resource.Resources;
 import cz.auderis.corusco.core.tooltip.TooltipPolicy;
@@ -18,6 +20,7 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
+import java.util.List;
 import java.util.Objects;
 import javax.swing.AbstractAction;
 import javax.swing.AbstractButton;
@@ -48,12 +51,13 @@ import javax.swing.text.JTextComponent;
  * possible; failures that depend on a component or context occur during
  * behavior installation.</p>
  *
- * <p>Generated {@code @SwingForm} behavior plans use these factories for
+ * <p>Generated {@code @CoruscoForm} behavior plans use these factories for
  * supported component kinds: text/date fields install text binding,
  * validation-tooltip, validation-border, and select-all-on-focus behaviors;
- * checkbox fields install selected-state binding behavior. Applications can
- * mix generated plans with additional handwritten behaviors in the same
- * {@link BehaviorScope}.</p>
+ * checkbox fields install selected-state binding behavior; radio groups
+ * install option-valued selected-state binding behavior. Applications can mix
+ * generated plans with additional handwritten behaviors in the same {@link
+ * BehaviorScope}.</p>
  */
 public final class StandardBehaviors {
 
@@ -135,6 +139,96 @@ public final class StandardBehaviors {
             @Override
             public Binding install(BehaviorContext<AbstractButton> context) {
                 return BindingFactory.selected(context.component(), model);
+            }
+        };
+    }
+
+    /**
+     * Creates a radio-group selected-value binding behavior.
+     *
+     * <p>The behavior installs a primary binding through
+     * {@link BindingFactory#radioGroup(JComponent, FieldModel, List)}. Radio
+     * buttons are discovered below the target component and matched by action
+     * command or component name against generated option keys and enum names.</p>
+     *
+     * @param model option-valued field model
+     * @param options generated option descriptors
+     * @param <O> owner/model type
+     * @param <T> semantic option value type
+     * @return radio-group binding behavior
+     */
+    public static <O, T> BindingBehavior<JComponent> radioGroupBinding(
+            FieldModel<O, T> model,
+            List<OptionDescriptor<T>> options
+    ) {
+        Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(options, "options");
+        return new BindingBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.primaryBinding(StandardBehaviorKeys.RADIO_GROUP_BINDING);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<JComponent> context) {
+                return BindingFactory.radioGroup(context.component(), model, options);
+            }
+        };
+    }
+
+    /**
+     * Creates a radio-group binding behavior for enum names.
+     *
+     * <p>This overload supports generated radio groups whose option metadata is
+     * disabled; buttons are matched by enum constant name.</p>
+     *
+     * @param model enum-valued field model
+     * @param enumType enum value type
+     * @param <O> owner/model type
+     * @param <T> semantic enum value type
+     * @return radio-group binding behavior
+     */
+    public static <O, T extends Enum<T>> BindingBehavior<JComponent> radioGroupBinding(
+            FieldModel<O, T> model,
+            Class<T> enumType
+    ) {
+        Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(enumType, "enumType");
+        return new BindingBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.primaryBinding(StandardBehaviorKeys.RADIO_GROUP_BINDING);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<JComponent> context) {
+                return BindingFactory.radioGroup(context.component(), model, enumType);
+            }
+        };
+    }
+
+    /**
+     * Creates a component-state binding behavior.
+     *
+     * <p>The installed binding applies enabled, visible, relevant, editable,
+     * busy, and protected-value state to the Swing component while preserving
+     * the component state present at installation time for cleanup.</p>
+     *
+     * @param state component-state model
+     * @param <C> component type
+     * @return component-state behavior
+     */
+    public static <C extends JComponent> BindingBehavior<C> componentState(ComponentStateModel state) {
+        Objects.requireNonNull(state, "state");
+        return new BindingBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.single(StandardBehaviorKeys.COMPONENT_STATE, BehaviorPhase.BINDING);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<C> context) {
+                return BindingFactory.componentState(context.component(), state);
             }
         };
     }

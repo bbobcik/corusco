@@ -9,7 +9,7 @@ import java.util.Objects;
  * lookup, and diagnostics. It deliberately does not describe how to access a
  * row value; {@link Column} carries the typed extractor/updater functions.</p>
  *
- * <p>Generated {@code @SwingTable} records create a {@code ColumnKey} constant
+ * <p>Generated {@code @CoruscoTable} records create a {@code ColumnKey} constant
  * in a row-specific columns companion, for example {@code CustomerRowColumns},
  * for each {@code @Column} record component.
  * Handwritten descriptors may create keys with {@link #of(String, Class,

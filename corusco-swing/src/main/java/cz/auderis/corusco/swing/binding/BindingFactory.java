@@ -1,9 +1,11 @@
 package cz.auderis.corusco.swing.binding;
 
 import cz.auderis.corusco.core.form.FieldModel;
+import cz.auderis.corusco.core.form.ComponentStateModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import cz.auderis.corusco.core.lifecycle.SubscriptionScope;
+import cz.auderis.corusco.core.meta.OptionDescriptor;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.tooltip.TooltipContent;
 import cz.auderis.corusco.core.tooltip.TooltipPolicy;
@@ -11,8 +13,15 @@ import cz.auderis.corusco.core.value.ChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.ValueChangeListener;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
+import java.awt.event.ActionListener;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
@@ -117,6 +126,104 @@ public final class BindingFactory {
                 updating[0] = false;
             }
         }));
+        return () -> {
+            SwingEdt.requireEdt();
+            scope.close();
+        };
+    }
+
+    /**
+     * Binds a radio-button group container to an option-valued field model.
+     *
+     * <p>The binding discovers descendant {@link AbstractButton} instances in
+     * the supplied container and matches each button by action command first,
+     * then component name. Recognized tokens are generated option keys and enum
+     * constant names from {@code options}. User selection updates the field
+     * with {@link ChangeOrigin#USER}; model changes select the matching button
+     * without feeding back through the action listener. Closing the binding
+     * removes listeners and the value subscription.</p>
+     *
+     * @param container component containing radio buttons
+     * @param model semantic option field model
+     * @param options generated option descriptors
+     * @param <O> owner/model type
+     * @param <T> semantic option value type
+     * @return binding
+     */
+    public static <O, T> Binding radioGroup(
+            JComponent container,
+            FieldModel<O, T> model,
+            List<OptionDescriptor<T>> options
+    ) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(container, "container");
+        Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(options, "options");
+
+        return radioGroup(container, model, optionValuesByToken(options));
+    }
+
+    /**
+     * Binds a radio-button group container to an enum-valued field model.
+     *
+     * <p>This overload is intended for generated radio groups with option
+     * metadata disabled. Buttons are matched by enum constant name through
+     * action command first, then component name.</p>
+     *
+     * @param container component containing radio buttons
+     * @param model semantic enum field model
+     * @param enumType enum value type
+     * @param <O> owner/model type
+     * @param <T> semantic enum value type
+     * @return binding
+     */
+    public static <O, T extends Enum<T>> Binding radioGroup(
+            JComponent container,
+            FieldModel<O, T> model,
+            Class<T> enumType
+    ) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(container, "container");
+        Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(enumType, "enumType");
+
+        return radioGroup(container, model, enumValuesByToken(enumType));
+    }
+
+    private static <O, T> Binding radioGroup(
+            JComponent container,
+            FieldModel<O, T> model,
+            Map<String, T> valuesByToken
+    ) {
+        List<AbstractButton> buttons = new ArrayList<>();
+        collectButtons(container, buttons);
+
+        SubscriptionScope scope = new SubscriptionScope();
+        boolean[] updating = new boolean[1];
+        ActionListener actionListener = event -> {
+            if (updating[0]) {
+                return;
+            }
+            AbstractButton button = (AbstractButton) event.getSource();
+            if (!button.isSelected()) {
+                return;
+            }
+            T value = valuesByToken.get(buttonToken(button));
+            if (value != null) {
+                model.setValue(value, ChangeOrigin.USER);
+            }
+        };
+
+        for (AbstractButton button : buttons) {
+            if (valuesByToken.containsKey(buttonToken(button))) {
+                button.addActionListener(actionListener);
+                scope.onClose(() -> button.removeActionListener(actionListener));
+            }
+        }
+        updateRadioGroupButtons(buttons, valuesByToken, model.value().value(), updating);
+        scope.add(model.value().subscribe(event ->
+                updateRadioGroupButtons(buttons, valuesByToken, event.newValue(), updating)));
+
         return () -> {
             SwingEdt.requireEdt();
             scope.close();
@@ -272,6 +379,47 @@ public final class BindingFactory {
         return () -> {
             SwingEdt.requireEdt();
             subscription.close();
+        };
+    }
+
+    /**
+     * Binds common presentation state to a Swing component.
+     *
+     * <p>The binding snapshots enabled, visible, and editable state where the
+     * component supports editability. Current effective state is derived from
+     * the component-state model: irrelevant controls are hidden and disabled,
+     * busy controls are disabled, and protected controls are non-editable.
+     * Closing the binding restores the component state present at installation
+     * time.</p>
+     *
+     * @param component component to update
+     * @param state component-state model
+     * @return binding
+     */
+    public static Binding componentState(JComponent component, ComponentStateModel state) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(component, "component");
+        Objects.requireNonNull(state, "state");
+        SubscriptionScope scope = new SubscriptionScope();
+        boolean originalEnabled = component.isEnabled();
+        boolean originalVisible = component.isVisible();
+        Boolean originalEditable = editable(component);
+        updateComponentState(component, state);
+        scope.add(state.enabled().subscribe(event -> updateComponentState(component, state)));
+        scope.add(state.visible().subscribe(event -> updateComponentState(component, state)));
+        scope.add(state.editable().subscribe(event -> updateComponentState(component, state)));
+        scope.add(state.relevant().subscribe(event -> updateComponentState(component, state)));
+        scope.add(state.busy().subscribe(event -> updateComponentState(component, state)));
+        scope.add(state.protectedValue().subscribe(event -> updateComponentState(component, state)));
+        return () -> {
+            SwingEdt.requireEdt();
+            try {
+                scope.close();
+            } finally {
+                component.setEnabled(originalEnabled);
+                component.setVisible(originalVisible);
+                setEditable(component, originalEditable);
+            }
         };
     }
 
@@ -454,6 +602,106 @@ public final class BindingFactory {
             SwingEdt.requireEdt();
             scope.close();
         };
+    }
+
+    private static void updateComponentState(JComponent component, ComponentStateModel state) {
+        SwingEdt.requireEdt();
+        boolean relevant = Boolean.TRUE.equals(state.relevant().value());
+        boolean busy = Boolean.TRUE.equals(state.busy().value());
+        boolean protectedValue = Boolean.TRUE.equals(state.protectedValue().value());
+        component.setVisible(Boolean.TRUE.equals(state.visible().value()) && relevant);
+        component.setEnabled(Boolean.TRUE.equals(state.enabled().value()) && relevant && !busy);
+        setEditable(component, Boolean.TRUE.equals(state.editable().value()) && !protectedValue && !busy);
+    }
+
+    private static <T> Map<String, T> optionValuesByToken(List<OptionDescriptor<T>> options) {
+        Map<String, T> valuesByToken = new LinkedHashMap<>();
+        for (OptionDescriptor<T> option : options) {
+            Objects.requireNonNull(option, "options must not contain null");
+            putOptionToken(valuesByToken, option.key().id(), option.value());
+            if (option.value() instanceof Enum<?> enumValue) {
+                putOptionToken(valuesByToken, enumValue.name(), option.value());
+            }
+        }
+        return valuesByToken;
+    }
+
+    private static <T extends Enum<T>> Map<String, T> enumValuesByToken(Class<T> enumType) {
+        Map<String, T> valuesByToken = new LinkedHashMap<>();
+        for (T value : enumType.getEnumConstants()) {
+            putOptionToken(valuesByToken, value.name(), value);
+        }
+        return valuesByToken;
+    }
+
+    private static <T> void putOptionToken(Map<String, T> valuesByToken, String token, T value) {
+        if ((token == null) || token.isBlank()) {
+            return;
+        }
+        T previous = valuesByToken.putIfAbsent(token, value);
+        if ((previous != null) && !Objects.equals(previous, value)) {
+            throw new IllegalArgumentException("Duplicate radio option token: " + token);
+        }
+    }
+
+    private static void collectButtons(Container container, List<AbstractButton> buttons) {
+        for (Component child : container.getComponents()) {
+            if (child instanceof AbstractButton button) {
+                buttons.add(button);
+            }
+            if (child instanceof Container childContainer) {
+                collectButtons(childContainer, buttons);
+            }
+        }
+    }
+
+    private static String buttonToken(AbstractButton button) {
+        String actionCommand = button.getActionCommand();
+        if ((actionCommand != null) && !actionCommand.isBlank()) {
+            return actionCommand;
+        }
+        return button.getName();
+    }
+
+    private static <T> void updateRadioGroupButtons(
+            List<AbstractButton> buttons,
+            Map<String, T> valuesByToken,
+            T value,
+            boolean[] updating
+    ) {
+        SwingEdt.requireEdt();
+        updating[0] = true;
+        try {
+            for (AbstractButton button : buttons) {
+                String token = buttonToken(button);
+                if (valuesByToken.containsKey(token)) {
+                    button.setSelected(Objects.equals(valuesByToken.get(token), value));
+                }
+            }
+        } finally {
+            updating[0] = false;
+        }
+    }
+
+    private static Boolean editable(JComponent component) {
+        if (component instanceof javax.swing.text.JTextComponent textComponent) {
+            return textComponent.isEditable();
+        }
+        if (component instanceof javax.swing.JComboBox<?> comboBox) {
+            return comboBox.isEditable();
+        }
+        return null;
+    }
+
+    private static void setEditable(JComponent component, Boolean editable) {
+        if (editable == null) {
+            return;
+        }
+        if (component instanceof javax.swing.text.JTextComponent textComponent) {
+            textComponent.setEditable(editable);
+        } else if (component instanceof javax.swing.JComboBox<?> comboBox) {
+            comboBox.setEditable(editable);
+        }
     }
 
     private static String disabledReasonValue(ReadableValue<String> disabledReason) {

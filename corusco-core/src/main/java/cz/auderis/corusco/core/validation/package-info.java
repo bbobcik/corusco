@@ -30,7 +30,7 @@
  * cz.auderis.corusco.core.validation.FormValidator} when a rule needs the
  * broader form object rather than one field value.</p>
  *
- * <p>Generated {@code @SwingForm} records use this package in two ways. The
+ * <p>Generated {@code @CoruscoForm} records use this package in two ways. The
  * annotation processor emits declarative {@code ConstraintDescriptor} metadata
  * in a descriptor companion, for example {@code CustomerEditDescriptors}, and
  * the generated form model, for example {@code CustomerEditFormModel}, builds a

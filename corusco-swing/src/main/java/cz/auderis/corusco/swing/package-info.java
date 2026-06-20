@@ -170,16 +170,18 @@
  * <h2>Generated Forms</h2>
  *
  * <p>A generated form usually enters this module through a generated bindings
- * facade. The annotated record produces a core form model, field descriptions,
- * a generated view interface, a behavior plan, and a bindings facade. The
- * application implements the view interface with Swing components.</p>
+ * facade. The annotated source produces a core form model, a presentation
+ * model for visual/session state, field descriptions, a generated view
+ * interface, a behavior plan, and a bindings facade. The application
+ * implements the view interface with Swing components.</p>
  *
  * <pre>{@code
  * CustomerEditFormModel model = new CustomerEditFormModel(originalCustomer);
+ * CustomerEditPresentationModel presentation = new CustomerEditPresentationModel(model);
  * CustomerEditPanel view = new CustomerEditPanel();
- * BindingScope scope = new BindingScope();
+ * BehaviorScope scope = new BehaviorScope();
  *
- * CustomerEditBindings.install(view, model, scope);
+ * CustomerEditBindings.install(view, presentation, scope);
  * }</pre>
  *
  * <p>The generated facade is intentionally small. It installs the standard

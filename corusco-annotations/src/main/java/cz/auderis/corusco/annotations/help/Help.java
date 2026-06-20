@@ -35,7 +35,7 @@ import java.lang.annotation.Target;
  * {@code cz.auderis.corusco.core.table.ColumnDescriptor} objects rather than
  * scanning this annotation.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface Help {
 

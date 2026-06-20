@@ -25,7 +25,7 @@
  * honest about owner types, value types, and component types.</p>
  *
  * <p>Most application code should get key instances from generated constants,
- * not by recreating ids at each use site. Generated {@code @SwingForm} records
+ * not by recreating ids at each use site. Generated {@code @CoruscoForm} records
  * with {@code @TextField} or {@code @DateField} components generate
  * {@code TextFieldKey} constants in fields companions such as
  * {@code CustomerEditFields}. Generated checkbox and combo-box components

@@ -42,12 +42,13 @@ public final class GeneratedViewPlanExample {
                     GeneratedCustomerType.RETAIL,
                     true
             ));
+            GeneratedCustomerEditPresentationModel presentation = new GeneratedCustomerEditPresentationModel(model);
             GeneratedCustomerView view = new GeneratedCustomerView();
 
             try (BehaviorScope scope = new BehaviorScope()) {
                 // Generated plans are deliberately direct: they call generated
                 // view accessors and install ordinary reusable behaviors.
-                installGeneratedCustomerEditBehaviorPlan(view, model, scope);
+                installGeneratedCustomerEditBehaviorPlan(view, presentation, scope);
                 view.nameField.setText("Bob");
                 view.activeBox.setSelected(false);
 
@@ -63,37 +64,37 @@ public final class GeneratedViewPlanExample {
 
     private static void installGeneratedCustomerEditBehaviorPlan(
             GeneratedCustomerEditView view,
-            GeneratedCustomerEditFormModel model,
+            GeneratedCustomerEditPresentationModel model,
             BehaviorScope scope
     ) {
         // Keep the example source-set self-contained: javac cannot reliably
         // resolve a type generated from the same source set during attribution,
         // so this helper mirrors the generated plan's direct installation code.
         scope.install(view.nameField(), List.of(
-                StandardBehaviors.textFieldBinding(model.name),
-                StandardBehaviors.validationTooltip(model.name.problemSet()),
-                StandardBehaviors.validationBorder(model.name.problemSet()),
+                StandardBehaviors.textFieldBinding(model.form().name),
+                StandardBehaviors.validationTooltip(model.form().name.problemSet()),
+                StandardBehaviors.validationBorder(model.form().name.problemSet()),
                 StandardBehaviors.selectAllOnFocus()
         ));
         scope.install(view.creditLimitField(), List.of(
-                StandardBehaviors.textFieldBinding(model.creditLimit),
-                StandardBehaviors.validationTooltip(model.creditLimit.problemSet()),
-                StandardBehaviors.validationBorder(model.creditLimit.problemSet()),
+                StandardBehaviors.textFieldBinding(model.form().creditLimit),
+                StandardBehaviors.validationTooltip(model.form().creditLimit.problemSet()),
+                StandardBehaviors.validationBorder(model.form().creditLimit.problemSet()),
                 StandardBehaviors.selectAllOnFocus()
         ));
         scope.install(view.ageField(), List.of(
-                StandardBehaviors.textFieldBinding(model.age),
-                StandardBehaviors.validationTooltip(model.age.problemSet()),
-                StandardBehaviors.validationBorder(model.age.problemSet()),
+                StandardBehaviors.textFieldBinding(model.form().age),
+                StandardBehaviors.validationTooltip(model.form().age.problemSet()),
+                StandardBehaviors.validationBorder(model.form().age.problemSet()),
                 StandardBehaviors.selectAllOnFocus()
         ));
         scope.install(view.validFromField(), List.of(
-                StandardBehaviors.textFieldBinding(model.validFrom),
-                StandardBehaviors.validationTooltip(model.validFrom.problemSet()),
-                StandardBehaviors.validationBorder(model.validFrom.problemSet()),
+                StandardBehaviors.textFieldBinding(model.form().validFrom),
+                StandardBehaviors.validationTooltip(model.form().validFrom.problemSet()),
+                StandardBehaviors.validationBorder(model.form().validFrom.problemSet()),
                 StandardBehaviors.selectAllOnFocus()
         ));
-        scope.install(view.activeBox(), List.of(StandardBehaviors.checkBoxBinding(model.active)));
+        scope.install(view.activeBox(), List.of(StandardBehaviors.checkBoxBinding(model.form().active)));
     }
 
     private static final class GeneratedCustomerView extends JPanel implements GeneratedCustomerEditView {

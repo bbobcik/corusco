@@ -2,7 +2,7 @@ package cz.auderis.corusco.processor;
 
 import cz.auderis.corusco.annotations.help.Help;
 import cz.auderis.corusco.annotations.table.Column;
-import cz.auderis.corusco.annotations.table.SwingTable;
+import cz.auderis.corusco.annotations.table.CoruscoTable;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -22,7 +22,7 @@ import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 
 /**
- * Reads {@link SwingTable} records and delegates generated table output.
+ * Reads {@link CoruscoTable} records and delegates generated table output.
  */
 final class TableProcessor {
 
@@ -39,22 +39,30 @@ final class TableProcessor {
     }
 
     void process(TypeElement tableType) {
-        SwingTable annotation = tableType.getAnnotation(SwingTable.class);
+        TableSpec table = createSpec(tableType);
+        if (table != null) {
+            new TableSourceWriter(elements, filer, messager)
+                    .writeTableSources(tableType, table);
+        }
+    }
+
+    TableSpec createSpec(TypeElement tableType) {
+        CoruscoTable annotation = tableType.getAnnotation(CoruscoTable.class);
         if (tableType.getKind() != ElementKind.RECORD) {
-            error(tableType, "@SwingTable is supported only on records");
-            return;
+            error(tableType, "@CoruscoTable is supported only on records");
+            return null;
         }
         if (annotation.id().isBlank()) {
-            error(tableType, "@SwingTable id must not be blank");
-            return;
+            error(tableType, "@CoruscoTable id must not be blank");
+            return null;
         }
         if (!isStableId(annotation.id())) {
-            error(tableType, "@SwingTable id must contain only letters, digits, dots, underscores, dashes, or slashes");
-            return;
+            error(tableType, "@CoruscoTable id must contain only letters, digits, dots, underscores, dashes, or slashes");
+            return null;
         }
         if (!tableType.getTypeParameters().isEmpty()) {
-            error(tableType, "@SwingTable generic records are not supported by this processor stage");
-            return;
+            error(tableType, "@CoruscoTable generic records are not supported by this processor stage");
+            return null;
         }
 
         List<TableComponentSpec> components = new ArrayList<>();
@@ -143,19 +151,18 @@ final class TableProcessor {
             columns.add(tableColumnSpec(tableType, component, annotationColumn, id, columns.size()));
         }
         if (columns.isEmpty() && !failed) {
-            error(tableType, "@SwingTable record must contain at least one @Column component");
-            return;
+            error(tableType, "@CoruscoTable record must contain at least one @Column component");
+            return null;
         }
         if (failed) {
-            return;
+            return null;
         }
-        new TableSourceWriter(elements, filer, messager)
-                .writeTableSources(tableType, new TableSpec(
-                        annotation.id(),
-                        tableType.getSimpleName().toString(),
-                        components,
-                        columns
-                ));
+        return new TableSpec(
+                annotation.id(),
+                tableType.getSimpleName().toString(),
+                components,
+                columns
+        );
     }
 
     private TableColumnSpec tableColumnSpec(

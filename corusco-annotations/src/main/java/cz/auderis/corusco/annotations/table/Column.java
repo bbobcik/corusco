@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
  * Marks a record component as a generated table column.
  *
  * <p>Use this annotation on components of a record annotated with
- * {@link SwingTable}. The processor turns each annotated component into a
+ * {@link CoruscoTable}. The processor turns each annotated component into a
  * generated column descriptor with a typed column key, header/tooltip resource
  * keys, default layout state, persistence id, capabilities, and row value
  * accessors. Unannotated record components are ignored by table metadata
@@ -43,13 +43,13 @@ import java.lang.annotation.Target;
  * this annotation. The executable {@code Column} constant uses direct record
  * accessors and, for editable columns, a generated record-constructor updater.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.RECORD_COMPONENT)
 public @interface Column {
 
     /**
      * Stable column id. When blank, the component name is converted to kebab
-     * case and appended to the enclosing {@link SwingTable#id()}.
+     * case and appended to the enclosing {@link CoruscoTable#id()}.
      *
      * @return stable id or blank for the default
      */

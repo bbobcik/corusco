@@ -12,7 +12,7 @@ final class DependencySpec {
     final String sourceFieldConstant;
     final boolean sourceTextField;
     final String targetStateModel;
-    final List<String> values;
+    final List<String> valueExpressions;
     final String effect;
 
     DependencySpec(
@@ -21,7 +21,7 @@ final class DependencySpec {
             String sourceFieldConstant,
             boolean sourceTextField,
             String targetStateModel,
-            List<String> values,
+            List<String> valueExpressions,
             String effect
     ) {
         this.constantName = constantName;
@@ -29,7 +29,7 @@ final class DependencySpec {
         this.sourceFieldConstant = sourceFieldConstant;
         this.sourceTextField = sourceTextField;
         this.targetStateModel = targetStateModel;
-        this.values = List.copyOf(values);
+        this.valueExpressions = List.copyOf(valueExpressions);
         this.effect = effect;
     }
 }

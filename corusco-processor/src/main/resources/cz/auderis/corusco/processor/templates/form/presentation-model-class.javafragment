@@ -1,0 +1,15 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.core.form.ComponentStateModel;
+import java.util.Objects;
+
+/**
+ * Generated presentation model for {@link OWNER_TYPE}.
+ *
+ * <p>This model owns visual and session state for the generated form. Semantic
+ * field values, validation, dirty state, reset, and result creation remain in
+ * {@link OWNER_TYPEFormModel}.</p>
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

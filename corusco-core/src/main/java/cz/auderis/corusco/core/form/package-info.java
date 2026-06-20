@@ -33,11 +33,14 @@
  * }
  * }</pre>
  *
- * <p>Generated {@code @SwingForm} records create an equivalent form-model
+ * <p>Generated {@code @CoruscoForm} records create an equivalent form-model
  * subclass, for example {@code CustomerEditFormModel}. The generated model registers
  * {@code TextFieldModel} instances for text/date fields, {@code FieldModel}
  * instances for checkboxes and combo boxes, exposes generated descriptors,
  * wires generated validation rules, and creates the immutable record result.
+ * Generated presentation models, not form models, expose {@link
+ * cz.auderis.corusco.core.form.ComponentStateModel} members for field controls,
+ * sections, tabs, and other UI regions that need presentational state.
  * Handwritten and generated models share the same {@link
  * cz.auderis.corusco.core.form.FormModel} contract.</p>
  *
@@ -96,6 +99,7 @@
  * and observe problems and dirty state. Dialog controllers decide when to
  * commit active editors, call {@code toResult()}, accept baselines, or reset
  * values. Generated metadata from {@code cz.auderis.corusco.core.meta}
- * describes fields; current editable values live here.</p>
+ * describes fields, options, and dependencies; current editable values and
+ * component state live here.</p>
  */
 package cz.auderis.corusco.core.form;

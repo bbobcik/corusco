@@ -36,7 +36,7 @@ final class TimeseriesDatabasePanel extends JPanel {
 
     private final ObservableArrayList<TimeseriesObservation> rows = ObservableArrayList.empty();
     final ObservableTableModel<TimeseriesObservation> model =
-            TimeseriesObservationTableDescriptor.tableModel(rows);
+            ObservableTableModel.of(rows, TimeseriesObservationTableDescriptor.DESCRIPTOR);
     final JTable table = new JTable(model);
     final JTextField symbolFilter = new JTextField();
     final JTextField regionFilter = new JTextField();

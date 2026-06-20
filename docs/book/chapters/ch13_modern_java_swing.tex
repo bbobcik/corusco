@@ -361,12 +361,12 @@ A modular migration can be staged. First keep the existing classpath application
 Corusco generation should be understood as ordinary source generation. Annotated records, methods, and view contracts produce typed companions: field keys, table columns, command descriptors, resource keys, binding helpers, behavior plans, and tests. When behavior is surprising, inspect the generated source. The generated code should be boring enough that inspection is possible.
 
 \begin{lstlisting}[caption={The kind of source declaration generation can consume.}]
-@SwingTable(resourcePrefix = "customer.table")
+@CoruscoTable(id = "customer/table")
 public record CustomerRow(
         @Column(width = 80) CustomerId id,
-        @Column(grow = true) String displayName,
-        @Column(renderer = StatusRenderer.class) CustomerStatus status,
-        @Column(format = "date.short") LocalDate lastOrderDate) {
+        @Column(width = 220) String displayName,
+        @Column(width = 120) CustomerStatus status,
+        @Column(width = 120) LocalDate lastOrderDate) {
 }
 \end{lstlisting}
 
@@ -380,7 +380,7 @@ Generated source should also be deterministic. The same annotated input should p
 Generated code is allowed to be boring. It is not allowed to be unknowable. A developer should be able to find the generated companion and understand why a binding, descriptor, resource key, or behavior exists.
 \end{principlebox}
 
-Processor diagnostics should point at the source declaration that caused the problem. If \api{@SwingForm} supports only records, the diagnostic should point at the non-record type. If a column width is invalid, the diagnostic should point at the annotated component. If a resource prefix is blank, the diagnostic should say so. Good compile-time diagnostics are part of the UI library's developer experience.
+Processor diagnostics should point at the source declaration that caused the problem. If \api{@CoruscoForm} supports only records, the diagnostic should point at the non-record type. If a column width is invalid, the diagnostic should point at the annotated component. If a resource prefix is blank, the diagnostic should say so. Good compile-time diagnostics are part of the UI library's developer experience.
 
 Generated code should be boring in another sense: it should avoid surprising side effects during class initialization. Descriptors, keys, and metadata constants are fine. Starting tasks, opening windows, loading user data, or touching Swing components during generated class initialization would make packaging and tests brittle. Generation should create declarations and adapters, not hidden application startup.
 
@@ -475,7 +475,7 @@ Use the following checklist during modernization review.
 \item Rewrite a blocking search action with \api{Executors.newVirtualThreadPerTaskExecutor} and explicit EDT delivery.
 \item Add a generation token so an older search result cannot overwrite a newer result.
 \item Add a support diagnostic that reports active task generation and current load state.
-\item Annotate a record with \api{@SwingTable}, inspect the generated columns, and find one generated resource key.
+\item Annotate a record with \api{@CoruscoTable}, inspect the generated columns, and find one generated resource key.
 \item Write a module declaration for the example and verify that bundled resources load after packaging.
 \item Review a lambda-heavy screen and identify which lambdas still hide ownership or lifecycle.
 \item Explain one modernization you chose not to do because it would hide a Swing contract.

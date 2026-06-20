@@ -1,11 +1,10 @@
     /**
      * Dependency from {@code SOURCE_FIELD_NAME} to component state {@code TARGET_STATE_MODEL}.
      */
-    public static final FieldDependency CONSTANT_NAME =
+    public static final FieldDependency<?> CONSTANT_NAME =
             FieldDependency.of(
                     FIELDS_TYPE.SOURCE_FIELD_KEY,
                     TARGET_STATE_MODEL_LITERAL,
                     List.of(DEPENDENCY_VALUES),
                     DependencyEffect.DEPENDENCY_EFFECT
             );
-

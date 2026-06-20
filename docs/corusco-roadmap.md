@@ -450,11 +450,11 @@ Compile-time annotation API.
 
 Responsibilities:
 
-- `@SwingForm`
+- `@CoruscoForm`
 - `@TextField`
 - `@CheckBox`
 - `@ComboBox`
-- `@SwingTable`
+- `@CoruscoTable`
 - `@Column`
 - `@UiAction`
 - `@Help`
@@ -980,7 +980,7 @@ Generate typed metadata without generating full form models yet.
 
 ## Annotations
 
-1. `@SwingForm`
+1. `@CoruscoForm`
 2. `@TextField`
 3. `@CheckBox`
 4. `@ComboBox`
@@ -1046,7 +1046,7 @@ CustomerEditFormModel
 Immutable records:
 
 ```java
-@SwingForm(id = "customer")
+@CoruscoForm(id = "customer")
 public record CustomerEdit(
     @TextField @Required String name,
     @TextField @DecimalRange(min = "0.00") BigDecimal creditLimit,
@@ -1182,7 +1182,7 @@ Generate table metadata from annotated row records/specs.
 
 ## Annotations
 
-1. `@SwingTable`
+1. `@CoruscoTable`
 2. `@Column`
 3. column help metadata
 4. column persistence metadata
@@ -1521,7 +1521,7 @@ The MVR should include only features necessary to prove the architecture end-to-
 ### 11.1 Form Record
 
 ```java
-@SwingForm(id = "customer", generateViewContract = true, generateBehaviorPlan = true)
+@CoruscoForm(id = "customer")
 public record CustomerEdit(
     @TextField
     @Required
@@ -1740,7 +1740,7 @@ complete. The next implementation tasks should proceed in this order:
 2. Implement `FieldModel` and `TextFieldModel` without Swing.
 3. Implement `JTextField` binding manually.
 4. Implement `ViewBehavior`, `BehaviorScope`, and `ValidationBorderBehavior`.
-5. Add the first annotation: `@SwingForm`.
+5. Add the first annotation: `@CoruscoForm`.
 6. Generate only `CustomerEditFields` for the first processor spike.
 7. Build a tiny `CustomerEdit` example using a mix of generated keys and
    handwritten model.

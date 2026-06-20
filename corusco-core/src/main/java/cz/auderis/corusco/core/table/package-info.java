@@ -13,7 +13,7 @@
  * especially useful for immutable record rows because a {@link
  * cz.auderis.corusco.core.table.Column} carries an explicit getter and optional
  * updater instead of relying on JavaBeans reflection or string property paths.
- * Generated {@code @SwingTable} records produce these descriptors for you;
+ * Generated {@code @CoruscoTable} records produce these descriptors for you;
  * handwritten tables can build the same objects directly.</p>
  *
  * <p>The first step is a {@link cz.auderis.corusco.core.table.TableKey} for the

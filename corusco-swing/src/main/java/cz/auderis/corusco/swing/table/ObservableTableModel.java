@@ -31,7 +31,7 @@ import javax.swing.table.AbstractTableModel;
  * {@link #setValueAt(Object, int, int)}. Closing the model removes its source
  * subscription and is idempotent.</p>
  *
- * <p>Generated {@code @SwingTable} records create row-specific companions,
+ * <p>Generated {@code @CoruscoTable} records create row-specific companions,
  * such as {@code CustomerRowTableDescriptor} with a table-model factory and
  * {@code CustomerRowTableBindings} for installing the model into a
  * {@code JTable} with a binding scope. Applications can also call

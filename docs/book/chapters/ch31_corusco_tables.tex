@@ -196,7 +196,7 @@ Column<CustomerRow, String> name =
         Column.readOnly(nameDescriptor, CustomerRow::displayName);
 \end{lstlisting}
 
-Generated \api{@SwingTable} companions write this kind of code mechanically.
+Generated \api{@CoruscoTable} companions write this kind of code mechanically.
 For a record component annotated with \api{@Column}, generated code can create
 the column key, resource keys, descriptor, getter, and table descriptor. The
 generated form is not magic; it is typed Java that a careful developer might
@@ -642,7 +642,7 @@ identity without depending on how the current Look-and-Feel paints the cell.
 
 \section{Generated and handwritten tables}
 
-\api{@SwingTable} generation is the shortest path for ordinary record-backed
+\api{@CoruscoTable} generation is the shortest path for ordinary record-backed
 tables. The annotated record declares stable table and column facts. The
 processor emits column keys, resource keys, descriptors, a table descriptor,
 and binding helpers. Generated columns call record accessors. Editable
@@ -651,7 +651,7 @@ when supported. The generated code is ordinary Java source and should be read
 when behavior is surprising.
 
 \begin{lstlisting}[caption={Annotated table row source.}]
-@SwingTable(id = "customer/search")
+@CoruscoTable(id = "customer/search")
 public record CustomerRow(
         @Column(width = 180)
         String name,
@@ -1064,7 +1064,7 @@ than discovering it. Tests become clearer because problem identity and column
 identity are typed.
 
 The eighth stage is optional generation. Once a descriptor pattern is stable,
-decide whether \api{@SwingTable} can own the row declaration. Some legacy
+decide whether \api{@CoruscoTable} can own the row declaration. Some legacy
 tables have dynamic columns or specialized row models and should remain
 handwritten. Others are ordinary record-backed tables and can move to
 generated companions. Generation is a convenience after the contract is
@@ -1244,7 +1244,7 @@ Old table updates after close & View scope and binding/controller cleanup\\
 
 \section{Decision rules}
 
-Use a generated \api{@SwingTable} descriptor when the row is naturally a record
+Use a generated \api{@CoruscoTable} descriptor when the row is naturally a record
 and the column set is known at compile time. Use a handwritten descriptor when
 columns are dynamic, domain-specific, or assembled from runtime configuration.
 Use plain Swing only when the table is genuinely local, short-lived, and has

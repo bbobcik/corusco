@@ -22,6 +22,16 @@ public final class StandardBehaviorKeys {
     public static final BehaviorKey CHECKBOX_BINDING = BehaviorKey.of("binding/checkbox");
 
     /**
+     * Primary radio-group selected-value binding behavior.
+     */
+    public static final BehaviorKey RADIO_GROUP_BINDING = BehaviorKey.of("binding/radio-group");
+
+    /**
+     * Component-state binding behavior.
+     */
+    public static final BehaviorKey COMPONENT_STATE = BehaviorKey.of("binding/component-state");
+
+    /**
      * Tooltip decoration behavior.
      */
     public static final BehaviorKey TOOLTIP = BehaviorKey.of("decoration/tooltip");

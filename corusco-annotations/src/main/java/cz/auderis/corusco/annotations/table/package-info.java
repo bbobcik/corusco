@@ -6,10 +6,12 @@
  * table row record says what values exist, and {@link
  * cz.auderis.corusco.annotations.table.Column} says which of those values
  * become visible columns. The processor then emits typed column keys,
- * descriptor metadata, table resources, binding helpers, and row updater
- * functions without JavaBeans reflection.</p>
+ * descriptor metadata, table resources, and row updater functions without
+ * JavaBeans reflection. Packages annotated with
+ * {@link cz.auderis.corusco.annotations.SwingCompanionPackage} also receive Swing table
+ * binding helpers.</p>
  *
- * <p>Use {@link cz.auderis.corusco.annotations.table.SwingTable} on a
+ * <p>Use {@link cz.auderis.corusco.annotations.table.CoruscoTable} on a
  * non-generic record that represents one table row. Mark record components
  * that should become visible columns with
  * {@link cz.auderis.corusco.annotations.table.Column}. Unannotated components
@@ -19,7 +21,7 @@
  * <p>For example, this source record:</p>
  *
  * <pre>{@code
- * @SwingTable(id = "customer-table")
+ * @CoruscoTable(id = "customer-table")
  * record CustomerRow(
  *         @Column(width = 180, editable = true) String name,
  *         @Column(width = 80) int orders
@@ -29,17 +31,19 @@
  *
  * <p>produces generated companions whose names start with
  * {@code CustomerRow}, such as {@code CustomerRowColumns},
- * {@code CustomerRowTableResources}, {@code CustomerRowTableDescriptor}, and
- * {@code CustomerRowTableBindings}. The prefix comes from the row type name, so
- * generated names remain easy to find from the source row record.</p>
+ * {@code CustomerRowTableResources} and
+ * {@code CustomerRowTableDescriptor}. Packages annotated with
+ * {@link cz.auderis.corusco.annotations.SwingCompanionPackage} also receive
+ * {@code CustomerRowTableBindings}. The prefix comes from the row type name,
+ * so generated names remain easy to find from the source row record.</p>
  *
- * <p>The first runtime step is usually to create an observable row list and
- * install the generated table model helper:</p>
+ * <p>The first Swing runtime step is usually to create an observable row list
+ * and table model from the generated descriptor:</p>
  *
  * <pre>{@code
  * ObservableList<CustomerRow> rows = ObservableArrayList.empty();
  * ObservableTableModel<CustomerRow> model =
- *         CustomerRowTableDescriptor.tableModel(rows);
+ *         ObservableTableModel.of(rows, CustomerRowTableDescriptor.DESCRIPTOR);
  * }</pre>
  *
  * <p>Generated table key instances live in generated companions. A columns
@@ -57,7 +61,8 @@
  * {@code cz.auderis.corusco.core.table.TableDescriptor} objects through
  * companions such as {@code CustomerRowColumns} and
  * {@code CustomerRowTableDescriptor}. Swing model and selection installation
- * helpers are generated in companions such as
+ * helpers are generated for packages annotated with
+ * {@link cz.auderis.corusco.annotations.SwingCompanionPackage} in companions such as
  * {@code CustomerRowTableBindings}.</p>
  *
  * <p>Editable generated columns update immutable records by calling the record

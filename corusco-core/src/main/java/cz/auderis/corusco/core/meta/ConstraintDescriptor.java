@@ -10,7 +10,7 @@ import java.util.Objects;
  * constraint parameters, while generated form-model code decides how to
  * instantiate validators from this metadata.</p>
  *
- * <p>Generated {@code @SwingForm} records create these descriptors inside
+ * <p>Generated {@code @CoruscoForm} records create these descriptors inside
  * descriptor companions such as {@code CustomerEditDescriptors} from validation annotations such as
  * {@code @Required}, {@code @Length}, {@code @Regex}, {@code @DecimalRange},
  * and {@code @IntRange}. They use problem-code constants from

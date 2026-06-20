@@ -336,7 +336,7 @@ Table tests are allowed to be more numerous than other Swing tests because table
 
 \section{Generated Source as a Contract}
 
-Compile-time generation changes what must be tested. If a chapter or API says that \api{@SwingForm} produces a form model, component keys, binding companions, and validation metadata, then a test should compile annotated source and inspect the generated output. It should not rely on a handwritten imitation of the generated class. The processor is the contract.
+Compile-time generation changes what must be tested. If a chapter or API says that \api{@CoruscoForm} produces a form model, component keys, binding companions, and validation metadata, then a test should compile annotated source and inspect the generated output. It should not rely on a handwritten imitation of the generated class. The processor is the contract.
 
 \api{GeneratedSourceCompiler} provides this kind of test support. It writes source text to a temporary directory, invokes javac with configured processors and classpath, and returns a \api{GeneratedSourceCompilation} that exposes success, diagnostics, and generated files. The test exercises the same mechanism that a Gradle build or IDE compilation uses, but with a tiny source fixture.
 
@@ -371,7 +371,7 @@ Generated-source tests should be small. One source fixture should demonstrate on
 
 Generated names need special attention because names become the bridge between documentation, IDE navigation, and tests. If \api{CustomerEditFormModel} is the generated model and \api{CustomerEditSwingBindings} is the generated binding companion, the names should be stable enough for examples and support text to mention them. A naming change is sometimes justified, but it should break a generation test and force related examples to be updated deliberately.
 
-The generated-source layer also guards examples. Book examples that demonstrate \api{@SwingTable}, \api{@UiAction}, validation annotations, help annotations, or generated component keys should compile through the processor. A screenshot produced from a generated view is stronger when the generated companions were produced in the same build. The reader can then trust that the listing is not decorative pseudo-code.
+The generated-source layer also guards examples. Book examples that demonstrate \api{@CoruscoTable}, \api{@UiAction}, validation annotations, help annotations, or generated component keys should compile through the processor. A screenshot produced from a generated view is stronger when the generated companions were produced in the same build. The reader can then trust that the listing is not decorative pseudo-code.
 
 Generation tests and Swing tests should meet only after each side has been tested separately. First, compile generated companions. Second, instantiate a small generated or generated-style view. Third, assert behavior installation and component keys. Fourth, render a screenshot if visual presentation matters. This ladder keeps failures useful. If the processor fails, there is no point debugging the screenshot harness. If the screenshot changes, there is no need to suspect javac first.
 

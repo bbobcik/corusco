@@ -24,13 +24,13 @@ that generates typed field-key classes for annotated records.
 
 Add annotation API:
 
-- `@SwingForm(id = "...")`
+- `@CoruscoForm(id = "...")`
 - `@TextField`
 - `@CheckBox`
 
 Add processor behavior:
 
-- Process only `@SwingForm` records.
+- Process only `@CoruscoForm` records.
 - Generate `<RecordName>Fields` in the same package.
 - Generate `TextFieldKey<Owner, T>` constants for `@TextField` record
   components.

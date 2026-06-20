@@ -83,9 +83,9 @@ patterns, validation rules, reset, baseline acceptance, and testing.
 
 The processor currently generates companion classes for three source shapes:
 
-- `@SwingForm` records: field keys, resources, problems, descriptors, form
+- `@CoruscoForm` records: field keys, resources, problems, descriptors, form
   models, view contracts, and behavior plans.
-- `@SwingTable` records: table keys, column descriptors, resources, row updater
+- `@CoruscoTable` records: table keys, column descriptors, resources, row updater
   helpers, table descriptors, model installers, and selection binders.
 - `@UiAction` methods: action keys, resource keys, and action descriptors.
 

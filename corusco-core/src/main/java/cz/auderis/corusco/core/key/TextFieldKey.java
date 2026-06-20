@@ -9,7 +9,7 @@ import java.util.Objects;
  * {@link FieldKey}. The stable id remains a boundary identity string for
  * generated descriptors and diagnostics, not an arbitrary property path.</p>
  *
- * <p>Generated {@code @SwingForm} metadata creates {@code TextFieldKey}
+ * <p>Generated {@code @CoruscoForm} metadata creates {@code TextFieldKey}
  * constants in form-specific fields companions such as
  * {@code CustomerEditFields} for {@code @TextField} and
  * {@code @DateField} record components. Use generated constants for ordinary

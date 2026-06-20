@@ -11,7 +11,7 @@ import java.util.Objects;
  * capabilities. It does not know how to read or update row values; use
  * {@link Column} for executable row access.</p>
  *
- * <p>Generated {@code @SwingTable} records create {@code ColumnDescriptor}
+ * <p>Generated {@code @CoruscoTable} records create {@code ColumnDescriptor}
  * constants in row-specific columns companions such as
  * {@code CustomerRowColumns} from {@code @Column} and {@code @Help}
  * metadata. Header and tooltip keys come from resource companions such as

@@ -98,10 +98,10 @@ record.
 
 ## Generated Form Models
 
-Annotating a record with `@SwingForm` generates the same shape:
+Annotating a record with `@CoruscoForm` generates the same shape:
 
 ```java
-@SwingForm(id = "generated-customer")
+@CoruscoForm(id = "generated-customer")
 record GeneratedCustomerEdit(
         @TextField @Required @Length(max = 80) String name,
         @TextField @DecimalRange(min = "0.00") BigDecimal creditLimit,
@@ -123,6 +123,11 @@ The generated `GeneratedCustomerEditFormModel`:
 - exposes descriptors in record component order;
 - builds a `RuleSet` from supported validation annotations;
 - creates a replacement immutable record in `createResult()`.
+
+Swing-facing companions such as `GeneratedCustomerEditView`,
+`GeneratedCustomerEditBehaviorPlan`, and `GeneratedCustomerEditBindings` are
+generated only for packages annotated with `@SwingCompanionPackage`. This keeps model
+packages usable with `corusco-core` and annotations alone.
 
 ```java
 GeneratedCustomerEdit original = new GeneratedCustomerEdit(
@@ -257,11 +262,12 @@ See `FieldModelExample`, `ValidationExample`, and
 
 ## Current Limits
 
-- Generated form models currently target non-generic records.
+- Generated form models currently target non-generic records and abstract
+  classes.
 - Generated text fields support `String`, `Integer`/`int`, `BigDecimal`, and
   `LocalDate`.
-- Generated combo boxes expose semantic `FieldModel` values but do not yet
-  generate option-source metadata.
+- Generated combo boxes and radio groups expose semantic `FieldModel` values;
+  enum-valued option metadata is generated for both component families.
 - Cross-field generated validation is not annotation-driven; use handwritten
   `RuleSet` rules.
 - Form models are synchronous unless explicit async validation controllers are

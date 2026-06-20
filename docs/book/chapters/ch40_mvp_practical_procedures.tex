@@ -4,7 +4,7 @@
 
 \begin{chaptermap}
 Core question & How should a production Corusco screen be assembled, reviewed, migrated, and tested once values, forms, commands, bindings, lifecycle, testing, and generation are available?\\
-Primary APIs & \api{@UiAction}, \api{@SwingForm}, \api{CommandSet}, \api{BehaviorScope}, \api{CommandBehaviors}, \api{SwingMvpTester}, generated form companions, generated action companions, table descriptors, and table-state controllers.\\
+Primary APIs & \api{@UiAction}, \api{@CoruscoForm}, \api{CommandSet}, \api{BehaviorScope}, \api{CommandBehaviors}, \api{SwingMvpTester}, generated form companions, generated action companions, table descriptors, and table-state controllers.\\
 Corusco connection & Generated definitions remove repetitive wiring while screen presenters keep workflow, views keep layout, bindings keep synchronization, and scopes keep cleanup.\\
 Companion examples & \commandExample, \swingIntegrationExample, \generationExample, \bookAppExample, and \screenshotHarnessExample.\\
 \end{chaptermap}
@@ -113,7 +113,7 @@ The form source should be stable enough to deserve generation. If the fields are
 The procedure is not a visual designer workflow. First declare the form source. Then let the processor generate field keys, descriptors, model helpers, view contracts, binding facades, behavior plans, resource keys, and problem codes. Then implement the Swing view with real components and layout. Then let the screen presenter own load, save, reset, cancel, service calls, and task policy.
 
 \begin{lstlisting}[caption={A generated form source names editable facts.}]
-@SwingForm(id = "customer/edit")
+@CoruscoForm(id = "customer/edit")
 record CustomerEdit(
         @TextField
         @Required
@@ -387,7 +387,7 @@ When starting a new Corusco screen, resist the urge to begin with a panel constr
 
 The first concrete artifact is often a set of stable ids. Choose ids for the screen, commands, fields, table, columns, resources, and help topics. Good ids are durable and semantic. They should not mention current Swing class names, visible ordering, or localized labels. A field id such as \api{customer/name} can survive layout changes. A component id such as \api{left-panel/text-1} cannot.
 
-Next declare stable generated sources where they have clear payoff. If the screen has a form with more than a trivial amount of validation, declare a \api{@SwingForm} source. If the screen has repeated command surfaces, annotate screen-presenter methods with \api{@UiAction}. If the screen has a table whose columns will be tested, persisted, exported, or localized, define a descriptor. These declarations create the shared handles that later code should consume.
+Next declare stable generated sources where they have clear payoff. If the screen has a form with more than a trivial amount of validation, declare a \api{@CoruscoForm} source. If the screen has repeated command surfaces, annotate screen-presenter methods with \api{@UiAction}. If the screen has a table whose columns will be tested, persisted, exported, or localized, define a descriptor. These declarations create the shared handles that later code should consume.
 
 Then sketch the presenter without Swing layout. Give it constructor dependencies, application-scoped models, presentation values, row lists, form models, command set, task service, and scopes. The presenter sketch should read like a workflow outline: load rows, select row, load detail, save detail, refresh, delete, cancel, close. If a method name sounds like a button, make sure it represents the operation rather than the button.
 
@@ -404,7 +404,7 @@ Construction step & Concrete output\\
 \midrule
 Vocabulary & Screen facts, lifetimes, commands, forms, rows, tasks.\\
 Stable ids & Field ids, action ids, table ids, column ids, resource ids.\\
-Declarations & \api{@SwingForm} records, \api{@UiAction} methods, descriptors.\\
+Declarations & \api{@CoruscoForm} records, \api{@UiAction} methods, descriptors.\\
 Presenter & Values, lists, form models, commands, task policy, close policy.\\
 View & Swing components, layout, generated view contract implementation.\\
 Bindings & Generated bindings, command behaviors, table selection, problem decoration.\\

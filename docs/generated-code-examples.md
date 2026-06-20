@@ -2,9 +2,9 @@
 
 Generated Corusco code should be easy to read in the build directory. It is
 ordinary Java source that calls typed keys, descriptors, validators, record
-accessors, constructors, Swing behavior factories, and binding helpers directly.
-It must not rely on runtime annotation scanning, JavaBeans property paths, or
-reflection.
+accessors, constructors, and, for packages annotated with `@SwingCompanionPackage`, Swing
+behavior factories and binding helpers directly. It must not rely on runtime
+annotation scanning, JavaBeans property paths, or reflection.
 
 The examples module contains the current generated-code walkthroughs. Build the
 project and inspect generated sources under:
@@ -17,8 +17,8 @@ corusco-examples/build/generated/sources/annotationProcessor/java/main/cz/auderi
 
 | Annotated source | Generated companions | Runtime example |
 | --- | --- | --- |
-| `examples.generated.GeneratedCustomerEdit` | `GeneratedCustomerEditFields`, `Resources`, `Problems`, `Descriptors`, `FormModel`, `View`, `BehaviorPlan`, `Bindings`, `Options` | `examples.generated.GeneratedMetadataExample`, `examples.forms.GeneratedFormModelExample`, `examples.generated.GeneratedViewPlanExample` |
-| `examples.generated.GeneratedCustomerRow` | `GeneratedCustomerRowColumns`, `TableResources`, `TableDescriptor`, `TableBindings` | `examples.tables.GeneratedTableColumnsExample` |
+| `examples.generated.GeneratedCustomerEdit` | `GeneratedCustomerEditFields`, `Resources`, `Problems`, `Descriptors`, `FormModel`, `PresentationModel`, `Options`; `@SwingCompanionPackage` also generates `View`, `BehaviorPlan`, `Bindings` | `examples.generated.GeneratedMetadataExample`, `examples.forms.GeneratedFormModelExample`, `examples.generated.GeneratedViewPlanExample` |
+| `examples.generated.GeneratedCustomerRow` | `GeneratedCustomerRowColumns`, `TableResources`, `TableDescriptor`; `@SwingCompanionPackage` also generates `TableBindings` | `examples.tables.GeneratedTableColumnsExample` |
 | `examples.generated.GeneratedActionMetadataExample` | `GeneratedActionMetadataExampleActions` | `examples.generated.GeneratedActionMetadataExample` |
 
 Each runtime example has a matching test under the corresponding package in
@@ -35,7 +35,7 @@ into one headless miniature business flow.
 `GeneratedCustomerEdit` is a compact annotated record:
 
 ```java
-@SwingForm(id = "generated-customer")
+@CoruscoForm(id = "generated-customer")
 record GeneratedCustomerEdit(
         @TextField @Required @Length(max = 80) @Regex("[A-Za-z ]+")
         @Help(topic = "generated-customer/name")
@@ -82,6 +82,16 @@ Generated form models should remain direct:
 - `buildRules()` wires supported validation annotations into a typed `RuleSet`;
 - `createResult()` calls the immutable record constructor.
 
+Generated presentation models own visual and session state for generated
+bindings. A binding facade can accept an explicit presentation model, or create
+one from a form model for simple callers:
+
+```java
+GeneratedCustomerEditPresentationModel presentation =
+        new GeneratedCustomerEditPresentationModel(model);
+GeneratedCustomerEditBindings.install(view, presentation, scope);
+```
+
 The generated source is intentionally readable enough to review. If generated
 formatting or naming makes the source difficult to inspect, fix the processor
 instead of hiding the output behind more runtime indirection.
@@ -103,10 +113,11 @@ public interface GeneratedCustomerEditView {
 
 `GeneratedCustomerEditBehaviorPlan` installs explicit behavior lists against
 that interface. The generated plan should be boring: direct accessor calls,
-direct model field references, and direct `StandardBehaviors` factory calls.
-`GeneratedCustomerEditBindings.install(view, model, scope)` is the public
-facade to call from application code; it delegates to the generated behavior
-plan so generated binding APIs have the same shape as table bindings.
+direct presentation/form model references, and direct `StandardBehaviors`
+factory calls. `GeneratedCustomerEditBindings.install(view, presentation,
+scope)` is the public facade to call from application code; it delegates to the
+generated behavior plan so generated binding APIs have the same shape as table
+bindings.
 
 For enum-valued combo boxes, `GeneratedCustomerEditOptions` exposes a
 declaration-ordered immutable option list. Non-enum option sources remain
@@ -123,7 +134,7 @@ compilation, not a different runtime architecture.
 `GeneratedCustomerRow` demonstrates generated table metadata:
 
 ```java
-@SwingTable(id = "generated-customer-table")
+@CoruscoTable(id = "generated-customer-table")
 record GeneratedCustomerRow(
         @Column(
                 persistenceId = "generated-customer-table/customer-name",
@@ -188,8 +199,10 @@ When reviewing generated code, check that it:
 
 ## Current Limits
 
-- Generated forms and tables currently target non-generic records.
-- Generated combo-box option metadata is limited to enum-valued fields.
+- Generated forms currently target non-generic records and abstract classes;
+  generated tables currently target non-generic records.
+- Generated combo-box and radio-group option metadata is limited to enum-valued
+  fields.
 - Generated menu and toolbar metadata is declaration-ordered action grouping,
   not a full menu layout framework.
 - Native dialog shell support is runtime API, not generated source.

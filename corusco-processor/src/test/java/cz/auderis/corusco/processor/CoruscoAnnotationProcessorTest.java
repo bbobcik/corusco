@@ -1,6 +1,7 @@
 package cz.auderis.corusco.processor;
 
 import java.nio.file.Path;
+import java.util.List;
 import cz.auderis.corusco.test.GeneratedSourceCompilation;
 import cz.auderis.corusco.test.GeneratedSourceCompiler;
 import org.junit.jupiter.api.Test;
@@ -27,12 +28,12 @@ class CoruscoAnnotationProcessorTest {
                 import cz.auderis.corusco.annotations.validation.Length;
                 import cz.auderis.corusco.annotations.validation.Required;
                 import cz.auderis.corusco.annotations.validation.Regex;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
                 import java.math.BigDecimal;
                 import java.time.LocalDate;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(
                         @TextField @Required @Length(max = 80) @Regex("[A-Za-z ]+") @Help(topic = "customer/name") String name,
                         @TextField @DecimalRange(min = "0.00") BigDecimal creditLimit,
@@ -128,16 +129,18 @@ class CoruscoAnnotationProcessorTest {
         );
         result.assertGeneratedSourceContains("demo/CustomerEditBehaviorPlan.java",
                 "public final class CustomerEditBehaviorPlan",
-                "public static void install(CustomerEditView view, CustomerEditFormModel model, BehaviorScope scope)",
-                "StandardBehaviors.textFieldBinding(model.name)",
-                "StandardBehaviors.validationTooltip(model.name.problemSet())",
+                "public static void install(CustomerEditView view, CustomerEditPresentationModel model, BehaviorScope scope)",
+                "StandardBehaviors.textFieldBinding(model.form().name)",
+                "StandardBehaviors.validationTooltip(model.form().name.problemSet())",
                 "StandardBehaviors.selectAllOnFocus()",
-                "StandardBehaviors.checkBoxBinding(model.active)"
+                "StandardBehaviors.checkBoxBinding(model.form().active)"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditBindings.java",
                 "public final class CustomerEditBindings",
-                "public static void install(CustomerEditView view, CustomerEditFormModel model, BehaviorScope scope)",
-                "CustomerEditBehaviorPlan.install(view, model, scope)"
+                "public static void install(CustomerEditView view, CustomerEditPresentationModel model, BehaviorScope scope)",
+                "public static void install(CustomerEditView view, CustomerEditFormModel form, BehaviorScope scope)",
+                "CustomerEditBehaviorPlan.install(view, model, scope)",
+                "install(view, new CustomerEditPresentationModel(form), scope)"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditOptions.java",
                 "public final class CustomerEditOptions",
@@ -153,19 +156,17 @@ class CoruscoAnnotationProcessorTest {
     void generatesRadioGroupDescriptorsAndResourceBackedOptionMetadata() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
-
-                import cz.auderis.corusco.annotations.form.Option;
                 import cz.auderis.corusco.annotations.form.RadioGroup;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
 
-                @SwingForm(id = "customer/security")
+                @CoruscoForm(id = "customer/security")
                 public record CustomerEdit(@RadioGroup AuthenticationMode authenticationMode) {
                 }
 
                 enum AuthenticationMode {
-                    @Option(key = "password", order = 2)
+                    @CoruscoForm.Option(key = "password", order = 2)
                     PASSWORD,
-                    @Option(key = "certificate", order = 1)
+                    @CoruscoForm.Option(key = "certificate", order = 1)
                     CERTIFICATE,
                     EXTERNAL
                 }
@@ -179,6 +180,10 @@ class CoruscoAnnotationProcessorTest {
         result.assertGeneratedSourceContains("demo/CustomerEditView.java",
                 "JComponent authenticationModeGroup();"
         );
+        result.assertGeneratedSourceContains("demo/CustomerEditBehaviorPlan.java",
+                "StandardBehaviors.radioGroupBinding(model.form().authenticationMode, "
+                        + "CustomerEditOptions.AUTHENTICATION_MODE_DESCRIPTORS)"
+        );
         result.assertGeneratedSourceContains("demo/CustomerEditOptions.java",
                 "private static final OptionResourcePrefix AUTHENTICATION_MODE_RESOURCES",
                 "OptionResourcePrefix.of(CustomerEditFields.AUTHENTICATION_MODE)",
@@ -186,6 +191,7 @@ class CoruscoAnnotationProcessorTest {
                 "OptionKey.of(\"certificate\")",
                 "public static final OptionDescriptor<demo.AuthenticationMode> AUTHENTICATION_MODE_CERTIFICATE",
                 "AUTHENTICATION_MODE_RESOURCES.label(AUTHENTICATION_MODE_CERTIFICATE_KEY)",
+                "AUTHENTICATION_MODE_RESOURCES.help(AUTHENTICATION_MODE_CERTIFICATE_KEY)",
                 "public static final OptionKey AUTHENTICATION_MODE_EXTERNAL_KEY",
                 "OptionKey.of(\"external\")",
                 "public static final List<OptionDescriptor<demo.AuthenticationMode>> AUTHENTICATION_MODE_DESCRIPTORS",
@@ -203,10 +209,10 @@ class CoruscoAnnotationProcessorTest {
                 import cz.auderis.corusco.annotations.form.CheckBox;
                 import cz.auderis.corusco.annotations.form.ComboBox;
                 import cz.auderis.corusco.annotations.validation.Required;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public abstract class CustomerEdit {
                     @TextField
                     @Required
@@ -230,7 +236,7 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).as(result.messages()).isTrue();
         result.assertGeneratedSourceContains("demo/GeneratedCustomerEdit.java",
-                "public final class GeneratedCustomerEdit extends CustomerEdit",
+                "public final class GeneratedCustomerEdit",
                 "private final java.lang.String name;",
                 "private final demo.CustomerType type;",
                 "private final boolean active;",
@@ -241,7 +247,7 @@ class CoruscoAnnotationProcessorTest {
                 "public java.lang.String name()",
                 "public demo.CustomerType type()",
                 "public boolean active()",
-                "if (!(obj instanceof CustomerEdit other))",
+                "if (!(obj instanceof GeneratedCustomerEdit other))",
                 "Objects.equals(name(), other.name())",
                 "Objects.hash(name(), type(), active())",
                 "GeneratedCustomerEdit[",
@@ -259,12 +265,12 @@ class CoruscoAnnotationProcessorTest {
                 "public static final FieldDescriptor<CustomerEdit, java.lang.Boolean> ACTIVE"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
-                "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>",
+                "public final class CustomerEditFormModel extends AbstractFormModel<GeneratedCustomerEdit>",
                 "public CustomerEditFormModel(CustomerEdit original)",
                 "original.name()",
                 "original.type()",
                 "original.active()",
-                "protected CustomerEdit createResult()",
+                "protected GeneratedCustomerEdit createResult()",
                 "return new GeneratedCustomerEdit(",
                 "name.value()",
                 "type.value().value()",
@@ -278,24 +284,21 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.form.ComboBox;
-                import cz.auderis.corusco.annotations.form.ComponentState;
-                import cz.auderis.corusco.annotations.form.DependencyEffect;
-                import cz.auderis.corusco.annotations.form.DependsOn;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
                 import cz.auderis.corusco.core.form.ComponentStateModel;
 
-                @SwingForm(id = "customer/security")
+                @CoruscoForm(id = "customer/security")
                 public abstract class CustomerEdit {
                     @ComboBox
                     public abstract AuthenticationMode authenticationMode();
 
                     @TextField
-                    @ComponentState
-                    @DependsOn(field = "authenticationMode", values = "PASSWORD", effect = DependencyEffect.VISIBLE)
+                    @CoruscoForm.ComponentState
+                    @CoruscoForm.DependsOn(field = "authenticationMode", values = "PASSWORD", effect = CoruscoForm.DependencyEffect.VISIBLE)
                     public abstract String password();
 
-                    @ComponentState
+                    @CoruscoForm.ComponentState
                     public abstract ComponentStateModel advancedSection();
                 }
 
@@ -306,167 +309,271 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).as(result.messages()).isTrue();
         result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
-                "import cz.auderis.corusco.core.form.ComponentStateModel;",
-                "public final ComponentStateModel passwordState;",
-                "public final ComponentStateModel advancedSection;",
-                "this.passwordState = new ComponentStateModel();",
-                "this.advancedSection = new ComponentStateModel();",
-                "public ComponentStateModel passwordState()",
-                "return passwordState;",
-                "public ComponentStateModel advancedSection()",
-                "return advancedSection;",
                 "return new GeneratedCustomerEdit(",
                 "authenticationMode.value().value()",
                 "password.value()"
         );
+        result.assertGeneratedSourceContains("demo/CustomerEditPresentationModel.java",
+                "import cz.auderis.corusco.core.form.ComponentStateModel;",
+                "public final class CustomerEditPresentationModel",
+                "private final CustomerEditFormModel form;",
+                "public final ComponentStateModel passwordState;",
+                "public final ComponentStateModel advancedSection;",
+                "public CustomerEditPresentationModel(CustomerEditFormModel form)",
+                "this.form = Objects.requireNonNull(form, \"form\");",
+                "this.passwordState = new ComponentStateModel();",
+                "this.advancedSection = new ComponentStateModel();",
+                "public CustomerEditFormModel form()",
+                "public ComponentStateModel passwordState()",
+                "return passwordState;",
+                "public ComponentStateModel advancedSection()",
+                "return advancedSection;"
+        );
         result.assertGeneratedSourceContains("demo/GeneratedCustomerEdit.java",
                 "private final demo.AuthenticationMode authenticationMode;",
                 "private final java.lang.String password;",
-                "private final ComponentStateModel advancedSection = new ComponentStateModel();",
                 "public demo.AuthenticationMode authenticationMode()",
-                "public java.lang.String password()",
-                "public ComponentStateModel advancedSection()"
+                "public java.lang.String password()"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditDependencies.java",
                 "public final class CustomerEditDependencies",
-                "public static final FieldDependency PASSWORD_STATE_DEPENDS_ON_AUTHENTICATION_MODE",
+                "public static final FieldDependency<?> PASSWORD_STATE_DEPENDS_ON_AUTHENTICATION_MODE",
                 "FieldDependency.of(",
                 "CustomerEditFields.AUTHENTICATION_MODE,",
                 "\"passwordState\"",
-                "List.of(\"PASSWORD\")",
+                "List.of(demo.AuthenticationMode.PASSWORD)",
                 "DependencyEffect.VISIBLE",
-                "public static List<FieldDependency> all()",
+                "public static List<FieldDependency<?>> all()",
                 "List.of(",
                 "PASSWORD_STATE_DEPENDS_ON_AUTHENTICATION_MODE"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditBehaviorPlan.java",
                 "StandardBehaviors.componentState(model.passwordState)",
                 "scope.add(dependencyBinding(",
-                "model.authenticationMode.value()",
+                "model.form().authenticationMode.value()",
                 "model.passwordState",
+                "List.of(demo.AuthenticationMode.PASSWORD)",
                 "DependencyEffect.VISIBLE",
                 "private static Binding dependencyBinding(",
+                "List<?> expectedValues",
+                "boolean active = expectedValues.contains(value)",
                 "case VISIBLE -> target.visible().setValue(active, ChangeOrigin.GENERATED)"
         );
         assertThat(result.generatedSource("demo/GeneratedCustomerEdit.java"))
                 .doesNotContain("ComponentStateModel passwordState")
-                .doesNotContain("ComponentStateModel advancedSection)");
+                .doesNotContain("ComponentStateModel advancedSection")
+                .doesNotContain("new ComponentStateModel()")
+                .doesNotContain("UnsupportedOperationException");
+        assertThat(result.generatedSource("demo/CustomerEditFormModel.java"))
+                .doesNotContain("ComponentStateModel passwordState")
+                .doesNotContain("ComponentStateModel advancedSection");
     }
 
     @Test
-    void rejectsAuxiliaryComponentStateAccessorWithWrongReturnType() throws Exception {
+    void dependencyValuesResolveEnumOptionKeysAndBooleanLiterals() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.ComponentState;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CheckBox;
+                import cz.auderis.corusco.annotations.form.ComboBox;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer/security")
+                @CoruscoForm(id = "customer/security")
                 public abstract class CustomerEdit {
-                    @TextField
-                    public abstract String password();
+                    @ComboBox
+                    public abstract AuthenticationMode authenticationMode();
 
-                    @ComponentState
-                    public abstract String advancedSection();
-                }
-                """);
-
-        assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("@ComponentState auxiliary accessors must return ComponentStateModel");
-    }
-
-    @Test
-    void rejectsStateOnlyRecordComponent() throws Exception {
-        GeneratedSourceCompilation result = compile("""
-                package demo;
-
-                import cz.auderis.corusco.annotations.form.ComponentState;
-                import cz.auderis.corusco.annotations.form.SwingForm;
-                import cz.auderis.corusco.core.form.ComponentStateModel;
-
-                @SwingForm(id = "customer/security")
-                public record CustomerEdit(@ComponentState ComponentStateModel advancedSection) {
-                }
-                """);
-
-        assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("Record component @ComponentState must accompany a field kind annotation");
-    }
-
-    @Test
-    void rejectsDependencyWithoutComponentState() throws Exception {
-        GeneratedSourceCompilation result = compile("""
-                package demo;
-
-                import cz.auderis.corusco.annotations.form.DependsOn;
-                import cz.auderis.corusco.annotations.form.SwingForm;
-                import cz.auderis.corusco.annotations.form.TextField;
-
-                @SwingForm(id = "customer/security")
-                public abstract class CustomerEdit {
-                    @TextField
-                    public abstract String authenticationMode();
+                    @CheckBox
+                    public abstract boolean active();
 
                     @TextField
-                    @DependsOn(field = "authenticationMode", values = "PASSWORD")
+                    @CoruscoForm.ComponentState
+                    @CoruscoForm.DependsOn(field = "authenticationMode", values = "password", effect = CoruscoForm.DependencyEffect.VISIBLE)
+                    @CoruscoForm.DependsOn(field = "active", values = "true", effect = CoruscoForm.DependencyEffect.ENABLED)
                     public abstract String password();
                 }
+
+                enum AuthenticationMode {
+                    @CoruscoForm.Option(key = "password")
+                    PASSWORD,
+                    CERTIFICATE
+                }
                 """);
 
-        assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("@DependsOn requires @ComponentState");
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditDependencies.java",
+                "List.of(demo.AuthenticationMode.PASSWORD)",
+                "List.of(Boolean.TRUE)"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditBehaviorPlan.java",
+                "List.of(demo.AuthenticationMode.PASSWORD)",
+                "List.of(Boolean.TRUE)",
+                "boolean active = expectedValues.contains(value)"
+        );
     }
 
     @Test
-    void rejectsDependencyOnUnknownField() throws Exception {
+    void rejectsUnknownEnumDependencyValue() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.ComponentState;
-                import cz.auderis.corusco.annotations.form.DependsOn;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.ComboBox;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer/security")
+                @CoruscoForm(id = "customer/security")
                 public abstract class CustomerEdit {
+                    @ComboBox
+                    public abstract AuthenticationMode authenticationMode();
+
                     @TextField
-                    @ComponentState
-                    @DependsOn(field = "authenticationMode", values = "PASSWORD")
+                    @CoruscoForm.ComponentState
+                    @CoruscoForm.DependsOn(field = "authenticationMode", values = "PASSWROD")
+                    public abstract String password();
+                }
+
+                enum AuthenticationMode {
+                    PASSWORD, CERTIFICATE
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages())
+                .contains("@CoruscoForm.DependsOn value does not match an enum constant or option key for authenticationMode: PASSWROD");
+    }
+
+    @Test
+    void rejectsInvalidBooleanDependencyValue() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.CheckBox;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @CoruscoForm(id = "customer/security")
+                public abstract class CustomerEdit {
+                    @CheckBox
+                    public abstract boolean active();
+
+                    @TextField
+                    @CoruscoForm.ComponentState
+                    @CoruscoForm.DependsOn(field = "active", values = "yes")
                     public abstract String password();
                 }
                 """);
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages())
-                .contains("@DependsOn field does not match a generated form field in CustomerEdit: authenticationMode");
+                .contains("@CoruscoForm.DependsOn value for checkbox field active must be true or false: yes");
     }
 
     @Test
-    void rejectsNonRecordSwingForm() throws Exception {
+    void rejectsAuxiliaryComponentStateAccessorWithWrongReturnType() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @CoruscoForm(id = "customer/security")
+                public abstract class CustomerEdit {
+                    @TextField
+                    public abstract String password();
+
+                    @CoruscoForm.ComponentState
+                    public abstract String advancedSection();
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@CoruscoForm.ComponentState auxiliary accessors must return ComponentStateModel");
+    }
+
+    @Test
+    void rejectsStateOnlyRecordComponent() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.core.form.ComponentStateModel;
+
+                @CoruscoForm(id = "customer/security")
+                public record CustomerEdit(@CoruscoForm.ComponentState ComponentStateModel advancedSection) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Record component @CoruscoForm.ComponentState must accompany a field kind annotation");
+    }
+
+    @Test
+    void rejectsDependencyWithoutComponentState() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @CoruscoForm(id = "customer/security")
+                public abstract class CustomerEdit {
+                    @TextField
+                    public abstract String authenticationMode();
+
+                    @TextField
+                    @CoruscoForm.DependsOn(field = "authenticationMode", values = "PASSWORD")
+                    public abstract String password();
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@CoruscoForm.DependsOn requires @CoruscoForm.ComponentState");
+    }
+
+    @Test
+    void rejectsDependencyOnUnknownField() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @CoruscoForm(id = "customer/security")
+                public abstract class CustomerEdit {
+                    @TextField
+                    @CoruscoForm.ComponentState
+                    @CoruscoForm.DependsOn(field = "authenticationMode", values = "PASSWORD")
+                    public abstract String password();
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages())
+                .contains("@CoruscoForm.DependsOn field does not match a generated form field in CustomerEdit: authenticationMode");
+    }
+
+    @Test
+    void rejectsNonRecordCoruscoForm() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public final class CustomerEdit {
                 }
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("@SwingForm classes must be abstract");
+        assertThat(result.messages()).contains("@CoruscoForm classes must be abstract");
     }
 
     @Test
-    void rejectsUnannotatedAbstractAccessorInSwingForm() throws Exception {
+    void rejectsUnannotatedAbstractAccessorInCoruscoForm() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public abstract class CustomerEdit {
                     @TextField
                     public abstract String name();
@@ -476,18 +583,18 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("Abstract @SwingForm accessor must have a field kind annotation");
+        assertThat(result.messages()).contains("Abstract @CoruscoForm accessor must have a field kind annotation");
     }
 
     @Test
-    void rejectsConcreteAnnotatedMethodInAbstractSwingForm() throws Exception {
+    void rejectsConcreteAnnotatedMethodInAbstractCoruscoForm() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public abstract class CustomerEdit {
                     @TextField
                     public String name() {
@@ -498,7 +605,7 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages())
-                .contains("@SwingForm field annotations on abstract classes require abstract accessor methods");
+                .contains("@CoruscoForm field annotations on abstract classes require abstract accessor methods");
     }
 
     @Test
@@ -506,10 +613,10 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public abstract class CustomerEdit {
                     @TextField
                     public abstract String name(String locale);
@@ -517,7 +624,7 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("Abstract @SwingForm accessor must not declare parameters");
+        assertThat(result.messages()).contains("Abstract @CoruscoForm accessor must not declare parameters");
     }
 
     @Test
@@ -526,10 +633,10 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.form.CheckBox;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@TextField @CheckBox boolean active) {
                 }
                 """);
@@ -543,10 +650,10 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.SwingForm;
+                import cz.auderis.corusco.annotations.CoruscoForm;
                 import cz.auderis.corusco.annotations.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@TextField String name) {
                 }
                 """);
@@ -561,9 +668,9 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.form.CheckBox;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@CheckBox String active) {
                 }
                 """);
@@ -573,20 +680,20 @@ class CoruscoAnnotationProcessorTest {
     }
 
     @Test
-    void rejectsGenericSwingFormRecordInInitialProcessorStage() throws Exception {
+    void rejectsGenericCoruscoFormRecordInInitialProcessorStage() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit<T>(@TextField T name) {
                 }
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("@SwingForm generic source types are not supported by this processor stage");
+        assertThat(result.messages()).contains("@CoruscoForm generic source types are not supported by this processor stage");
     }
 
     @Test
@@ -595,11 +702,11 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.validation.Length;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
                 import java.math.BigDecimal;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@TextField @Length(max = 10) BigDecimal creditLimit) {
                 }
                 """);
@@ -614,11 +721,11 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.validation.DecimalRange;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
                 import java.math.BigDecimal;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@TextField @DecimalRange(min = "10", max = "1") BigDecimal creditLimit) {
                 }
                 """);
@@ -633,9 +740,9 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.validation.Required;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@Required String name) {
                 }
                 """);
@@ -649,17 +756,17 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer name")
+                @CoruscoForm(id = "customer name")
                 public record CustomerEdit(@TextField String name) {
                 }
                 """);
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages())
-                .contains("@SwingForm id must contain only letters, digits, dots, underscores, dashes, or slashes");
+                .contains("@CoruscoForm id must contain only letters, digits, dots, underscores, dashes, or slashes");
     }
 
     @Test
@@ -668,9 +775,9 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.form.DateField;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@DateField String validFrom) {
                 }
                 """);
@@ -685,10 +792,10 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.validation.Regex;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@TextField @Regex("[0-9]+") Integer age) {
                 }
                 """);
@@ -703,10 +810,10 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.validation.IntRange;
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@TextField @IntRange(min = 10, max = 1) Integer age) {
                 }
                 """);
@@ -720,10 +827,10 @@ class CoruscoAnnotationProcessorTest {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
                 import cz.auderis.corusco.annotations.form.TextField;
 
-                @SwingForm(id = "customer")
+                @CoruscoForm(id = "customer")
                 public record CustomerEdit(@TextField Double score) {
                 }
                 """);
@@ -740,9 +847,9 @@ class CoruscoAnnotationProcessorTest {
 
                 import cz.auderis.corusco.annotations.table.Column;
                 import cz.auderis.corusco.annotations.help.Help;
-                import cz.auderis.corusco.annotations.table.SwingTable;
+                import cz.auderis.corusco.annotations.table.CoruscoTable;
 
-                @SwingTable(id = "customer/search")
+                @CoruscoTable(id = "customer/search")
                 public record CustomerEdit(
                         @Column(
                                 persistenceId = "customer/search/main-name",
@@ -806,23 +913,20 @@ class CoruscoAnnotationProcessorTest {
                 "CustomerEditColumns.TABLE",
                 "List.of(",
                 "CustomerEditColumns.NAME",
-                "CustomerEditColumns.ORDERS",
-                "public static ObservableTableModel<CustomerEdit> tableModel(ObservableList<CustomerEdit> rows)",
-                "public static ObservableTableModel<CustomerEdit> readOnlyTableModel(",
-                "ObservableReadableCollection<CustomerEdit> rows",
-                "return ObservableTableModel.readOnly(rows, DESCRIPTOR)"
+                "CustomerEditColumns.ORDERS"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditTableBindings.java",
                 "public final class CustomerEditTableBindings",
                 "public static ObservableTableModel<CustomerEdit> installModel(",
                 "ObservableList<CustomerEdit> rows",
                 "BindingScope scope",
-                "ObservableTableModel<CustomerEdit> model = CustomerEditTableDescriptor.tableModel(rows)",
+                "ObservableTableModel<CustomerEdit> tableModel =",
+                "ObservableTableModel.of(rows, CustomerEditTableDescriptor.DESCRIPTOR)",
                 "public static ObservableTableModel<CustomerEdit> installReadOnlyModel(",
                 "ObservableReadableCollection<CustomerEdit> rows",
-                "ObservableTableModel<CustomerEdit> model = CustomerEditTableDescriptor.readOnlyTableModel(rows)",
-                "table.setModel(model)",
-                "scope.add(model)",
+                "ObservableTableModel.readOnly(rows, CustomerEditTableDescriptor.DESCRIPTOR)",
+                "table.setModel(tableModel)",
+                "scope.add(tableModel)",
                 "public static TableSelectionBinding<CustomerEdit> bindSelection(",
                 "WritableValue<Integer> selectedModelRow",
                 "WritableValue<CustomerEdit> selectedRow",
@@ -831,19 +935,184 @@ class CoruscoAnnotationProcessorTest {
     }
 
     @Test
-    void rejectsNonRecordSwingTable() throws Exception {
+    void omitsCoruscoFormInstallationSourcesWhenPackageIsNotAnnotated() throws Exception {
+        GeneratedSourceCompilation result = compileWithoutSwingCompanionPackage("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.CheckBox;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @CoruscoForm(id = "customer")
+                public record CustomerEdit(
+                        @TextField String name,
+                        @CheckBox boolean active
+                ) {
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditFields.java",
+                "public final class CustomerEditFields"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
+                "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditPresentationModel.java",
+                "public final class CustomerEditPresentationModel"
+        );
+        assertThat(result.hasGeneratedSource("demo/CustomerEditView.java")).isFalse();
+        assertThat(result.hasGeneratedSource("demo/CustomerEditBehaviorPlan.java")).isFalse();
+        assertThat(result.hasGeneratedSource("demo/CustomerEditBindings.java")).isFalse();
+    }
+
+    @Test
+    void omitsCoruscoTableHelpersWhenPackageIsNotAnnotated() throws Exception {
+        GeneratedSourceCompilation result = compileWithoutSwingCompanionPackage("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.table.Column;
+                import cz.auderis.corusco.annotations.table.CoruscoTable;
+
+                @CoruscoTable(id = "customer/search")
+                public record CustomerEdit(
+                        @Column String name,
+                        @Column int orders
+                ) {
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditColumns.java",
+                "public final class CustomerEditColumns"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditTableDescriptor.java",
+                "public final class CustomerEditTableDescriptor",
+                "public static final cz.auderis.corusco.core.table.TableDescriptor<CustomerEdit> DESCRIPTOR"
+        );
+        assertThat(result.generatedSource("demo/CustomerEditTableDescriptor.java"))
+                .doesNotContain("cz.auderis.corusco.swing");
+        assertThat(result.hasGeneratedSource("demo/CustomerEditTableBindings.java")).isFalse();
+    }
+
+    @Test
+    void generatesExplicitCrossPackageCoruscoFormCompanions() throws Exception {
+        GeneratedSourceCompilation result = GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile(List.of(
+                        new GeneratedSourceCompiler.SourceFile("model/CustomerEdit.java", """
+                                package model;
+
+                                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                                import cz.auderis.corusco.annotations.form.TextField;
+
+                                @CoruscoForm(id = "customer")
+                                public record CustomerEdit(@TextField String name) {
+                                }
+                                """),
+                        new GeneratedSourceCompiler.SourceFile("ui/package-info.java", """
+                                @cz.auderis.corusco.annotations.SwingCompanionPackage(
+                                        forms = model.CustomerEdit.class
+                                )
+                                package ui;
+                                """)
+                ));
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("model/CustomerEditFormModel.java",
+                "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>"
+        );
+        assertThat(result.hasGeneratedSource("model/CustomerEditView.java")).isFalse();
+        result.assertGeneratedSourceContains("ui/CustomerEditView.java",
+                "package ui;",
+                "public interface CustomerEditView"
+        );
+        result.assertGeneratedSourceContains("ui/CustomerEditBindings.java",
+                "public static void install(CustomerEditView view, model.CustomerEditPresentationModel model, BehaviorScope scope)",
+                "public static void install(CustomerEditView view, model.CustomerEditFormModel form, BehaviorScope scope)",
+                "install(view, new model.CustomerEditPresentationModel(form), scope)"
+        );
+    }
+
+    @Test
+    void generatesExplicitSwingCompanionsForCompiledModelClasses() throws Exception {
+        GeneratedSourceCompilation modelCompilation = GeneratedSourceCompiler.in(tempDir)
+                .withoutClasspathEntriesContaining("corusco-swing")
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile(List.of(
+                        new GeneratedSourceCompiler.SourceFile("model/CustomerEdit.java", """
+                                package model;
+
+                                import cz.auderis.corusco.annotations.form.CheckBox;
+                                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                                import cz.auderis.corusco.annotations.form.TextField;
+
+                                @CoruscoForm(id = "customer")
+                                public record CustomerEdit(
+                                        @TextField String name,
+                                        @CheckBox boolean active
+                                ) {
+                                }
+                                """),
+                        new GeneratedSourceCompiler.SourceFile("model/CustomerRow.java", """
+                                package model;
+
+                                import cz.auderis.corusco.annotations.table.Column;
+                                import cz.auderis.corusco.annotations.table.CoruscoTable;
+
+                                @CoruscoTable(id = "customer/search")
+                                public record CustomerRow(
+                                        @Column String name,
+                                        @Column int orders
+                                ) {
+                                }
+                                """)
+                ));
+
+        assertThat(modelCompilation.success()).as(modelCompilation.messages()).isTrue();
+        assertThat(modelCompilation.hasGeneratedSource("model/CustomerEditView.java")).isFalse();
+        assertThat(modelCompilation.hasGeneratedSource("model/CustomerRowTableBindings.java")).isFalse();
+
+        String adapterClasspath = System.getProperty("java.class.path")
+                + java.io.File.pathSeparator
+                + modelCompilation.classes();
+        GeneratedSourceCompilation adapterCompilation = GeneratedSourceCompiler.in(tempDir)
+                .withClasspath(adapterClasspath)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile("ui/package-info.java", """
+                        @cz.auderis.corusco.annotations.SwingCompanionPackage(
+                                forms = model.CustomerEdit.class,
+                                tables = model.CustomerRow.class
+                        )
+                        package ui;
+                        """);
+
+        assertThat(adapterCompilation.success()).as(adapterCompilation.messages()).isTrue();
+        adapterCompilation.assertGeneratedSourceContains("ui/CustomerEditBindings.java",
+                "public static void install(CustomerEditView view, model.CustomerEditPresentationModel model, BehaviorScope scope)",
+                "public static void install(CustomerEditView view, model.CustomerEditFormModel form, BehaviorScope scope)"
+        );
+        adapterCompilation.assertGeneratedSourceContains("ui/CustomerRowTableBindings.java",
+                "ObservableTableModel<model.CustomerRow> tableModel =",
+                "ObservableTableModel.of(rows, model.CustomerRowTableDescriptor.DESCRIPTOR)",
+                "TableSelectionBinding<model.CustomerRow> bindSelection"
+        );
+    }
+
+    @Test
+    void rejectsNonRecordCoruscoTable() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
 
-                import cz.auderis.corusco.annotations.table.SwingTable;
+                import cz.auderis.corusco.annotations.table.CoruscoTable;
 
-                @SwingTable(id = "customer/search")
+                @CoruscoTable(id = "customer/search")
                 public final class CustomerEdit {
                 }
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("@SwingTable is supported only on records");
+        assertThat(result.messages()).contains("@CoruscoTable is supported only on records");
     }
 
     @Test
@@ -852,9 +1121,9 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.table.Column;
-                import cz.auderis.corusco.annotations.table.SwingTable;
+                import cz.auderis.corusco.annotations.table.CoruscoTable;
 
-                @SwingTable(id = "customer/search")
+                @CoruscoTable(id = "customer/search")
                 public record CustomerEdit(
                         @Column(id = "customer/search/name") String name,
                         @Column(id = "customer/search/name") String displayName
@@ -872,9 +1141,9 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.table.Column;
-                import cz.auderis.corusco.annotations.table.SwingTable;
+                import cz.auderis.corusco.annotations.table.CoruscoTable;
 
-                @SwingTable(id = "customer/search")
+                @CoruscoTable(id = "customer/search")
                 public record CustomerEdit(@Column(width = 0) String name) {
                 }
                 """);
@@ -889,9 +1158,9 @@ class CoruscoAnnotationProcessorTest {
                 package demo;
 
                 import cz.auderis.corusco.annotations.table.Column;
-                import cz.auderis.corusco.annotations.table.SwingTable;
+                import cz.auderis.corusco.annotations.table.CoruscoTable;
 
-                @SwingTable(id = "customer/search")
+                @CoruscoTable(id = "customer/search")
                 public record CustomerEdit(@Column(width = 80, minWidth = 100) String name) {
                 }
                 """);
@@ -907,9 +1176,9 @@ class CoruscoAnnotationProcessorTest {
 
                 import cz.auderis.corusco.annotations.table.Column;
                 import cz.auderis.corusco.annotations.help.Help;
-                import cz.auderis.corusco.annotations.table.SwingTable;
+                import cz.auderis.corusco.annotations.table.CoruscoTable;
 
-                @SwingTable(id = "customer/search")
+                @CoruscoTable(id = "customer/search")
                 public record CustomerEdit(
                         @Column(tooltip = "customer/search/name/help")
                         @Help(tooltip = "customer/search/name/other-help")
@@ -1014,6 +1283,19 @@ class CoruscoAnnotationProcessorTest {
 
     private GeneratedSourceCompilation compile(String source) throws Exception {
         return GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile(List.of(
+                        new GeneratedSourceCompiler.SourceFile("demo/package-info.java", """
+                                @cz.auderis.corusco.annotations.SwingCompanionPackage
+                                package demo;
+                                """),
+                        new GeneratedSourceCompiler.SourceFile("demo/CustomerEdit.java", source)
+                ));
+    }
+
+    private GeneratedSourceCompilation compileWithoutSwingCompanionPackage(String source) throws Exception {
+        return GeneratedSourceCompiler.in(tempDir)
+                .withoutClasspathEntriesContaining("corusco-swing")
                 .withProcessor(new CoruscoAnnotationProcessor())
                 .compile("demo/CustomerEdit.java", source);
     }

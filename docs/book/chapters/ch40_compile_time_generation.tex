@@ -4,7 +4,7 @@
 
 \begin{chaptermap}
 Core question & What does Corusco generate, why is it generated at compile time, and how should application code consume the generated companions without losing design control?\\
-Primary annotations & \api{@SwingForm}, \api{@TextField}, \api{@DateField}, \api{@ComboBox}, \api{@CheckBox}, \api{@SwingTable}, \api{@Column}, \api{@UiAction}, validation annotations, and \api{@Help}.\\
+Primary annotations & \api{@CoruscoForm}, \api{@TextField}, \api{@DateField}, \api{@ComboBox}, \api{@CheckBox}, \api{@CoruscoTable}, \api{@Column}, \api{@UiAction}, validation annotations, and \api{@Help}.\\
 Generated outputs & Field keys, resource keys, problem codes, descriptors, form models, view contracts, behavior plans, binding facades, table descriptors, command descriptors, command factories, and deterministic companion names.\\
 Build topic & Annotation-processor configuration, generated-source inspection, processor diagnostics, generated-source compiler tests, modular builds, and stale-output hygiene.\\
 Companion example & \generationExample.\\
@@ -13,8 +13,8 @@ Companion example & \generationExample.\\
 \section{Generation is a compile-time agreement}
 
 Corusco generation starts from an ordinary Java source declaration and ends in
-ordinary Java source. A record annotated with \api{@SwingForm} describes an
-editable value shape. A record annotated with \api{@SwingTable} describes a
+ordinary Java source. A record annotated with \api{@CoruscoForm} describes an
+editable value shape. A record annotated with \api{@CoruscoTable} describes a
 row shape and its table columns. A presenter method annotated with
 \api{@UiAction} describes a user operation. The processor reads those
 declarations during javac annotation processing, validates them, and writes
@@ -131,8 +131,8 @@ component placement.
 \toprule
 Source kind & Stable id role & Generated uses\\
 \midrule
-\api{@SwingForm} & Form prefix & Field ids, resource ids, problem codes, component contracts, descriptors\\
-\api{@SwingTable} & Table prefix & Table id, default column ids, table-state boundary, descriptor ownership\\
+\api{@CoruscoForm} & Form prefix & Field ids, resource ids, problem codes, component contracts, descriptors\\
+\api{@CoruscoTable} & Table prefix & Table id, default column ids, table-state boundary, descriptor ownership\\
 \api{@Column} & Column id & Column key, header key, tooltip key, persistence id, order, width metadata\\
 \api{@UiAction} & Action id & Action key, command descriptor, resource keys, command factory, command set\\
 \api{@Help} & Help and tooltip ids & Help topic metadata and optional static tooltip resource ids\\
@@ -154,15 +154,15 @@ packages for reflective scanners merely so a UI framework can discover
 annotations at runtime. The generated companions are the runtime API.
 
 \begin{pitfallbox}{Runtime Annotation Nostalgia}
-Do not write runtime code that searches for \api{@SwingForm},
-\api{@SwingTable}, or \api{@UiAction}. Runtime code should use generated
+Do not write runtime code that searches for \api{@CoruscoForm},
+\api{@CoruscoTable}, or \api{@UiAction}. Runtime code should use generated
 companions. The annotations are compile-time inputs.
 \end{pitfallbox}
 
 The current processor supports specific source shapes. A form source is a
-non-generic record annotated with \api{@SwingForm} and at least one field-kind
+non-generic record annotated with \api{@CoruscoForm} and at least one field-kind
 annotation on a record component. A table source is a non-generic record
-annotated with \api{@SwingTable} and at least one \api{@Column}. A UI action
+annotated with \api{@CoruscoTable} and at least one \api{@Column}. A UI action
 source is a no-argument \api{void} method enclosed by a type. These limits are
 not arbitrary. Records give the processor stable component names, value types,
 constructor shape, and component order. No-argument action methods give command
@@ -242,7 +242,7 @@ same field.
 
 \section{Generated forms from records}
 
-\api{@SwingForm} marks a record as a generated form source. Record components
+\api{@CoruscoForm} marks a record as a generated form source. Record components
 describe editable input. The record itself is the committed value shape: the
 object that can be passed to domain code after editing succeeds. The generated
 form model is the mutable editing shape: it owns parse state, field models,
@@ -251,7 +251,7 @@ matches the form chapter's central rule. Widgets are not the only place where
 state lives.
 
 \begin{lstlisting}[caption={Annotated form source used by the companion example.}]
-@SwingForm(id = "book/customer/edit")
+@CoruscoForm(id = "book/customer/edit")
 public record CustomerEdit(
         @TextField
         @Required
@@ -440,7 +440,7 @@ could have written by hand and would not want to write repeatedly.
 
 \section{Generated tables from records}
 
-\api{@SwingTable} marks a record as a generated table row source. Record
+\api{@CoruscoTable} marks a record as a generated table row source. Record
 components annotated with \api{@Column} become table columns. Unannotated
 components remain part of the row record but are ignored by table metadata
 generation. This is useful when a row carries an internal id, cached status,
@@ -448,7 +448,7 @@ or detail object that should not appear as a visible column. Generation
 follows the annotations, not every property reachable from the row.
 
 \begin{lstlisting}[caption={Annotated table source used by the companion example.}]
-@SwingTable(id = "book/customer/table")
+@CoruscoTable(id = "book/customer/table")
 public record CustomerRow(
         @Column(header = "customer/name", width = 180)
         String name,
@@ -845,7 +845,7 @@ contracts that matter most.
 
 \section{Diagnostics and generated-source tests}
 
-Good generation fails early and locally. If \api{@SwingForm} is applied to a
+Good generation fails early and locally. If \api{@CoruscoForm} is applied to a
 class instead of a record, the processor should report that the annotation is
 supported only on records. If a record component has both \api{@TextField} and
 \api{@CheckBox}, the processor should report that only one field-kind
@@ -1020,7 +1020,7 @@ class of duplication while preserving the user's visible workflow. A
 big-bang migration makes it hard to tell whether a failure is a processor bug,
 a changed id, a changed resource, a changed layout, or a changed workflow.
 
-Do not migrate only the annotations. A record with \api{@SwingForm} is useful
+Do not migrate only the annotations. A record with \api{@CoruscoForm} is useful
 when application code uses the generated companions. If the panel still
 creates unrelated field keys by hand, tests still search for labels, and
 validation still emits raw strings, generation has become decoration. The
@@ -1101,7 +1101,7 @@ limited annotation to mean something it does not support creates future
 confusion.
 
 Documentation should name both the annotation and the generated result. Saying
-``add \api{@SwingForm}'' is not enough. Say that the source will generate a
+``add \api{@CoruscoForm}'' is not enough. Say that the source will generate a
 form model, field keys, descriptors, resources, a view contract, a behavior
 plan, and bindings facade. Saying ``add \api{@UiAction}'' is not enough. Say
 that it generates an action key, descriptor, resource keys, command factories,
@@ -1197,7 +1197,7 @@ examples module compiles, the generated-source directory contains companions
 beside those records. The generated files are not meant to be edited. They are
 meant to be read.
 
-The form source starts with \api{@SwingForm(id = "book/customer/edit")}. That
+The form source starts with \api{@CoruscoForm(id = "book/customer/edit")}. That
 id becomes the prefix for generated field ids and problem codes. The
 \api{name} component is a text field with required and length constraints.
 The \api{status} component is a text field without extra validation. From
@@ -1230,7 +1230,7 @@ long as it implements the generated contract, the generated behavior plan can
 install text-field bindings and validation behavior. The panel remains real
 Swing code.
 
-The table source starts with \api{@SwingTable(id = "book/customer/table")}.
+The table source starts with \api{@CoruscoTable(id = "book/customer/table")}.
 The \api{name} column declares a header resource id and width. The
 \api{status} column does the same. The generated columns companion contains
 the table key, column keys, descriptors, and column instances. The generated
@@ -1259,7 +1259,7 @@ chapters show how those companions participate in real screens.
 
 \begin{exercisebox}
 \begin{enumerate}
-\item Annotate a small record with \api{@SwingForm}. Build the module and list
+\item Annotate a small record with \api{@CoruscoForm}. Build the module and list
 every generated companion by name.
 \item Open the generated form model and identify which lines construct field
 models, which lines build validation rules, and which lines create the result

@@ -2,12 +2,12 @@ package cz.auderis.corusco.processor;
 
 import cz.auderis.corusco.annotations.form.CheckBox;
 import cz.auderis.corusco.annotations.form.ComboBox;
-import cz.auderis.corusco.annotations.form.ComponentState;
+import cz.auderis.corusco.annotations.form.CoruscoForm.ComponentState;
 import cz.auderis.corusco.annotations.form.DateField;
-import cz.auderis.corusco.annotations.form.DependsOn;
-import cz.auderis.corusco.annotations.form.Option;
+import cz.auderis.corusco.annotations.form.CoruscoForm.DependsOn;
+import cz.auderis.corusco.annotations.form.CoruscoForm.Option;
 import cz.auderis.corusco.annotations.form.RadioGroup;
-import cz.auderis.corusco.annotations.form.SwingForm;
+import cz.auderis.corusco.annotations.form.CoruscoForm;
 import cz.auderis.corusco.annotations.form.TextField;
 import cz.auderis.corusco.annotations.help.Help;
 import cz.auderis.corusco.annotations.validation.DecimalRange;
@@ -38,7 +38,7 @@ import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 
 /**
- * Builds validated form specifications from {@link SwingForm} sources.
+ * Builds validated form specifications from {@link CoruscoForm} sources.
  *
  * <p>This processor owns source-shape validation and annotation normalization
  * for form records and abstract form contracts. It deliberately stops at
@@ -60,27 +60,34 @@ final class FormProcessor {
     }
 
     void process(TypeElement formType) {
-        SwingForm annotation = formType.getAnnotation(SwingForm.class);
+        FormSpec form = createSpec(formType);
+        if (form != null) {
+            sourceWriter().writeFormSources(formType, form);
+        }
+    }
+
+    FormSpec createSpec(TypeElement formType) {
+        CoruscoForm annotation = formType.getAnnotation(CoruscoForm.class);
         if (formType.getKind() != ElementKind.RECORD && formType.getKind() != ElementKind.CLASS) {
-            error(formType, "@SwingForm is supported only on records or abstract classes");
-            return;
+            error(formType, "@CoruscoForm is supported only on records or abstract classes");
+            return null;
         }
         if (annotation.id().isBlank()) {
-            error(formType, "@SwingForm id must not be blank");
-            return;
+            error(formType, "@CoruscoForm id must not be blank");
+            return null;
         }
         if (!isStableId(annotation.id())) {
-            error(formType, "@SwingForm id must contain only letters, digits, dots, underscores, dashes, or slashes");
-            return;
+            error(formType, "@CoruscoForm id must contain only letters, digits, dots, underscores, dashes, or slashes");
+            return null;
         }
         if (!formType.getTypeParameters().isEmpty()) {
-            error(formType, "@SwingForm generic source types are not supported by this processor stage");
-            return;
+            error(formType, "@CoruscoForm generic source types are not supported by this processor stage");
+            return null;
         }
 
         if (formType.getKind() == ElementKind.CLASS && !formType.getModifiers().contains(Modifier.ABSTRACT)) {
-            error(formType, "@SwingForm classes must be abstract");
-            return;
+            error(formType, "@CoruscoForm classes must be abstract");
+            return null;
         }
 
         boolean failed = false;
@@ -112,14 +119,14 @@ final class FormProcessor {
             if (fieldKindCount == 0) {
                 if (componentState && source.abstractAccessor()) {
                     if (!isComponentStateModel(source.type())) {
-                        error(source.element(), "@ComponentState auxiliary accessors must return ComponentStateModel");
+                        error(source.element(), "@CoruscoForm.ComponentState auxiliary accessors must return ComponentStateModel");
                         failed = true;
                         continue;
                     }
                     String stateConstantName = constantName(source.name());
                     ComponentStateSpec state = new ComponentStateSpec(stateConstantName, source.name(), true);
                     if (!stateNames.add(state.componentName) || fieldNames.contains(state.componentName)) {
-                        error(source.element(), "Duplicate @SwingForm component state name in "
+                        error(source.element(), "Duplicate @CoruscoForm component state name in "
                                 + formType.getSimpleName() + ": " + state.componentName);
                         failed = true;
                         continue;
@@ -127,13 +134,13 @@ final class FormProcessor {
                     componentStates.add(state);
                     pendingStateDependencies.add(new PendingStateDependency(source, stateConstantName, state.componentName));
                 } else if (componentState) {
-                    error(source.element(), "Record component @ComponentState must accompany a field kind annotation");
+                    error(source.element(), "Record component @CoruscoForm.ComponentState must accompany a field kind annotation");
                     failed = true;
                 } else if (hasDependencies(source.element())) {
-                    error(source.element(), "@DependsOn requires @ComponentState");
+                    error(source.element(), "@CoruscoForm.DependsOn requires @CoruscoForm.ComponentState");
                     failed = true;
                 } else if (source.abstractAccessor()) {
-                    error(source.element(), "Abstract @SwingForm accessor must have a field kind annotation");
+                    error(source.element(), "Abstract @CoruscoForm accessor must have a field kind annotation");
                     failed = true;
                 } else if (hasFieldMetadata(source.element())) {
                     error(source.element(), "Field metadata annotations require a field kind annotation");
@@ -174,19 +181,19 @@ final class FormProcessor {
             FieldSpec field = fieldSpec(formType, annotation.id(), source, textField, checkBox, comboBox,
                     radioGroup, dateField);
             if (!fieldNames.add(field.componentName)) {
-                error(source.element(), "Duplicate @SwingForm field name in " + formType.getSimpleName() + ": "
+                error(source.element(), "Duplicate @CoruscoForm field name in " + formType.getSimpleName() + ": "
                         + field.componentName);
                 failed = true;
                 continue;
             }
             if (stateNames.contains(field.componentName)) {
-                error(source.element(), "Duplicate @SwingForm component state name in "
+                error(source.element(), "Duplicate @CoruscoForm component state name in "
                         + formType.getSimpleName() + ": " + field.componentName);
                 failed = true;
                 continue;
             }
             if (!fieldIds.add(field.keyId)) {
-                error(source.element(), "Duplicate @SwingForm field id in " + formType.getSimpleName() + ": "
+                error(source.element(), "Duplicate @CoruscoForm field id in " + formType.getSimpleName() + ": "
                         + field.keyId);
                 failed = true;
                 continue;
@@ -201,7 +208,7 @@ final class FormProcessor {
                         field.componentName + "State"
                 );
                 if (!stateNames.add(state.componentName) || fieldNames.contains(state.componentName)) {
-                    error(source.element(), "Duplicate @SwingForm component state name in "
+                    error(source.element(), "Duplicate @CoruscoForm component state name in "
                             + formType.getSimpleName() + ": " + state.componentName);
                     failed = true;
                     continue;
@@ -209,7 +216,7 @@ final class FormProcessor {
                 componentStates.add(state);
                 pendingStateDependencies.add(new PendingStateDependency(source, state.constantName, state.componentName));
             } else if (hasDependencies(source.element())) {
-                error(source.element(), "@DependsOn requires @ComponentState");
+                error(source.element(), "@CoruscoForm.DependsOn requires @CoruscoForm.ComponentState");
                 failed = true;
                 continue;
             }
@@ -223,26 +230,26 @@ final class FormProcessor {
 
         if (fields.isEmpty() && !failed) {
             error(formType, formType.getKind() == ElementKind.RECORD
-                    ? "@SwingForm record must contain at least one field kind annotation"
-                    : "@SwingForm abstract class must contain at least one annotated abstract accessor");
-            return;
+                    ? "@CoruscoForm record must contain at least one field kind annotation"
+                    : "@CoruscoForm abstract class must contain at least one annotated abstract accessor");
+            return null;
         }
         if (failed) {
-            return;
+            return null;
         }
         String sourceType = formType.getSimpleName().toString();
         String resultImplementationType = formType.getKind() == ElementKind.CLASS ? "Generated" + sourceType : null;
         if (resultImplementationType != null && generatedResultTypeExists(formType, resultImplementationType)) {
             error(formType, "Generated form result type would collide with existing type: " + resultImplementationType);
-            return;
+            return null;
         }
-        sourceWriter().writeFormSources(formType, new FormSpec(
+        return new FormSpec(
                 annotation.id(),
                 sourceType,
                 resultImplementationType,
                 fields,
                 componentStates
-        ));
+        );
     }
 
     private List<FieldSource> formFieldSources(TypeElement formType) {
@@ -315,19 +322,19 @@ final class FormProcessor {
         int index = 0;
         for (DependsOn dependency : annotations) {
             if (dependency.field().isBlank()) {
-                error(pending.source.element(), "@DependsOn field must not be blank");
+                error(pending.source.element(), "@CoruscoForm.DependsOn field must not be blank");
                 failed = true;
                 continue;
             }
             FieldSpec sourceField = fieldsByName.get(dependency.field());
             if (sourceField == null) {
-                error(pending.source.element(), "@DependsOn field does not match a generated form field in "
+                error(pending.source.element(), "@CoruscoForm.DependsOn field does not match a generated form field in "
                         + formType.getSimpleName() + ": " + dependency.field());
                 failed = true;
                 continue;
             }
             if (dependency.values().length == 0) {
-                error(pending.source.element(), "@DependsOn values must not be empty");
+                error(pending.source.element(), "@CoruscoForm.DependsOn values must not be empty");
                 failed = true;
                 continue;
             }
@@ -335,7 +342,12 @@ final class FormProcessor {
                     .map(String::trim)
                     .toList();
             if (values.stream().anyMatch(String::isBlank)) {
-                error(pending.source.element(), "@DependsOn values must not contain blank entries");
+                error(pending.source.element(), "@CoruscoForm.DependsOn values must not contain blank entries");
+                failed = true;
+                continue;
+            }
+            List<String> valueExpressions = dependencyValueExpressions(pending.source.element(), sourceField, values);
+            if (valueExpressions == null) {
                 failed = true;
                 continue;
             }
@@ -346,12 +358,80 @@ final class FormProcessor {
                     sourceField.constantName,
                     sourceField.textField,
                     pending.stateName,
-                    values,
+                    valueExpressions,
                     dependency.effect().name()
             ));
             index++;
         }
         return failed ? null : result;
+    }
+
+    private List<String> dependencyValueExpressions(Element dependencyElement, FieldSpec sourceField, List<String> values) {
+        if (sourceField.textField) {
+            return values.stream()
+                    .map(FormProcessor::stringLiteral)
+                    .toList();
+        }
+        if ("CHECK_BOX".equals(sourceField.kind)) {
+            List<String> result = new ArrayList<>();
+            boolean failed = false;
+            for (String value : values) {
+                if ("true".equals(value)) {
+                    result.add("Boolean.TRUE");
+                } else if ("false".equals(value)) {
+                    result.add("Boolean.FALSE");
+                } else {
+                    error(dependencyElement, "@CoruscoForm.DependsOn value for checkbox field "
+                            + sourceField.componentName + " must be true or false: " + value);
+                    failed = true;
+                }
+            }
+            return failed ? null : result;
+        }
+        if (!sourceField.enumOptionConstants.isEmpty()) {
+            java.util.Map<String, String> constantsByToken = new java.util.LinkedHashMap<>();
+            java.util.Set<String> ambiguousTokens = new java.util.LinkedHashSet<>();
+            for (String enumConstant : sourceField.enumOptionConstants) {
+                registerDependencyToken(constantsByToken, ambiguousTokens, enumConstant, enumConstant);
+            }
+            for (OptionSpec option : sourceField.options) {
+                registerDependencyToken(constantsByToken, ambiguousTokens, option.key, option.enumConstantName);
+            }
+            List<String> result = new ArrayList<>();
+            boolean failed = false;
+            for (String value : values) {
+                if (ambiguousTokens.contains(value)) {
+                    error(dependencyElement, "@CoruscoForm.DependsOn value for enum field "
+                            + sourceField.componentName + " is ambiguous: " + value);
+                    failed = true;
+                } else {
+                    String enumConstant = constantsByToken.get(value);
+                    if (enumConstant == null) {
+                        error(dependencyElement, "@CoruscoForm.DependsOn value does not match an enum constant or option key for "
+                                + sourceField.componentName + ": " + value);
+                        failed = true;
+                    } else {
+                        result.add(sourceField.valueType + "." + enumConstant);
+                    }
+                }
+            }
+            return failed ? null : result;
+        }
+        error(dependencyElement, "@CoruscoForm.DependsOn does not support values for field "
+                + sourceField.componentName + " of type " + sourceField.valueType);
+        return null;
+    }
+
+    private static void registerDependencyToken(
+            java.util.Map<String, String> constantsByToken,
+            java.util.Set<String> ambiguousTokens,
+            String token,
+            String enumConstant
+    ) {
+        String previous = constantsByToken.putIfAbsent(token, enumConstant);
+        if (previous != null && !previous.equals(enumConstant)) {
+            ambiguousTokens.add(token);
+        }
     }
 
     private boolean validateAbstractClassMembers(TypeElement formType) {
@@ -364,10 +444,10 @@ final class FormProcessor {
                 continue;
             }
             if (hasFieldKind(method) || hasFieldMetadata(method)) {
-                error(method, "@SwingForm field annotations on abstract classes require abstract accessor methods");
+                error(method, "@CoruscoForm field annotations on abstract classes require abstract accessor methods");
                 valid = false;
             } else if (method.getAnnotation(ComponentState.class) != null) {
-                error(method, "@SwingForm component state annotations on abstract classes require abstract accessors");
+                error(method, "@CoruscoForm component state annotations on abstract classes require abstract accessors");
                 valid = false;
             }
         }
@@ -377,15 +457,15 @@ final class FormProcessor {
     private boolean validateAbstractAccessorShape(ExecutableElement method) {
         boolean valid = true;
         if (!method.getParameters().isEmpty()) {
-            error(method, "Abstract @SwingForm accessor must not declare parameters");
+            error(method, "Abstract @CoruscoForm accessor must not declare parameters");
             valid = false;
         }
         if (!method.getTypeParameters().isEmpty()) {
-            error(method, "Abstract @SwingForm accessor must not be generic");
+            error(method, "Abstract @CoruscoForm accessor must not be generic");
             valid = false;
         }
         if (method.getReturnType().getKind() == TypeKind.VOID) {
-            error(method, "Abstract @SwingForm accessor must return a value");
+            error(method, "Abstract @CoruscoForm accessor must return a value");
             valid = false;
         }
         return valid;
@@ -426,9 +506,7 @@ final class FormProcessor {
         String viewComponentType = viewComponentType(textField, checkBox, comboBox, radioGroup, dateField, valueType);
         String viewMethodName = viewMethodName(componentName, textField, checkBox, comboBox, radioGroup, dateField);
         List<OptionSpec> options = enumOptions(source, comboBox, radioGroup);
-        List<String> enumOptionConstants = options.stream()
-                .map(option -> option.enumConstantName)
-                .toList();
+        List<String> enumOptionConstants = enumConstantNames(source.type());
         Help help = source.getAnnotation(Help.class);
         String tooltipId = null;
         String helpTopicId = null;
@@ -486,7 +564,7 @@ final class FormProcessor {
                 String enumConstantName = constant.getSimpleName().toString();
                 String key = option == null || option.key().isBlank() ? enumOptionKey(enumConstantName) : option.key();
                 if (!isStableId(key)) {
-                    error(constant, "@Option key must contain only letters, digits, dots, underscores, dashes, or slashes");
+                    error(constant, "@CoruscoForm.Option key must contain only letters, digits, dots, underscores, dashes, or slashes");
                     continue;
                 }
                 if (!keys.add(key)) {
@@ -508,6 +586,20 @@ final class FormProcessor {
         return options.stream()
                 .map(option -> option.option)
                 .toList();
+    }
+
+    private List<String> enumConstantNames(TypeMirror type) {
+        Element typeElement = types.asElement(type);
+        if (typeElement == null || typeElement.getKind() != ElementKind.ENUM) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (Element enclosed : typeElement.getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.ENUM_CONSTANT) {
+                result.add(enclosed.getSimpleName().toString());
+            }
+        }
+        return result;
     }
 
     private boolean validateMetadata(FieldSource source, FieldSpec field) {
@@ -819,6 +911,10 @@ final class FormProcessor {
 
     private static boolean isStableId(String value) {
         return value.matches("[A-Za-z0-9][A-Za-z0-9._/-]*");
+    }
+
+    private static String stringLiteral(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private static String kebab(String text) {

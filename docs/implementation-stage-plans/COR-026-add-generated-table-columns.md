@@ -27,7 +27,7 @@ paths.
 
 Add annotations:
 
-- `@SwingTable`
+- `@CoruscoTable`
 - `@Column`
 
 Generated types for `CustomerRow`:

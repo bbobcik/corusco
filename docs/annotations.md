@@ -1,8 +1,11 @@
 # Corusco Annotation Reference
 
 Corusco annotations are compile-time inputs for `corusco-processor`. They are
-`SOURCE` retained and are read through `javax.lang.model` during javac
-annotation processing. Runtime framework code must not scan them reflectively.
+read through `javax.lang.model` during javac annotation processing. Form and
+table metadata annotations are retained in class files so Swing adapter modules
+can generate companions for already compiled model classes. Runtime framework
+code must not scan annotations reflectively; it should consume generated
+companions and descriptors.
 
 Use annotations to describe stable UI contracts. Put business behavior,
 cross-field validation, persistence, and presenter logic in ordinary Java code.
@@ -13,8 +16,8 @@ Annotation types are grouped by authoring concern:
 
 | Package | Use for |
 | --- | --- |
-| `cz.auderis.corusco.annotations.form` | `@SwingForm` and field-kind annotations such as `@TextField`, `@DateField`, `@ComboBox`, and `@CheckBox`. |
-| `cz.auderis.corusco.annotations.table` | `@SwingTable` and `@Column`. |
+| `cz.auderis.corusco.annotations.form` | `@CoruscoForm` and field-kind annotations such as `@TextField`, `@DateField`, `@ComboBox`, `@RadioGroup`, and `@CheckBox`. |
+| `cz.auderis.corusco.annotations.table` | `@CoruscoTable` and `@Column`. |
 | `cz.auderis.corusco.annotations.validation` | Field constraints such as `@Required`, `@Length`, `@Regex`, `@DecimalRange`, and `@IntRange`. |
 | `cz.auderis.corusco.annotations.command` | `@UiAction` action descriptor metadata. |
 | `cz.auderis.corusco.annotations.help` | `@Help` tooltip and help-topic metadata. |
@@ -48,9 +51,10 @@ UI identity tokens for generated metadata.
 
 ## Form Annotations
 
-### `@SwingForm`
+### `@CoruscoForm`
 
-Target: type. Supported source shape: non-generic record.
+Target: type. Supported source shapes: non-generic record or non-generic
+abstract class with public abstract component accessor methods.
 
 Required attributes:
 
@@ -58,18 +62,24 @@ Required attributes:
 | --- | --- |
 | `id` | Stable form prefix used for generated field, resource, problem, and component IDs. |
 
-Generated companions for `CustomerEdit`:
+Generated core companions for `CustomerEdit`:
 
 - `CustomerEditFields`
 - `CustomerEditResources`
 - `CustomerEditProblems`
 - `CustomerEditDescriptors`
 - `CustomerEditFormModel`
+- `CustomerEditPresentationModel`
+- `CustomerEditOptions`
+
+Packages annotated with `@SwingCompanionPackage` also receive Swing companions:
+
 - `CustomerEditView`
 - `CustomerEditBehaviorPlan`
+- `CustomerEditBindings`
 
 ```java
-@SwingForm(id = "customer")
+@CoruscoForm(id = "customer")
 record CustomerEdit(
         @TextField @Required String name,
         @TextField @DecimalRange(min = "0.00") BigDecimal creditLimit,
@@ -80,8 +90,8 @@ record CustomerEdit(
 
 Current processor limits:
 
-- the annotated type must be a record;
-- generic records are rejected;
+- the annotated type must be a record or abstract class;
+- generic records and generic abstract classes are rejected;
 - at least one component must use a field-kind annotation;
 - a component may use only one field-kind annotation.
 
@@ -94,6 +104,7 @@ Exactly one field-kind annotation may appear on a generated form component.
 | `@TextField` | `String`, `Integer`, `int`, `BigDecimal`, or `LocalDate` | `TextFieldModel` | `JTextField <name>Field()` |
 | `@DateField` | `LocalDate` | `TextFieldModel` | `JTextField <name>Field()` |
 | `@ComboBox` | declared type, usually an enum | `FieldModel` | `JComboBox<T> <name>Combo()` |
+| `@RadioGroup` | enum | `FieldModel` | `JComponent <name>Group()` |
 | `@CheckBox` | `boolean` or `Boolean` | `FieldModel` | `JCheckBox <name>Box()` |
 
 `@DateField` currently uses a text-field model with the built-in `LocalDate`
@@ -131,7 +142,7 @@ state, validation rules, and guarded result creation.
 
 ## Table Annotations
 
-### `@SwingTable`
+### `@CoruscoTable`
 
 Target: type. Supported source shape: non-generic record.
 
@@ -141,15 +152,18 @@ Required attributes:
 | --- | --- |
 | `id` | Stable table prefix used for generated table and default column IDs. |
 
-Generated companions for `CustomerRow`:
+Generated core companions for `CustomerRow`:
 
 - `CustomerRowColumns`
 - `CustomerRowTableResources`
 - `CustomerRowTableDescriptor`
+
+Packages annotated with `@SwingCompanionPackage` also receive Swing companions:
+
 - `CustomerRowTableBindings`
 
 ```java
-@SwingTable(id = "customer/search")
+@CoruscoTable(id = "customer/search")
 record CustomerRow(
         @Column(width = 180, editable = true) String name,
         @Column(width = 80, sortable = false) int orders
@@ -168,7 +182,7 @@ Current processor limits:
 
 ### `@Column`
 
-Target: record component under `@SwingTable`.
+Target: record component under `@CoruscoTable`.
 
 | Attribute | Default | Meaning |
 | --- | --- | --- |
@@ -261,13 +275,17 @@ become presenter-owned commands and Swing entry points.
 
 ## Generated Names
 
-Generated type names are deterministic and live in the same package as the
-annotated source type.
+Generated core type names are deterministic and live in the same package as the
+annotated source type. Swing companion names are generated in packages annotated
+with `@SwingCompanionPackage`; the same package is auto-discovered, and cross-package
+source types can be listed explicitly.
 
 | Source | Generated names |
 | --- | --- |
-| `@SwingForm CustomerEdit` | `CustomerEditFields`, `CustomerEditResources`, `CustomerEditProblems`, `CustomerEditDescriptors`, `CustomerEditFormModel`, `CustomerEditView`, `CustomerEditBehaviorPlan`, `CustomerEditBindings`, `CustomerEditOptions` |
-| `@SwingTable CustomerRow` | `CustomerRowColumns`, `CustomerRowTableResources`, `CustomerRowTableDescriptor`, `CustomerRowTableBindings` |
+| `@CoruscoForm CustomerEdit` | `CustomerEditFields`, `CustomerEditResources`, `CustomerEditProblems`, `CustomerEditDescriptors`, `CustomerEditFormModel`, `CustomerEditPresentationModel`, `CustomerEditOptions` |
+| `@SwingCompanionPackage` for `CustomerEdit` | `CustomerEditView`, `CustomerEditBehaviorPlan`, `CustomerEditBindings` |
+| `@CoruscoTable CustomerRow` | `CustomerRowColumns`, `CustomerRowTableResources`, `CustomerRowTableDescriptor` |
+| `@SwingCompanionPackage` for `CustomerRow` | `CustomerRowTableBindings` |
 | `@UiAction` methods in `CustomerPresenter` | `CustomerPresenterActions` |
 
 Record component names become constant names and method names by convention:

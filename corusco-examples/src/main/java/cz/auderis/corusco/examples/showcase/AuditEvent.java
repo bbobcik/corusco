@@ -2,9 +2,9 @@ package cz.auderis.corusco.examples.showcase;
 
 import cz.auderis.corusco.annotations.help.Help;
 import cz.auderis.corusco.annotations.table.Column;
-import cz.auderis.corusco.annotations.table.SwingTable;
+import cz.auderis.corusco.annotations.table.CoruscoTable;
 
-@SwingTable(id = "showcase/events")
+@CoruscoTable(id = "showcase/events")
 record AuditEvent(
         @Column(width = 190, tooltip = "showcase/events/time/tooltip")
         @Help(topic = "showcase/events/time")

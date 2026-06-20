@@ -39,11 +39,11 @@ which fits immutable records and generated updater helpers.
 
 ## Generated Table Records
 
-Annotate a non-generic record with `@SwingTable` and annotate at least one
+Annotate a non-generic record with `@CoruscoTable` and annotate at least one
 record component with `@Column`:
 
 ```java
-@SwingTable(id = "generated-customer-table")
+@CoruscoTable(id = "generated-customer-table")
 record GeneratedCustomerRow(
         @Column(
                 persistenceId = "generated-customer-table/customer-name",

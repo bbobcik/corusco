@@ -68,7 +68,7 @@ final class FormDependenciesSourceWriter {
                         ? dependency.sourceFieldConstant + ".asFieldKey()"
                         : dependency.sourceFieldConstant,
                 "TARGET_STATE_MODEL_LITERAL", stringLiteralOrNull(dependency.targetStateModel),
-                "DEPENDENCY_VALUES", dependencyValuesExpression(dependency.values),
+                "DEPENDENCY_VALUES", dependencyValuesExpression(dependency.valueExpressions),
                 "DEPENDENCY_EFFECT", dependency.effect.toString()
         )).asString();
     }
@@ -96,9 +96,7 @@ final class FormDependenciesSourceWriter {
     }
 
     private static String dependencyValuesExpression(List<String> values) {
-        return values.stream()
-                .map(FormDependenciesSourceWriter::stringLiteralOrNull)
-                .collect(Collectors.joining(", "));
+        return values.stream().collect(Collectors.joining(", "));
     }
 
     private static String stringLiteralOrNull(String value) {

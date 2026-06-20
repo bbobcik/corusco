@@ -13,7 +13,6 @@ class AbstractGeneratedFormExampleTest {
                 "Acme Industrial (inactive)",
                 "review-required",
                 "true",
-                "true",
                 "abstract-customer-profile/name",
                 "TEXT"
         );

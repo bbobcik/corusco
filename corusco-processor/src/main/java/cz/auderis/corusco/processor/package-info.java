@@ -53,7 +53,7 @@
  * annotations themselves are not scanned at runtime.</p>
  *
  * <pre>{@code
- * @SwingForm(id = "customer/edit")
+ * @CoruscoForm(id = "customer/edit")
  * record CustomerEdit(
  *         @TextField @Required String name,
  *         @ComboBox CustomerType type
@@ -61,8 +61,9 @@
  * }
  *
  * // After compilation, application code can use generated classes:
- * CustomerEditFormModel model = new CustomerEditFormModel(customer);
- * CustomerEditBindings.install(view, model, scope);
+ * CustomerEditFormModel form = new CustomerEditFormModel(customer);
+ * CustomerEditPresentationModel presentation = new CustomerEditPresentationModel(form);
+ * CustomerEditBindings.install(view, presentation, scope);
  * }</pre>
  *
  * <p>A generated class is build output. Do not edit it by hand. If the

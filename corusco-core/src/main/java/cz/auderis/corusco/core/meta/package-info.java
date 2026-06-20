@@ -5,10 +5,22 @@
  * values. Start with {@link cz.auderis.corusco.core.meta.FieldDescriptor},
  * which ties a typed field key to label resources, editor kind, optional help
  * metadata, and generated validation descriptors. {@link
- * cz.auderis.corusco.core.meta.FieldKind} identifies the intended editor
- * family, while {@link cz.auderis.corusco.core.meta.ConstraintDescriptor} and
- * {@link cz.auderis.corusco.core.meta.ConstraintKind} describe validation
- * constraints discovered by the annotation processor.</p>
+ * cz.auderis.corusco.core.meta.FieldKind} identifies the older editor family.
+ * Newer descriptors use {@link
+ * cz.auderis.corusco.core.meta.EditorDescriptor} so richer editor families such
+ * as radio groups can be described without flattening every control into the
+ * older field-kind enum. {@link
+ * cz.auderis.corusco.core.meta.ConstraintDescriptor} and {@link
+ * cz.auderis.corusco.core.meta.ConstraintKind} describe validation constraints
+ * discovered by the annotation processor.</p>
+ *
+ * <p>{@link cz.auderis.corusco.core.meta.OptionDescriptor} describes one
+ * selectable option value together with generated resource keys for label,
+ * description, and help text. {@link
+ * cz.auderis.corusco.core.meta.FieldDependency} describes a generated
+ * dependency from a source field to a component-state model, with expected
+ * values normalized by generated code rather than compared as free-form
+ * strings.</p>
  *
  * <p>Annotation types in {@code cz.auderis.corusco.annotations} are the source
  * declarations. Processor output turns them into these runtime descriptors so

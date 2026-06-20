@@ -11,10 +11,11 @@
             ObservableList<OWNER_TYPE> rows,
             BindingScope scope
     ) {
-        ObservableTableModel<OWNER_TYPE> model = DESCRIPTOR_TYPE.tableModel(rows);
-        table.setModel(model);
-        scope.add(model);
-        return model;
+        ObservableTableModel<OWNER_TYPE> tableModel =
+                ObservableTableModel.of(rows, DESCRIPTOR_TYPE.DESCRIPTOR);
+        table.setModel(tableModel);
+        scope.add(tableModel);
+        return tableModel;
     }
 
     /**
@@ -30,10 +31,11 @@
             ObservableReadableCollection<OWNER_TYPE> rows,
             BindingScope scope
     ) {
-        ObservableTableModel<OWNER_TYPE> model = DESCRIPTOR_TYPE.readOnlyTableModel(rows);
-        table.setModel(model);
-        scope.add(model);
-        return model;
+        ObservableTableModel<OWNER_TYPE> tableModel =
+                ObservableTableModel.readOnly(rows, DESCRIPTOR_TYPE.DESCRIPTOR);
+        table.setModel(tableModel);
+        scope.add(tableModel);
+        return tableModel;
     }
 
     /**
@@ -73,4 +75,3 @@
     ) {
         return scope.add(TableSelectionBinding.bind(table, model, selectedModelRow, selectedRow));
     }
-
