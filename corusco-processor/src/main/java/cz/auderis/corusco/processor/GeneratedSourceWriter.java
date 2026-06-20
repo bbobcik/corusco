@@ -37,16 +37,19 @@ final class GeneratedSourceWriter {
         this.messager = messager;
     }
 
-    void writeFormSources(TypeElement formType, List<FieldSpec> fields) {
-        writeFieldsClass(formType, fields);
-        writeResourcesClass(formType, fields);
-        writeProblemsClass(formType, fields);
-        writeDescriptorsClass(formType, fields);
-        writeFormModelClass(formType, fields);
-        writeViewClass(formType, fields);
-        writeBehaviorPlanClass(formType, fields);
-        writeBindingsClass(formType);
-        writeOptionsClass(formType, fields);
+    void writeFormSources(TypeElement formType, FormSpec form) {
+        if (form.hasGeneratedResultImplementation()) {
+            writeResultImplementationClass(formType, form);
+        }
+        writeFieldsClass(formType, form);
+        writeResourcesClass(formType, form);
+        writeProblemsClass(formType, form);
+        writeDescriptorsClass(formType, form);
+        writeFormModelClass(formType, form);
+        writeViewClass(formType, form);
+        writeBehaviorPlanClass(formType, form);
+        writeBindingsClass(formType, form);
+        writeOptionsClass(formType, form);
     }
 
     void writeActionsClass(TypeElement ownerType, List<ActionSpec> actions) {
@@ -81,9 +84,40 @@ final class GeneratedSourceWriter {
         writeSource(ownerType, qualifiedName, source.toString(), "Could not write generated action descriptors");
     }
 
-    private void writeFieldsClass(TypeElement formType, List<FieldSpec> fields) {
+    private void writeResultImplementationClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String generatedType = form.resultImplementationType;
+        String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
+        StringBuilder source = sourceBuilder(packageName);
+        source.append("""
+                import java.util.Objects;
+
+                /**
+                 * Generated immutable result implementation for {@link %s}.
+                 */
+                public final class %s extends %s {
+
+                """.formatted(form.sourceType, generatedType, form.sourceType));
+        for (FieldSpec field : form.fields) {
+            source.append("""
+                    private final %s %s;
+
+                    """.formatted(field.accessorType, field.componentName));
+        }
+        source.append(resultConstructorSource(generatedType, form.fields));
+        for (FieldSpec field : form.fields) {
+            source.append(resultAccessorSource(field));
+        }
+        source.append(resultEqualsSource(form));
+        source.append(resultHashCodeSource(form.fields));
+        source.append(resultToStringSource(generatedType, form.fields));
+        source.append("}\n");
+        writeSource(formType, qualifiedName, source.toString(), "Could not write generated form result implementation");
+    }
+
+    private void writeFieldsClass(TypeElement formType, FormSpec form) {
+        String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "Fields";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         StringBuilder source = sourceBuilder(packageName);
@@ -98,16 +132,16 @@ final class GeneratedSourceWriter {
 
                 """.formatted(ownerType, generatedType));
         source.append(privateConstructorSource(generatedType));
-        for (FieldSpec field : fields) {
+        for (FieldSpec field : form.fields) {
             source.append(fieldSource(field));
         }
         source.append("}\n");
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated field keys");
     }
 
-    private void writeResourcesClass(TypeElement formType, List<FieldSpec> fields) {
+    private void writeResourcesClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "Resources";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         StringBuilder source = sourceBuilder(packageName);
@@ -121,7 +155,7 @@ final class GeneratedSourceWriter {
 
                 """.formatted(ownerType, generatedType));
         source.append(privateConstructorSource(generatedType));
-        for (FieldSpec field : fields) {
+        for (FieldSpec field : form.fields) {
             source.append(resourceKeySource(field.labelConstant, field.keyId + "/label"));
             if (field.tooltipConstant != null) {
                 source.append(resourceKeySource(field.tooltipConstant, field.tooltipId));
@@ -131,9 +165,9 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated resource keys");
     }
 
-    private void writeProblemsClass(TypeElement formType, List<FieldSpec> fields) {
+    private void writeProblemsClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "Problems";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         StringBuilder source = sourceBuilder(packageName);
@@ -147,7 +181,7 @@ final class GeneratedSourceWriter {
 
                 """.formatted(ownerType, generatedType));
         source.append(privateConstructorSource(generatedType));
-        for (FieldSpec field : fields) {
+        for (FieldSpec field : form.fields) {
             for (ConstraintSpec constraint : field.constraints) {
                 source.append(problemCodeSource(constraint));
             }
@@ -156,9 +190,9 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated problem codes");
     }
 
-    private void writeDescriptorsClass(TypeElement formType, List<FieldSpec> fields) {
+    private void writeDescriptorsClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "Descriptors";
         String resourcesType = ownerType + "Resources";
         String problemsType = ownerType + "Problems";
@@ -178,19 +212,25 @@ final class GeneratedSourceWriter {
 
                 """.formatted(ownerType, generatedType));
         source.append(privateConstructorSource(generatedType));
-        for (FieldSpec field : fields) {
+        for (FieldSpec field : form.fields) {
             source.append(descriptorSource(field, resourcesType, problemsType));
         }
         source.append("}\n");
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated field descriptors");
     }
 
-    private void writeFormModelClass(TypeElement formType, List<FieldSpec> fields) {
+    private void writeFormModelClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "FormModel";
         String fieldsType = ownerType + "Fields";
         String descriptorsType = ownerType + "Descriptors";
+        String resultConstructorType = form.hasGeneratedResultImplementation()
+                ? form.resultImplementationType
+                : ownerType;
+        String originalDescription = form.hasGeneratedResultImplementation()
+                ? "original immutable form result"
+                : "original immutable record";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         StringBuilder source = sourceBuilder(packageName);
         source.append("""
@@ -213,7 +253,7 @@ final class GeneratedSourceWriter {
                 public final class %s extends AbstractFormModel<%s> {
 
                 """.formatted(ownerType, generatedType, ownerType));
-        for (FieldSpec field : fields) {
+        for (FieldSpec field : form.fields) {
             source.append(fieldModelDeclarationSource(field));
         }
         source.append("""
@@ -222,12 +262,12 @@ final class GeneratedSourceWriter {
                     /**
                      * Creates a generated form model.
                      *
-                     * @param original original immutable record
+                     * @param original %s
                      */
                     public %s(%s original) {
                         java.util.Objects.requireNonNull(original, "original");
-                """.formatted(generatedType, generatedType, ownerType));
-        for (FieldSpec field : fields) {
+                """.formatted(generatedType, originalDescription, generatedType, ownerType));
+        for (FieldSpec field : form.fields) {
             source.append(fieldModelInitializationSource(field, fieldsType));
         }
         source.append("""
@@ -235,8 +275,8 @@ final class GeneratedSourceWriter {
                     }
 
                 """);
-        source.append(descriptorListSource(fields, descriptorsType));
-        source.append(buildRulesSource(fields, generatedType, fieldsType));
+        source.append(descriptorListSource(form.fields, descriptorsType));
+        source.append(buildRulesSource(form.fields, generatedType, fieldsType));
         source.append("""
                     @Override
                     protected ProblemSet validationProblems() {
@@ -246,10 +286,10 @@ final class GeneratedSourceWriter {
                     @Override
                     protected %s createResult() {
                         return new %s(
-                """.formatted(ownerType, ownerType));
-        for (int i = 0; i < fields.size(); i++) {
-            FieldSpec field = fields.get(i);
-            String suffix = i == fields.size() - 1 ? "\n" : ",\n";
+                """.formatted(ownerType, resultConstructorType));
+        for (int i = 0; i < form.fields.size(); i++) {
+            FieldSpec field = form.fields.get(i);
+            String suffix = i == form.fields.size() - 1 ? "\n" : ",\n";
             source.append("                ").append(resultValueExpression(field)).append(suffix);
         }
         source.append("""
@@ -260,9 +300,9 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated form model");
     }
 
-    private void writeViewClass(TypeElement formType, List<FieldSpec> fields) {
+    private void writeViewClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "View";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         StringBuilder source = sourceBuilder(packageName);
@@ -277,16 +317,16 @@ final class GeneratedSourceWriter {
                 public interface %s {
 
                 """.formatted(ownerType, generatedType));
-        for (FieldSpec field : fields) {
+        for (FieldSpec field : form.fields) {
             source.append(viewMethodSource(field));
         }
         source.append("}\n");
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated view contract");
     }
 
-    private void writeBehaviorPlanClass(TypeElement formType, List<FieldSpec> fields) {
+    private void writeBehaviorPlanClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "BehaviorPlan";
         String viewType = ownerType + "View";
         String formModelType = ownerType + "FormModel";
@@ -317,7 +357,7 @@ final class GeneratedSourceWriter {
                         java.util.Objects.requireNonNull(model, "model");
                         java.util.Objects.requireNonNull(scope, "scope");
                 """.formatted(viewType, formModelType));
-        for (FieldSpec field : fields) {
+        for (FieldSpec field : form.fields) {
             source.append(behaviorInstallSource(field));
         }
         source.append("""
@@ -327,9 +367,9 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated behavior plan");
     }
 
-    private void writeBindingsClass(TypeElement formType) {
+    private void writeBindingsClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "Bindings";
         String viewType = ownerType + "View";
         String formModelType = ownerType + "FormModel";
@@ -362,9 +402,9 @@ final class GeneratedSourceWriter {
         writeSource(formType, qualifiedName, source.toString(), "Could not write generated binding facade");
     }
 
-    private void writeOptionsClass(TypeElement formType, List<FieldSpec> fields) {
+    private void writeOptionsClass(TypeElement formType, FormSpec form) {
         String packageName = elements.getPackageOf(formType).getQualifiedName().toString();
-        String ownerType = formType.getSimpleName().toString();
+        String ownerType = form.sourceType;
         String generatedType = ownerType + "Options";
         String qualifiedName = packageName.isEmpty() ? generatedType : packageName + "." + generatedType;
         StringBuilder source = sourceBuilder(packageName);
@@ -378,7 +418,7 @@ final class GeneratedSourceWriter {
 
                 """.formatted(ownerType, generatedType));
         source.append(privateConstructorSource(generatedType));
-        for (FieldSpec field : fields) {
+        for (FieldSpec field : form.fields) {
             if (!field.enumOptionConstants.isEmpty()) {
                 source.append(enumOptionSource(field));
             }
@@ -408,6 +448,103 @@ final class GeneratedSourceWriter {
                 field.ownerType,
                 field.valueClass
         );
+    }
+
+    private String resultConstructorSource(String generatedType, List<FieldSpec> fields) {
+        StringBuilder source = new StringBuilder("""
+                    /**
+                     * Creates an immutable generated form result.
+                     */
+                    public %s(
+                """.formatted(generatedType));
+        for (int i = 0; i < fields.size(); i++) {
+            FieldSpec field = fields.get(i);
+            String suffix = i == fields.size() - 1 ? "\n" : ",\n";
+            source.append("            ").append(field.accessorType).append(' ').append(field.componentName).append(suffix);
+        }
+        source.append("""
+                    ) {
+                """);
+        for (FieldSpec field : fields) {
+            source.append("        this.").append(field.componentName).append(" = ")
+                    .append(field.componentName).append(";\n");
+        }
+        source.append("""
+                    }
+
+                """);
+        return source.toString();
+    }
+
+    private String resultAccessorSource(FieldSpec field) {
+        return """
+                    @Override
+                    public %s %s() {
+                        return %s;
+                    }
+
+                """.formatted(field.accessorType, field.componentName, field.componentName);
+    }
+
+    private String resultEqualsSource(FormSpec form) {
+        StringBuilder source = new StringBuilder("""
+                    @Override
+                    public boolean equals(Object obj) {
+                        if (this == obj) {
+                            return true;
+                        }
+                        if (!(obj instanceof %s other)) {
+                            return false;
+                        }
+                        return%s""".formatted(form.sourceType, " "));
+        for (int i = 0; i < form.fields.size(); i++) {
+            FieldSpec field = form.fields.get(i);
+            String prefix = i == 0 ? "" : "\n                && ";
+            source.append(prefix).append("Objects.equals(")
+                    .append(field.componentName).append("(), other.")
+                    .append(field.componentName).append("())");
+        }
+        source.append("""
+                ;
+                    }
+
+                """);
+        return source.toString();
+    }
+
+    private String resultHashCodeSource(List<FieldSpec> fields) {
+        List<String> values = new ArrayList<>();
+        for (FieldSpec field : fields) {
+            values.add(field.componentName + "()");
+        }
+        return """
+                    @Override
+                    public int hashCode() {
+                        return Objects.hash(%s);
+                    }
+
+                """.formatted(String.join(", ", values));
+    }
+
+    private String resultToStringSource(String generatedType, List<FieldSpec> fields) {
+        StringBuilder source = new StringBuilder("""
+                    @Override
+                    public String toString() {
+                        return "%s["
+                """.formatted(generatedType));
+        for (int i = 0; i < fields.size(); i++) {
+            FieldSpec field = fields.get(i);
+            String prefix = i == 0 ? " + \"" : " + \", ";
+            source.append("                ").append(prefix)
+                    .append(field.componentName).append("=\" + ")
+                    .append(field.componentName).append("()\n");
+        }
+        source.append("""
+                                + "]";
+                    }
+
+                """);
+        return source.toString();
     }
 
     private String actionSource(ActionSpec action) {
@@ -665,7 +802,7 @@ final class GeneratedSourceWriter {
     private String descriptorListSource(List<FieldSpec> fields, String descriptorsType) {
         StringBuilder source = new StringBuilder("""
                     /**
-                     * Returns generated field descriptors in record component order.
+                     * Returns generated field descriptors in source declaration order.
                      *
                      * @return descriptor list
                      */

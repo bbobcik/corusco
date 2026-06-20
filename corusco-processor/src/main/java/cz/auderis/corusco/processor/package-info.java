@@ -93,14 +93,15 @@
  * <h2>Validation And Diagnostics</h2>
  *
  * <p>The processor checks that annotations are used on supported source
- * elements. For example, form and table sources must be records, command
- * methods must be no-argument {@code void} methods, and validation annotations
- * must be compatible with the field kind they annotate.</p>
+ * elements. For example, form sources must be non-generic records or abstract
+ * classes with annotated abstract accessors, table sources must be records,
+ * command methods must be no-argument {@code void} methods, and validation
+ * annotations must be compatible with the field kind they annotate.</p>
  *
  * <p>Diagnostics should point to the source location a developer can fix. A
- * malformed field should report the record component. A malformed command
- * should report the method. A generated-source failure after valid input should
- * be treated as a processor defect.</p>
+ * malformed field should report the record component or abstract accessor. A
+ * malformed command should report the method. A generated-source failure after
+ * valid input should be treated as a processor defect.</p>
  *
  * <h2>Build Configuration</h2>
  *

@@ -16,6 +16,7 @@ import cz.auderis.corusco.annotations.form.TextField;
 import cz.auderis.corusco.annotations.command.UiAction;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +33,7 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.PrimitiveType;
@@ -342,8 +344,8 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
 
     private void processForm(TypeElement formType) {
         SwingForm annotation = formType.getAnnotation(SwingForm.class);
-        if (formType.getKind() != ElementKind.RECORD) {
-            error(formType, "@SwingForm is supported only on records");
+        if (formType.getKind() != ElementKind.RECORD && formType.getKind() != ElementKind.CLASS) {
+            error(formType, "@SwingForm is supported only on records or abstract classes");
             return;
         }
         if (annotation.id().isBlank()) {
@@ -355,55 +357,84 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
             return;
         }
         if (!formType.getTypeParameters().isEmpty()) {
-            error(formType, "@SwingForm generic records are not supported by this processor stage");
+            error(formType, "@SwingForm generic source types are not supported by this processor stage");
             return;
         }
 
-        List<FieldSpec> fields = new ArrayList<>();
+        if (formType.getKind() == ElementKind.CLASS && !formType.getModifiers().contains(Modifier.ABSTRACT)) {
+            error(formType, "@SwingForm classes must be abstract");
+            return;
+        }
+
         boolean failed = false;
-        for (RecordComponentElement component : formType.getRecordComponents()) {
-            boolean textField = component.getAnnotation(TextField.class) != null;
-            boolean checkBox = component.getAnnotation(CheckBox.class) != null;
-            boolean comboBox = component.getAnnotation(ComboBox.class) != null;
-            boolean dateField = component.getAnnotation(DateField.class) != null;
+        if (formType.getKind() == ElementKind.CLASS && !validateAbstractClassMembers(formType)) {
+            failed = true;
+        }
+        List<FieldSpec> fields = new ArrayList<>();
+        Set<String> fieldNames = new LinkedHashSet<>();
+        Set<String> fieldIds = new LinkedHashSet<>();
+        for (FieldSource source : formFieldSources(formType)) {
+            if (source.abstractAccessor() && !validateAbstractAccessorShape(source.method())) {
+                failed = true;
+                continue;
+            }
+            boolean textField = source.getAnnotation(TextField.class) != null;
+            boolean checkBox = source.getAnnotation(CheckBox.class) != null;
+            boolean comboBox = source.getAnnotation(ComboBox.class) != null;
+            boolean dateField = source.getAnnotation(DateField.class) != null;
             int fieldKindCount = (textField ? 1 : 0)
                     + (checkBox ? 1 : 0)
                     + (comboBox ? 1 : 0)
                     + (dateField ? 1 : 0);
             if (fieldKindCount == 0) {
-                if (hasFieldMetadata(component)) {
-                    error(component, "Field metadata annotations require a field kind annotation");
+                if (source.abstractAccessor()) {
+                    error(source.element(), "Abstract @SwingForm accessor must have a field kind annotation");
+                    failed = true;
+                } else if (hasFieldMetadata(source.element())) {
+                    error(source.element(), "Field metadata annotations require a field kind annotation");
                     failed = true;
                 }
                 continue;
             }
             if (fieldKindCount > 1) {
-                error(component, "Record component must have only one field kind annotation");
+                error(source.element(), source.fieldKindConflictMessage());
                 failed = true;
                 continue;
             }
-            if (checkBox && !isBoolean(component.asType())) {
-                error(component, "@CheckBox requires boolean or java.lang.Boolean component type");
+            if (checkBox && !isBoolean(source.type())) {
+                error(source.element(), "@CheckBox requires boolean or java.lang.Boolean component type");
                 failed = true;
                 continue;
             }
-            if (comboBox && component.asType().getKind() != TypeKind.DECLARED) {
-                error(component, "@ComboBox requires a declared component type");
+            if (comboBox && source.type().getKind() != TypeKind.DECLARED) {
+                error(source.element(), "@ComboBox requires a declared component type");
                 failed = true;
                 continue;
             }
-            if (dateField && !isLocalDate(component.asType())) {
-                error(component, "@DateField requires java.time.LocalDate component type");
+            if (dateField && !isLocalDate(source.type())) {
+                error(source.element(), "@DateField requires java.time.LocalDate component type");
                 failed = true;
                 continue;
             }
-            if (!isSupportedValueType(component.asType())) {
-                error(component, "Generated field keys require primitive or declared component types");
+            if (!isSupportedValueType(source.type())) {
+                error(source.element(), "Generated field keys require primitive or declared component types");
                 failed = true;
                 continue;
             }
-            FieldSpec field = fieldSpec(formType, annotation.id(), component, textField, checkBox, comboBox, dateField);
-            if (!validateMetadata(component, field)) {
+            FieldSpec field = fieldSpec(formType, annotation.id(), source, textField, checkBox, comboBox, dateField);
+            if (!fieldNames.add(field.componentName)) {
+                error(source.element(), "Duplicate @SwingForm field name in " + formType.getSimpleName() + ": "
+                        + field.componentName);
+                failed = true;
+                continue;
+            }
+            if (!fieldIds.add(field.keyId)) {
+                error(source.element(), "Duplicate @SwingForm field id in " + formType.getSimpleName() + ": "
+                        + field.keyId);
+                failed = true;
+                continue;
+            }
+            if (!validateMetadata(source, field)) {
                 failed = true;
                 continue;
             }
@@ -411,50 +442,131 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         }
 
         if (fields.isEmpty() && !failed) {
-            error(formType, "@SwingForm record must contain at least one @TextField or @CheckBox component");
+            error(formType, formType.getKind() == ElementKind.RECORD
+                    ? "@SwingForm record must contain at least one field kind annotation"
+                    : "@SwingForm abstract class must contain at least one annotated abstract accessor");
             return;
         }
         if (failed) {
             return;
         }
-        sourceWriter().writeFormSources(formType, fields);
+        String sourceType = formType.getSimpleName().toString();
+        String resultImplementationType = formType.getKind() == ElementKind.CLASS ? "Generated" + sourceType : null;
+        if (resultImplementationType != null && generatedResultTypeExists(formType, resultImplementationType)) {
+            error(formType, "Generated form result type would collide with existing type: " + resultImplementationType);
+            return;
+        }
+        sourceWriter().writeFormSources(formType, new FormSpec(
+                annotation.id(),
+                sourceType,
+                resultImplementationType,
+                fields
+        ));
+    }
+
+    private List<FieldSource> formFieldSources(TypeElement formType) {
+        if (formType.getKind() == ElementKind.RECORD) {
+            List<FieldSource> result = new ArrayList<>();
+            for (RecordComponentElement component : formType.getRecordComponents()) {
+                result.add(FieldSource.recordComponent(component));
+            }
+            return result;
+        }
+        List<FieldSource> result = new ArrayList<>();
+        for (Element enclosed : formType.getEnclosedElements()) {
+            if (!(enclosed instanceof ExecutableElement method)) {
+                continue;
+            }
+            if (!method.getModifiers().contains(Modifier.ABSTRACT)) {
+                continue;
+            }
+            result.add(FieldSource.abstractAccessor(method));
+        }
+        return result;
+    }
+
+    private boolean validateAbstractClassMembers(TypeElement formType) {
+        boolean valid = true;
+        for (Element enclosed : formType.getEnclosedElements()) {
+            if (!(enclosed instanceof ExecutableElement method)) {
+                continue;
+            }
+            if (method.getModifiers().contains(Modifier.ABSTRACT)) {
+                continue;
+            }
+            if (hasFieldKind(method) || hasFieldMetadata(method)) {
+                error(method, "@SwingForm field annotations on abstract classes require abstract accessor methods");
+                valid = false;
+            }
+        }
+        return valid;
+    }
+
+    private boolean validateAbstractAccessorShape(ExecutableElement method) {
+        boolean valid = true;
+        if (!method.getParameters().isEmpty()) {
+            error(method, "Abstract @SwingForm accessor must not declare parameters");
+            valid = false;
+        }
+        if (!method.getTypeParameters().isEmpty()) {
+            error(method, "Abstract @SwingForm accessor must not be generic");
+            valid = false;
+        }
+        if (method.getReturnType().getKind() == TypeKind.VOID) {
+            error(method, "Abstract @SwingForm accessor must return a value");
+            valid = false;
+        }
+        return valid;
+    }
+
+    private boolean generatedResultTypeExists(TypeElement owner, String simpleName) {
+        for (Element enclosed : owner.getEnclosedElements()) {
+            if (enclosed instanceof TypeElement type && type.getSimpleName().contentEquals(simpleName)) {
+                return true;
+            }
+        }
+        String packageName = elements.getPackageOf(owner).getQualifiedName().toString();
+        String qualifiedName = packageName.isEmpty() ? simpleName : packageName + "." + simpleName;
+        return elements.getTypeElement(qualifiedName) != null;
     }
 
     private FieldSpec fieldSpec(
             TypeElement formType,
             String formId,
-            RecordComponentElement component,
+            FieldSource source,
             boolean textField,
             boolean checkBox,
             boolean comboBox,
             boolean dateField
     ) {
-        String componentName = component.getSimpleName().toString();
+        String componentName = source.name();
         String constantName = constantName(componentName);
         String keyId = formId + "/" + kebab(componentName);
         String ownerType = formType.getSimpleName().toString();
-        String valueType = genericType(component.asType());
-        String valueClass = classLiteral(component.asType());
+        String accessorType = sourceType(source.type());
+        String valueType = genericType(source.type());
+        String valueClass = classLiteral(source.type());
         String kind = fieldKind(textField, checkBox, comboBox, dateField);
         boolean textKey = textField || dateField;
         String modelType = textKey ? "TextFieldModel" : "FieldModel";
-        String converterExpression = converterExpression(component.asType(), textField, dateField);
+        String converterExpression = converterExpression(source.type(), textField, dateField);
         String viewComponentType = viewComponentType(textField, checkBox, comboBox, dateField, valueType);
         String viewMethodName = viewMethodName(componentName, textField, checkBox, comboBox, dateField);
-        List<String> enumOptionConstants = enumOptionConstants(component, comboBox);
-        Help help = component.getAnnotation(Help.class);
+        List<String> enumOptionConstants = enumOptionConstants(source, comboBox);
+        Help help = source.getAnnotation(Help.class);
         String tooltipId = null;
         String helpTopicId = null;
         if (help != null) {
             tooltipId = help.tooltip().isBlank() ? keyId + "/tooltip" : help.tooltip();
             helpTopicId = help.topic().isBlank() ? null : help.topic();
         }
-        List<ConstraintSpec> constraints = constraints(component, keyId, constantName);
+        List<ConstraintSpec> constraints = constraints(source.element(), keyId, constantName);
         return new FieldSpec(
                 constantName,
                 keyId,
                 componentName,
                 ownerType,
+                accessorType,
                 valueType,
                 valueClass,
                 kind,
@@ -472,15 +584,15 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         );
     }
 
-    private List<String> enumOptionConstants(RecordComponentElement component, boolean comboBox) {
+    private List<String> enumOptionConstants(FieldSource source, boolean comboBox) {
         if (!comboBox) {
             return List.of();
         }
-        ComboBox annotation = component.getAnnotation(ComboBox.class);
+        ComboBox annotation = source.getAnnotation(ComboBox.class);
         if (annotation == null || !annotation.enumOptions()) {
             return List.of();
         }
-        Element typeElement = types.asElement(component.asType());
+        Element typeElement = types.asElement(source.type());
         if (typeElement == null || typeElement.getKind() != ElementKind.ENUM) {
             return List.of();
         }
@@ -493,55 +605,57 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         return constants;
     }
 
-    private boolean validateMetadata(RecordComponentElement component, FieldSpec field) {
+    private boolean validateMetadata(FieldSource source, FieldSpec field) {
+        Element element = source.element();
+        TypeMirror type = source.type();
         boolean valid = true;
-        if (component.getAnnotation(Length.class) != null && (!field.textField || !isString(component.asType()))) {
-            error(component, "@Length is supported only on @TextField String components");
+        if (element.getAnnotation(Length.class) != null && (!field.textField || !isString(type))) {
+            error(element, "@Length is supported only on @TextField String components");
             valid = false;
         }
-        if (component.getAnnotation(DecimalRange.class) != null && (!field.textField || !isBigDecimal(component.asType()))) {
-            error(component, "@DecimalRange is supported only on @TextField BigDecimal components");
+        if (element.getAnnotation(DecimalRange.class) != null && (!field.textField || !isBigDecimal(type))) {
+            error(element, "@DecimalRange is supported only on @TextField BigDecimal components");
             valid = false;
         }
         if (field.textField && field.converterExpression == null) {
-            error(component, "@TextField supports String, Integer, BigDecimal, and LocalDate in this processor stage");
+            error(element, "@TextField supports String, Integer, BigDecimal, and LocalDate in this processor stage");
             valid = false;
         }
-        if (component.getAnnotation(IntRange.class) != null && (!field.textField || !isInteger(component.asType()))) {
-            error(component, "@IntRange is supported only on @TextField integer components");
+        if (element.getAnnotation(IntRange.class) != null && (!field.textField || !isInteger(type))) {
+            error(element, "@IntRange is supported only on @TextField integer components");
             valid = false;
         }
-        if (component.getAnnotation(Regex.class) != null && (!field.textField || !isString(component.asType()))) {
-            error(component, "@Regex is supported only on @TextField String components");
+        if (element.getAnnotation(Regex.class) != null && (!field.textField || !isString(type))) {
+            error(element, "@Regex is supported only on @TextField String components");
             valid = false;
         }
-        Length length = component.getAnnotation(Length.class);
+        Length length = element.getAnnotation(Length.class);
         if (length != null && (length.min() < 0 || length.max() < length.min())) {
-            error(component, "@Length requires 0 <= min <= max");
+            error(element, "@Length requires 0 <= min <= max");
             valid = false;
         }
-        DecimalRange decimalRange = component.getAnnotation(DecimalRange.class);
-        if (decimalRange != null && !validateDecimalRange(component, decimalRange)) {
+        DecimalRange decimalRange = element.getAnnotation(DecimalRange.class);
+        if (decimalRange != null && !validateDecimalRange(element, decimalRange)) {
             valid = false;
         }
-        IntRange intRange = component.getAnnotation(IntRange.class);
+        IntRange intRange = element.getAnnotation(IntRange.class);
         if (intRange != null && intRange.max() < intRange.min()) {
-            error(component, "@IntRange requires min <= max");
+            error(element, "@IntRange requires min <= max");
             valid = false;
         }
-        Regex regex = component.getAnnotation(Regex.class);
+        Regex regex = element.getAnnotation(Regex.class);
         if (regex != null && regex.value().isBlank()) {
-            error(component, "@Regex pattern must not be blank");
+            error(element, "@Regex pattern must not be blank");
             valid = false;
         }
-        Help help = component.getAnnotation(Help.class);
+        Help help = element.getAnnotation(Help.class);
         if (help != null) {
             if (!help.tooltip().isBlank() && !isStableId(help.tooltip())) {
-                error(component, "@Help tooltip must contain only letters, digits, dots, underscores, dashes, or slashes");
+                error(element, "@Help tooltip must contain only letters, digits, dots, underscores, dashes, or slashes");
                 valid = false;
             }
             if (!help.topic().isBlank() && !isStableId(help.topic())) {
-                error(component, "@Help topic must contain only letters, digits, dots, underscores, dashes, or slashes");
+                error(element, "@Help topic must contain only letters, digits, dots, underscores, dashes, or slashes");
                 valid = false;
             }
         }
@@ -568,7 +682,7 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         };
     }
 
-    private List<ConstraintSpec> constraints(RecordComponentElement component, String keyId, String constantName) {
+    private List<ConstraintSpec> constraints(Element component, String keyId, String constantName) {
         List<ConstraintSpec> constraints = new ArrayList<>();
         if (component.getAnnotation(Required.class) != null) {
             constraints.add(new ConstraintSpec("REQUIRED", constantName + "_REQUIRED", keyId + "/required", null, null));
@@ -639,29 +753,29 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         return "java.time.LocalDate".equals(types.erasure(type).toString());
     }
 
-    private boolean validateDecimalRange(RecordComponentElement component, DecimalRange decimalRange) {
+    private boolean validateDecimalRange(Element element, DecimalRange decimalRange) {
         boolean valid = true;
         if (decimalRange.min().isBlank() && decimalRange.max().isBlank()) {
-            error(component, "@DecimalRange requires at least one bound");
+            error(element, "@DecimalRange requires at least one bound");
             valid = false;
         }
-        BigDecimal min = parseDecimal(component, decimalRange.min(), "min");
-        BigDecimal max = parseDecimal(component, decimalRange.max(), "max");
+        BigDecimal min = parseDecimal(element, decimalRange.min(), "min");
+        BigDecimal max = parseDecimal(element, decimalRange.max(), "max");
         if (min != null && max != null && min.compareTo(max) > 0) {
-            error(component, "@DecimalRange requires min <= max");
+            error(element, "@DecimalRange requires min <= max");
             valid = false;
         }
         return valid && (decimalRange.min().isBlank() || min != null) && (decimalRange.max().isBlank() || max != null);
     }
 
-    private BigDecimal parseDecimal(RecordComponentElement component, String value, String label) {
+    private BigDecimal parseDecimal(Element element, String value, String label) {
         if (value.isBlank()) {
             return null;
         }
         try {
             return new BigDecimal(value);
         } catch (NumberFormatException e) {
-            error(component, "@DecimalRange " + label + " is not a valid decimal");
+            error(element, "@DecimalRange " + label + " is not a valid decimal");
             return null;
         }
     }
@@ -670,19 +784,30 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         return type.getKind().isPrimitive() || type.getKind() == TypeKind.DECLARED;
     }
 
-    private static boolean hasFieldMetadata(RecordComponentElement component) {
-        return component.getAnnotation(Required.class) != null
-                || component.getAnnotation(Length.class) != null
-                || component.getAnnotation(DecimalRange.class) != null
-                || component.getAnnotation(IntRange.class) != null
-                || component.getAnnotation(Regex.class) != null
-                || component.getAnnotation(Help.class) != null;
+    private static boolean hasFieldMetadata(Element element) {
+        return element.getAnnotation(Required.class) != null
+                || element.getAnnotation(Length.class) != null
+                || element.getAnnotation(DecimalRange.class) != null
+                || element.getAnnotation(IntRange.class) != null
+                || element.getAnnotation(Regex.class) != null
+                || element.getAnnotation(Help.class) != null;
+    }
+
+    private static boolean hasFieldKind(Element element) {
+        return element.getAnnotation(TextField.class) != null
+                || element.getAnnotation(CheckBox.class) != null
+                || element.getAnnotation(ComboBox.class) != null
+                || element.getAnnotation(DateField.class) != null;
     }
 
     private String genericType(TypeMirror type) {
         if (type.getKind().isPrimitive()) {
             return types.boxedClass((PrimitiveType) type).getQualifiedName().toString();
         }
+        return type.toString();
+    }
+
+    private String sourceType(TypeMirror type) {
         return type.toString();
     }
 
@@ -782,5 +907,35 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
 
     private static String emptyToNull(String value) {
         return value.isBlank() ? null : value;
+    }
+
+    private record FieldSource(
+            Element element,
+            String name,
+            TypeMirror type,
+            boolean abstractAccessor
+    ) {
+
+        static FieldSource recordComponent(RecordComponentElement component) {
+            return new FieldSource(component, component.getSimpleName().toString(), component.asType(), false);
+        }
+
+        static FieldSource abstractAccessor(ExecutableElement method) {
+            return new FieldSource(method, method.getSimpleName().toString(), method.getReturnType(), true);
+        }
+
+        <A extends java.lang.annotation.Annotation> A getAnnotation(Class<A> annotationType) {
+            return element.getAnnotation(annotationType);
+        }
+
+        ExecutableElement method() {
+            return (ExecutableElement) element;
+        }
+
+        String fieldKindConflictMessage() {
+            return abstractAccessor
+                    ? "Abstract accessor must have only one field kind annotation"
+                    : "Record component must have only one field kind annotation";
+        }
     }
 }

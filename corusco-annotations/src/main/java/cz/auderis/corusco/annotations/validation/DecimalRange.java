@@ -28,7 +28,7 @@ import java.lang.annotation.Target;
  * generated form models wire the matching validator.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.RECORD_COMPONENT)
+@Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface DecimalRange {
 
     /**

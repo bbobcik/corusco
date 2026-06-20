@@ -29,7 +29,7 @@ import java.lang.annotation.Target;
  * {@code CustomerEditProblems}.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.RECORD_COMPONENT)
+@Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface IntRange {
 
     /**

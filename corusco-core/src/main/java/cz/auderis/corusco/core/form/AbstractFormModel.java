@@ -23,12 +23,12 @@ import java.util.Objects;
  * registration before the instance is passed to bindings, validators, or dialog
  * controllers.</p>
  *
- * <p>Generated {@code @SwingForm} records create a concrete form-model
+ * <p>Generated {@code @SwingForm} sources create a concrete form-model
  * subclass, for example {@code CustomerEditFormModel}. The generated subclass registers
  * {@link TextFieldModel} instances for {@code @TextField}/{@code @DateField}
  * components, {@link FieldModel} instances for {@code @CheckBox}/{@code
  * @ComboBox} components, exposes generated descriptors, wires generated
- * validation rules, and creates the immutable record result.</p>
+ * validation rules, and creates the immutable result.</p>
  *
  * <p>The class is synchronous and not synchronized. Swing callers normally use
  * it from the Event Dispatch Thread because component bindings and dialogs are

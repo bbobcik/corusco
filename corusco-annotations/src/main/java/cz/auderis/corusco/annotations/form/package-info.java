@@ -3,19 +3,21 @@
  *
  * <p>This package solves the problem of describing an editable form once, in
  * ordinary Java source, and deriving the repetitive support code from that
- * declaration. A form record names the values being edited. Field-kind
- * annotations say how each value should be represented in the generated form
- * model and Swing view contract. Validation and help annotations add metadata
- * without requiring runtime annotation scanning.</p>
+ * declaration. A form record or abstract class names the values being edited.
+ * Field-kind annotations say how each value should be represented in the
+ * generated form model and Swing view contract. Validation and help annotations
+ * add metadata without requiring runtime annotation scanning.</p>
  *
  * <p>Start with {@link cz.auderis.corusco.annotations.form.SwingForm} on a
- * non-generic record that represents editable input. Then annotate each
- * generated component with exactly one field-kind annotation:
+ * non-generic record that represents editable input, or on a non-generic
+ * abstract class with abstract accessor methods. Then annotate each generated
+ * component or accessor with exactly one field-kind annotation:
  * {@link cz.auderis.corusco.annotations.form.TextField},
  * {@link cz.auderis.corusco.annotations.form.DateField},
  * {@link cz.auderis.corusco.annotations.form.ComboBox}, or
- * {@link cz.auderis.corusco.annotations.form.CheckBox}. Components without a
- * field-kind annotation are not part of generated form metadata.</p>
+ * {@link cz.auderis.corusco.annotations.form.CheckBox}. Record components
+ * without a field-kind annotation are not part of generated form metadata.
+ * Abstract accessors must have a field-kind annotation.</p>
  *
  * <p>For example, this source record:</p>
  *
@@ -33,8 +35,9 @@
  * {@code CustomerEditResources}, {@code CustomerEditDescriptors},
  * {@code CustomerEditProblems}, {@code CustomerEditFormModel},
  * {@code CustomerEditView}, {@code CustomerEditBehaviorPlan}, and
- * {@code CustomerEditBindings}. The prefix comes from the record type name, so
- * renaming the record changes generated type names.</p>
+ * {@code CustomerEditBindings}. The prefix comes from the source type name, so
+ * renaming the source changes generated type names. Abstract class forms also
+ * produce a generated immutable result implementation.</p>
  *
  * <p>The first practical runtime step is usually to construct the generated
  * form model from an original record value:</p>
@@ -95,8 +98,9 @@
  * <p>Advanced users should treat the generated Java source as an API artifact,
  * not as hidden framework internals. It is intentionally direct: constructors
  * register field models, descriptor lists are explicit, validators are wired by
- * ordinary Java calls, and result creation calls the record constructor. When a
- * screen needs behavior outside the generated subset, extend it with ordinary
- * code rather than trying to encode application logic in annotations.</p>
+ * ordinary Java calls, and result creation calls the record constructor or the
+ * generated immutable implementation constructor. When a screen needs behavior
+ * outside the generated subset, extend it with ordinary code rather than
+ * trying to encode application logic in annotations.</p>
  */
 package cz.auderis.corusco.annotations.form;

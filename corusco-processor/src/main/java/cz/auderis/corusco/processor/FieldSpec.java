@@ -18,6 +18,7 @@ final class FieldSpec {
     final String keyId;
     final String componentName;
     final String ownerType;
+    final String accessorType;
     final String valueType;
     final String valueClass;
     final String kind;
@@ -38,6 +39,7 @@ final class FieldSpec {
             String keyId,
             String componentName,
             String ownerType,
+            String accessorType,
             String valueType,
             String valueClass,
             String kind,
@@ -57,6 +59,7 @@ final class FieldSpec {
         this.keyId = keyId;
         this.componentName = componentName;
         this.ownerType = ownerType;
+        this.accessorType = accessorType;
         this.valueType = valueType;
         this.valueClass = valueClass;
         this.kind = kind;

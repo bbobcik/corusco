@@ -147,6 +147,83 @@ class CoruscoAnnotationProcessorTest {
     }
 
     @Test
+    void generatesImmutableResultImplementationForAnnotatedAbstractClass() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.CheckBox;
+                import cz.auderis.corusco.annotations.form.ComboBox;
+                import cz.auderis.corusco.annotations.validation.Required;
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @SwingForm(id = "customer")
+                public abstract class CustomerEdit {
+                    @TextField
+                    @Required
+                    public abstract String name();
+
+                    @ComboBox
+                    public abstract CustomerType type();
+
+                    @CheckBox
+                    public abstract boolean active();
+
+                    public boolean corporateCustomer() {
+                        return type() == CustomerType.BUSINESS;
+                    }
+                }
+
+                enum CustomerType {
+                    RETAIL, BUSINESS
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/GeneratedCustomerEdit.java",
+                "public final class GeneratedCustomerEdit extends CustomerEdit",
+                "private final java.lang.String name;",
+                "private final demo.CustomerType type;",
+                "private final boolean active;",
+                "public GeneratedCustomerEdit(",
+                "java.lang.String name,",
+                "demo.CustomerType type,",
+                "boolean active",
+                "public java.lang.String name()",
+                "public demo.CustomerType type()",
+                "public boolean active()",
+                "if (!(obj instanceof CustomerEdit other))",
+                "Objects.equals(name(), other.name())",
+                "Objects.hash(name(), type(), active())",
+                "GeneratedCustomerEdit[",
+                "name=\" + name()"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditFields.java",
+                "public static final TextFieldKey<CustomerEdit, java.lang.String> NAME",
+                "TextFieldKey.of(\"customer/name\", CustomerEdit.class, java.lang.String.class)",
+                "public static final FieldKey<CustomerEdit, demo.CustomerType> TYPE",
+                "public static final FieldKey<CustomerEdit, java.lang.Boolean> ACTIVE"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditDescriptors.java",
+                "public static final FieldDescriptor<CustomerEdit, java.lang.String> NAME",
+                "public static final FieldDescriptor<CustomerEdit, demo.CustomerType> TYPE",
+                "public static final FieldDescriptor<CustomerEdit, java.lang.Boolean> ACTIVE"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
+                "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>",
+                "public CustomerEditFormModel(CustomerEdit original)",
+                "original.name()",
+                "original.type()",
+                "original.active()",
+                "protected CustomerEdit createResult()",
+                "return new GeneratedCustomerEdit(",
+                "name.value()",
+                "type.value().value()",
+                "active.value().value()"
+        );
+    }
+
+    @Test
     void rejectsNonRecordSwingForm() throws Exception {
         GeneratedSourceCompilation result = compile("""
                 package demo;
@@ -159,7 +236,69 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("@SwingForm is supported only on records");
+        assertThat(result.messages()).contains("@SwingForm classes must be abstract");
+    }
+
+    @Test
+    void rejectsUnannotatedAbstractAccessorInSwingForm() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @SwingForm(id = "customer")
+                public abstract class CustomerEdit {
+                    @TextField
+                    public abstract String name();
+
+                    public abstract String displayName();
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Abstract @SwingForm accessor must have a field kind annotation");
+    }
+
+    @Test
+    void rejectsConcreteAnnotatedMethodInAbstractSwingForm() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @SwingForm(id = "customer")
+                public abstract class CustomerEdit {
+                    @TextField
+                    public String name() {
+                        return "Ada";
+                    }
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages())
+                .contains("@SwingForm field annotations on abstract classes require abstract accessor methods");
+    }
+
+    @Test
+    void rejectsAbstractAccessorWithParameters() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.SwingForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @SwingForm(id = "customer")
+                public abstract class CustomerEdit {
+                    @TextField
+                    public abstract String name(String locale);
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("Abstract @SwingForm accessor must not declare parameters");
     }
 
     @Test
@@ -228,7 +367,7 @@ class CoruscoAnnotationProcessorTest {
                 """);
 
         assertThat(result.success()).isFalse();
-        assertThat(result.messages()).contains("@SwingForm generic records are not supported by this processor stage");
+        assertThat(result.messages()).contains("@SwingForm generic source types are not supported by this processor stage");
     }
 
     @Test
@@ -409,7 +548,7 @@ class CoruscoAnnotationProcessorTest {
                 }
                 """);
 
-        assertThat(result.success()).isTrue();
+        assertThat(result.success()).as(result.messages()).isTrue();
         result.assertGeneratedSourceContains("demo/CustomerEditColumns.java",
                 "public final class CustomerEditColumns",
                 "public static final TableKey<CustomerEdit> TABLE",

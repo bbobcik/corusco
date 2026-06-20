@@ -36,7 +36,7 @@ import java.lang.annotation.Target;
  * scanning this annotation.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.RECORD_COMPONENT)
+@Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface Help {
 
     /**

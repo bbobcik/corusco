@@ -11,13 +11,14 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a boolean record component as a generated checkbox field.
+ * Marks a boolean form source member as a generated checkbox field.
  *
- * <p>Use this annotation on a component of a {@link SwingForm} record when the
- * value should be edited as a selected/not-selected state. The processor
- * accepts primitive {@code boolean} and {@link java.lang.Boolean} components,
- * emits typed field and descriptor metadata, and adds a Swing
- * {@code JCheckBox} entry to generated view plans.</p>
+ * <p>Use this annotation on a component of a {@link SwingForm} record or on an
+ * abstract accessor method of a {@link SwingForm} abstract class when the value
+ * should be edited as a selected/not-selected state. The processor accepts
+ * primitive {@code boolean} and {@link java.lang.Boolean} values, emits typed
+ * field and descriptor metadata, and adds a Swing {@code JCheckBox} entry to
+ * generated view plans.</p>
  *
  * <p>Checkbox fields are value fields, not command toggles. Use {@link
  * UiAction#selectable()} for generated toggle actions. Text-only constraints
@@ -41,6 +42,6 @@ import java.lang.annotation.Target;
  * kind, and generated behavior plans install checkbox binding behavior.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.RECORD_COMPONENT)
+@Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface CheckBox {
 }

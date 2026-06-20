@@ -13,11 +13,12 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a record component as a generated text-entry field.
+ * Marks a form source member as a generated text-entry field.
  *
- * <p>Use this annotation on a component of a {@link SwingForm} record when the
- * value is edited through text. The processor accepts supported scalar types
- * and emits typed field keys, descriptor metadata, a generated field backed by
+ * <p>Use this annotation on a component of a {@link SwingForm} record or on an
+ * abstract accessor method of a {@link SwingForm} abstract class when the value
+ * is edited through text. The processor accepts supported scalar types and
+ * emits typed field keys, descriptor metadata, a generated field backed by
  * {@code TextFieldModel}, converter wiring, and a Swing text component entry in
  * generated view plans.</p>
  *
@@ -46,6 +47,6 @@ import java.lang.annotation.Target;
  * any supported {@code ConstraintDescriptor} metadata.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.RECORD_COMPONENT)
+@Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface TextField {
 }

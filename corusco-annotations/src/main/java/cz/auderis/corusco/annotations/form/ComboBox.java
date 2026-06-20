@@ -11,12 +11,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a record component as a generated combo-box field.
+ * Marks a form source member as a generated combo-box field.
  *
- * <p>Use this annotation on a component of a {@link SwingForm} record when the
- * value should be edited through a selection control. The processor emits typed
- * field keys, descriptor metadata, and a Swing {@code JComboBox<Value>} entry
- * in generated view plans. The component type becomes the value type used by
+ * <p>Use this annotation on a component of a {@link SwingForm} record or on an
+ * abstract accessor method of a {@link SwingForm} abstract class when the value
+ * should be edited through a selection control. The processor emits typed field
+ * keys, descriptor metadata, and a Swing {@code JComboBox<Value>} entry in
+ * generated view plans. The component type becomes the value type used by
  * generated field models and bindings.</p>
  *
  * <p>For enum-valued components the processor can also generate ordered option
@@ -47,7 +48,7 @@ import java.lang.annotation.Target;
  * kind.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.RECORD_COMPONENT)
+@Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface ComboBox {
 
     /**

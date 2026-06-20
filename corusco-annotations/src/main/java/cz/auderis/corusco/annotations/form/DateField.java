@@ -9,13 +9,14 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a {@link java.time.LocalDate} record component as a generated date
+ * Marks a {@link java.time.LocalDate} form source member as a generated date
  * field.
  *
- * <p>Use this annotation on a component of a {@link SwingForm} record when the
- * value should be edited as a date. Date fields use text-field style raw-text
- * editing with a generated {@code LocalDate} converter, so invalid intermediate
- * text can be preserved by the form model without replacing the last valid date
+ * <p>Use this annotation on a component of a {@link SwingForm} record or on an
+ * abstract accessor method of a {@link SwingForm} abstract class when the value
+ * should be edited as a date. Date fields use text-field style raw-text editing
+ * with a generated {@code LocalDate} converter, so invalid intermediate text
+ * can be preserved by the form model without replacing the last valid date
  * value.</p>
  *
  * <p>{@link Required} and {@link Help} are meaningful combinations. Text-only
@@ -42,6 +43,6 @@ import java.lang.annotation.Target;
  * date field kind.</p>
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.RECORD_COMPONENT)
+@Target({ ElementType.RECORD_COMPONENT, ElementType.METHOD })
 public @interface DateField {
 }
