@@ -23,7 +23,7 @@ public final class FormDialogExample {
     }
 
     /**
-     * Runs OK, Apply, and Cancel dialog flows.
+     * Runs OK, Apply, Apply-Cancel, and Cancel dialog flows.
      *
      * @return diagnostics describing dialog results
      */
@@ -46,6 +46,15 @@ public final class FormDialogExample {
             result.add("accepted=" + dialog.result().acceptedValue().orElseThrow().name());
             result.add("closedAfterOk=" + dialog.isClosed());
 
+            CustomerForm applyCancelForm = new CustomerForm("Carol");
+            FormDialog<CustomerForm, Customer> applyCancelDialog =
+                    new FormDialog<>(applyCancelForm, new JPanel());
+            applyCancelDialog.apply();
+            applyCancelForm.name = "discarded";
+            applyCancelDialog.cancel();
+            result.add("applyCancelAccepted=" + applyCancelDialog.result().isAccepted());
+            result.add("applyCancelValue=" + applyCancelDialog.result().acceptedValue().orElseThrow().name());
+
             CustomerForm cancelForm = new CustomerForm("Bob");
             FormDialog<CustomerForm, Customer> cancelDialog = new FormDialog<>(cancelForm, new JPanel());
             cancelDialog.cancelCommand().execute();
@@ -59,7 +68,7 @@ public final class FormDialogExample {
 
     private static final class CustomerForm implements FormModel<Customer> {
 
-        private final String name;
+        private String name;
 
         private CustomerForm(String name) {
             this.name = name;

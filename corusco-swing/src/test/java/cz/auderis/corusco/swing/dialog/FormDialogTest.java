@@ -71,6 +71,43 @@ class FormDialogTest {
     }
 
     @Test
+    void applyThenCancelClosesAsAcceptedWithLastAppliedResult() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("applied");
+            FormDialog<TestForm, String> dialog = new FormDialog<>(form, new JPanel());
+
+            assertThat(dialog.apply()).isTrue();
+            form.result = "edited-after-apply";
+            assertThat(dialog.cancel()).isTrue();
+
+            assertThat(dialog.result().isAccepted()).isTrue();
+            assertThat(dialog.result().acceptedValue()).contains("applied");
+            assertThat(dialog.lastAppliedResult()).contains("applied");
+            assertThat(form.resetCalls).isEqualTo(1);
+            assertThat(dialog.isClosed()).isTrue();
+        });
+    }
+
+    @Test
+    void failedApplyDoesNotReplaceLastAppliedResult() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("first");
+            TestFormDialog dialog = new TestFormDialog(form, true);
+
+            assertThat(dialog.apply()).isTrue();
+            form.result = "second";
+            dialog.editorCommit = false;
+
+            assertThat(dialog.apply()).isFalse();
+            assertThat(dialog.lastAppliedResult()).contains("first");
+
+            assertThat(dialog.cancel()).isTrue();
+            assertThat(dialog.result().acceptedValue()).contains("first");
+            assertThat(form.toResultCalls).isEqualTo(1);
+        });
+    }
+
+    @Test
     void commandExecutionUsesDialogSemantics() {
         SwingEdt.runAndWait(() -> {
             TestForm form = new TestForm("saved");
@@ -197,6 +234,21 @@ class FormDialogTest {
     }
 
     @Test
+    void closeAfterApplyStillForcesCancelledLifecycleCleanup() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("applied");
+            FormDialog<TestForm, String> dialog = new FormDialog<>(form, new JPanel());
+
+            assertThat(dialog.apply()).isTrue();
+            dialog.close();
+
+            assertThat(dialog.result().isAccepted()).isFalse();
+            assertThat(dialog.result().acceptedValue()).isEmpty();
+            assertThat(form.resetCalls).isEqualTo(1);
+        });
+    }
+
+    @Test
     void nonCommittableFormDisablesCommitCommandsAndBlocksAccept() {
         SwingEdt.runAndWait(() -> {
             TestForm form = new TestForm("blocked");
@@ -283,9 +335,103 @@ class FormDialogTest {
         });
     }
 
+    @Test
+    void unsupportedRevertIsDisabledAndDoesNotClose() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("saved");
+            FormDialog<TestForm, String> dialog = new FormDialog<>(form, new JPanel());
+
+            assertThat(dialog.revertCommand().isEnabled()).isFalse();
+            assertThat(dialog.revert()).isFalse();
+
+            assertThat(dialog.isClosed()).isFalse();
+            assertThat(dialog.result().isReverted()).isFalse();
+            assertThat(form.resetCalls).isZero();
+        });
+    }
+
+    @Test
+    void revertUsesPolicyAndClosesAsRevertedWithoutResettingBaseline() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("applied");
+            Counter revertCalls = new Counter();
+            FormDialog<TestForm, String> dialog = new FormDialog<>(
+                    form,
+                    new JPanel(),
+                    () -> true,
+                    CancelConfirmation.ALWAYS_CONFIRM,
+                    new RevertPolicy() {
+                        @Override
+                        public boolean canRevert() {
+                            return true;
+                        }
+
+                        @Override
+                        public boolean revert() {
+                            revertCalls.increment();
+                            return true;
+                        }
+                    }
+            );
+
+            assertThat(dialog.apply()).isTrue();
+            assertThat(dialog.revertCommand().isEnabled()).isTrue();
+            assertThat(dialog.revert()).isTrue();
+
+            assertThat(revertCalls.value()).isEqualTo(1);
+            assertThat(dialog.result().isReverted()).isTrue();
+            assertThat(dialog.result().isAccepted()).isFalse();
+            assertThat(dialog.lastAppliedResult()).isEmpty();
+            assertThat(form.resetCalls).isZero();
+            assertThat(dialog.isClosed()).isTrue();
+        });
+    }
+
+    @Test
+    void actionStateFollowsCommittabilityAndDirtyPolicies() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("saved");
+            MutableDirtyState currentBaselineDirty = new MutableDirtyState(true);
+            MutableDirtyState preDialogDirty = new MutableDirtyState(true);
+            MutableRevertPolicy revertPolicy = new MutableRevertPolicy(true);
+            FormDialog<TestForm, String> dialog = new FormDialog<>(
+                    form,
+                    new JPanel(),
+                    currentBaselineDirty,
+                    CancelConfirmation.ALWAYS_CONFIRM,
+                    revertPolicy
+            );
+            FormDialogActionState actionState = new FormDialogActionState(
+                    dialog,
+                    currentBaselineDirty,
+                    preDialogDirty
+            );
+
+            assertThat(actionState.applyAction().enabled().value()).isTrue();
+            assertThat(actionState.revertAction().enabled().value()).isTrue();
+
+            currentBaselineDirty.dirty = false;
+            actionState.refresh();
+            assertThat(actionState.applyAction().enabled().value()).isFalse();
+            assertThat(actionState.revertAction().enabled().value()).isTrue();
+
+            preDialogDirty.dirty = false;
+            actionState.refresh();
+            assertThat(actionState.revertAction().enabled().value()).isFalse();
+
+            currentBaselineDirty.dirty = true;
+            preDialogDirty.dirty = true;
+            form.committable = false;
+            revertPolicy.canRevert = false;
+            actionState.refresh();
+            assertThat(actionState.applyAction().enabled().value()).isFalse();
+            assertThat(actionState.revertAction().enabled().value()).isFalse();
+        });
+    }
+
     private static final class TestFormDialog extends FormDialog<TestForm, String> {
 
-        private final boolean editorCommit;
+        private boolean editorCommit;
 
         private TestFormDialog(TestForm form, boolean editorCommit) {
             super(form, new JPanel());
@@ -312,7 +458,7 @@ class FormDialogTest {
 
     private static final class TestForm implements FormModel<String> {
 
-        private final String result;
+        private String result;
         private boolean committable = true;
         private int toResultCalls;
         private int acceptCalls;
@@ -359,6 +505,39 @@ class FormDialogTest {
 
         private int value() {
             return value;
+        }
+    }
+
+    private static final class MutableDirtyState implements DirtyState {
+
+        private boolean dirty;
+
+        private MutableDirtyState(boolean dirty) {
+            this.dirty = dirty;
+        }
+
+        @Override
+        public boolean isDirty() {
+            return dirty;
+        }
+    }
+
+    private static final class MutableRevertPolicy implements RevertPolicy {
+
+        private boolean canRevert;
+
+        private MutableRevertPolicy(boolean canRevert) {
+            this.canRevert = canRevert;
+        }
+
+        @Override
+        public boolean canRevert() {
+            return canRevert;
+        }
+
+        @Override
+        public boolean revert() {
+            return canRevert;
         }
     }
 }

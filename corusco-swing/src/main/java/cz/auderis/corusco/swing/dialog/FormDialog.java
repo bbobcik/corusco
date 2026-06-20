@@ -19,7 +19,7 @@ import javax.swing.JComponent;
  * Coordinates standard modal form-dialog semantics for a Swing view.
  *
  * <p>{@code FormDialog} is a controller, not a {@code JDialog}. It owns the
- * state machine behind OK, Apply, and Cancel for a Corusco
+ * state machine behind OK, Apply, Revert, and Cancel for a Corusco
  * {@link FormModel}: active editor commit, committability checks, result
  * creation, dirty-cancel confirmation, baseline acceptance, form reset, and
  * command enablement. A generated presenter or handwritten screen can host the
@@ -40,7 +40,9 @@ import javax.swing.JComponent;
  * controller, command execution is disabled and the terminal {@link
  * DialogResult} should be treated as final. Apply is intentionally non-terminal:
  * it creates a result snapshot, accepts the current form values as the new
- * baseline, and keeps the controller open.</p>
+ * baseline, and keeps the controller open. If the user later cancels, the
+ * terminal result is accepted with the last applied value. Revert is terminal
+ * only when an explicit {@link RevertPolicy} restores pre-dialog state.</p>
  *
  * <p>The controller retains the supplied form model, root component, dirty-state
  * hook, and cancellation hook. It does not own the native window, does not
@@ -86,6 +88,11 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
     public static final ActionKey CANCEL_KEY = ActionKey.of("dialog/cancel");
 
     /**
+     * Stable action key for Revert.
+     */
+    public static final ActionKey REVERT_KEY = ActionKey.of("dialog/revert");
+
+    /**
      * Resource key for OK button text.
      */
     public static final ResourceKey<String> OK_TEXT = ResourceKey.of("dialog/ok/text", String.class);
@@ -100,15 +107,23 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
      */
     public static final ResourceKey<String> CANCEL_TEXT = ResourceKey.of("dialog/cancel/text", String.class);
 
+    /**
+     * Resource key for Revert button text.
+     */
+    public static final ResourceKey<String> REVERT_TEXT = ResourceKey.of("dialog/revert/text", String.class);
+
     private final P formModel;
     private final JComponent root;
     private final DirtyState dirtyState;
     private final CancelConfirmation cancelConfirmation;
+    private final RevertPolicy revertPolicy;
     private final MutableCommand okCommand;
     private final MutableCommand applyCommand;
     private final MutableCommand cancelCommand;
+    private final MutableCommand revertCommand;
     private DialogResult<R> result = DialogResult.cancelled();
     private R lastAppliedResult;
+    private boolean hasAppliedResult;
     private boolean closed;
 
     /**
@@ -155,14 +170,45 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
             DirtyState dirtyState,
             CancelConfirmation cancelConfirmation
     ) {
+        this(formModel, root, dirtyState, cancelConfirmation, RevertPolicy.UNSUPPORTED);
+    }
+
+    /**
+     * Creates a form dialog controller with explicit dirty-cancel and revert
+     * policies.
+     *
+     * <p>Revert is optional and should be supplied only when the application can
+     * restore pre-dialog state. It is separate from form reset because Apply
+     * accepts the current form values as the normal reset baseline.</p>
+     *
+     * @param formModel form model retained by the controller, not {@code null}
+     * @param root root component used for active-editor commit, not
+     *         {@code null}
+     * @param dirtyState aggregate dirty-state hook, not {@code null}
+     * @param cancelConfirmation confirmation hook used for dirty cancellation,
+     *         not {@code null}
+     * @param revertPolicy optional pre-dialog restoration policy, not
+     *         {@code null}
+     * @throws IllegalStateException if called off the EDT
+     * @throws NullPointerException if any argument is {@code null}
+     */
+    public FormDialog(
+            P formModel,
+            JComponent root,
+            DirtyState dirtyState,
+            CancelConfirmation cancelConfirmation,
+            RevertPolicy revertPolicy
+    ) {
         SwingEdt.requireEdt();
         this.formModel = Objects.requireNonNull(formModel, "formModel");
         this.root = Objects.requireNonNull(root, "root");
         this.dirtyState = Objects.requireNonNull(dirtyState, "dirtyState");
         this.cancelConfirmation = Objects.requireNonNull(cancelConfirmation, "cancelConfirmation");
+        this.revertPolicy = Objects.requireNonNull(revertPolicy, "revertPolicy");
         this.okCommand = CommandFactory.command(ActionDescriptor.action(OK_KEY, OK_TEXT), command -> accept());
         this.applyCommand = CommandFactory.command(ActionDescriptor.action(APPLY_KEY, APPLY_TEXT), command -> apply());
         this.cancelCommand = CommandFactory.command(ActionDescriptor.action(CANCEL_KEY, CANCEL_TEXT), command -> cancel());
+        this.revertCommand = CommandFactory.command(ActionDescriptor.action(REVERT_KEY, REVERT_TEXT), command -> revert());
         refreshCommandState();
     }
 
@@ -203,6 +249,15 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
     }
 
     /**
+     * Returns the optional pre-dialog restoration policy.
+     *
+     * @return revert policy, never {@code null}
+     */
+    public RevertPolicy revertPolicy() {
+        return revertPolicy;
+    }
+
+    /**
      * Returns the OK command.
      *
      * <p>Executing this command delegates to {@link #accept()}. Its enabled
@@ -240,12 +295,27 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
     }
 
     /**
+     * Returns the Revert command.
+     *
+     * <p>Executing this command delegates to {@link #revert()}. It is enabled
+     * only while the controller is open and the configured revert policy
+     * reports that restore is currently possible.</p>
+     *
+     * @return Revert command
+     */
+    public MutableCommand revertCommand() {
+        return revertCommand;
+    }
+
+    /**
      * Returns the terminal dialog result.
      *
-     * <p>The result is cancelled until OK accepts the dialog. Apply does not
-     * change this terminal result because it keeps the controller open. After
-     * OK, Cancel, or {@link #close()}, the returned result represents the final
-     * controller outcome.</p>
+     * <p>The result is cancelled until OK accepts the dialog. Apply keeps the
+     * controller open and records a last-applied value. If user Cancel follows
+     * Apply, the terminal result becomes accepted with that last-applied value.
+     * Revert records a reverted result when its policy succeeds. After OK,
+     * Cancel, Revert, or {@link #close()}, the returned result represents the
+     * final controller outcome.</p>
      *
      * @return dialog result, never {@code null}
      */
@@ -262,7 +332,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
      * @return optional applied value
      */
     public Optional<R> lastAppliedResult() {
-        return Optional.ofNullable(lastAppliedResult);
+        return hasAppliedResult ? Optional.of(lastAppliedResult) : Optional.empty();
     }
 
     /**
@@ -292,6 +362,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
         okCommand.setEnabled(canCommit);
         applyCommand.setEnabled(canCommit);
         cancelCommand.setEnabled(!closed);
+        revertCommand.setEnabled(!closed && revertPolicy.canRevert());
     }
 
     /**
@@ -330,9 +401,11 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
      * <p>Apply uses the same active-editor and committability checks as
      * {@link #accept()}. On success it stores the latest committed value in
      * {@link #lastAppliedResult()}, accepts the current form values as the new
-     * baseline, and leaves the terminal {@link #result()} unchanged. If the
-     * controller is closed, an editor rejects commit, or the form is not
-     * committable, the method returns {@code false} without creating a result.</p>
+     * baseline, and leaves the controller open. If the user later cancels the
+     * dialog, that cancellation closes as accepted with this last applied value.
+     * If the controller is closed, an editor rejects commit, or the form is not
+     * committable, the method returns {@code false} without creating a result or
+     * moving the applied baseline.</p>
      *
      * @return {@code true} when the form applied successfully
      * @throws IllegalStateException if called off the EDT
@@ -345,6 +418,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
             return false;
         }
         lastAppliedResult = Objects.requireNonNull(formModel.toResult(), "formModel.toResult()");
+        hasAppliedResult = true;
         formModel.acceptCurrentValues();
         refreshCommandState();
         return true;
@@ -357,8 +431,9 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
      * returns {@code true}. Otherwise it asks {@link DirtyState#isDirty()} and,
      * when dirty, calls {@link CancelConfirmation#confirmCancel()}. A rejected
      * confirmation leaves the controller open and does not reset the form. A
-     * confirmed or clean cancellation resets the form model, stores a cancelled
-     * result, closes the controller, and disables commands.</p>
+     * confirmed or clean cancellation resets the form model and closes the
+     * controller. If Apply succeeded earlier, the terminal result is accepted
+     * with the last applied value; otherwise it is cancelled.</p>
      *
      * @return {@code true} when cancellation closed the controller or it was
      *         already closed; {@code false} when dirty confirmation rejected
@@ -373,7 +448,35 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
         if (!confirmCancelIfDirty()) {
             return false;
         }
-        closeCancelled();
+        closeAfterUserCancellation();
+        return true;
+    }
+
+    /**
+     * Restores pre-dialog state through the configured revert policy.
+     *
+     * <p>Revert is terminal because the policy owns restoring the state that
+     * existed before the dialog interaction began. The form model is not reset
+     * here; reset only returns to the current baseline, which Apply is allowed
+     * to move forward.</p>
+     *
+     * @return {@code true} when revert succeeded and closed the controller
+     * @throws IllegalStateException if called off the EDT
+     */
+    public boolean revert() {
+        SwingEdt.requireEdt();
+        if (closed || !revertPolicy.canRevert()) {
+            return false;
+        }
+        if (!revertPolicy.revert()) {
+            refreshCommandState();
+            return false;
+        }
+        lastAppliedResult = null;
+        hasAppliedResult = false;
+        result = DialogResult.reverted();
+        closed = true;
+        refreshCommandState();
         return true;
     }
 
@@ -418,6 +521,15 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
 
     private void closeCancelled() {
         result = DialogResult.cancelled();
+        formModel.reset();
+        closed = true;
+        refreshCommandState();
+    }
+
+    private void closeAfterUserCancellation() {
+        result = hasAppliedResult
+                ? DialogResult.accepted(lastAppliedResult)
+                : DialogResult.cancelled();
         formModel.reset();
         closed = true;
         refreshCommandState();

@@ -27,6 +27,8 @@ domain value
 | `ParseState<T>` | Parsed or failed parse state for a text field. |
 | `FormModel<R>` | Non-Swing form contract: problems, committability, reset, baseline acceptance, and result creation. |
 | `AbstractFormModel<R>` | Base class for handwritten and generated form models. |
+| `CompositeFormModel<R>` | Form model composed from fixed ordered child form models. |
+| `AbstractCompositeFormModel<R>` | Base class for handwritten parent sessions over generated or handwritten child forms. |
 | `RuleSet<M>` | Typed validation rules with dependency metadata. |
 | `Validators` | Generated-compatible field validators for required, length, regex, decimal range, integer range, and date checks. |
 
@@ -170,6 +172,61 @@ state, refreshes dirty state, resets raw text, and clears parse problems.
 baseline. Use it after a successful save/apply operation when the form should
 continue editing the accepted values.
 
+## Composite Form Sessions
+
+Use `AbstractCompositeFormModel<R>` when one logical operation owns several
+child form models. Typical examples are tabbed settings dialogs, customer
+editors with security and billing sections, or workflows that compose generated
+child forms with a handwritten parent result.
+
+```java
+final class CustomerDialogSession
+        extends AbstractCompositeFormModel<CustomerDialogResult> {
+
+    private final CustomerIdentityFormModel identity;
+    private final SecuritySettingsFormModel security;
+
+    CustomerDialogSession(
+            CustomerIdentityFormModel identity,
+            SecuritySettingsFormModel security
+    ) {
+        super(identity, security);
+        this.identity = identity;
+        this.security = security;
+    }
+
+    @Override
+    protected CustomerDialogResult createResult() {
+        return new CustomerDialogResult(identity.toResult(), security.toResult());
+    }
+}
+```
+
+Child order is part of the contract. The composite aggregates child problems in
+registration order, then appends parent validation problems. It resets children
+in the same order, accepts child baselines in the same order, and rejects null
+or duplicate child instances.
+
+Put cross-child validation in the parent by overriding `validationProblems()`.
+That hook should inspect child field state or child committability. It should
+not call `child.toResult()` unless the relevant child is already committable;
+`createResult()` is the normal place to materialize child results.
+
+Composite forms remain Swing-free. Dirty state is still an explicit dialog or
+presenter policy, not part of `FormModel`:
+
+```java
+DirtyState dirty = DirtyStates.any(
+        () -> session.identity().name.isDirty(),
+        () -> session.security().password.isDirty()
+);
+```
+
+Generated child form and presentation models can be composed directly inside a
+handwritten parent session. Generated Swing `*View`, `*BehaviorPlan`, and
+`*Bindings` classes remain optional and are produced only for packages that opt
+in with `@SwingCompanionPackage`.
+
 ## Problems and Committability
 
 `AbstractFormModel.problems()` aggregates:
@@ -256,9 +313,13 @@ Test handwritten and generated form models without opening windows:
 - `reset()` restores original values and clears parse problems;
 - `acceptCurrentValues()` clears dirty state after save/apply;
 - generated models commit to immutable replacement records.
+- composite models aggregate child and parent problems in deterministic order;
+- composite `reset()` and `acceptCurrentValues()` delegate to every child.
 
 See `FieldModelExample`, `ValidationExample`, and
 `GeneratedFormModelExample` for compiling scenarios with method-body comments.
+See `MultiFormDialogSessionExample` for a generated-child, handwritten-parent
+dialog session with explicit dirty policies and action presentation state.
 
 ## Current Limits
 

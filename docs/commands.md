@@ -5,8 +5,8 @@ toolbar items, and key bindings from one shared state owner. Action annotations
 generate metadata and optional factories; presenter code still owns enabled
 state, selected state, and business workflow.
 
-See [Dialog Guide](dialogs.md) for the built-in OK, Apply, and Cancel commands
-used by form-dialog controllers.
+See [Dialog Guide](dialogs.md) for the built-in OK, Apply, Revert, and Cancel
+commands used by form-dialog controllers.
 
 Use commands when multiple UI entry points should share identity, text,
 tooltip, accelerator metadata, enabled state, selected state, and invocation:

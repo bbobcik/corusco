@@ -2,6 +2,7 @@ package cz.auderis.corusco.swing.dialog;
 
 import cz.auderis.corusco.core.form.FormModel;
 import cz.auderis.corusco.core.key.ComponentKey;
+import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.problem.Problem;
 import cz.auderis.corusco.core.problem.ProblemCode;
 import cz.auderis.corusco.core.problem.ProblemSet;
@@ -25,6 +26,10 @@ class FormDialogValidationBindingTest {
             ComponentKey.of("customer/name-field", FocusPanel.class);
     private static final ComponentKey<FocusPanel> CREDIT_COMPONENT =
             ComponentKey.of("customer/credit-field", FocusPanel.class);
+    private static final FieldKey<TestForm, String> NAME_FIELD =
+            FieldKey.of("customer/name", TestForm.class, String.class);
+    private static final FieldKey<TestForm, Integer> AGE_FIELD =
+            FieldKey.of("customer/age", TestForm.class, Integer.class);
 
     @Test
     void refreshClearsSummaryWhenThereAreNoProblems() {
@@ -98,6 +103,64 @@ class FormDialogValidationBindingTest {
             assertThat(binding.focusFirstProblem()).isTrue();
             assertThat(name.focusRequests).isEqualTo(1);
             assertThat(credit.focusRequests).isZero();
+        });
+    }
+
+    @Test
+    void fieldTargetResolverUsesTypedFieldKeys() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm();
+            FocusPanel name = new FocusPanel();
+            FocusPanel age = new FocusPanel();
+            form.problems = ProblemSet.of(problem(
+                    REQUIRED,
+                    ProblemSeverity.ERROR,
+                    ProblemTarget.field(NAME_FIELD),
+                    "Name required"
+            ));
+            FormDialogValidationBinding binding = FormDialogValidationBinding.install(
+                    dialog(form),
+                    new JLabel(),
+                    ProblemFocusResolver.fieldTargets(Map.of(AGE_FIELD, age, NAME_FIELD, name))
+            );
+
+            assertThat(binding.focusFirstProblem()).isTrue();
+            assertThat(name.focusRequests).isEqualTo(1);
+            assertThat(age.focusRequests).isZero();
+        });
+    }
+
+    @Test
+    void resolverCompositionCanRevealOwningChildBeforeFocus() {
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm();
+            FocusPanel profileField = new FocusPanel();
+            FocusPanel securityField = new FocusPanel();
+            Counter profileReveal = new Counter();
+            Counter securityReveal = new Counter();
+            form.problems = ProblemSet.of(problem(
+                    REQUIRED,
+                    ProblemSeverity.ERROR,
+                    ProblemTarget.field(AGE_FIELD),
+                    "Age required"
+            ));
+            ProblemFocusResolver resolver = ProblemFocusResolver.firstOf(
+                    ProblemFocusResolver.withPreparation(
+                            profileReveal::increment,
+                            ProblemFocusResolver.fieldTargets(Map.of(NAME_FIELD, profileField))
+                    ),
+                    ProblemFocusResolver.withPreparation(
+                            securityReveal::increment,
+                            ProblemFocusResolver.fieldTargets(Map.of(AGE_FIELD, securityField))
+                    )
+            );
+            FormDialogValidationBinding binding = FormDialogValidationBinding.install(dialog(form), new JLabel(), resolver);
+
+            assertThat(binding.focusFirstProblem()).isTrue();
+            assertThat(profileReveal.value()).isZero();
+            assertThat(securityReveal.value()).isEqualTo(1);
+            assertThat(profileField.focusRequests).isZero();
+            assertThat(securityField.focusRequests).isEqualTo(1);
         });
     }
 
@@ -179,6 +242,19 @@ class FormDialogValidationBindingTest {
         public boolean requestFocusInWindow() {
             focusRequests++;
             return true;
+        }
+    }
+
+    private static final class Counter {
+
+        private int value;
+
+        private void increment() {
+            value++;
+        }
+
+        private int value() {
+            return value;
         }
     }
 }

@@ -50,6 +50,15 @@
  * cz.auderis.corusco.core.form.UncommittableFormException} protects the result
  * contract when blocking errors are present.</p>
  *
+ * <p>Use {@link cz.auderis.corusco.core.form.CompositeFormModel} and {@link
+ * cz.auderis.corusco.core.form.AbstractCompositeFormModel} when a dialog or
+ * workflow is made from several child form models. Composite forms register a
+ * fixed ordered child list, aggregate child problems deterministically before
+ * parent cross-form validation, delegate reset and baseline acceptance to every
+ * child, and still expose one {@code FormModel} result boundary. The composite
+ * layer is semantic only; it does not depend on Swing views, generated
+ * bindings, or dialog buttons.</p>
+ *
  * <p>Think of the baseline as the form's current committed starting point, not
  * necessarily as the original object loaded from storage. A dialog that
  * successfully applies changes may accept the current values as the new

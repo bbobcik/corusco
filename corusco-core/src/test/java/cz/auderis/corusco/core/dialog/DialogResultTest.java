@@ -20,6 +20,16 @@ class DialogResultTest {
         DialogResult<String> result = DialogResult.cancelled();
 
         assertThat(result.isAccepted()).isFalse();
+        assertThat(result.isReverted()).isFalse();
+        assertThat(result.acceptedValue()).isEmpty();
+    }
+
+    @Test
+    void revertedResultCarriesNoValue() {
+        DialogResult<String> result = DialogResult.reverted();
+
+        assertThat(result.isAccepted()).isFalse();
+        assertThat(result.isReverted()).isTrue();
         assertThat(result.acceptedValue()).isEmpty();
     }
 

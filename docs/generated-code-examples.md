@@ -18,6 +18,7 @@ corusco-examples/build/generated/sources/annotationProcessor/java/main/cz/auderi
 | Annotated source | Generated companions | Runtime example |
 | --- | --- | --- |
 | `examples.generated.GeneratedCustomerEdit` | `GeneratedCustomerEditFields`, `Resources`, `Problems`, `Descriptors`, `FormModel`, `PresentationModel`, `Options`; `@SwingCompanionPackage` also generates `View`, `BehaviorPlan`, `Bindings` | `examples.generated.GeneratedMetadataExample`, `examples.forms.GeneratedFormModelExample`, `examples.generated.GeneratedViewPlanExample` |
+| `examples.generated.AbstractCustomerProfile` and `examples.generated.SecuritySettings` | Generated child `Fields`, `Descriptors`, `FormModel`, and `PresentationModel` classes; `SecuritySettings` also declares component state and dependency metadata | `examples.generated.MultiFormDialogSessionExample` |
 | `examples.generated.GeneratedCustomerRow` | `GeneratedCustomerRowColumns`, `TableResources`, `TableDescriptor`; `@SwingCompanionPackage` also generates `TableBindings` | `examples.tables.GeneratedTableColumnsExample` |
 | `examples.generated.GeneratedActionMetadataExample` | `GeneratedActionMetadataExampleActions` | `examples.generated.GeneratedActionMetadataExample` |
 
@@ -29,6 +30,13 @@ not private generated implementation details.
 form/table/action pieces with dialog controllers, table state, validation
 summary, invoice-line editing, an address sub-dialog, and async VAT validation
 into one headless miniature business flow.
+
+`examples.generated.MultiFormDialogSessionExample` shows a smaller
+multi-form transaction. It composes generated child form and presentation
+models inside a handwritten `AbstractCompositeFormModel` parent, derives Apply
+and Revert action state from two explicit dirty policies, routes child field
+problems through `ProblemFocusResolver`, and keeps generated Swing companions
+optional.
 
 ## Form Metadata
 
@@ -82,6 +90,12 @@ Generated form models should remain direct:
 - `buildRules()` wires supported validation annotations into a typed `RuleSet`;
 - `createResult()` calls the immutable record constructor.
 
+Generated form models can also be composed. A handwritten parent session can
+extend `AbstractCompositeFormModel<R>`, register generated child models in
+user-visible order, add cross-child validation, and assemble one typed result.
+Keep child `toResult()` calls in the parent assembler, not in parent validation
+unless the child is known to be committable.
+
 Generated presentation models own visual and session state for generated
 bindings. A binding facade can accept an explicit presentation model, or create
 one from a form model for simple callers:
@@ -91,6 +105,11 @@ GeneratedCustomerEditPresentationModel presentation =
         new GeneratedCustomerEditPresentationModel(model);
 GeneratedCustomerEditBindings.install(view, presentation, scope);
 ```
+
+For multi-form dialogs, parent presenters should compose child presentation
+models rather than replacing them. Dialog action state, tab selection, and
+problem routing can live beside the child presenters, while the semantic result
+continues to contain only form values.
 
 The generated source is intentionally readable enough to review. If generated
 formatting or naming makes the source difficult to inspect, fix the processor

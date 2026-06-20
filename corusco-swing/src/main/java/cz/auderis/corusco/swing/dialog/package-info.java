@@ -18,11 +18,24 @@
  * problem state to summaries and focus behavior.</p>
  *
  * <p>{@link cz.auderis.corusco.swing.dialog.DirtyState} and
+ * {@link cz.auderis.corusco.swing.dialog.DirtyStates} and
  * {@link cz.auderis.corusco.swing.dialog.CancelConfirmation} let applications
- * decide when cancellation should ask the user before discarding edits. {@link
+ * decide when cancellation should ask the user before discarding edits. Apply
+ * accepts the current form values as the reset baseline and remembers the last
+ * applied result. A later user Cancel closes as accepted with that last applied
+ * value; Cancel before any Apply remains cancelled. {@link
+ * cz.auderis.corusco.swing.dialog.RevertPolicy} is optional and should only be
+ * supplied when the application can restore pre-dialog state, including changes
+ * that were already applied. {@link
+ * cz.auderis.corusco.swing.dialog.FormDialogActionState} exposes presentation
+ * state for Apply and Revert controls without committing those button states
+ * into form results. {@link
  * cz.auderis.corusco.swing.dialog.ProblemFocusResolver} maps typed problems to
  * components so failed commit attempts can move focus to useful locations
- * without reflection or string property paths.</p>
+ * without reflection or string property paths. Its field-target and resolver
+ * composition helpers are useful for multi-form dialogs where a child problem
+ * should first select the owning tab or reveal a child section, then focus the
+ * actual field component.</p>
  *
  * <p>Dialog helpers are Swing code and should be created, used, and closed on
  * the Event Dispatch Thread. Model validation and result creation remain in the

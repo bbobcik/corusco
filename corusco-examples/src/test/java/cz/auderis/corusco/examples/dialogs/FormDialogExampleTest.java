@@ -13,6 +13,8 @@ class FormDialogExampleTest {
                 "closedAfterApply=false",
                 "accepted=Alice",
                 "closedAfterOk=true",
+                "applyCancelAccepted=true",
+                "applyCancelValue=Carol",
                 "cancelledHasValue=false"
         );
     }

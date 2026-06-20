@@ -70,6 +70,41 @@ class FormDialogShellTest {
         });
     }
 
+    @Test
+    void revertDelegatesToControllerAndDisposesDialog() {
+        assumeFalse(GraphicsEnvironment.isHeadless());
+        SwingEdt.runAndWait(() -> {
+            TestForm form = new TestForm("ignored");
+            Counter reverts = new Counter();
+            FormDialog<TestForm, String> controller = new FormDialog<>(
+                    form,
+                    new JPanel(),
+                    DirtyState.CLEAN,
+                    CancelConfirmation.ALWAYS_CONFIRM,
+                    new RevertPolicy() {
+                        @Override
+                        public boolean canRevert() {
+                            return true;
+                        }
+
+                        @Override
+                        public boolean revert() {
+                            reverts.increment();
+                            return true;
+                        }
+                    }
+            );
+            FormDialogShell<TestForm, String> shell = FormDialogShell.create(null, "Customer", controller);
+
+            assertThat(shell.revert()).isTrue();
+
+            assertThat(reverts.value()).isEqualTo(1);
+            assertThat(controller.result().isReverted()).isTrue();
+            assertThat(controller.isClosed()).isTrue();
+            assertThat(shell.dialog().isDisplayable()).isFalse();
+        });
+    }
+
     private static final class TestForm implements FormModel<String> {
 
         private final String result;

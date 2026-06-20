@@ -9,9 +9,10 @@ import java.util.Optional;
  * <p>Dialog controllers use this Swing-free value to report whether the user
  * accepted a form and, if so, which committed domain object was produced.
  * Accepted results carry the value returned by the form model's commit path.
- * Cancelled results intentionally carry no value so callers cannot accidentally
  * consume a partially edited object after Cancel, Escape, window close, or a
- * dirty-cancel confirmation.</p>
+ * dirty-cancel confirmation. Reverted results also carry no value and mark a
+ * terminal interaction where a dialog-specific policy restored pre-dialog
+ * state.</p>
  *
  * <p>The result is one-shot state owned by the dialog interaction, not by the
  * form model. It does not close dialogs or reset forms by itself; it merely
@@ -20,7 +21,8 @@ import java.util.Optional;
  *
  * @param <R> committed result type
  */
-public sealed interface DialogResult<R> permits DialogResult.Accepted, DialogResult.Cancelled {
+public sealed interface DialogResult<R>
+        permits DialogResult.Accepted, DialogResult.Cancelled, DialogResult.Reverted {
 
     /**
      * Creates an accepted dialog result.
@@ -44,11 +46,28 @@ public sealed interface DialogResult<R> permits DialogResult.Accepted, DialogRes
     }
 
     /**
+     * Creates a reverted dialog result.
+     *
+     * @param <R> committed result type
+     * @return reverted result
+     */
+    static <R> DialogResult<R> reverted() {
+        return new Reverted<>();
+    }
+
+    /**
      * Indicates whether this result is accepted.
      *
      * @return {@code true} for accepted results
      */
     boolean isAccepted();
+
+    /**
+     * Indicates whether this result is reverted.
+     *
+     * @return {@code true} for reverted results
+     */
+    boolean isReverted();
 
     /**
      * Returns the committed value for accepted results.
@@ -80,6 +99,11 @@ public sealed interface DialogResult<R> permits DialogResult.Accepted, DialogRes
         }
 
         @Override
+        public boolean isReverted() {
+            return false;
+        }
+
+        @Override
         public Optional<R> acceptedValue() {
             return Optional.of(value);
         }
@@ -95,6 +119,34 @@ public sealed interface DialogResult<R> permits DialogResult.Accepted, DialogRes
         @Override
         public boolean isAccepted() {
             return false;
+        }
+
+        @Override
+        public boolean isReverted() {
+            return false;
+        }
+
+        @Override
+        public Optional<R> acceptedValue() {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Reverted dialog result.
+     *
+     * @param <R> committed result type
+     */
+    record Reverted<R>() implements DialogResult<R> {
+
+        @Override
+        public boolean isAccepted() {
+            return false;
+        }
+
+        @Override
+        public boolean isReverted() {
+            return true;
         }
 
         @Override

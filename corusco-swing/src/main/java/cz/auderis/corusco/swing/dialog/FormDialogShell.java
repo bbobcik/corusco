@@ -17,7 +17,7 @@ import javax.swing.WindowConstants;
  *
  * <p>{@code FormDialogShell} creates and owns a modal {@link JDialog}, hosts
  * the controller's existing root component, and delegates user-level OK, Apply,
- * and Cancel operations to the controller. It does not build form layouts,
+ * Revert, and Cancel operations to the controller. It does not build form layouts,
  * validation summaries, button bars, resource lookups, or confirmation UI. Keep
  * those application-owned and connect buttons to {@link #accept()},
  * {@link #apply()}, and {@link #cancel()} or to custom actions that call those
@@ -132,6 +132,20 @@ public final class FormDialogShell<P extends FormModel<R>, R> implements Binding
     public boolean apply() {
         SwingEdt.requireEdt();
         return controller.apply();
+    }
+
+    /**
+     * Runs Revert semantics and disposes the shell after successful restore.
+     *
+     * @return {@code true} when the controller reverted and closed
+     */
+    public boolean revert() {
+        SwingEdt.requireEdt();
+        boolean reverted = controller.revert();
+        if (reverted) {
+            dialog.dispose();
+        }
+        return reverted;
     }
 
     /**

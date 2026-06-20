@@ -4,10 +4,10 @@
 
 \begin{chaptermap}
 Core question & How should form dialogs coordinate commit, cancel, validation, keyboard behavior, dirty state, and cleanup without becoming piles of listeners?\\
-Primary APIs & \api{FormDialog}, \api{FormDialogShell}, \api{FormDialogLifecycle}, \api{FormDialogValidationBinding}, \api{FormDialogKeyboardBinding}, \api{ProblemFocusResolver}, \api{SwingEditors}, \api{DirtyState}, and \api{CancelConfirmation}.\\
+Primary APIs & \api{FormDialog}, \api{FormDialogShell}, \api{FormDialogLifecycle}, \api{FormDialogValidationBinding}, \api{FormDialogKeyboardBinding}, \api{ProblemFocusResolver}, \api{SwingEditors}, \api{DirtyState}, \api{DirtyStates}, \api{FormDialogActionState}, \api{RevertPolicy}, and \api{CancelConfirmation}.\\
 Layout topic & MigLayout dialog bodies with generated or handwritten field bindings.\\
 Corusco connection & Corusco centralizes dialog semantics while leaving component layout and business workflow in application code.\\
-Companion examples & \dialogExample, \dialogValidationExample, \dialogActiveEditorExample, \dialogDirtyCancelExample, \dialogLifecycleExample, and \dialogKeyboardExample.\\
+Companion examples & \dialogExample, \dialogApplyRevertExample, \dialogValidationExample, \dialogActiveEditorExample, \dialogDirtyCancelExample, \dialogLifecycleExample, \dialogKeyboardExample, and \multiFormDialogExample.\\
 \end{chaptermap}
 
 \section{The modal transaction}
@@ -18,8 +18,8 @@ decision. The word terminal is important. A modal dialog is not merely a
 \api{JDialog} with fields in it. It is a small transaction in which the program
 asks the user for a value, a decision, a correction, or a confirmation, and then
 returns control to the surrounding workflow. The transaction may succeed,
-cancel, or fail to accept the current input. It should not half-succeed by
-closing the window while leaving the caller to guess what happened.
+cancel, revert, or fail to accept the current input. It should not half-succeed
+by closing the window while leaving the caller to guess what happened.
 
 \termdef{Form model}{in this book} is the object that owns editable state,
 validation problems, reset, dirty-baseline acceptance, and result creation for a
@@ -32,7 +32,7 @@ with the current input?''
 
 \termdef{Dialog controller}{in Corusco Swing} is an object that coordinates the
 standard modal rules without being a native window. \api{FormDialog} is such a
-controller. It owns OK, Apply, and Cancel semantics for a form model. It does
+controller. It owns OK, Apply, Revert, and Cancel semantics for a form model. It does
 not build the form body, it does not show a native \api{JDialog}, and it does
 not decide which repository method will save the result. That restraint is the
 point. A controller that owns only the decision protocol can be tested without a
@@ -196,12 +196,12 @@ whether that result currently exists.
 \end{principlebox}
 
 The important invariant is one-way motion. Once OK succeeds, the controller has
-reached a terminal closed state. The OK, Apply, and Cancel commands become
-disabled. The accepted \api{DialogResult} is final. The shell may then dispose
-the native peer, and the caller may continue with the result. This one-shot
-rule makes tests and cleanup much simpler. There is no second OK after a
-successful OK, and there is no hidden branch in which the controller closes but
-the result remains mutable.
+reached a terminal closed state. The OK, Apply, Revert, and Cancel commands
+become disabled. The accepted \api{DialogResult} is final. The shell may then
+dispose the native peer, and the caller may continue with the result. This
+one-shot rule makes tests and cleanup much simpler. There is no second OK after
+a successful OK, and there is no hidden branch in which the controller closes
+but the result remains mutable.
 
 Apply is deliberately different. It uses the same active-editor and
 committability path as OK, but it is non-terminal. On success it creates a
@@ -220,9 +220,20 @@ abandons only changes since the last successful Apply. In a few specialized
 workflows, Cancel may revert everything since the dialog opened. Both policies
 can be defensible, but only one can be the user's mental model. Corusco's
 default controller supports the conventional rule by calling
-\api{acceptCurrentValues} after a successful Apply. A program that chooses a
-different policy should not hide it in a listener; it should name it and test
-it.
+\api{acceptCurrentValues} after a successful Apply. After that point, user
+Cancel returns the last applied value as an accepted result and abandons only
+post-Apply edits. A program that chooses a different policy should not hide it
+in a listener; it should name it and test it.
+
+Revert is the separate operation for the other mental model: discard everything
+since the dialog opened, including values already committed by Apply. It cannot
+be implemented by ordinary form reset after Apply, because Apply deliberately
+moved the reset baseline. Corusco therefore models Revert as an optional
+\api{RevertPolicy}. The policy may restore an in-memory snapshot, call a
+compensating save, or refuse because the surrounding workflow cannot honestly
+undo the applied change. When it succeeds, the terminal \api{DialogResult} is
+reverted rather than accepted, so callers do not confuse Apply--Cancel with
+Apply--Revert.
 
 Cancel is also a decision. It is not simply \api{dispose}. A clean dialog should
 cancel quickly. A dirty dialog may need to ask whether user edits may be
@@ -266,7 +277,7 @@ because the view lifetime has ended. Showing a dirty confirmation while the
 owner window is already closing is one of those small UI defects that makes an
 application feel as if its parts do not agree about who is in charge.
 
-The controller also exposes OK, Apply, and Cancel as mutable commands. Commands
+The controller also exposes OK, Apply, Revert, and Cancel as mutable commands. Commands
 matter because a dialog operation is rarely invoked from exactly one button.
 OK may be invoked by a button, a default-button Enter action, a toolbar action
 in an embedded editor, or a test. Cancel may be invoked by a button, Escape, a
@@ -278,22 +289,34 @@ key, and one place to test.
 \begin{lstlisting}[caption={Dialog buttons adapt dialog commands.}]
 JButton ok = new JButton(new SwingActionAdapter(dialog.okCommand(), resources));
 JButton apply = new JButton(new SwingActionAdapter(dialog.applyCommand(), resources));
+JButton revert = new JButton(new SwingActionAdapter(dialog.revertCommand(), resources));
 JButton cancel = new JButton(new SwingActionAdapter(dialog.cancelCommand(), resources));
 
 buttonRow.add(ok, "tag ok");
 buttonRow.add(apply, "tag apply");
+buttonRow.add(revert, "tag other");
 buttonRow.add(cancel, "tag cancel");
 \end{lstlisting}
 
 The resource keys behind the standard commands give the application a single
 place for button text and other command metadata. The action keys give tests
-and generated companions stable identities. The enabled state follows
-\api{refreshCommandState}: OK and Apply are enabled only while the controller
-is open and the form is committable; Cancel is enabled while the controller is
-open. If the form model does not expose observable command-state changes, call
-\api{refreshCommandState} after validation or parse state changes. This is a
-small explicit call, but it is better than hidden listeners that revalidate the
-dialog at surprising times.
+and generated companions stable identities. The basic command enabled state
+follows \api{refreshCommandState}: OK and Apply are enabled only while the
+controller is open and the form is committable; Revert is enabled only while
+the controller is open and the configured policy reports that restoration is
+available; Cancel is enabled while the controller is open. If the form model
+does not expose observable command-state changes, call \api{refreshCommandState}
+after validation or parse state changes. This is a small explicit call, but it
+is better than hidden listeners that revalidate the dialog at surprising times.
+
+Button presentation state can be more precise than command availability. A
+presenter may expose \api{ComponentStateModel} instances for Apply and Revert
+through \api{FormDialogActionState}. Apply usually follows current-baseline
+dirty state: it is enabled when there are unapplied changes and the form is
+committable. Revert follows pre-dialog dirty state: it may remain enabled
+after Apply, because the transaction still differs from the opening snapshot.
+These action models are presentation state. They should not appear in the
+accepted domain result.
 
 There is one more rule that is easy to miss: \api{toResult} must return a real
 result. A null result is not a cancelled result and not an invalid result; it is
@@ -307,12 +330,14 @@ reference smuggled through the dialog protocol.
 The controller can be read as a small state machine. It starts open with a
 cancelled result. OK may either leave it open or move it to accepted and closed.
 Apply may either leave it unchanged or update the last-applied snapshot while
-remaining open. Cancel may leave it open if dirty confirmation refuses, or move
-it to cancelled and closed. Close always moves an open controller to cancelled
-and closed without asking confirmation. Every transition refreshes commands so
-the visible controls do not advertise actions that the controller will ignore.
-The state machine is small enough to test exhaustively, and that is one of the
-main reasons to keep it out of anonymous listeners.
+remaining open. Cancel may leave it open if dirty confirmation refuses, move it
+to cancelled and closed when nothing has been applied, or move it to accepted
+and closed with the last applied value. Revert may move it to reverted and
+closed when the policy succeeds. Close always moves an open controller to
+cancelled and closed without asking confirmation. Every transition refreshes
+commands so the visible controls do not advertise actions that the controller
+will ignore. The state machine is small enough to test exhaustively, and that
+is one of the main reasons to keep it out of anonymous listeners.
 
 The state machine also gives a precise meaning to idempotence. Calling Cancel
 after the controller is already closed is harmless. Calling Close after it is
@@ -566,6 +591,32 @@ not a second validation engine. It should not inspect field values and decide
 what is wrong. It should translate problem targets into user recovery. Tests
 for this code should assert that the right tab is selected, the right table
 cell is visible, and the right component receives a focus request.
+
+For multi-form dialogs, each child view can expose its own explicit resolver.
+The parent presenter composes those resolvers in the same order as the child
+forms and wraps each child resolver with the preparation needed to reveal that
+child. A problem in a hidden tab should first select the tab. A problem in a
+collapsed section should first expand the section. The validator still reports
+a typed target; the presenter owns the navigation.
+
+\begin{lstlisting}[caption={Reveal the child view before focusing its problem.}]
+ProblemFocusResolver resolver = ProblemFocusResolver.firstOf(
+        ProblemFocusResolver.withPreparation(
+                () -> tabs.setSelectedComponent(identityPanel),
+                ProblemFocusResolver.fieldTargets(Map.of(
+                        CustomerIdentityFields.NAME.asFieldKey(),
+                        identityView.nameField()))),
+        ProblemFocusResolver.withPreparation(
+                () -> tabs.setSelectedComponent(securityPanel),
+                ProblemFocusResolver.fieldTargets(Map.of(
+                        SecuritySettingsFields.PASSWORD.asFieldKey(),
+                        securityView.passwordField()))));
+\end{lstlisting}
+
+This shape keeps the ownership boundaries clean. The core problem target is a
+typed field key. The child view supplies a component. The parent presenter
+selects the child surface. The validation binding only requests focus on the
+component it was given.
 
 Validation failure and unexpected failure deserve different presentations.
 Validation failure is ordinary user input. It belongs in problem summaries,
@@ -869,6 +920,82 @@ point to its physical location.
 \dialogValidationExample{} and \dialogActiveEditorExample{} are the compact
 examples behind the dialog figures. They use ordinary Swing components and
 short Corusco controllers so that chapter listings can stay small.
+\dialogApplyRevertExample{} is the focused behavior example for Apply-Cancel
+and Revert baselines.
+\end{examplebox}
+
+\section{Composite form sessions}
+
+Large dialogs often contain several independently meaningful forms: identity,
+billing, security, contacts, advanced options, or a generated form next to a
+handwritten table editor. Flattening every field into one generated form makes
+those screens harder to own and test. Corusco handles this by keeping the
+dialog controller unchanged and composing the semantic form model instead.
+
+\api{AbstractCompositeFormModel} is the core-side base for this pattern. It is
+still a \api{FormModel}; it simply owns an ordered list of child form models.
+Problem aggregation follows child order and then parent validation. Reset and
+baseline acceptance flow to every child. Result creation remains an explicit
+parent operation.
+
+\begin{lstlisting}[caption={A handwritten parent session over generated children.}]
+final class CustomerSettingsSession
+        extends AbstractCompositeFormModel<CustomerSettingsResult> {
+
+    private final CustomerIdentityFormModel identity;
+    private final SecuritySettingsFormModel security;
+
+    CustomerSettingsSession(
+            CustomerIdentityFormModel identity,
+            SecuritySettingsFormModel security) {
+        super(identity, security);
+        this.identity = identity;
+        this.security = security;
+    }
+
+    @Override
+    protected CustomerSettingsResult createResult() {
+        return new CustomerSettingsResult(
+                identity.toResult(),
+                security.toResult());
+    }
+}
+\end{lstlisting}
+
+Parent validation is the reason the parent exists. It can express rules such
+as ``external authentication is not allowed for inactive customers'' without
+making the security form know about the customer form. Parent validation
+should inspect child field state or child committability. It should not
+materialize child results unless the child is already committable; the
+assembler is the normal place for child \api{toResult} calls.
+
+The existing \api{FormDialog} can host the composite directly because the
+composite is still a form model:
+
+\begin{lstlisting}[caption={The dialog sees one form model.}]
+DirtyState dirty = DirtyStates.any(
+        () -> identity.name.isDirty(),
+        () -> security.password.isDirty());
+
+FormDialog<CustomerSettingsSession, CustomerSettingsResult> dialog =
+        new FormDialog<>(session, root, dirty, confirmation);
+\end{lstlisting}
+
+The presenter side should compose generated child presentation models in the
+same spirit. A parent presenter can keep \api{CustomerIdentityPresentationModel}
+and \api{SecuritySettingsPresentationModel} beside dialog-level action state,
+tab selection, and problem routing. None of that presentation state belongs in
+the committed result. Swing-specific generated companions remain optional:
+packages that opt into \api{SwingCompanionPackage} can use generated views and
+bindings, while the core session only depends on core form and presentation
+models.
+
+\begin{examplebox}{Composite dialogs}
+\multiFormDialogExample{} demonstrates a generated-child, handwritten-parent
+dialog session. It composes generated form and presentation models, derives
+Apply and Revert state from separate dirty policies, routes child field
+problems through typed focus resolvers, and keeps generated Swing bindings
+optional.
 \end{examplebox}
 
 \section{Lifecycle and background work}
@@ -1116,7 +1243,8 @@ confirms cancellation. The screenshot is evidence of presentation; the tests
 are evidence of behavior.
 
 \begin{examplebox}{Dialogs}
-\dialogExample{} demonstrates base OK, Apply, and Cancel controller semantics.
+\dialogExample{} demonstrates base OK, Apply, Apply-Cancel, and Cancel controller semantics.
+\dialogApplyRevertExample{} demonstrates Apply-Cancel and optional Revert.
 \dialogDirtyCancelExample{} covers dirty confirmation. \dialogKeyboardExample{}
 covers Escape and default-button wiring. \dialogLifecycleExample{} covers
 cleanup ownership. The book names the examples by class so that references stay
@@ -1219,8 +1347,10 @@ OK closes with invalid input & Does \api{isCommittable} reflect parse, validatio
 Escape discards edits immediately & Is Escape routed to the same cancel command as the Cancel button?\\
 Cancel asks during shutdown & Is user cancellation being confused with lifecycle cleanup?\\
 Apply closes the dialog & Is Apply accidentally using OK semantics?\\
-Apply then Cancel loses applied work & Is the dirty baseline moved after successful Apply according to policy?\\
+Apply then Cancel loses applied work & Is the dirty baseline moved after successful Apply, and does Cancel return the last applied result?\\
+Revert behaves like Cancel & Is Revert backed by a real pre-dialog restoration policy rather than ordinary reset?\\
 Validation summary changes but focus does not & Is a \api{ProblemFocusResolver} installed for structured targets?\\
+Child problem opens the wrong tab & Are child focus resolvers composed with the same order and reveal policy as the composite session?\\
 Problem appears on the wrong table row & Are model coordinates translated to view coordinates after sorting or filtering?\\
 Old async validation result appears & Is generation or cancellation suppressing stale task results?\\
 Dialog leaks listeners & Are bindings and task services registered with \api{FormDialogLifecycle}?\\
@@ -1274,11 +1404,15 @@ generated facts and which parts should remain handwritten MigLayout.
 \item OK and Apply commit active editors before reading the form result.
 \item OK is terminal only after successful commit and committability checks.
 \item Apply is non-terminal and has a stated dirty-baseline policy.
+\item Apply followed by Cancel preserves the last successfully applied result.
+\item Revert is offered only when a real pre-dialog restoration policy exists.
 \item Cancel uses dirty state and confirmation only for user cancellation.
 \item Programmatic close bypasses dirty confirmation and performs cleanup.
 \item Buttons, Enter, Escape, and tests invoke shared dialog commands.
 \item Validation problems have stable codes, severities, and targets.
 \item A focus resolver maps structured problem targets to Swing recovery.
+\item Composite form sessions aggregate child problems before parent validation.
+\item Generated child presentation models are composed, not committed.
 \item MigLayout expresses the dialog body directly and remains reviewable.
 \item Generated code supplies stable facts without hiding product layout.
 \item Background work has cancellation, stale-result suppression, and EDT handoff.
