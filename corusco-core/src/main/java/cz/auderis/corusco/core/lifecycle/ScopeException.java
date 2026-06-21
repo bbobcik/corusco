@@ -1,5 +1,7 @@
 package cz.auderis.corusco.core.lifecycle;
 
+import java.io.Serial;
+
 /**
  * Reports one or more failures that occurred while closing a
  * {@link SubscriptionScope}.
@@ -8,8 +10,9 @@ package cz.auderis.corusco.core.lifecycle;
  * Individual cleanup failures are available through
  * {@link #getSuppressed()}.</p>
  */
-public final class SubscriptionScopeException extends RuntimeException {
+public class ScopeException extends RuntimeException {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     /**
@@ -17,7 +20,8 @@ public final class SubscriptionScopeException extends RuntimeException {
      *
      * @param message detail message
      */
-    public SubscriptionScopeException(String message) {
+    public ScopeException(String message) {
         super(message);
     }
+
 }

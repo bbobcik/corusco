@@ -9,7 +9,7 @@ import cz.auderis.corusco.core.meta.OptionDescriptor;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.tooltip.TooltipContent;
 import cz.auderis.corusco.core.tooltip.TooltipPolicy;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.ValueChangeListener;
 import java.awt.Color;
@@ -38,7 +38,7 @@ import javax.swing.event.DocumentListener;
  * Factory for basic disposable Swing bindings.
  *
  * <p>All factory methods must be called on the EDT. Component listeners update
- * models with {@link ChangeOrigin#USER}; model-originated changes update
+ * models with {@link StandardChangeOrigin#USER}; model-originated changes update
  * components with a feedback guard so the binding does not loop through Swing
  * document events. Returned bindings own every listener or model subscription
  * they install and restore component state documented by the individual
@@ -59,7 +59,7 @@ public final class BindingFactory {
      *
      * <p>The binding installs a document listener, initializes the component
      * from {@link TextFieldModel#rawText()}, and propagates user document
-     * changes back to the model with {@link ChangeOrigin#USER}. Closing the
+     * changes back to the model with {@link StandardChangeOrigin#USER}. Closing the
      * binding removes both the document listener and the model subscription.</p>
      *
      * @param component Swing text field
@@ -94,9 +94,9 @@ public final class BindingFactory {
      * Binds selected state of an abstract button to a Boolean field model.
      *
      * <p>The component is initialized from the model. User item events update
-     * the model with {@link ChangeOrigin#USER}; model events update the button
-     * without writing back through the item listener. Closing the binding
-     * removes the item listener and value subscription.</p>
+     * the model with {@link StandardChangeOrigin#USER}; model events update the
+     * button without writing back through the item listener. Closing the
+     * binding removes the item listener and value subscription.</p>
      *
      * @param button checkbox, radio button, or toggle button
      * @param model Boolean field model
@@ -112,7 +112,7 @@ public final class BindingFactory {
         button.setSelected(Boolean.TRUE.equals(model.value().value()));
         java.awt.event.ItemListener itemListener = event -> {
             if (!updating[0]) {
-                model.setValue(button.isSelected(), ChangeOrigin.USER);
+                model.setValue(button.isSelected(), StandardChangeOrigin.USER);
             }
         };
         button.addItemListener(itemListener);
@@ -139,9 +139,9 @@ public final class BindingFactory {
      * the supplied container and matches each button by action command first,
      * then component name. Recognized tokens are generated option keys and enum
      * constant names from {@code options}. User selection updates the field
-     * with {@link ChangeOrigin#USER}; model changes select the matching button
-     * without feeding back through the action listener. Closing the binding
-     * removes listeners and the value subscription.</p>
+     * with {@link StandardChangeOrigin#USER}; model changes select the matching
+     * button without feeding back through the action listener. Closing the
+     * binding removes listeners and the value subscription.</p>
      *
      * @param container component containing radio buttons
      * @param model semantic option field model
@@ -210,7 +210,7 @@ public final class BindingFactory {
             }
             T value = valuesByToken.get(buttonToken(button));
             if (value != null) {
-                model.setValue(value, ChangeOrigin.USER);
+                model.setValue(value, StandardChangeOrigin.USER);
             }
         };
 
@@ -581,7 +581,7 @@ public final class BindingFactory {
 
             private void updateModel() {
                 if (!updating[0]) {
-                    model.setRawText(getter.get(), ChangeOrigin.USER);
+                    model.setRawText(getter.get(), StandardChangeOrigin.USER);
                 }
             }
         };

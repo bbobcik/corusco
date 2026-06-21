@@ -12,7 +12,7 @@ import cz.auderis.corusco.core.problem.ProblemSeverity;
 import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.validation.RuleSet;
 import cz.auderis.corusco.core.validation.Validators;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -47,7 +47,7 @@ public final class ValidationExample {
         // This edit parses successfully, so field validation can run. If the
         // text were invalid, parse problems would be reported separately and
         // the credit-limit validator would be skipped.
-        form.creditLimit.setRawText("2000.00", ChangeOrigin.USER);
+        form.creditLimit.setRawText("2000.00", StandardChangeOrigin.USER);
 
         return form.problems().problems().stream()
                 .map(Problem::message)

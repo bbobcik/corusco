@@ -2,6 +2,7 @@ package cz.auderis.corusco.core.form;
 
 import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.SimpleValue;
 import java.util.Objects;
@@ -102,9 +103,9 @@ public class FieldModel<O, T> {
      * Resets current value and touched state to the original baseline.
      */
     public void reset() {
-        value.setValue(originalValue, ChangeOrigin.SYSTEM);
-        touched.setValue(false, ChangeOrigin.SYSTEM);
-        refreshDirty(ChangeOrigin.SYSTEM);
+        value.setValue(originalValue, StandardChangeOrigin.SYSTEM);
+        touched.setValue(false, StandardChangeOrigin.SYSTEM);
+        refreshDirty(StandardChangeOrigin.SYSTEM);
     }
 
     /**
@@ -112,7 +113,7 @@ public class FieldModel<O, T> {
      */
     public void acceptCurrentValue() {
         originalValue = value.value();
-        refreshDirty(ChangeOrigin.SYSTEM);
+        refreshDirty(StandardChangeOrigin.SYSTEM);
     }
 
     void markTouched(ChangeOrigin origin) {

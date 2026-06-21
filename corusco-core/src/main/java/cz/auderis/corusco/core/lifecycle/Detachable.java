@@ -17,8 +17,7 @@ public interface Detachable {
     /**
      * No-op detachable useful as an optional placeholder.
      */
-    Detachable EMPTY = () -> {
-    };
+    Detachable EMPTY = NoOperation.INSTANCE;
 
     /**
      * Releases cached state that can be loaded again later.

@@ -5,7 +5,7 @@ import cz.auderis.corusco.core.convert.EmptyTextPolicy;
 import cz.auderis.corusco.core.form.AbstractFormModel;
 import cz.auderis.corusco.core.form.TextFieldModel;
 import cz.auderis.corusco.core.key.TextFieldKey;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -39,7 +39,7 @@ public final class FieldModelExample {
 
         // The user can type an invalid intermediate value. The raw text changes
         // immediately, but the semantic value remains the last parse success.
-        creditLimit.setRawText("12,", ChangeOrigin.USER);
+        creditLimit.setRawText("12,", StandardChangeOrigin.USER);
 
         return List.of(
                 creditLimit.rawText().value(),
@@ -58,8 +58,8 @@ public final class FieldModelExample {
 
         // The form is still plain Java: generated code should eventually emit
         // this shape, but no processor is needed to prove the core behavior.
-        form.name.setRawText("Grace", ChangeOrigin.USER);
-        form.creditLimit.setRawText("20.00", ChangeOrigin.USER);
+        form.name.setRawText("Grace", StandardChangeOrigin.USER);
+        form.creditLimit.setRawText("20.00", StandardChangeOrigin.USER);
 
         // toResult() is guarded by form committability; parse errors would
         // throw instead of producing a partially invalid record.

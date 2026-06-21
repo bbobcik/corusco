@@ -1,11 +1,11 @@
 package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Disposable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -27,7 +27,7 @@ import java.util.function.Predicate;
  */
 public final class FilteredList<E> implements ObservableList<E>, Disposable {
 
-    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
+    private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private final Subscription subscription;
     private Predicate<? super E> predicate;
     private final List<E> sourceSnapshot;
@@ -155,9 +155,7 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
 
     @Override
     public Subscription subscribe(ListChangeListener<E> listener) {
-        Objects.requireNonNull(listener, "listener");
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     @Override
@@ -298,9 +296,7 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
             return;
         }
         ListChangeSet<E> changeSet = new ListChangeSet<>(changes);
-        for (ListChangeListener<E> listener : listeners) {
-            listener.listChanged(changeSet);
-        }
+        listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 
     private UnsupportedOperationException readOnly() {

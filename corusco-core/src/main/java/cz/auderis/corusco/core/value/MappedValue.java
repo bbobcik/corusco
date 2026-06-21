@@ -1,9 +1,8 @@
 package cz.auderis.corusco.core.value;
 
 import cz.auderis.corusco.core.lifecycle.Disposable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -32,7 +31,7 @@ public final class MappedValue<A, B> implements ReadableValue<B>, Disposable {
     private final ReadableValue<A> source;
     private final Function<? super A, ? extends B> mapper;
     private final Subscription sourceSubscription;
-    private final List<ValueChangeListener<B>> listeners = new ArrayList<>();
+    private final ListenerSet<ValueChangeListener<B>, ValueChangeEvent<B>> listeners = new ListenerSet<>();
     private B value;
     private boolean closed;
 
@@ -70,8 +69,7 @@ public final class MappedValue<A, B> implements ReadableValue<B>, Disposable {
         if (closed) {
             return Subscription.EMPTY;
         }
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     /**
@@ -86,7 +84,7 @@ public final class MappedValue<A, B> implements ReadableValue<B>, Disposable {
         try {
             sourceSubscription.close();
         } finally {
-            listeners.clear();
+            listeners.clearListeners();
         }
     }
 
@@ -101,9 +99,6 @@ public final class MappedValue<A, B> implements ReadableValue<B>, Disposable {
         }
         value = newValue;
         ValueChangeEvent<B> event = new ValueChangeEvent<>(this, oldValue, newValue, origin);
-        List<ValueChangeListener<B>> snapshot = List.copyOf(listeners);
-        for (ValueChangeListener<B> listener : snapshot) {
-            listener.valueChanged(event);
-        }
+        listeners.fireEvent(event, ValueChangeListener::valueChanged);
     }
 }

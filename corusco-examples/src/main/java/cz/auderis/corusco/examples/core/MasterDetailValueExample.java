@@ -1,6 +1,6 @@
 package cz.auderis.corusco.examples.core;
 
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.MasterDetailValue;
 import cz.auderis.corusco.core.value.SimpleValue;
 
@@ -41,13 +41,13 @@ public final class MasterDetailValueExample {
 
         // While attached, changing the master immediately reloads the detail so
         // bound UI can repaint with the new selected customer's data.
-        selectedCustomerId.setValue(2, ChangeOrigin.USER);
+        selectedCustomerId.setValue(2, StandardChangeOrigin.USER);
         result.add(detail.value());
 
         // When detached, master changes are cheap. The next activation reloads
         // once for the latest master instead of loading every intermediate row.
         detail.detach();
-        selectedCustomerId.setValue(3, ChangeOrigin.USER);
+        selectedCustomerId.setValue(3, StandardChangeOrigin.USER);
         result.add("attached=" + detail.isAttached());
         result.add(detail.value());
         result.add("loads=" + loads.get());

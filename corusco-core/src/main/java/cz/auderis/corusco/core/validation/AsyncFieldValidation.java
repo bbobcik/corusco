@@ -13,6 +13,7 @@ import cz.auderis.corusco.core.task.TaskCallbacks;
 import cz.auderis.corusco.core.task.TaskHandle;
 import cz.auderis.corusco.core.task.TaskService;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.SimpleValue;
 
@@ -96,8 +97,8 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
      * Creates and starts async field validation.
      *
      * <p>Construction subscribes to the value and immediately schedules
-     * validation of the current value with {@link ChangeOrigin#SYSTEM}. Later
-     * value changes reuse the origin carried by the value event.</p>
+     * validation of the current value with {@link StandardChangeOrigin#SYSTEM}.
+     * Later value changes reuse the origin carried by the value event.</p>
      *
      * @param key typed field key
      * @param value observed field value
@@ -115,7 +116,7 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
         this.taskService = Objects.requireNonNull(taskService, "taskService");
         this.validator = Objects.requireNonNull(validator, "validator");
         this.valueSubscription = value.subscribe(event -> validate(event.newValue(), event.origin()));
-        validate(value.value(), ChangeOrigin.SYSTEM);
+        validate(value.value(), StandardChangeOrigin.SYSTEM);
     }
 
     /**
@@ -153,7 +154,7 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
      * changed. Calling this after close has no effect.</p>
      */
     public void validateNow() {
-        validate(value.value(), ChangeOrigin.MODEL);
+        validate(value.value(), StandardChangeOrigin.MODEL);
     }
 
     /**
@@ -175,7 +176,7 @@ public final class AsyncFieldValidation<O, T> implements Disposable {
             task.cancel();
         }
         tasks.clear();
-        busy.setValue(false, ChangeOrigin.SYSTEM);
+        busy.setValue(false, StandardChangeOrigin.SYSTEM);
     }
 
     private void validate(T fieldValue, ChangeOrigin origin) {

@@ -1,5 +1,7 @@
 package cz.auderis.corusco.core.value;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 
 /**
@@ -16,9 +18,15 @@ import java.util.Objects;
  * @param <T> value type
  */
 public record ValueChangeEvent<T>(
+
         ReadableValue<T> source,
+
+        @Nullable
         T oldValue,
+
+        @Nullable
         T newValue,
+
         ChangeOrigin origin
 ) {
 

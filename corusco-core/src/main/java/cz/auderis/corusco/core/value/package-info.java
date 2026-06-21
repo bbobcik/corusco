@@ -21,7 +21,7 @@
  * <pre>{@code
  * WritableValue<CustomerRow> selected = SimpleValue.of(null);
  * Subscription subscription = selected.subscribe(event -> refreshDetails(event.newValue()));
- * selected.setValue(row, ChangeOrigin.USER);
+ * selected.setValue(row, StandardChangeOrigin.USER);
  * subscription.close();
  * }</pre>
  *
@@ -30,9 +30,10 @@
  * use {@link cz.auderis.corusco.core.value.WritableValue}. {@link
  * cz.auderis.corusco.core.value.ValueChangeEvent} describes each change and
  * {@link cz.auderis.corusco.core.value.ValueChangeListener} receives it
- * synchronously. {@link cz.auderis.corusco.core.value.ChangeOrigin} lets
- * bindings distinguish user-originated and programmatic updates where a model
- * exposes that distinction.</p>
+ * synchronously. {@link cz.auderis.corusco.core.value.StandardChangeOrigin}
+ * covers framework-defined origins, while {@link
+ * cz.auderis.corusco.core.value.CustomChangeOrigin} can be used for
+ * application-specific diagnostic origins.</p>
  *
  * <p>Expose the narrowest interface that matches ownership. A presenter may
  * keep a {@code WritableValue} privately while exposing only a
@@ -69,11 +70,14 @@
  * distinguishable. Document null meaning at the presenter boundary instead of
  * relying on readers to infer it from implementation details.</p>
  *
- * <p>Subscriptions must be closed by the owner that registered them. Values are
- * Swing-free and make no implicit threading guarantees: events are delivered by
- * the mutating call. If a value is bound to Swing components, mutate it
- * according to the binding's EDT requirements or insert an explicit dispatch
- * boundary.</p>
+ * <p>Subscriptions must be closed by the owner that registered them. Value
+ * implementations use {@link cz.auderis.corusco.core.lifecycle.ListenerSet}
+ * for listener storage: duplicate registration of the same listener instance is
+ * ignored, listener identity is used instead of equality, and dispatch uses the
+ * listener snapshot captured at the start of the event. Values are Swing-free
+ * and make no implicit threading guarantees: events are delivered by the
+ * mutating call. If a value is bound to Swing components, mutate it according
+ * to the binding's EDT requirements or insert an explicit dispatch boundary.</p>
  *
  * <p>Testing values should cover initial state, event order, origin propagation,
  * unsubscribe behavior, and derived-value recomputation. For bindings, test the
@@ -82,4 +86,7 @@
  * This separation keeps presenter-state tests fast and makes UI threading
  * assumptions visible in the Swing layer.</p>
  */
+@NullMarked
 package cz.auderis.corusco.core.value;
+
+import org.jspecify.annotations.NullMarked;

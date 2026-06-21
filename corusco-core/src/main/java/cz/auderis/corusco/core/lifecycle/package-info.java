@@ -12,9 +12,15 @@
  * <p>{@link cz.auderis.corusco.core.lifecycle.SubscriptionScope} and
  * {@link cz.auderis.corusco.core.lifecycle.DetachableScope} own groups of
  * children, process them in reverse registration order, and aggregate cleanup
- * failures as suppressed exceptions. Scopes are intentionally small and
- * unsynchronized; callers should confine them to the owning lifecycle or
- * provide external coordination.</p>
+ * failures as suppressed exceptions. Scopes synchronize registration and close
+ * state, while child cleanup still runs on the calling thread and must follow
+ * the child object's threading rules.</p>
+ *
+ * <p>{@link cz.auderis.corusco.core.lifecycle.ListenerSet} is the lightweight
+ * listener-storage primitive for internal observable models. It keeps
+ * registration as a cold, locked copy-on-write path while dispatch stays a
+ * lock-free snapshot read. Listener identity, not equality, defines
+ * membership.</p>
  *
  * <p>A common usage flow is to create a scope when a presenter, behavior, or
  * dialog is activated, add every listener or binding registration as it is
@@ -30,4 +36,7 @@
  * contract for subscriptions and scopes; callers may safely close them during
  * both normal and exceptional teardown paths.</p>
  */
+@NullMarked
 package cz.auderis.corusco.core.lifecycle;
+
+import org.jspecify.annotations.NullMarked;

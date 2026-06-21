@@ -9,6 +9,7 @@ import cz.auderis.corusco.core.collection.ListChangeListener;
 import cz.auderis.corusco.core.collection.ListChangeSet;
 import cz.auderis.corusco.core.collection.ObservableList;
 import cz.auderis.corusco.core.lifecycle.Disposable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import org.jspecify.annotations.NonNull;
 
@@ -16,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
@@ -41,7 +41,7 @@ import java.util.function.Consumer;
 public final class GlazedObservableList<E> implements ObservableList<E>, Disposable {
 
     private final EventList<E> source;
-    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
+    private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private final List<ListChange<E>> batchedChanges = new ArrayList<>();
     private final ListEventListener<E> sourceListener = this::sourceChanged;
     private List<E> sourceSnapshot;
@@ -203,9 +203,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
 
     @Override
     public Subscription subscribe(ListChangeListener<E> listener) {
-        Objects.requireNonNull(listener, "listener");
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     @Override
@@ -300,9 +298,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
     }
 
     private void fire(ListChangeSet<E> changeSet) {
-        for (ListChangeListener<E> listener : listeners) {
-            listener.listChanged(changeSet);
-        }
+        listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 
     private List<E> singleton(E element) {

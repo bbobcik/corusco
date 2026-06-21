@@ -46,7 +46,7 @@
  *
  * <pre>{@code
  * CustomerEditFormModel model = new CustomerEditFormModel(customer);
- * model.name.setRawText("Ada", ChangeOrigin.USER);
+ * model.name.setRawText("Ada", StandardChangeOrigin.USER);
  *
  * if (model.isCommittable()) {
  *     Customer updated = model.toResult();
@@ -124,3 +124,5 @@
  * application uses.</p>
  */
 package cz.auderis.corusco.examples;
+
+import cz.auderis.corusco.core.value.StandardChangeOrigin;

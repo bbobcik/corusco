@@ -1,7 +1,7 @@
 package cz.auderis.corusco.examples.core;
 
 import cz.auderis.corusco.core.lifecycle.SubscriptionScope;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.DerivedValue;
 import cz.auderis.corusco.core.value.MappedValue;
 import cz.auderis.corusco.core.value.SimpleValue;
@@ -49,12 +49,12 @@ public final class ObservableValueExample {
             scope.add(fullName);
             scope.add(greeting);
             scope.add(greeting.subscribe(event -> observed.add(event.newValue())));
-            firstName.setValue("Grace", ChangeOrigin.USER);
+            firstName.setValue("Grace", StandardChangeOrigin.USER);
         }
 
         // This change proves the scoped subscriptions were removed; it should
         // not append another greeting after cleanup.
-        firstName.setValue("Ignored", ChangeOrigin.USER);
+        firstName.setValue("Ignored", StandardChangeOrigin.USER);
         return List.copyOf(observed);
     }
 }

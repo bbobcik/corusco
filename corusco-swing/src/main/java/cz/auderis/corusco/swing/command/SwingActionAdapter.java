@@ -5,6 +5,7 @@ import cz.auderis.corusco.core.command.Command;
 import cz.auderis.corusco.core.command.MutableCommand;
 import cz.auderis.corusco.core.lifecycle.SubscriptionScope;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.awt.event.ActionEvent;
@@ -108,7 +109,7 @@ public final class SwingActionAdapter extends AbstractAction implements Binding 
             return;
         }
         if (event.getSource() instanceof AbstractButton button) {
-            mutableCommand.setSelected(button.isSelected(), ChangeOrigin.USER);
+            mutableCommand.setSelected(button.isSelected(), StandardChangeOrigin.USER);
         }
     }
 }

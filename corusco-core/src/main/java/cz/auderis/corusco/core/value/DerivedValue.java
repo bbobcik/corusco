@@ -1,9 +1,9 @@
 package cz.auderis.corusco.core.value;
 
 import cz.auderis.corusco.core.lifecycle.Disposable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import cz.auderis.corusco.core.lifecycle.SubscriptionScope;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -17,8 +17,8 @@ import java.util.function.Supplier;
  * value immediately, recomputes synchronously when any dependency changes, and
  * emits one event when the computed value changes.</p>
  *
- * <p>The instance owns its dependency subscriptions and its own listener list.
- * Closing it removes dependency subscriptions, clears listeners, and makes
+ * <p>The instance owns its dependency subscriptions and its own listener
+ * registrations. Closing it removes dependency subscriptions, clears listeners, and makes
  * later subscriptions no-ops. Callers should close derived values from the same
  * lifecycle that owns the presenter or binding using them.</p>
  *
@@ -32,7 +32,7 @@ public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
 
     private final Supplier<? extends T> supplier;
     private final SubscriptionScope dependencyScope = new SubscriptionScope();
-    private final List<ValueChangeListener<T>> listeners = new ArrayList<>();
+    private final ListenerSet<ValueChangeListener<T>, ValueChangeEvent<T>> listeners = new ListenerSet<>();
     private T value;
     private boolean closed;
 
@@ -87,8 +87,7 @@ public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
         if (closed) {
             return Subscription.EMPTY;
         }
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     /**
@@ -103,7 +102,7 @@ public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
         try {
             dependencyScope.close();
         } finally {
-            listeners.clear();
+            listeners.clearListeners();
         }
     }
 
@@ -118,9 +117,6 @@ public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
         }
         value = newValue;
         ValueChangeEvent<T> event = new ValueChangeEvent<>(this, oldValue, newValue, origin);
-        List<ValueChangeListener<T>> snapshot = List.copyOf(listeners);
-        for (ValueChangeListener<T> listener : snapshot) {
-            listener.valueChanged(event);
-        }
+        listeners.fireEvent(event, ValueChangeListener::valueChanged);
     }
 }

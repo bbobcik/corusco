@@ -76,9 +76,9 @@ ordinary field-model member per record component:
 ```java
 GeneratedCustomerEditFormModel model = new GeneratedCustomerEditFormModel(original);
 
-model.name.setRawText("Bob", ChangeOrigin.USER);
-model.creditLimit.setRawText("25.50", ChangeOrigin.USER);
-model.active.setValue(false, ChangeOrigin.USER);
+model.name.setRawText("Bob", StandardChangeOrigin.USER);
+model.creditLimit.setRawText("25.50", StandardChangeOrigin.USER);
+model.active.setValue(false, StandardChangeOrigin.USER);
 
 GeneratedCustomerEdit committed = model.toResult();
 ```

@@ -152,8 +152,8 @@ GeneratedCustomerRowTableBindings.bindSelection(
 ```
 
 User selection writes the model-row value and optional row value with
-`ChangeOrigin.USER`. Presenter-driven changes to the selected model-row value
-select the corresponding current JTable view row. Configure the row sorter
+`StandardChangeOrigin.USER`. Presenter-driven changes to the selected model-row
+value select the corresponding current JTable view row. Configure the row sorter
 before creating the binding; if the table receives a replacement sorter, close
 and recreate the binding.
 

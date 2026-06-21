@@ -1,6 +1,6 @@
 package cz.auderis.corusco.examples.practices;
 
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.examples.book.BookExampleSupport;
 import java.awt.Dimension;
@@ -45,7 +45,7 @@ public final class PracticeComparisonExample {
             }
 
             private void update() {
-                name.setValue(field.getText(), ChangeOrigin.USER);
+                name.setValue(field.getText(), StandardChangeOrigin.USER);
             }
         });
         name.subscribe(event -> status.setText("Name length: " + event.newValue().length()));

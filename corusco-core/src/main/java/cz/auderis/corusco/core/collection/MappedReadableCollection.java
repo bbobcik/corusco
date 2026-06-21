@@ -1,11 +1,11 @@
 package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Disposable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 
 /**
@@ -21,7 +21,7 @@ import java.util.function.Function;
  * listeners as equivalent {@link ListChange} instances over mapped elements.</p>
  *
  * <p>Closing the view removes the source subscription and clears this view's
- * listener list. It does not close, clear, or otherwise own the source
+ * listener registrations. It does not close, clear, or otherwise own the source
  * collection.</p>
  *
  * @param <S> source element type
@@ -30,7 +30,7 @@ import java.util.function.Function;
 public class MappedReadableCollection<S, T> implements ObservableReadableCollection<T>, Disposable {
 
     private final Function<? super S, ? extends T> mapper;
-    private final CopyOnWriteArrayList<ListChangeListener<T>> listeners = new CopyOnWriteArrayList<>();
+    private final ListenerSet<ListChangeListener<T>, ListChangeSet<T>> listeners = new ListenerSet<>();
     private final Subscription subscription;
     private List<T> mapped;
     private boolean closed;
@@ -84,9 +84,7 @@ public class MappedReadableCollection<S, T> implements ObservableReadableCollect
 
     @Override
     public Subscription subscribe(ListChangeListener<T> listener) {
-        Objects.requireNonNull(listener, "listener");
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     @Override
@@ -95,7 +93,7 @@ public class MappedReadableCollection<S, T> implements ObservableReadableCollect
             return;
         }
         subscription.close();
-        listeners.clear();
+        listeners.clearListeners();
         closed = true;
     }
 
@@ -176,8 +174,6 @@ public class MappedReadableCollection<S, T> implements ObservableReadableCollect
             return;
         }
         ListChangeSet<T> changeSet = new ListChangeSet<>(changes);
-        for (ListChangeListener<T> listener : listeners) {
-            listener.listChanged(changeSet);
-        }
+        listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 }

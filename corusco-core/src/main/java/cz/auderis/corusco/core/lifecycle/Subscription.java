@@ -1,8 +1,5 @@
 package cz.auderis.corusco.core.lifecycle;
 
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 /**
  * A disposable registration for a listener, callback, or similar attachment.
  *
@@ -18,8 +15,7 @@ public interface Subscription extends Disposable {
     /**
      * A subscription that is already closed and performs no cleanup.
      */
-    Subscription EMPTY = () -> {
-    };
+    Subscription EMPTY = NoOperation.INSTANCE;
 
     /**
      * Creates an idempotent subscription backed by a cleanup callback.
@@ -28,13 +24,7 @@ public interface Subscription extends Disposable {
      * @return an idempotent subscription
      */
     static Subscription of(Disposable cleanup) {
-        Objects.requireNonNull(cleanup, "cleanup");
-        AtomicBoolean closed = new AtomicBoolean();
-        return () -> {
-            if (closed.compareAndSet(false, true)) {
-                cleanup.close();
-            }
-        };
+        return new IdempotentSubscription(cleanup);
     }
 
     /**

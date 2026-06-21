@@ -15,6 +15,7 @@ import cz.auderis.corusco.core.problem.ProblemSeverity;
 import cz.auderis.corusco.core.problem.ProblemSource;
 import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -82,7 +83,7 @@ class ValidationRuleTest {
         CustomerForm form = new CustomerForm(new CustomerEdit("Ada", new BigDecimal("10"), 1,
                 LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)));
 
-        form.creditLimit.setRawText("not-decimal", ChangeOrigin.USER);
+        form.creditLimit.setRawText("not-decimal", StandardChangeOrigin.USER);
 
         assertThat(form.rules.validateAll(form).filter(ProblemFilter.field(CREDIT_LIMIT.asFieldKey())).isEmpty())
                 .isTrue();
@@ -105,7 +106,7 @@ class ValidationRuleTest {
     void formAggregatesParseAndValidationProblemsSeparately() {
         CustomerForm form = new CustomerForm(new CustomerEdit("", new BigDecimal("10"), 1,
                 LocalDate.of(2026, 12, 31), LocalDate.of(2026, 1, 1)));
-        form.creditLimit.setRawText("bad", ChangeOrigin.USER);
+        form.creditLimit.setRawText("bad", StandardChangeOrigin.USER);
 
         ProblemSet problems = form.problems();
 
@@ -128,7 +129,7 @@ class ValidationRuleTest {
         CustomerForm form = new CustomerForm(new CustomerEdit("Ada", new BigDecimal("10"), 1,
                 LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)));
 
-        form.active.setValue(false, ChangeOrigin.USER);
+        form.active.setValue(false, StandardChangeOrigin.USER);
 
         assertThat(form.rules.validateFor(form, ACTIVE).filter(ProblemFilter.field(ACTIVE)).problems())
                 .singleElement()

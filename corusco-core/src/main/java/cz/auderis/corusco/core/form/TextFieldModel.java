@@ -9,6 +9,7 @@ import cz.auderis.corusco.core.problem.ProblemCode;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.SimpleValue;
 import java.util.Objects;
@@ -175,9 +176,9 @@ public final class TextFieldModel<O, T> {
     public void reset() {
         field.reset();
         String resetText = converter.format(field.value().value());
-        rawText.setValue(resetText, ChangeOrigin.SYSTEM);
-        parseState.setValue(new ParseState.Parsed<>(resetText, field.value().value()), ChangeOrigin.SYSTEM);
-        problems.setValue(ProblemSet.empty(), ChangeOrigin.SYSTEM);
+        rawText.setValue(resetText, StandardChangeOrigin.SYSTEM);
+        parseState.setValue(new ParseState.Parsed<>(resetText, field.value().value()), StandardChangeOrigin.SYSTEM);
+        problems.setValue(ProblemSet.empty(), StandardChangeOrigin.SYSTEM);
     }
 
     /**

@@ -3,7 +3,7 @@ package cz.auderis.corusco.examples.showcase;
 import com.formdev.flatlaf.FlatClientProperties;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.resource.Resources;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.swing.binding.BindingFactory;
 import cz.auderis.corusco.swing.binding.BindingScope;
 import cz.auderis.corusco.swing.dialog.FormDialog;
@@ -95,7 +95,7 @@ final class CustomerWorkspacePanel extends JPanel {
         boolean[] updatingType = new boolean[1];
         type.addActionListener(event -> {
             if (!updatingType[0]) {
-                model.type.setValue((ShowcaseCustomerType) type.getSelectedItem(), ChangeOrigin.USER);
+                model.type.setValue((ShowcaseCustomerType) type.getSelectedItem(), StandardChangeOrigin.USER);
             }
         });
         var typeSubscription = model.type.value().subscribe(event -> {

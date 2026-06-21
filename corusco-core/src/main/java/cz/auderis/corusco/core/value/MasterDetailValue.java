@@ -1,10 +1,9 @@
 package cz.auderis.corusco.core.value;
 
 import cz.auderis.corusco.core.lifecycle.Disposable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -34,7 +33,7 @@ public final class MasterDetailValue<M, T> implements DetachableValue<T>, Dispos
     private final ReadableValue<M> master;
     private final Function<? super M, ? extends T> loader;
     private final Subscription masterSubscription;
-    private final List<ValueChangeListener<T>> listeners = new ArrayList<>();
+    private final ListenerSet<ValueChangeListener<T>, ValueChangeEvent<T>> listeners = new ListenerSet<>();
     private boolean attached;
     private boolean closed;
     private M attachedMaster;
@@ -86,8 +85,7 @@ public final class MasterDetailValue<M, T> implements DetachableValue<T>, Dispos
         if (closed) {
             return Subscription.EMPTY;
         }
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     @Override
@@ -117,7 +115,7 @@ public final class MasterDetailValue<M, T> implements DetachableValue<T>, Dispos
         boolean hadEffectiveValue = attached;
         T newValue = load(currentMaster);
         if (hadEffectiveValue && !Objects.equals(oldValue, newValue)) {
-            fireChanged(oldValue, newValue, ChangeOrigin.MODEL);
+            fireChanged(oldValue, newValue, StandardChangeOrigin.MODEL);
         }
         return newValue;
     }
@@ -135,7 +133,7 @@ public final class MasterDetailValue<M, T> implements DetachableValue<T>, Dispos
             masterSubscription.close();
         } finally {
             invalidate();
-            listeners.clear();
+            listeners.clearListeners();
         }
     }
 
@@ -164,9 +162,6 @@ public final class MasterDetailValue<M, T> implements DetachableValue<T>, Dispos
 
     private void fireChanged(T oldValue, T newValue, ChangeOrigin origin) {
         ValueChangeEvent<T> event = new ValueChangeEvent<>(this, oldValue, newValue, origin);
-        List<ValueChangeListener<T>> snapshot = List.copyOf(listeners);
-        for (ValueChangeListener<T> listener : snapshot) {
-            listener.valueChanged(event);
-        }
+        listeners.fireEvent(event, ValueChangeListener::valueChanged);
     }
 }

@@ -10,6 +10,7 @@ import cz.auderis.corusco.core.table.ColumnKey;
 import cz.auderis.corusco.core.table.TableDescriptor;
 import cz.auderis.corusco.core.table.TableKey;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.ArrayList;
@@ -43,7 +44,7 @@ class TableSelectionBindingTest {
             assertThat(table.convertRowIndexToModel(0)).isEqualTo(1);
             assertThat(selectedIndex.value()).isEqualTo(1);
             assertThat(selectedRow.value()).isEqualTo(new CustomerRow("Alice", 3));
-            assertThat(events).contains("1:" + ChangeOrigin.USER);
+            assertThat(events).contains("1:" + StandardChangeOrigin.USER);
             binding.close();
             model.close();
         });

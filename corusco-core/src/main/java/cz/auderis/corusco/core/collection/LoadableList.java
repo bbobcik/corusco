@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Detachable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import org.jspecify.annotations.Nullable;
 
@@ -8,7 +9,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -38,7 +38,7 @@ import java.util.function.Supplier;
 public final class LoadableList<E> implements ObservableList<E>, Detachable {
 
     private final Supplier<? extends Collection<? extends E>> loader;
-    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
+    private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private @Nullable ObservableArrayList<E> cache;
     private @Nullable Subscription cacheSubscription;
 
@@ -126,9 +126,7 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
 
     @Override
     public Subscription subscribe(ListChangeListener<E> listener) {
-        Objects.requireNonNull(listener, "listener");
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     @Override
@@ -196,8 +194,6 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
     }
 
     private void fire(ListChangeSet<E> changeSet) {
-        for (ListChangeListener<E> listener : listeners) {
-            listener.listChanged(changeSet);
-        }
+        listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 }

@@ -6,7 +6,7 @@ import cz.auderis.corusco.core.table.InMemoryTableStateStore;
 import cz.auderis.corusco.core.table.TableStateStore;
 import cz.auderis.corusco.core.task.TaskCallbacks;
 import cz.auderis.corusco.core.task.TaskService;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.binding.BindingScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
@@ -179,7 +179,7 @@ final class ShowcaseRuntime implements AutoCloseable {
     }
 
     private void reloadTimeseries() {
-        busy.setValue(true, ChangeOrigin.USER);
+        busy.setValue(true, StandardChangeOrigin.USER);
         statusLabel.setText("Loading 100K H2 observations...");
         taskService.submit(
                 cancellation -> H2TimeseriesRepository.loadObservations(),
@@ -187,7 +187,7 @@ final class ShowcaseRuntime implements AutoCloseable {
                     @Override
                     public void succeeded(List<TimeseriesObservation> rows) {
                         timeseriesPanel.loadRows(rows);
-                        busy.setValue(false, ChangeOrigin.SYSTEM);
+                        busy.setValue(false, StandardChangeOrigin.SYSTEM);
                         eventPanel.addSyntheticEvent("Reloaded H2 time-series observations");
                         recordActivity("Reloaded " + rows.size() + " H2 observations");
                         statusLabel.setText("Loaded " + rows.size() + " observations from H2.");
@@ -196,7 +196,7 @@ final class ShowcaseRuntime implements AutoCloseable {
 
                     @Override
                     public void failed(Throwable error) {
-                        busy.setValue(false, ChangeOrigin.SYSTEM);
+                        busy.setValue(false, StandardChangeOrigin.SYSTEM);
                         recordActivity("H2 load failed");
                         statusLabel.setText("H2 load failed: " + error.getMessage());
                         refreshOverview();

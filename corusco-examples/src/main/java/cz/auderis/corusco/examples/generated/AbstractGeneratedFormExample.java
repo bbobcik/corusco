@@ -1,6 +1,6 @@
 package cz.auderis.corusco.examples.generated;
 
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -32,9 +32,9 @@ public final class AbstractGeneratedFormExample {
         );
         AbstractCustomerProfileFormModel model = new AbstractCustomerProfileFormModel(original);
 
-        model.name.setRawText("Acme Industrial", ChangeOrigin.USER);
-        model.creditLimit.setRawText("150000.00", ChangeOrigin.USER);
-        model.active.setValue(false, ChangeOrigin.USER);
+        model.name.setRawText("Acme Industrial", StandardChangeOrigin.USER);
+        model.creditLimit.setRawText("150000.00", StandardChangeOrigin.USER);
+        model.active.setValue(false, StandardChangeOrigin.USER);
         GeneratedAbstractCustomerProfile committed = model.toResult();
 
         return List.of(

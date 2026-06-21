@@ -8,7 +8,7 @@ import cz.auderis.corusco.core.problem.ProblemSeverity;
 import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.task.TaskService;
 import cz.auderis.corusco.core.validation.AsyncFieldValidation;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 
 import java.util.ArrayList;
@@ -70,7 +70,7 @@ public final class AsyncFieldValidationExample {
             // Editing the field starts a newer validation generation while the
             // first request is still running. The controller keeps the field
             // busy until this current generation finishes.
-            name.setValue("new", ChangeOrigin.USER);
+            name.setValue("new", StandardChangeOrigin.USER);
             await(newStarted);
             result.add("busyAfterEdit=" + validation.busy().value());
 

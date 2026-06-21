@@ -16,6 +16,7 @@ import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.problem.ProblemSeverity;
 import cz.auderis.corusco.core.problem.ProblemTarget;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import java.awt.event.FocusEvent;
 import java.math.BigDecimal;
@@ -79,7 +80,7 @@ class BindingFactoryTest {
             JTextField field = new JTextField();
             Binding binding = BindingFactory.textField(field, model);
 
-            model.setRawText("15.00", ChangeOrigin.MODEL);
+            model.setRawText("15.00", StandardChangeOrigin.MODEL);
 
             assertThat(field.getText()).isEqualTo("15.00");
             assertThat(model.value()).isEqualByComparingTo("15.00");
@@ -113,19 +114,19 @@ class BindingFactoryTest {
             checkBox.setSelected(true);
             assertThat(active.value().value()).isTrue();
 
-            active.setValue(false, ChangeOrigin.MODEL);
+            active.setValue(false, StandardChangeOrigin.MODEL);
             assertThat(checkBox.isSelected()).isFalse();
 
             SimpleValue<String> labelText = SimpleValue.of("ready");
             JLabel label = new JLabel();
             Binding labelBinding = BindingFactory.labelText(label, labelText);
-            labelText.setValue("done", ChangeOrigin.MODEL);
+            labelText.setValue("done", StandardChangeOrigin.MODEL);
             assertThat(label.getText()).isEqualTo("done");
 
             SimpleValue<Boolean> enabledValue = SimpleValue.of(true);
             JButton button = new JButton();
             Binding enabled = BindingFactory.enabled(button, enabledValue);
-            enabledValue.setValue(false, ChangeOrigin.MODEL);
+            enabledValue.setValue(false, StandardChangeOrigin.MODEL);
             assertThat(button.isEnabled()).isFalse();
 
             selected.close();
@@ -161,7 +162,7 @@ class BindingFactoryTest {
             certificate.doClick();
             assertThat(authenticationMode.value().value()).isEqualTo(AuthenticationMode.CERTIFICATE);
 
-            authenticationMode.setValue(AuthenticationMode.PASSWORD, ChangeOrigin.MODEL);
+            authenticationMode.setValue(AuthenticationMode.PASSWORD, StandardChangeOrigin.MODEL);
             assertThat(password.isSelected()).isTrue();
             assertThat(certificate.isSelected()).isFalse();
 
@@ -182,20 +183,20 @@ class BindingFactoryTest {
 
             Binding binding = BindingFactory.componentState(field, state);
 
-            state.enabled().setValue(false, ChangeOrigin.MODEL);
+            state.enabled().setValue(false, StandardChangeOrigin.MODEL);
             assertThat(field.isEnabled()).isFalse();
 
-            state.enabled().setValue(true, ChangeOrigin.MODEL);
-            state.relevant().setValue(false, ChangeOrigin.MODEL);
+            state.enabled().setValue(true, StandardChangeOrigin.MODEL);
+            state.relevant().setValue(false, StandardChangeOrigin.MODEL);
             assertThat(field.isEnabled()).isFalse();
             assertThat(field.isVisible()).isFalse();
 
-            state.relevant().setValue(true, ChangeOrigin.MODEL);
-            state.protectedValue().setValue(true, ChangeOrigin.MODEL);
+            state.relevant().setValue(true, StandardChangeOrigin.MODEL);
+            state.protectedValue().setValue(true, StandardChangeOrigin.MODEL);
             assertThat(field.isEditable()).isFalse();
 
-            state.protectedValue().setValue(false, ChangeOrigin.MODEL);
-            state.busy().setValue(true, ChangeOrigin.MODEL);
+            state.protectedValue().setValue(false, StandardChangeOrigin.MODEL);
+            state.busy().setValue(true, StandardChangeOrigin.MODEL);
             assertThat(field.isEnabled()).isFalse();
             assertThat(field.isEditable()).isFalse();
 
@@ -233,19 +234,19 @@ class BindingFactoryTest {
             SimpleValue<String> statusText = SimpleValue.of("Initial guidance");
             Binding binding = BindingFactory.statusText(field, status, statusText);
 
-            statusText.setValue("Changed before focus", ChangeOrigin.MODEL);
+            statusText.setValue("Changed before focus", StandardChangeOrigin.MODEL);
             assertThat(status.getText()).isEqualTo("Idle");
 
             focusGained(field);
             assertThat(status.getText()).isEqualTo("Changed before focus");
 
-            statusText.setValue("Changed while focused", ChangeOrigin.MODEL);
+            statusText.setValue("Changed while focused", StandardChangeOrigin.MODEL);
             assertThat(status.getText()).isEqualTo("Changed while focused");
 
             binding.close();
             assertThat(status.getText()).isEqualTo("Idle");
 
-            statusText.setValue("Ignored after close", ChangeOrigin.MODEL);
+            statusText.setValue("Ignored after close", StandardChangeOrigin.MODEL);
             assertThat(status.getText()).isEqualTo("Idle");
         });
     }
@@ -278,7 +279,7 @@ class BindingFactoryTest {
             Binding tooltip = BindingFactory.validationTooltip(field, model.problemSet());
             Binding border = BindingFactory.validationBorder(field, model.problemSet());
 
-            model.setRawText("bad", ChangeOrigin.USER);
+            model.setRawText("bad", StandardChangeOrigin.USER);
 
             assertThat(field.getToolTipText()).isEqualTo("Expected BigDecimal");
             assertThat(field.getBorder()).isNotSameAs(original);
@@ -287,7 +288,7 @@ class BindingFactoryTest {
             assertThat(field.getToolTipText()).isNull();
             assertThat(field.getBorder()).isSameAs(original);
 
-            model.setRawText("bad", ChangeOrigin.USER);
+            model.setRawText("bad", StandardChangeOrigin.USER);
             border.close();
             tooltip.close();
             assertThat(field.getBorder()).isSameAs(original);
@@ -320,10 +321,10 @@ class BindingFactoryTest {
                     Customer display name
                     Press F1 for help""");
 
-            disabledReason.setValue("Save waits for validation", ChangeOrigin.MODEL);
+            disabledReason.setValue("Save waits for validation", StandardChangeOrigin.MODEL);
             assertThat(field.getToolTipText()).contains("Save waits for validation");
 
-            problems.setValue(ProblemSet.empty(), ChangeOrigin.MODEL);
+            problems.setValue(ProblemSet.empty(), StandardChangeOrigin.MODEL);
             assertThat(field.getToolTipText()).isEqualTo("""
                     Save waits for validation
                     Customer display name
@@ -362,7 +363,7 @@ class BindingFactoryTest {
 
         SwingEdt.runAndWait(() -> BindingFactory.labelText(new JLabel(), text));
 
-        assertThatThrownBy(() -> text.setValue("off-edt", ChangeOrigin.MODEL))
+        assertThatThrownBy(() -> text.setValue("off-edt", StandardChangeOrigin.MODEL))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Swing binding code must run on the EDT");
     }

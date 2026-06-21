@@ -1,8 +1,7 @@
 package cz.auderis.corusco.core.value;
 
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 
 /**
@@ -27,7 +26,7 @@ import java.util.Objects;
  */
 public final class SimpleValue<T> implements WritableValue<T> {
 
-    private final List<ValueChangeListener<T>> listeners = new ArrayList<>();
+    private final ListenerSet<ValueChangeListener<T>, ValueChangeEvent<T>> listeners = new ListenerSet<>();
     private T value;
 
     /**
@@ -78,9 +77,7 @@ public final class SimpleValue<T> implements WritableValue<T> {
 
     @Override
     public Subscription subscribe(ValueChangeListener<T> listener) {
-        Objects.requireNonNull(listener, "listener");
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     /**
@@ -92,9 +89,6 @@ public final class SimpleValue<T> implements WritableValue<T> {
      */
     private void fireChanged(T oldValue, T newValue, ChangeOrigin origin) {
         ValueChangeEvent<T> event = new ValueChangeEvent<>(this, oldValue, newValue, origin);
-        List<ValueChangeListener<T>> snapshot = List.copyOf(listeners);
-        for (ValueChangeListener<T> listener : snapshot) {
-            listener.valueChanged(event);
-        }
+        listeners.fireEvent(event, ValueChangeListener::valueChanged);
     }
 }

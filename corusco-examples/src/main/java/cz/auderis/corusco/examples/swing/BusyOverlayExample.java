@@ -1,6 +1,6 @@
 package cz.auderis.corusco.examples.swing;
 
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.behavior.BehaviorScope;
 import cz.auderis.corusco.swing.behavior.StandardBehaviors;
@@ -50,7 +50,7 @@ public final class BusyOverlayExample {
                 // The same observable busy value can come from TaskService or
                 // AsyncFieldValidation. The binding updates the overlay without
                 // mutating child component enabled states.
-                busy.setValue(true, ChangeOrigin.MODEL);
+                busy.setValue(true, StandardChangeOrigin.MODEL);
                 MouseEvent event = new MouseEvent(
                         layer,
                         MouseEvent.MOUSE_PRESSED,

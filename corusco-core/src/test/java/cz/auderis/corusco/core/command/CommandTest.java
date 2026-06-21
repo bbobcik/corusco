@@ -3,6 +3,7 @@ package cz.auderis.corusco.core.command;
 import cz.auderis.corusco.core.key.ActionKey;
 import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +27,7 @@ class CommandTest {
         command.execute();
         command.setEnabled(false);
         command.execute();
-        command.setEnabled(true, ChangeOrigin.USER);
+        command.setEnabled(true, StandardChangeOrigin.USER);
         command.execute();
 
         assertThat(calls).hasValue(2);
@@ -41,7 +42,7 @@ class CommandTest {
                 }
         );
 
-        command.setSelected(true, ChangeOrigin.USER);
+        command.setSelected(true, StandardChangeOrigin.USER);
 
         assertThat(command.selectable()).isTrue();
         assertThat(command.isSelected()).isTrue();

@@ -36,14 +36,14 @@ class MasterDetailValueTest {
         detail.subscribe(events::add);
 
         assertThat(detail.value()).isEqualTo("detail-1");
-        master.setValue(2, ChangeOrigin.USER);
+        master.setValue(2, StandardChangeOrigin.USER);
 
         assertThat(detail.value()).isEqualTo("detail-2");
         assertThat(events).hasSize(1);
         assertThat(events.getFirst().source()).isSameAs(detail);
         assertThat(events.getFirst().oldValue()).isEqualTo("detail-1");
         assertThat(events.getFirst().newValue()).isEqualTo("detail-2");
-        assertThat(events.getFirst().origin()).isEqualTo(ChangeOrigin.USER);
+        assertThat(events.getFirst().origin()).isEqualTo(StandardChangeOrigin.USER);
     }
 
     @Test
@@ -57,7 +57,7 @@ class MasterDetailValueTest {
 
         assertThat(detail.value()).isEqualTo("detail-1-1");
         detail.detach();
-        master.setValue(2, ChangeOrigin.MODEL);
+        master.setValue(2, StandardChangeOrigin.MODEL);
 
         assertThat(detail.isAttached()).isFalse();
         assertThat(loads).hasValue(1);

@@ -357,7 +357,7 @@ class CoruscoAnnotationProcessorTest {
                 "private static Binding dependencyBinding(",
                 "List<?> expectedValues",
                 "boolean active = expectedValues.contains(value)",
-                "case VISIBLE -> target.visible().setValue(active, ChangeOrigin.GENERATED)"
+                "case VISIBLE -> target.visible().setValue(active, StandardChangeOrigin.GENERATED)"
         );
         assertThat(result.generatedSource("demo/GeneratedCustomerEdit.java"))
                 .doesNotContain("ComponentStateModel passwordState")

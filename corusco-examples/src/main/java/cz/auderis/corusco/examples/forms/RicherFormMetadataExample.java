@@ -1,6 +1,6 @@
 package cz.auderis.corusco.examples.forms;
 
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.form.ComponentStateModel;
 import cz.auderis.corusco.examples.generated.SecurityAuthenticationMode;
 import cz.auderis.corusco.examples.generated.SecuritySettings;
@@ -38,10 +38,10 @@ public final class RicherFormMetadataExample {
         // A presenter can still control state explicitly. The generated
         // dependency metadata gives it a typed inventory of the rules that
         // should drive these states automatically in a richer binding layer.
-        presentation.passwordState().visible().setValue(true, ChangeOrigin.GENERATED);
-        presentation.certificateAliasState().visible().setValue(false, ChangeOrigin.GENERATED);
-        presentation.externalRealmState().visible().setValue(false, ChangeOrigin.GENERATED);
-        presentation.advancedSection().enabled().setValue(false, ChangeOrigin.USER);
+        presentation.passwordState().visible().setValue(true, StandardChangeOrigin.GENERATED);
+        presentation.certificateAliasState().visible().setValue(false, StandardChangeOrigin.GENERATED);
+        presentation.externalRealmState().visible().setValue(false, StandardChangeOrigin.GENERATED);
+        presentation.advancedSection().enabled().setValue(false, StandardChangeOrigin.USER);
 
         return List.of(
                 SecuritySettingsOptions.AUTHENTICATION_MODE_DESCRIPTORS.get(0).key().id(),

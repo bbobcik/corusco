@@ -95,13 +95,13 @@ GeneratedCustomerEdit original = new GeneratedCustomerEdit(
 );
 GeneratedCustomerEditFormModel model = new GeneratedCustomerEditFormModel(original);
 
-model.name.setRawText("", ChangeOrigin.USER);
+model.name.setRawText("", StandardChangeOrigin.USER);
 boolean blockedByRequiredName = !model.isCommittable();
 
-model.name.setRawText("Bob", ChangeOrigin.USER);
-model.creditLimit.setRawText("25.50", ChangeOrigin.USER);
-model.age.setRawText("45", ChangeOrigin.USER);
-model.active.setValue(false, ChangeOrigin.USER);
+model.name.setRawText("Bob", StandardChangeOrigin.USER);
+model.creditLimit.setRawText("25.50", StandardChangeOrigin.USER);
+model.age.setRawText("45", StandardChangeOrigin.USER);
+model.active.setValue(false, StandardChangeOrigin.USER);
 
 GeneratedCustomerEdit committed = model.toResult();
 ```

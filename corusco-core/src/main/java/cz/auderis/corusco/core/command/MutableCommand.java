@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.command;
 
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 
 /**
  * Command with mutable presentation state.
@@ -11,10 +12,11 @@ import cz.auderis.corusco.core.value.ChangeOrigin;
  * tests can subscribe without knowing who changes the state.</p>
  *
  * <p>Enabled-state changes usually come from model or validation state and use
- * {@link ChangeOrigin#MODEL}. UI adapters should mutate selected state only for
- * selectable commands and use {@link ChangeOrigin#USER} for user-originated
- * toggle changes. Implementations should reject selected-state mutation for
- * non-selectable commands rather than silently storing unsupported state.</p>
+ * {@link StandardChangeOrigin#MODEL}. UI adapters should mutate selected state
+ * only for selectable commands and use {@link StandardChangeOrigin#USER} for
+ * user-originated toggle changes. Implementations should reject selected-state
+ * mutation for non-selectable commands rather than silently storing unsupported
+ * state.</p>
  */
 public interface MutableCommand extends Command {
 
@@ -24,7 +26,7 @@ public interface MutableCommand extends Command {
      * @param enabled enabled flag
      */
     default void setEnabled(boolean enabled) {
-        setEnabled(enabled, ChangeOrigin.MODEL);
+        setEnabled(enabled, StandardChangeOrigin.MODEL);
     }
 
     /**
@@ -41,7 +43,7 @@ public interface MutableCommand extends Command {
      * @param selected selected flag
      */
     default void setSelected(boolean selected) {
-        setSelected(selected, ChangeOrigin.MODEL);
+        setSelected(selected, StandardChangeOrigin.MODEL);
     }
 
     /**

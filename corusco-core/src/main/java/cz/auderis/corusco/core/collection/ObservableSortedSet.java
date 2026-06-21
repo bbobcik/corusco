@@ -1,5 +1,6 @@
 package cz.auderis.corusco.core.collection;
 
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -7,7 +8,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.TreeSet;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import org.jspecify.annotations.Nullable;
 
@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
 public final class ObservableSortedSet<E> implements ObservableReadableCollection<E> {
 
     private final TreeSet<E> elements;
-    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners;
+    private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners;
     private final ObservableList<E> listView;
 
     /**
@@ -41,7 +41,7 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
     public ObservableSortedSet(Comparator<? super E> comparator) {
         Objects.requireNonNull(comparator, "comparator");
         this.elements = new TreeSet<>(comparator);
-        this.listeners = new CopyOnWriteArrayList<>();
+        this.listeners = new ListenerSet<>();
         this.listView = new SortedSetListView();
     }
 
@@ -184,28 +184,16 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
 
     @Override
     public Subscription subscribe(ListChangeListener<E> listener) {
-        Objects.requireNonNull(listener, "listener");
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     private void fireEvent(ListChange<E> event) {
-        if (listeners.isEmpty()) {
-            return;
-        }
         final ListChangeSet<E> changeSet = ListChangeSet.of(event);
-        for (ListChangeListener<E> listener : listeners) {
-            listener.listChanged(changeSet);
-        }
+        listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 
     private void fire(ListChangeSet<E> changeSet) {
-        if (listeners.isEmpty()) {
-            return;
-        }
-        for (ListChangeListener<E> listener : listeners) {
-            listener.listChanged(changeSet);
-        }
+        listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 
     @Override

@@ -24,6 +24,12 @@
  * registered until the returned
  * {@link cz.auderis.corusco.core.lifecycle.Subscription} is closed.</p>
  *
+ * <p>Core collection implementations use {@link
+ * cz.auderis.corusco.core.lifecycle.ListenerSet} for their own listener
+ * storage. Registering the same listener instance twice has set semantics, and
+ * a change event is delivered to the listener snapshot captured before
+ * dispatch starts.</p>
+ *
  * <p>Use {@link cz.auderis.corusco.core.collection.FilteredList},
  * {@link cz.auderis.corusco.core.collection.SortedList},
  * {@link cz.auderis.corusco.core.collection.MappedReadableCollection}, and

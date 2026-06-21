@@ -65,7 +65,7 @@ class LoadableValueTest {
         assertThat(events.getFirst().source()).isSameAs(value);
         assertThat(events.getFirst().oldValue()).isEqualTo("first");
         assertThat(events.getFirst().newValue()).isEqualTo("second");
-        assertThat(events.getFirst().origin()).isEqualTo(ChangeOrigin.MODEL);
+        assertThat(events.getFirst().origin()).isEqualTo(StandardChangeOrigin.MODEL);
     }
 
     @Test

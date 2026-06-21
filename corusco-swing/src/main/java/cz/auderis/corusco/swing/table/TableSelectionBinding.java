@@ -3,6 +3,7 @@ package cz.auderis.corusco.swing.table;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import cz.auderis.corusco.core.lifecycle.SubscriptionScope;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.WritableValue;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
@@ -19,9 +20,9 @@ import javax.swing.event.TableModelListener;
  *
  * <p>The binding is EDT-confined. User-originated table selection updates the
  * selected model-row index and optional row value with
- * {@link ChangeOrigin#USER}. Presenter-originated changes to the model-row
- * value select the corresponding JTable view row with
- * {@link ChangeOrigin#MODEL} already carried by the value event.</p>
+ * {@link StandardChangeOrigin#USER}. Presenter-originated changes to the
+ * model-row value select the corresponding JTable view row with
+ * {@link StandardChangeOrigin#MODEL} already carried by the value event.</p>
  *
  * <p>Selection is single-row oriented. The JTable may technically allow
  * multiple selected rows, but this binding tracks the lead selected row exposed
@@ -60,7 +61,7 @@ public final class TableSelectionBinding<R> implements Binding {
             throw new IllegalArgumentException("table must use the supplied ObservableTableModel");
         }
         installListeners();
-        updateValuesFromTable(ChangeOrigin.MODEL);
+        updateValuesFromTable(StandardChangeOrigin.MODEL);
     }
 
     /**
@@ -118,7 +119,7 @@ public final class TableSelectionBinding<R> implements Binding {
         ListSelectionListener selectionListener = event -> {
             SwingEdt.requireEdt();
             if (!event.getValueIsAdjusting() && !updatingFromValue) {
-                updateValuesFromTable(ChangeOrigin.USER);
+                updateValuesFromTable(StandardChangeOrigin.USER);
             }
         };
         table.getSelectionModel().addListSelectionListener(selectionListener);
@@ -161,11 +162,11 @@ public final class TableSelectionBinding<R> implements Binding {
         Integer selected = selectedModelRow.value();
         if (selected == null || selected < 0 || selected >= model.getRowCount()) {
             clearTableSelection();
-            updateValues(null, null, ChangeOrigin.MODEL);
+            updateValues(null, null, StandardChangeOrigin.MODEL);
             return;
         }
         selectModelRow(selected);
-        updateValuesFromTable(ChangeOrigin.MODEL);
+        updateValuesFromTable(StandardChangeOrigin.MODEL);
     }
 
     private void updateValuesFromTable(ChangeOrigin origin) {
@@ -197,18 +198,18 @@ public final class TableSelectionBinding<R> implements Binding {
         try {
             if (modelRow == null || modelRow < 0 || modelRow >= model.getRowCount()) {
                 clearTableSelection();
-                updateValues(null, null, ChangeOrigin.MODEL);
+                updateValues(null, null, StandardChangeOrigin.MODEL);
                 return;
             }
             int viewRow = table.convertRowIndexToView(modelRow);
             if (viewRow < 0) {
                 clearTableSelection();
-                updateValues(modelRow, model.readableRows().get(modelRow), ChangeOrigin.MODEL);
+                updateValues(modelRow, model.readableRows().get(modelRow), StandardChangeOrigin.MODEL);
                 return;
             }
             table.getSelectionModel().setSelectionInterval(viewRow, viewRow);
             if (selectedRow != null) {
-                selectedRow.setValue(model.readableRows().get(modelRow), ChangeOrigin.MODEL);
+                selectedRow.setValue(model.readableRows().get(modelRow), StandardChangeOrigin.MODEL);
             }
         } finally {
             updatingFromValue = false;

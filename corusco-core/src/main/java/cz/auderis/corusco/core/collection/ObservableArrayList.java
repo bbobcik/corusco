@@ -1,11 +1,11 @@
 package cz.auderis.corusco.core.collection;
 
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Mutable {@link ObservableList} implementation backed by an {@link ArrayList}.
@@ -27,7 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class ObservableArrayList<E> implements ObservableList<E> {
 
     private final List<E> elements = new ArrayList<>();
-    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
+    private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private final List<ListChange<E>> batchedChanges = new ArrayList<>();
     private int batchDepth;
 
@@ -151,9 +151,7 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
 
     @Override
     public Subscription subscribe(ListChangeListener<E> listener) {
-        Objects.requireNonNull(listener, "listener");
-        listeners.add(listener);
-        return Subscription.of(() -> listeners.remove(listener));
+        return listeners.addListener(listener);
     }
 
     private void record(ListChange<E> change) {
@@ -165,9 +163,7 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
     }
 
     private void fire(ListChangeSet<E> changeSet) {
-        for (ListChangeListener<E> listener : listeners) {
-            listener.listChanged(changeSet);
-        }
+        listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 
     private List<E> singleton(E element) {

@@ -2,7 +2,7 @@ package cz.auderis.corusco.examples.forms;
 
 import cz.auderis.corusco.examples.generated.*;
 
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -39,13 +39,13 @@ public final class GeneratedFormModelExample {
         // Generated models expose ordinary field members. Text fields keep raw
         // text separate from semantic values, so invalid input can be reported
         // without destroying the previous valid value.
-        model.name.setRawText("", ChangeOrigin.USER);
+        model.name.setRawText("", StandardChangeOrigin.USER);
         boolean blockedByRequiredName = !model.isCommittable();
 
-        model.name.setRawText("Bob", ChangeOrigin.USER);
-        model.creditLimit.setRawText("25.50", ChangeOrigin.USER);
-        model.age.setRawText("45", ChangeOrigin.USER);
-        model.active.setValue(false, ChangeOrigin.USER);
+        model.name.setRawText("Bob", StandardChangeOrigin.USER);
+        model.creditLimit.setRawText("25.50", StandardChangeOrigin.USER);
+        model.age.setRawText("45", StandardChangeOrigin.USER);
+        model.active.setValue(false, StandardChangeOrigin.USER);
         GeneratedCustomerEdit committed = model.toResult();
 
         model.reset();

@@ -18,12 +18,12 @@ package cz.auderis.corusco.core.value;
 public interface WritableValue<T> extends ReadableValue<T> {
 
     /**
-     * Sets a new value with {@link ChangeOrigin#MODEL} as the origin.
+     * Sets a new value with {@link StandardChangeOrigin#MODEL} as the origin.
      *
      * @param value new value, possibly {@code null}
      */
     default void setValue(T value) {
-        setValue(value, ChangeOrigin.MODEL);
+        setValue(value, StandardChangeOrigin.MODEL);
     }
 
     /**

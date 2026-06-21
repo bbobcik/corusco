@@ -13,6 +13,7 @@ import cz.auderis.corusco.core.meta.FieldKind;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.resource.Resources;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
@@ -238,7 +239,7 @@ class BehaviorScopeTest {
             scope.install(checkBox, List.of(StandardBehaviors.checkBoxBinding(model)));
             checkBox.setSelected(true);
             assertThat(model.value().value()).isTrue();
-            model.setValue(false, ChangeOrigin.MODEL);
+            model.setValue(false, StandardChangeOrigin.MODEL);
             assertThat(checkBox.isSelected()).isFalse();
             scope.close();
         });

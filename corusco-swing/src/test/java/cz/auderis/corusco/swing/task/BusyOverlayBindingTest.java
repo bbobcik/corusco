@@ -1,6 +1,7 @@
 package cz.auderis.corusco.swing.task;
 
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.behavior.BehaviorConflictException;
 import cz.auderis.corusco.swing.behavior.BehaviorScope;
@@ -60,11 +61,11 @@ class BusyOverlayBindingTest {
             BusyOverlayLayerUI overlayUi = (BusyOverlayLayerUI) layer.getUI();
 
             assertThat(overlayUi.isBusy()).isFalse();
-            busy.setValue(true, ChangeOrigin.MODEL);
+            busy.setValue(true, StandardChangeOrigin.MODEL);
             assertThat(overlayUi.isBusy()).isTrue();
 
             binding.close();
-            busy.setValue(false, ChangeOrigin.MODEL);
+            busy.setValue(false, StandardChangeOrigin.MODEL);
 
             assertThat(layer.getUI()).isSameAs(previousUi);
             assertThat(layer.getCursor().getType()).isEqualTo(Cursor.CROSSHAIR_CURSOR);
@@ -103,7 +104,7 @@ class BusyOverlayBindingTest {
             ui.value = (BusyOverlayLayerUI) layer.getUI();
         });
 
-        Thread worker = new Thread(() -> busy.setValue(true, ChangeOrigin.MODEL), "busy-overlay-test-worker");
+        Thread worker = new Thread(() -> busy.setValue(true, StandardChangeOrigin.MODEL), "busy-overlay-test-worker");
         worker.start();
         worker.join();
 

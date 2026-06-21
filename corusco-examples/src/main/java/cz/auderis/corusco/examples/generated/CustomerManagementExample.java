@@ -25,7 +25,7 @@ import cz.auderis.corusco.core.table.TableKey;
 import cz.auderis.corusco.core.table.TableStateStore;
 import cz.auderis.corusco.core.task.TaskService;
 import cz.auderis.corusco.core.validation.AsyncFieldValidation;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 import cz.auderis.corusco.swing.binding.BindingScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
@@ -133,7 +133,7 @@ public final class CustomerManagementExample {
         try (FormDialogValidationBinding validation = FormDialogValidationBinding.install(dialog, summary)) {
             // Validation summary reads the generated form model's current
             // problems; generated validators produce stable problem ids.
-            form.name.setRawText("", ChangeOrigin.USER);
+            form.name.setRawText("", StandardChangeOrigin.USER);
             validation.refresh();
             result.add("summary=" + summary.getText());
 
@@ -146,7 +146,7 @@ public final class CustomerManagementExample {
 
             // OK/save follows the dialog controller path: active editors,
             // committability, immutable result creation, and baseline accept.
-            form.name.setRawText("Alicia", ChangeOrigin.USER);
+            form.name.setRawText("Alicia", StandardChangeOrigin.USER);
             dialog.refreshCommandState();
             dialog.okCommand().execute();
             DialogResult<GeneratedCustomerEdit> saved = dialog.result();

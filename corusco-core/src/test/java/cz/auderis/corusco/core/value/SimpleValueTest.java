@@ -16,14 +16,14 @@ class SimpleValueTest {
         List<ValueChangeEvent<String>> events = new ArrayList<>();
         value.subscribe(events::add);
 
-        value.setValue("new", ChangeOrigin.USER);
+        value.setValue("new", StandardChangeOrigin.USER);
 
         assertThat(events).hasSize(1);
         ValueChangeEvent<String> event = events.getFirst();
         assertThat(event.source()).isSameAs(value);
         assertThat(event.oldValue()).isEqualTo("old");
         assertThat(event.newValue()).isEqualTo("new");
-        assertThat(event.origin()).isEqualTo(ChangeOrigin.USER);
+        assertThat(event.origin()).isEqualTo(StandardChangeOrigin.USER);
     }
 
     @Test
@@ -32,7 +32,7 @@ class SimpleValueTest {
         List<ValueChangeEvent<String>> events = new ArrayList<>();
         value.subscribe(events::add);
 
-        value.setValue("same", ChangeOrigin.MODEL);
+        value.setValue("same", StandardChangeOrigin.MODEL);
 
         assertThat(events).isEmpty();
     }
@@ -43,9 +43,9 @@ class SimpleValueTest {
         List<ValueChangeEvent<String>> events = new ArrayList<>();
         value.subscribe(events::add);
 
-        value.setValue("present", ChangeOrigin.MODEL);
-        value.setValue(null, ChangeOrigin.SYSTEM);
-        value.setValue(null, ChangeOrigin.SYSTEM);
+        value.setValue("present", StandardChangeOrigin.MODEL);
+        value.setValue(null, StandardChangeOrigin.SYSTEM);
+        value.setValue(null, StandardChangeOrigin.SYSTEM);
 
         assertThat(events).hasSize(2);
         assertThat(events.get(0).oldValue()).isNull();
@@ -87,7 +87,7 @@ class SimpleValueTest {
 
     @Test
     void blankCustomOriginIsRejected() {
-        assertThatThrownBy(() -> ChangeOrigin.of(" "))
+        assertThatThrownBy(() -> CustomChangeOrigin.of(" "))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("id must not be blank");
     }

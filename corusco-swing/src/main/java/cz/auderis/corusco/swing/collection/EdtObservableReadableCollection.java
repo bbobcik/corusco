@@ -4,10 +4,10 @@ import cz.auderis.corusco.core.collection.ListChangeListener;
 import cz.auderis.corusco.core.collection.ListChangeSet;
 import cz.auderis.corusco.core.collection.ObservableReadableCollection;
 import cz.auderis.corusco.core.lifecycle.Disposable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 import javax.swing.SwingUtilities;
 
 /**
@@ -21,7 +21,7 @@ import javax.swing.SwingUtilities;
  * the EDT are forwarded synchronously.</p>
  *
  * <p>Closing the wrapper removes the source subscription and clears this
- * wrapper's listener list. It does not close, clear, or otherwise own the
+ * wrapper's listener registrations. It does not close, clear, or otherwise own the
  * source collection. Subscribers added after close receive an inert
  * subscription.</p>
  *
@@ -32,7 +32,7 @@ public final class EdtObservableReadableCollection<E> implements ObservableReada
     private final Object monitor = new Object();
     private final ObservableReadableCollection<E> source;
     private final Subscription sourceSubscription;
-    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
+    private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private boolean closed;
 
     /**
@@ -82,19 +82,12 @@ public final class EdtObservableReadableCollection<E> implements ObservableReada
 
     @Override
     public Subscription subscribe(ListChangeListener<E> listener) {
-        Objects.requireNonNull(listener, "listener");
         synchronized (monitor) {
             if (closed) {
-                return Subscription.of(() -> {
-                });
+                return Subscription.EMPTY;
             }
-            listeners.add(listener);
+            return listeners.addListener(listener);
         }
-        return Subscription.of(() -> {
-            synchronized (monitor) {
-                listeners.remove(listener);
-            }
-        });
     }
 
     @Override
@@ -104,7 +97,7 @@ public final class EdtObservableReadableCollection<E> implements ObservableReada
                 return;
             }
             closed = true;
-            listeners.clear();
+            listeners.clearListeners();
         }
         sourceSubscription.close();
     }
@@ -123,8 +116,6 @@ public final class EdtObservableReadableCollection<E> implements ObservableReada
                 return;
             }
         }
-        for (ListChangeListener<E> listener : listeners) {
-            listener.listChanged(changes);
-        }
+        listeners.fireEvent(changes, ListChangeListener::listChanged);
     }
 }

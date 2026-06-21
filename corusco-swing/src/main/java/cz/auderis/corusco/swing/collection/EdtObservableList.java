@@ -4,13 +4,13 @@ import cz.auderis.corusco.core.collection.ListChangeListener;
 import cz.auderis.corusco.core.collection.ListChangeSet;
 import cz.auderis.corusco.core.collection.ObservableList;
 import cz.auderis.corusco.core.lifecycle.Disposable;
+import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import org.jspecify.annotations.NonNull;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import javax.swing.SwingUtilities;
 
@@ -38,7 +38,7 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
     private final Object monitor = new Object();
     private final ObservableList<E> source;
     private final Subscription sourceSubscription;
-    private final CopyOnWriteArrayList<ListChangeListener<E>> listeners = new CopyOnWriteArrayList<>();
+    private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private boolean closed;
 
     /**
@@ -127,19 +127,12 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
 
     @Override
     public Subscription subscribe(ListChangeListener<E> listener) {
-        Objects.requireNonNull(listener, "listener");
         synchronized (monitor) {
             if (closed) {
-                return Subscription.of(() -> {
-                });
+                return Subscription.EMPTY;
             }
-            listeners.add(listener);
+            return listeners.addListener(listener);
         }
-        return Subscription.of(() -> {
-            synchronized (monitor) {
-                listeners.remove(listener);
-            }
-        });
     }
 
     @Override
@@ -149,7 +142,7 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
                 return;
             }
             closed = true;
-            listeners.clear();
+            listeners.clearListeners();
         }
         sourceSubscription.close();
     }
@@ -168,8 +161,6 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
                 return;
             }
         }
-        for (ListChangeListener<E> listener : listeners) {
-            listener.listChanged(changes);
-        }
+        listeners.fireEvent(changes, ListChangeListener::listChanged);
     }
 }

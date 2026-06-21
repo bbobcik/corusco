@@ -34,8 +34,8 @@ class BookCompanionExamplesTest {
     void coreValueScenarioPublishesExpectedAudit() {
         assertThat(CoreValuesExample.runScenario())
                 .containsExactly(
-                        "user: Ada Lovelace -> Grace Hopper",
-                        "model: Grace Hopper -> Katherine Johnson");
+                        "USER: Ada Lovelace -> Grace Hopper",
+                        "MODEL: Grace Hopper -> Katherine Johnson");
     }
 
     private static void assertWindow(WindowFactory factory, String title) throws Exception {

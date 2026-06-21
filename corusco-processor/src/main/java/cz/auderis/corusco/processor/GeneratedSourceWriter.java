@@ -760,9 +760,9 @@ final class GeneratedSourceWriter {
                     ) {
                         boolean active = expectedValues.contains(value);
                         switch (effect) {
-                            case ENABLED -> target.enabled().setValue(active, ChangeOrigin.GENERATED);
-                            case VISIBLE -> target.visible().setValue(active, ChangeOrigin.GENERATED);
-                            case RELEVANT -> target.relevant().setValue(active, ChangeOrigin.GENERATED);
+                            case ENABLED -> target.enabled().setValue(active, StandardChangeOrigin.GENERATED);
+                            case VISIBLE -> target.visible().setValue(active, StandardChangeOrigin.GENERATED);
+                            case RELEVANT -> target.relevant().setValue(active, StandardChangeOrigin.GENERATED);
                         }
                     }
 

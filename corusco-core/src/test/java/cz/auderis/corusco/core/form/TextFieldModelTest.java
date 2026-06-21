@@ -6,6 +6,7 @@ import cz.auderis.corusco.core.key.FieldKey;
 import cz.auderis.corusco.core.key.TextFieldKey;
 import cz.auderis.corusco.core.problem.ProblemFilter;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +27,7 @@ class TextFieldModelTest {
         TextFieldModel<CustomerEdit, BigDecimal> field =
                 new TextFieldModel<>(CREDIT_LIMIT, new BigDecimal("10.00"), Converters.bigDecimal(EmptyTextPolicy.REJECT));
 
-        field.setRawText("20.00", ChangeOrigin.USER);
+        field.setRawText("20.00", StandardChangeOrigin.USER);
 
         assertThat(field.value()).isEqualByComparingTo("20.00");
         assertThat(field.rawText().value()).isEqualTo("20.00");
@@ -41,7 +42,7 @@ class TextFieldModelTest {
         TextFieldModel<CustomerEdit, BigDecimal> field =
                 new TextFieldModel<>(CREDIT_LIMIT, new BigDecimal("10.00"), Converters.bigDecimal(EmptyTextPolicy.REJECT));
 
-        field.setRawText("not-a-number", ChangeOrigin.USER);
+        field.setRawText("not-a-number", StandardChangeOrigin.USER);
 
         assertThat(field.value()).isEqualByComparingTo("10.00");
         assertThat(field.rawText().value()).isEqualTo("not-a-number");
@@ -58,8 +59,8 @@ class TextFieldModelTest {
         TextFieldModel<CustomerEdit, BigDecimal> required =
                 new TextFieldModel<>(CREDIT_LIMIT, new BigDecimal("10.00"), Converters.bigDecimal(EmptyTextPolicy.REJECT));
 
-        nullable.setRawText("", ChangeOrigin.USER);
-        required.setRawText("", ChangeOrigin.USER);
+        nullable.setRawText("", StandardChangeOrigin.USER);
+        required.setRawText("", StandardChangeOrigin.USER);
 
         assertThat(nullable.value()).isNull();
         assertThat(nullable.problems().isEmpty()).isTrue();
@@ -72,7 +73,7 @@ class TextFieldModelTest {
         TextFieldModel<CustomerEdit, BigDecimal> field =
                 new TextFieldModel<>(CREDIT_LIMIT, new BigDecimal("10.00"), Converters.bigDecimal(EmptyTextPolicy.REJECT));
 
-        field.setRawText("bad", ChangeOrigin.USER);
+        field.setRawText("bad", StandardChangeOrigin.USER);
         field.reset();
 
         assertThat(field.value()).isEqualByComparingTo("10.00");
@@ -87,7 +88,7 @@ class TextFieldModelTest {
         TextFieldModel<CustomerEdit, String> field =
                 new TextFieldModel<>(NAME, "Ada", Converters.string());
 
-        field.setRawText("Grace", ChangeOrigin.USER);
+        field.setRawText("Grace", StandardChangeOrigin.USER);
         field.acceptCurrentValue();
 
         assertThat(field.isDirty()).isFalse();
@@ -98,7 +99,7 @@ class TextFieldModelTest {
     void formAggregatesProblemsAndBlocksResultCreation() {
         CustomerEditForm form = new CustomerEditForm(new CustomerEdit("Ada", new BigDecimal("10.00")));
 
-        form.creditLimit.setRawText("bad", ChangeOrigin.USER);
+        form.creditLimit.setRawText("bad", StandardChangeOrigin.USER);
 
         assertThat(form.problems().hasErrors()).isTrue();
         assertThat(form.isCommittable()).isFalse();
@@ -111,8 +112,8 @@ class TextFieldModelTest {
     void formResultUsesSemanticValuesAfterSuccessfulEdits() {
         CustomerEditForm form = new CustomerEditForm(new CustomerEdit("Ada", new BigDecimal("10.00")));
 
-        form.name.setRawText("Grace", ChangeOrigin.USER);
-        form.creditLimit.setRawText("20.00", ChangeOrigin.USER);
+        form.name.setRawText("Grace", StandardChangeOrigin.USER);
+        form.creditLimit.setRawText("20.00", StandardChangeOrigin.USER);
 
         assertThat(form.toResult()).isEqualTo(new CustomerEdit("Grace", new BigDecimal("20.00")));
         form.acceptCurrentValues();
@@ -124,9 +125,9 @@ class TextFieldModelTest {
     void formCanRegisterPlainSemanticFields() {
         CustomerEditForm form = new CustomerEditForm(new CustomerEdit("Ada", new BigDecimal("10.00")));
 
-        form.active.setValue(true, ChangeOrigin.USER);
+        form.active.setValue(true, StandardChangeOrigin.USER);
         form.acceptCurrentValues();
-        form.active.setValue(false, ChangeOrigin.USER);
+        form.active.setValue(false, StandardChangeOrigin.USER);
         form.reset();
 
         assertThat(form.active.value().value()).isTrue();

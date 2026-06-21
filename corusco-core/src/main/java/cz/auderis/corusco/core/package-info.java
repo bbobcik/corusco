@@ -89,7 +89,7 @@
  * Subscription subscription = selectedCustomer.subscribe(event ->
  *         details.show(event.newValue()));
  *
- * selectedCustomer.setValue(row, ChangeOrigin.USER);
+ * selectedCustomer.setValue(row, StandardChangeOrigin.USER);
  * subscription.close();
  * }</pre>
  *
@@ -234,3 +234,5 @@
  * adapters, or application dispatch code.</p>
  */
 package cz.auderis.corusco.core;
+
+import cz.auderis.corusco.core.value.StandardChangeOrigin;

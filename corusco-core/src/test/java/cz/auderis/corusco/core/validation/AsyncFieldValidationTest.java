@@ -11,6 +11,7 @@ import cz.auderis.corusco.core.task.TaskHandle;
 import cz.auderis.corusco.core.task.TaskService;
 import cz.auderis.corusco.core.task.UiTask;
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.SimpleValue;
 
 import java.time.Duration;
@@ -73,7 +74,7 @@ class AsyncFieldValidationTest {
             );
             assertThat(oldStarted.await(2, TimeUnit.SECONDS)).isTrue();
 
-            name.setValue("new", ChangeOrigin.USER);
+            name.setValue("new", StandardChangeOrigin.USER);
             assertThat(newStarted.await(2, TimeUnit.SECONDS)).isTrue();
             newRelease.countDown();
             await(() -> !validation.busy().value(), "new validation finished");
@@ -133,7 +134,7 @@ class AsyncFieldValidationTest {
             assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
 
             validation.close();
-            name.setValue("Bob", ChangeOrigin.USER);
+            name.setValue("Bob", StandardChangeOrigin.USER);
             pauseForCallbackDelivery();
 
             assertThat(validation.busy().value()).isFalse();

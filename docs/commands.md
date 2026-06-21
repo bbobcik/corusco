@@ -125,8 +125,8 @@ active.setSelected(customer.active());
 ```
 
 Use model-origin changes for presenter decisions. `SwingActionAdapter` uses
-`ChangeOrigin.USER` when a selectable Swing button changes selected state as
-part of a user action.
+`StandardChangeOrigin.USER` when a selectable Swing button changes selected
+state as part of a user action.
 
 For non-selectable commands, `selected()` is always false and
 `setSelected(...)` is rejected. This keeps accidental toggle wiring visible

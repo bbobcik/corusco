@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.task;
 
 import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
 import cz.auderis.corusco.core.value.SimpleValue;
 
@@ -128,9 +129,9 @@ public final class DefaultTaskService implements TaskService {
     }
 
     private void markStarted(TaskHandleImpl<?> handle) {
-        handle.busy.setValue(true, ChangeOrigin.SYSTEM);
+        handle.busy.setValue(true, StandardChangeOrigin.SYSTEM);
         if (activeTasks.getAndIncrement() == 0) {
-            busy.setValue(true, ChangeOrigin.SYSTEM);
+            busy.setValue(true, StandardChangeOrigin.SYSTEM);
         }
     }
 
@@ -147,9 +148,9 @@ public final class DefaultTaskService implements TaskService {
 
     private <T> void finishOnCallbackExecutor(TaskHandleImpl<T> handle, TaskOutcome<T> outcome) {
         try {
-            handle.busy.setValue(false, ChangeOrigin.SYSTEM);
+            handle.busy.setValue(false, StandardChangeOrigin.SYSTEM);
             if (activeTasks.decrementAndGet() == 0) {
-                busy.setValue(false, ChangeOrigin.SYSTEM);
+                busy.setValue(false, StandardChangeOrigin.SYSTEM);
             }
             handles.remove(handle);
             switch (outcome.state()) {

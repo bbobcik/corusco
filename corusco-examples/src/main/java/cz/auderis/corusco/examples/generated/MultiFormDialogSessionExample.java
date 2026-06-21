@@ -8,7 +8,7 @@ import cz.auderis.corusco.core.problem.ProblemCode;
 import cz.auderis.corusco.core.problem.ProblemSeverity;
 import cz.auderis.corusco.core.problem.ProblemSet;
 import cz.auderis.corusco.core.problem.ProblemTarget;
-import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import cz.auderis.corusco.swing.dialog.CancelConfirmation;
 import cz.auderis.corusco.swing.dialog.DirtyState;
@@ -66,7 +66,7 @@ public final class MultiFormDialogSessionExample {
                 new SecuritySettingsFormModel(securityOriginal)
         );
         DialogPresentation presentation = new DialogPresentation(session);
-        presentation.security().advancedSection().enabled().setValue(false, ChangeOrigin.GENERATED);
+        presentation.security().advancedSection().enabled().setValue(false, StandardChangeOrigin.GENERATED);
 
         DirtyState currentBaselineDirty = DirtyStates.any(
                 () -> session.profile().name.isDirty(),
@@ -91,7 +91,7 @@ public final class MultiFormDialogSessionExample {
         FormDialogActionState actionState = new FormDialogActionState(dialog, currentBaselineDirty, preDialogDirty);
         presentation.setActions(actionState);
 
-        session.profile().name.setRawText("Acme Portal", ChangeOrigin.USER);
+        session.profile().name.setRawText("Acme Portal", StandardChangeOrigin.USER);
         actionState.refresh();
         boolean applyBefore = presentation.apply().enabled().value();
         boolean revertBefore = presentation.revert().enabled().value();
@@ -101,7 +101,7 @@ public final class MultiFormDialogSessionExample {
         boolean applyAfter = presentation.apply().enabled().value();
         boolean revertAfter = presentation.revert().enabled().value();
 
-        session.profile().name.setRawText("Ignored Edit", ChangeOrigin.USER);
+        session.profile().name.setRawText("Ignored Edit", StandardChangeOrigin.USER);
         dialog.cancel();
         DialogResult<DialogResultValue> cancelResult = dialog.result();
 
@@ -117,7 +117,7 @@ public final class MultiFormDialogSessionExample {
                 CancelConfirmation.ALWAYS_CONFIRM,
                 new SnapshotRevertPolicy(revertSession, revertSnapshot)
         );
-        revertSession.profile().name.setRawText("Changed", ChangeOrigin.USER);
+        revertSession.profile().name.setRawText("Changed", StandardChangeOrigin.USER);
         boolean reverted = revertDialog.revert();
 
         FocusPanel profileNameField = new FocusPanel();
@@ -374,14 +374,14 @@ public final class MultiFormDialogSessionExample {
 
         @Override
         public boolean revert() {
-            session.profile().name.setRawText(snapshot.nameText(), ChangeOrigin.SYSTEM);
-            session.profile().creditLimit.setRawText(snapshot.creditLimitText(), ChangeOrigin.SYSTEM);
-            session.profile().type.setValue(snapshot.type(), ChangeOrigin.SYSTEM);
-            session.profile().active.setValue(snapshot.active(), ChangeOrigin.SYSTEM);
-            session.security().authenticationMode.setValue(snapshot.authenticationMode(), ChangeOrigin.SYSTEM);
-            session.security().password.setRawText(snapshot.passwordText(), ChangeOrigin.SYSTEM);
-            session.security().certificateAlias.setRawText(snapshot.certificateAliasText(), ChangeOrigin.SYSTEM);
-            session.security().externalRealm.setRawText(snapshot.externalRealmText(), ChangeOrigin.SYSTEM);
+            session.profile().name.setRawText(snapshot.nameText(), StandardChangeOrigin.SYSTEM);
+            session.profile().creditLimit.setRawText(snapshot.creditLimitText(), StandardChangeOrigin.SYSTEM);
+            session.profile().type.setValue(snapshot.type(), StandardChangeOrigin.SYSTEM);
+            session.profile().active.setValue(snapshot.active(), StandardChangeOrigin.SYSTEM);
+            session.security().authenticationMode.setValue(snapshot.authenticationMode(), StandardChangeOrigin.SYSTEM);
+            session.security().password.setRawText(snapshot.passwordText(), StandardChangeOrigin.SYSTEM);
+            session.security().certificateAlias.setRawText(snapshot.certificateAliasText(), StandardChangeOrigin.SYSTEM);
+            session.security().externalRealm.setRawText(snapshot.externalRealmText(), StandardChangeOrigin.SYSTEM);
             session.acceptCurrentValues();
             return true;
         }

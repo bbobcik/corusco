@@ -20,13 +20,13 @@ class DerivedValueTest {
         List<ValueChangeEvent<String>> events = new ArrayList<>();
         fullName.subscribe(events::add);
 
-        first.setValue("Grace", ChangeOrigin.USER);
+        first.setValue("Grace", StandardChangeOrigin.USER);
 
         assertThat(fullName.value()).isEqualTo("Grace Lovelace");
         assertThat(events).hasSize(1);
         assertThat(events.getFirst().oldValue()).isEqualTo("Ada Lovelace");
         assertThat(events.getFirst().newValue()).isEqualTo("Grace Lovelace");
-        assertThat(events.getFirst().origin()).isEqualTo(ChangeOrigin.USER);
+        assertThat(events.getFirst().origin()).isEqualTo(StandardChangeOrigin.USER);
     }
 
     @Test
@@ -39,8 +39,8 @@ class DerivedValueTest {
         List<String> observed = new ArrayList<>();
         parity.subscribe(event -> observed.add(event.newValue()));
 
-        number.setValue(3, ChangeOrigin.MODEL);
-        number.setValue(4, ChangeOrigin.MODEL);
+        number.setValue(3, StandardChangeOrigin.MODEL);
+        number.setValue(4, StandardChangeOrigin.MODEL);
 
         assertThat(observed).containsExactly("even");
     }
@@ -67,8 +67,8 @@ class DerivedValueTest {
         List<Integer> observed = new ArrayList<>();
         length.subscribe(event -> observed.add(event.newValue()));
 
-        name.setValue("core", ChangeOrigin.GENERATED);
-        name.setValue(null, ChangeOrigin.SYSTEM);
+        name.setValue("core", StandardChangeOrigin.GENERATED);
+        name.setValue(null, StandardChangeOrigin.SYSTEM);
 
         assertThat(length.value()).isZero();
         assertThat(observed).containsExactly(4, 0);
@@ -81,7 +81,7 @@ class DerivedValueTest {
         List<ValueChangeEvent<Integer>> events = new ArrayList<>();
         length.subscribe(events::add);
 
-        name.setValue("core", ChangeOrigin.MODEL);
+        name.setValue("core", StandardChangeOrigin.MODEL);
 
         assertThat(events).hasSize(1);
         assertThat(events.getFirst().source()).isSameAs(length);
