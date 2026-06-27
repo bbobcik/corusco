@@ -1,0 +1,18 @@
+PACKAGE_DECLARATION
+import cz.auderis.corusco.annotations.dataset.AggregationFunction;
+import cz.auderis.corusco.annotations.dataset.DataColumnRole;
+import cz.auderis.corusco.annotations.dataset.MissingPolicy;
+import cz.auderis.corusco.annotations.dataset.QualityPolicy;
+import cz.auderis.corusco.core.dataset.DataColumnDescriptor;
+import cz.auderis.corusco.core.dataset.DataColumnKey;
+import cz.auderis.corusco.core.dataset.DataSetKey;
+import cz.auderis.corusco.core.dataset.DataStorageType;
+import cz.auderis.corusco.core.dataset.UnitMetadata;
+
+/**
+ * Generated data-set column metadata for {@link OWNER_TYPE}.
+ */
+public final class GENERATED_TYPE {
+
+/* <<< SPLIT >>> =========================================================== */
+}

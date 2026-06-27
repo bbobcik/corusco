@@ -1,0 +1,1 @@
+        this.COMPONENT_NAME = java.util.Arrays.copyOf(builder.COMPONENT_NAME, builder.size);

@@ -1,6 +1,7 @@
 package cz.auderis.corusco.processor;
 
 import cz.auderis.corusco.annotations.SwingCompanionPackage;
+import cz.auderis.corusco.annotations.dataset.CoruscoDataSet;
 import cz.auderis.corusco.annotations.form.CoruscoForm;
 import cz.auderis.corusco.annotations.form.SwingForm;
 import cz.auderis.corusco.annotations.table.CoruscoTable;
@@ -36,6 +37,7 @@ import javax.tools.Diagnostic;
         "cz.auderis.corusco.annotations.form.CoruscoForm",
         "cz.auderis.corusco.annotations.form.SwingForm",
         "cz.auderis.corusco.annotations.SwingCompanionPackage",
+        "cz.auderis.corusco.annotations.dataset.CoruscoDataSet",
         "cz.auderis.corusco.annotations.table.CoruscoTable",
         "cz.auderis.corusco.annotations.table.SwingTable",
         "cz.auderis.corusco.annotations.command.UiAction"
@@ -67,6 +69,7 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         FormProcessor formProcessor = new FormProcessor(elements, types, filer, messager);
         TableProcessor tableProcessor = new TableProcessor(elements, types, filer, messager);
+        DataSetProcessor dataSetProcessor = new DataSetProcessor(elements, types, filer, messager);
         GeneratedSourceWriter formSourceWriter = new GeneratedSourceWriter(elements, filer, messager);
         TableSourceWriter tableSourceWriter = new TableSourceWriter(elements, filer, messager);
 
@@ -127,6 +130,11 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
                             packageElement.getQualifiedName().toString()
                     );
                 }
+            }
+        }
+        for (Element element : roundEnv.getElementsAnnotatedWith(CoruscoDataSet.class)) {
+            if (element instanceof TypeElement typeElement) {
+                dataSetProcessor.process(typeElement);
             }
         }
         new SwingCompanionPackageProcessor(elements, types, filer, messager).process(roundEnv);

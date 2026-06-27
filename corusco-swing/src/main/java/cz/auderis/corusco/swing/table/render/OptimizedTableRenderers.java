@@ -1,9 +1,12 @@
 package cz.auderis.corusco.swing.table.render;
 
+import cz.auderis.corusco.core.dataset.DataColumnDescriptor;
+import cz.auderis.corusco.core.dataset.DataColumnKey;
 import cz.auderis.corusco.core.table.Column;
 import cz.auderis.corusco.core.table.ColumnKey;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
+import cz.auderis.corusco.swing.table.DataSetFrameTableModel;
 import cz.auderis.corusco.swing.table.ObservableTableModel;
 import java.util.Objects;
 import javax.swing.JTable;
@@ -104,6 +107,26 @@ public final class OptimizedTableRenderers {
     }
 
     /**
+     * Installs an epoch timestamp renderer on one currently visible data-set
+     * model column.
+     *
+     * @param table target table, not {@code null}
+     * @param model data-set table model installed on the table, not {@code null}
+     * @param columnKey target column key, not {@code null}
+     * @param options renderer options, not {@code null}
+     * @param <R> row type
+     * @return binding that restores the previous column renderer
+     */
+    public static <R> Binding installTimestampRenderer(
+            JTable table,
+            DataSetFrameTableModel<R> model,
+            DataColumnKey<R, ?> columnKey,
+            TimestampRendererOptions options
+    ) {
+        return installColumnRenderer(table, model, columnKey, new TimestampTableCellRenderer(options));
+    }
+
+    /**
      * Installs a cached finite-state renderer as the default renderer for a
      * value type.
      *
@@ -186,6 +209,27 @@ public final class OptimizedTableRenderers {
         return RendererBinding.columnRenderer(tableColumn, original);
     }
 
+    private static <R> Binding installColumnRenderer(
+            JTable table,
+            DataSetFrameTableModel<R> model,
+            DataColumnKey<R, ?> columnKey,
+            TableCellRenderer renderer
+    ) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(table, "table");
+        Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(columnKey, "columnKey");
+        Objects.requireNonNull(renderer, "renderer");
+        if (table.getModel() != model) {
+            throw new IllegalArgumentException("table must use the supplied DataSetFrameTableModel");
+        }
+        int modelIndex = modelIndex(model, columnKey);
+        TableColumn tableColumn = visibleTableColumn(table, modelIndex);
+        TableCellRenderer original = tableColumn.getCellRenderer();
+        tableColumn.setCellRenderer(renderer);
+        return RendererBinding.columnRenderer(tableColumn, original);
+    }
+
     private static <R> int modelIndex(ObservableTableModel<R> model, ColumnKey<R, ?> columnKey) {
         for (int i = 0; i < model.descriptor().columns().size(); i++) {
             Column<R, ?> column = model.descriptor().column(i);
@@ -194,6 +238,16 @@ public final class OptimizedTableRenderers {
             }
         }
         throw new IllegalArgumentException("Unknown column key: " + columnKey);
+    }
+
+    private static <R> int modelIndex(DataSetFrameTableModel<R> model, DataColumnKey<R, ?> columnKey) {
+        for (int i = 0; i < model.descriptor().columns().size(); i++) {
+            DataColumnDescriptor<R, ?> column = model.descriptor().columns().get(i);
+            if (column.key().equals(columnKey)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("Unknown data column key: " + columnKey);
     }
 
     private static TableColumn visibleTableColumn(JTable table, int modelIndex) {

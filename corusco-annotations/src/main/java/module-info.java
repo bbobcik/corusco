@@ -22,6 +22,7 @@
 module cz.auderis.corusco.annotations {
     exports cz.auderis.corusco.annotations;
     exports cz.auderis.corusco.annotations.command;
+    exports cz.auderis.corusco.annotations.dataset;
     exports cz.auderis.corusco.annotations.form;
     exports cz.auderis.corusco.annotations.help;
     exports cz.auderis.corusco.annotations.table;

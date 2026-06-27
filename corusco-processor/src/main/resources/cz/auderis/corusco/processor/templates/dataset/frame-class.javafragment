@@ -1,0 +1,60 @@
+PACKAGE_DECLARATION
+/**
+ * Generated columnar frame for {@link OWNER_TYPE} rows.
+ */
+public final class GENERATED_TYPE {
+
+    private final int size;
+FRAME_FIELDS
+    private GENERATED_TYPE(Builder builder) {
+        this.size = builder.size;
+FRAME_COPY_ASSIGNMENTS    }
+
+    public static Builder builder(int expectedSize) {
+        return new Builder(expectedSize);
+    }
+
+    public int size() {
+        return size;
+    }
+
+FRAME_ACCESSORS
+    public OWNER_TYPE row(int row) {
+        checkRow(row);
+        return new OWNER_TYPE(
+ROW_ARGUMENTS        );
+    }
+
+    private void checkRow(int row) {
+        if (row < 0 || row >= size) {
+            throw new IndexOutOfBoundsException("row=" + row + ", size=" + size);
+        }
+    }
+
+    public static final class Builder {
+
+        private int size;
+BUILDER_FIELDS
+        private Builder(int expectedSize) {
+            int capacity = Math.max(0, expectedSize);
+BUILDER_INITIALIZERS        }
+
+        public Builder add(OWNER_TYPE row) {
+            java.util.Objects.requireNonNull(row, "row");
+            ensureCapacity(size + 1);
+BUILDER_ADD_ASSIGNMENTS            size++;
+            return this;
+        }
+
+        public GENERATED_TYPE build() {
+            return new GENERATED_TYPE(this);
+        }
+
+        private void ensureCapacity(int required) {
+            if (required <= FIRST_COLUMN.length) {
+                return;
+            }
+            int next = Math.max(required, Math.max(4, FIRST_COLUMN.length * 2));
+BUILDER_GROW_ASSIGNMENTS        }
+    }
+}

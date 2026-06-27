@@ -1,0 +1,15 @@
+    public static final DataColumnKey<OWNER_TYPE, VALUE_TYPE> CONSTANT_NAME_KEY =
+            DataColumnKey.of(COLUMN_ID_LITERAL, DATA_SET, VALUE_CLASS);
+
+    public static final DataColumnDescriptor<OWNER_TYPE, VALUE_TYPE> CONSTANT_NAME =
+            DataColumnDescriptor.of(
+                    CONSTANT_NAME_KEY,
+                    COMPONENT_NAME_LITERAL,
+                    DataColumnRole.ROLE,
+                    DataStorageType.STORAGE,
+                    UNIT_EXPRESSION,
+                    MissingPolicy.MISSING_POLICY,
+                    QualityPolicy.QUALITY_POLICY,
+                    AGGREGATIONS_EXPRESSION
+            );
+

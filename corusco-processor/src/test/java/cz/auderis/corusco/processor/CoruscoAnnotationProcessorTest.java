@@ -1379,6 +1379,112 @@ class CoruscoAnnotationProcessorTest {
         assertThat(result.messages()).contains("Duplicate @UiAction id in CustomerEdit: customer/save");
     }
 
+    @Test
+    void generatesDataSetDescriptorsForFixedSchemaRecord() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.dataset.CoruscoDataSet;
+                import cz.auderis.corusco.annotations.dataset.Dimension;
+                import cz.auderis.corusco.annotations.dataset.Measure;
+                import cz.auderis.corusco.annotations.dataset.AggregationFunction;
+                import cz.auderis.corusco.annotations.dataset.MissingPolicy;
+                import cz.auderis.corusco.annotations.dataset.QualityColumn;
+                import cz.auderis.corusco.annotations.dataset.QualityPolicy;
+                import cz.auderis.corusco.annotations.dataset.TimeAxis;
+
+                @CoruscoDataSet(id = "market/quotes")
+                record CustomerEdit(
+                        @TimeAxis(unit = "millis", monotonic = true) long timestampMillis,
+                        @Dimension String symbol,
+                        @Dimension String venue,
+                        @Measure(unit = "USD", missing = MissingPolicy.NAN, quality = QualityPolicy.FLAGS,
+                                aggregations = {AggregationFunction.MIN, AggregationFunction.MAX,
+                                        AggregationFunction.AVERAGE}) double bid,
+                        @Measure(unit = "shares", aggregations = AggregationFunction.SUM) long volume,
+                        @QualityColumn(appliesTo = {"bid", "volume"}) int quality
+                ) {
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditDataColumns.java",
+                "public final class CustomerEditDataColumns",
+                "public static final DataSetKey<CustomerEdit> DATA_SET",
+                "DataSetKey.of(\"market/quotes\", CustomerEdit.class)",
+                "public static final DataColumnKey<CustomerEdit, java.lang.Long> TIMESTAMP_MILLIS_KEY",
+                "DataColumnKey.of(\"market/quotes/timestamp-millis\", DATA_SET, java.lang.Long.class)",
+                "public static final DataColumnDescriptor<CustomerEdit, java.lang.Long> TIMESTAMP_MILLIS",
+                "DataColumnRole.TIME_AXIS",
+                "DataStorageType.LONG_ARRAY",
+                "UnitMetadata.of(\"millis\")",
+                "public static final DataColumnDescriptor<CustomerEdit, java.lang.Double> BID",
+                "MissingPolicy.NAN",
+                "QualityPolicy.FLAGS",
+                "java.util.Set.of(AggregationFunction.MIN, AggregationFunction.MAX, AggregationFunction.AVERAGE)",
+                "public static final DataColumnDescriptor<CustomerEdit, java.lang.Integer> QUALITY",
+                "DataColumnRole.QUALITY"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditDataDescriptor.java",
+                "public final class CustomerEditDataDescriptor",
+                "public static final DataSetDescriptor<CustomerEdit> DESCRIPTOR",
+                "CustomerEditDataColumns.DATA_SET",
+                "CustomerEditDataColumns.TIMESTAMP_MILLIS",
+                "CustomerEditDataColumns.SYMBOL",
+                "CustomerEditDataColumns.BID",
+                "CustomerEditDataColumns.QUALITY"
+        );
+        result.assertGeneratedSourceContains("demo/CustomerEditFrame.java",
+                "public final class CustomerEditFrame",
+                "private final long[] timestampMillis;",
+                "private final java.lang.Object[] symbol;",
+                "private final double[] bid;",
+                "public long timestampMillis(int row)",
+                "public java.lang.String symbol(int row)",
+                "return (java.lang.String) this.symbol[row];",
+                "public CustomerEdit row(int row)",
+                "return new CustomerEdit(",
+                "public static final class Builder",
+                "public Builder add(CustomerEdit row)",
+                "timestampMillis[size] = row.timestampMillis();",
+                "symbol[size] = row.symbol();",
+                "return new CustomerEditFrame(this);"
+        );
+    }
+
+    @Test
+    void rejectsInvalidDataSetShapes() throws Exception {
+        GeneratedSourceCompilation duplicateRoles = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.dataset.CoruscoDataSet;
+                import cz.auderis.corusco.annotations.dataset.Dimension;
+                import cz.auderis.corusco.annotations.dataset.TimeAxis;
+
+                @CoruscoDataSet(id = "market/quotes")
+                record CustomerEdit(@TimeAxis @Dimension long timestampMillis) {
+                }
+                """);
+
+        assertThat(duplicateRoles.success()).isFalse();
+        assertThat(duplicateRoles.messages()).contains("Use only one data-set role annotation");
+
+        GeneratedSourceCompilation invalidMissing = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.dataset.CoruscoDataSet;
+                import cz.auderis.corusco.annotations.dataset.Measure;
+                import cz.auderis.corusco.annotations.dataset.MissingPolicy;
+
+                @CoruscoDataSet(id = "market/quotes")
+                record CustomerEdit(@Measure(missing = MissingPolicy.NAN) long volume) {
+                }
+                """);
+
+        assertThat(invalidMissing.success()).isFalse();
+        assertThat(invalidMissing.messages()).contains("NAN missing policy requires float or double");
+    }
+
     private GeneratedSourceCompilation compile(String source) throws Exception {
         return GeneratedSourceCompiler.in(tempDir)
                 .withProcessor(new CoruscoAnnotationProcessor())

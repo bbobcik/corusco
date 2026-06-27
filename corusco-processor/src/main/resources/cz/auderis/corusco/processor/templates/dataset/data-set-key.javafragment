@@ -1,0 +1,3 @@
+    public static final DataSetKey<OWNER_TYPE> DATA_SET =
+            DataSetKey.of(DATA_SET_ID_LITERAL, OWNER_TYPE.class);
+

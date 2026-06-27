@@ -25,6 +25,7 @@
  */
 module cz.auderis.corusco.core {
     requires java.prefs;
+    requires transitive cz.auderis.corusco.annotations;
     requires static org.jspecify;
     requires static org.jetbrains.annotations;
 
@@ -34,6 +35,7 @@ module cz.auderis.corusco.core {
     exports cz.auderis.corusco.core.convert;
     exports cz.auderis.corusco.core.data;
     exports cz.auderis.corusco.core.data.edit;
+    exports cz.auderis.corusco.core.dataset;
     exports cz.auderis.corusco.core.dialog;
     exports cz.auderis.corusco.core.form;
     exports cz.auderis.corusco.core.help;

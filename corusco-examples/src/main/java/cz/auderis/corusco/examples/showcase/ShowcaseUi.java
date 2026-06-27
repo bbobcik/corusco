@@ -1,16 +1,20 @@
 package cz.auderis.corusco.examples.showcase;
 
 import com.formdev.flatlaf.FlatClientProperties;
+import cz.auderis.corusco.core.dataset.DataColumnDescriptor;
+import cz.auderis.corusco.core.dataset.DataColumnKey;
 import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.resource.Resources;
 import cz.auderis.corusco.core.table.Column;
 import cz.auderis.corusco.core.table.ColumnKey;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.BindingScope;
+import cz.auderis.corusco.swing.table.DataSetFrameTableModel;
 import cz.auderis.corusco.swing.table.ObservableTableModel;
 import cz.auderis.corusco.swing.table.TableCellTooltipBinding;
 import cz.auderis.corusco.swing.table.TableHeaderTooltipBinding;
 import java.awt.Dimension;
+import java.util.Locale;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -120,6 +124,31 @@ final class ShowcaseUi {
         scope.add(TableCellTooltipBinding.install(table, model, resources));
     }
 
+    static <R> void applyDataSetTableResources(
+            JTable table,
+            DataSetFrameTableModel<R> model,
+            Resources resources
+    ) {
+        table.setFont(table.getFont().deriveFont(11f));
+        table.setRowHeight(22);
+        table.setIntercellSpacing(new Dimension(0, 1));
+        table.setShowHorizontalLines(true);
+        table.setShowVerticalLines(false);
+        table.putClientProperty(FlatClientProperties.STYLE,
+                "selectionBackground:#d7ebff; selectionForeground:#111827;");
+        table.getTableHeader().setFont(table.getTableHeader().getFont().deriveFont(11f));
+        table.getTableHeader().putClientProperty(FlatClientProperties.STYLE,
+                "height:26; background:#f4f6f8; hoverBackground:#e9edf2;");
+        for (int view = 0; view < table.getColumnModel().getColumnCount(); view++) {
+            TableColumn column = table.getColumnModel().getColumn(view);
+            int modelIndex = column.getModelIndex();
+            if (modelIndex >= 0 && modelIndex < model.getColumnCount()) {
+                column.setHeaderValue(dataSetHeader(model.column(modelIndex), resources));
+            }
+        }
+        table.getTableHeader().repaint();
+    }
+
     static <R> Binding installColumnRenderer(
             JTable table,
             ObservableTableModel<R> model,
@@ -127,6 +156,23 @@ final class ShowcaseUi {
             TableCellRenderer renderer
     ) {
         int modelIndex = modelIndex(model, columnKey);
+        int viewIndex = table.convertColumnIndexToView(modelIndex);
+        if (viewIndex < 0) {
+            throw new IllegalArgumentException("Column is not visible: " + columnKey);
+        }
+        TableColumn column = table.getColumnModel().getColumn(viewIndex);
+        TableCellRenderer original = column.getCellRenderer();
+        column.setCellRenderer(renderer);
+        return () -> column.setCellRenderer(original);
+    }
+
+    static <R> Binding installDataSetColumnRenderer(
+            JTable table,
+            DataSetFrameTableModel<R> model,
+            DataColumnKey<R, ?> columnKey,
+            TableCellRenderer renderer
+    ) {
+        int modelIndex = dataSetModelIndex(model, columnKey);
         int viewIndex = table.convertColumnIndexToView(modelIndex);
         if (viewIndex < 0) {
             throw new IllegalArgumentException("Column is not visible: " + columnKey);
@@ -145,5 +191,33 @@ final class ShowcaseUi {
             }
         }
         throw new IllegalArgumentException("Unknown column key: " + columnKey);
+    }
+
+    private static <R> int dataSetModelIndex(DataSetFrameTableModel<R> model, DataColumnKey<R, ?> columnKey) {
+        for (int i = 0; i < model.getColumnCount(); i++) {
+            if (model.column(i).key().equals(columnKey)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("Unknown data column key: " + columnKey);
+    }
+
+    private static <R> String dataSetHeader(DataColumnDescriptor<R, ?> column, Resources resources) {
+        String id = column.key().id() + "/header";
+        return resources.find(ResourceKey.of(id, String.class)).orElse(title(column.sourceMemberName()));
+    }
+
+    private static String title(String memberName) {
+        String kebab = memberName.replaceAll("(?<!^)([A-Z])", "-$1").toLowerCase(Locale.ROOT);
+        StringBuilder result = new StringBuilder();
+        for (String part : kebab.split("-")) {
+            if (!result.isEmpty()) {
+                result.append(' ');
+            }
+            result.append(part.isEmpty()
+                    ? part
+                    : Character.toUpperCase(part.charAt(0)) + part.substring(1));
+        }
+        return result.toString();
     }
 }

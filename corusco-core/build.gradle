@@ -3,6 +3,10 @@ plugins {
     id 'project.publication-conventions'
 }
 
+dependencies {
+    api project(':corusco-annotations')
+}
+
 jar {
     manifest {
         attributes(

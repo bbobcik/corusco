@@ -1,0 +1,7 @@
+    public static final DataSetDescriptor<OWNER_TYPE> DESCRIPTOR =
+            new DataSetDescriptor<>(
+                    COLUMNS_TYPE.DATA_SET,
+                    java.util.List.of(
+COLUMN_ENTRIES                    )
+            );
+

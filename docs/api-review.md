@@ -15,6 +15,7 @@ runtime policy decisions that are stable enough to guard in the build.
 - `cz.auderis.corusco.core.convert`
 - `cz.auderis.corusco.core.data`
 - `cz.auderis.corusco.core.data.edit`
+- `cz.auderis.corusco.core.dataset`
 - `cz.auderis.corusco.core.dialog`
 - `cz.auderis.corusco.core.form`
 - `cz.auderis.corusco.core.help`
@@ -50,6 +51,7 @@ runtime policy decisions that are stable enough to guard in the build.
 
 - `cz.auderis.corusco.annotations`
 - `cz.auderis.corusco.annotations.command`
+- `cz.auderis.corusco.annotations.dataset`
 - `cz.auderis.corusco.annotations.form`
 - `cz.auderis.corusco.annotations.help`
 - `cz.auderis.corusco.annotations.table`

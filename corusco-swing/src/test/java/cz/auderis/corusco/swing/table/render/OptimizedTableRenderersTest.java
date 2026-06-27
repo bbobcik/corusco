@@ -1,6 +1,15 @@
 package cz.auderis.corusco.swing.table.render;
 
+import cz.auderis.corusco.annotations.dataset.DataColumnRole;
+import cz.auderis.corusco.annotations.dataset.MissingPolicy;
+import cz.auderis.corusco.annotations.dataset.QualityPolicy;
 import cz.auderis.corusco.core.collection.ObservableArrayList;
+import cz.auderis.corusco.core.dataset.DataColumnDescriptor;
+import cz.auderis.corusco.core.dataset.DataColumnKey;
+import cz.auderis.corusco.core.dataset.DataSetDescriptor;
+import cz.auderis.corusco.core.dataset.DataSetKey;
+import cz.auderis.corusco.core.dataset.DataStorageType;
+import cz.auderis.corusco.core.dataset.UnitMetadata;
 import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.table.Column;
 import cz.auderis.corusco.core.table.ColumnCapabilities;
@@ -11,6 +20,7 @@ import cz.auderis.corusco.core.table.TableDescriptor;
 import cz.auderis.corusco.core.table.TableKey;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
+import cz.auderis.corusco.swing.table.DataSetFrameTableModel;
 import cz.auderis.corusco.swing.table.ObservableTableModel;
 import java.awt.Color;
 import java.awt.Component;
@@ -20,6 +30,7 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
 import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.table.TableCellRenderer;
@@ -36,6 +47,12 @@ class OptimizedTableRenderersTest {
             ColumnKey.of("event/state", EventRow.class, EventState.class);
     private static final ColumnKey<EventRow, Boolean> ACTIVE_KEY =
             ColumnKey.of("event/active", EventRow.class, Boolean.class);
+    private static final DataSetKey<EventRow> DATA_SET_KEY =
+            DataSetKey.of("event-data", EventRow.class);
+    private static final DataColumnKey<EventRow, Long> DATA_TIME_KEY =
+            DataColumnKey.of("event-data/time", DATA_SET_KEY, Long.class);
+    private static final DataColumnKey<EventRow, EventState> DATA_STATE_KEY =
+            DataColumnKey.of("event-data/state", DATA_SET_KEY, EventState.class);
 
     @Test
     void validatesTimestampOptions() {
@@ -185,6 +202,35 @@ class OptimizedTableRenderersTest {
                     .isInstanceOf(StateTableCellRenderer.class);
             binding.close();
             assertThat(table.getColumnModel().getColumn(stateViewColumn).getCellRenderer()).isSameAs(original);
+            model.close();
+        });
+    }
+
+    @Test
+    void installsDataSetColumnRendererByColumnKeyAfterViewReorder() {
+        SwingEdt.runAndWait(() -> {
+            List<EventRow> rows = List.of(new EventRow(0L, EventState.OPEN, true));
+            DataSetFrameTableModel<EventRow> model = DataSetFrameTableModel.of(
+                    eventDataSet(),
+                    rows::size,
+                    (row, column) -> dataValue(rows.get(row), column)
+            );
+            JTable table = new JTable(model);
+            table.moveColumn(0, 1);
+            int timeViewColumn = table.convertColumnIndexToView(0);
+            TableCellRenderer original = table.getColumnModel().getColumn(timeViewColumn).getCellRenderer();
+
+            Binding binding = OptimizedTableRenderers.installTimestampRenderer(
+                    table,
+                    model,
+                    DATA_TIME_KEY,
+                    TimestampRendererOptions.defaults()
+            );
+
+            assertThat(table.getColumnModel().getColumn(timeViewColumn).getCellRenderer())
+                    .isInstanceOf(TimestampTableCellRenderer.class);
+            binding.close();
+            assertThat(table.getColumnModel().getColumn(timeViewColumn).getCellRenderer()).isSameAs(original);
             model.close();
         });
     }
@@ -403,6 +449,38 @@ class OptimizedTableRenderersTest {
                 EventRow::active
         );
         return new TableDescriptor<>(TableKey.of("events", EventRow.class), List.of(time, state, active));
+    }
+
+    private static DataSetDescriptor<EventRow> eventDataSet() {
+        DataColumnDescriptor<EventRow, Long> time = DataColumnDescriptor.of(
+                DATA_TIME_KEY,
+                "timestamp",
+                DataColumnRole.TIME_AXIS,
+                DataStorageType.LONG_ARRAY,
+                UnitMetadata.of("millis"),
+                MissingPolicy.NONE,
+                QualityPolicy.NONE,
+                Set.of()
+        );
+        DataColumnDescriptor<EventRow, EventState> state = DataColumnDescriptor.of(
+                DATA_STATE_KEY,
+                "state",
+                DataColumnRole.DIMENSION,
+                DataStorageType.OBJECT_ARRAY,
+                null,
+                MissingPolicy.NULL_VALUE,
+                QualityPolicy.NONE,
+                Set.of()
+        );
+        return new DataSetDescriptor<>(DATA_SET_KEY, List.of(time, state));
+    }
+
+    private static Object dataValue(EventRow row, DataColumnDescriptor<EventRow, ?> column) {
+        return switch (column.sourceMemberName()) {
+            case "timestamp" -> row.timestamp();
+            case "state" -> row.state();
+            default -> throw new IllegalArgumentException(column.sourceMemberName());
+        };
     }
 
     private record EventRow(Long timestamp, EventState state, Boolean active) {

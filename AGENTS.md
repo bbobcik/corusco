@@ -7,12 +7,16 @@ selection, and machine-specific paths.
 ## Tool Preference
 
 1. Prefer semantic MCP tools for code understanding, symbol lookup, navigation,
-   and supported refactorings. Use them before plain text search when the task is
-   about program structure.
+   usage analysis, and supported refactorings. For tasks about program
+   structure, first check whether suitable semantic tools are available in the
+   current agent environment, then use them before plain text search or manual
+   source manipulation.
 2. Prefer AudEnv tools for local context, path conversion, tool availability,
    and project command recommendations.
 3. Use shell tools such as `rg`, `git`, and Gradle wrappers as fallbacks or when
-   AudEnv recommends them for the current project.
+   AudEnv recommends them for the current project. When semantic tools are not
+   available for a structure-aware task, state that fallback briefly before
+   proceeding.
 
 ## AudEnv Workflow
 
@@ -29,8 +33,9 @@ selection, and machine-specific paths.
    Git Bash, WSL, POSIX, or file URI forms.
 6. If AudEnv reports MCP-backed recommendations, prefer them. Otherwise use the
    shell fallbacks it recommends, such as `rg` for code search.
-7. When semantic MCP tools are available, prefer semantic symbol lookup and
-   refactoring operations over broad text-only edits for Java code.
+7. For Java code changes, prefer semantic symbol lookup, usage analysis, and
+   refactoring operations over broad text-only edits when the active environment
+   exposes suitable semantic MCP tools.
 
 ## Chatty Commands
 
