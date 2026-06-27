@@ -180,7 +180,7 @@ deterministically. It is intended for a single ownership context such as a
 presenter activation, dialog activation, behavior, or test fixture. Children
 close in reverse registration order. Closing the scope is idempotent. If one
 child fails, the scope still attempts to close the remaining children and then
-throws a \api{SubscriptionScopeException} with the individual failures
+throws a \api{ScopeException} with the individual failures
 suppressed. If a child is added after the scope has closed, the child is closed
 immediately and is not retained.
 

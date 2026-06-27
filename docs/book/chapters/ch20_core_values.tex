@@ -33,7 +33,7 @@ Subscription subscription = selectedCustomerName.subscribe(event -> {
     System.out.println(event.oldValue() + " -> " + event.newValue());
 });
 
-selectedCustomerName.setValue("Grace Hopper", ChangeOrigin.USER);
+selectedCustomerName.setValue("Grace Hopper", StandardChangeOrigin.USER);
 subscription.close();
 \end{lstlisting}
 
@@ -53,7 +53,7 @@ status message, or committed filter text often is.
 \api{value()}, and it accepts subscribers through \api{subscribe}. The
 subscription returns a \api{Subscription}, which is the caller's cleanup handle.
 \api{WritableValue<T>} adds \api{setValue}. The default \api{setValue(value)}
-uses \api{ChangeOrigin.MODEL}; callers may supply another origin when the
+uses \api{StandardChangeOrigin.MODEL}; callers may supply another origin when the
 difference matters.
 
 \begin{lstlisting}[caption={The shape of the core contract.}]
@@ -64,7 +64,7 @@ public interface ReadableValue<T> {
 
 public interface WritableValue<T> extends ReadableValue<T> {
     default void setValue(T value) {
-        setValue(value, ChangeOrigin.MODEL);
+        setValue(value, StandardChangeOrigin.MODEL);
     }
 
     void setValue(T value, ChangeOrigin origin);
@@ -121,7 +121,7 @@ have.
 
 \begin{lstlisting}[caption={Using old value, new value, source, and origin.}]
 ValueChangeListener<CustomerRow> listener = event -> {
-    if (event.origin() == ChangeOrigin.USER) {
+    if (event.origin() == StandardChangeOrigin.USER) {
         auditSelection(event.oldValue(), event.newValue());
     }
     refreshStatusFor(event.source().value());
@@ -137,7 +137,7 @@ composition possible without losing identity.
 \termdef{Change origin}{in Corusco} is a small value describing why a mutation
 occurred. Built-in origins include \api{USER}, \api{MODEL}, \api{BINDING},
 \api{GENERATED}, and \api{SYSTEM}. Applications may create additional origins
-with \api{ChangeOrigin.of}.
+with \api{CustomChangeOrigin.of}.
 
 Origins are not a security system and not a replacement for commands. They are a
 diagnostic and feedback-control tool. They answer questions that listeners
@@ -152,13 +152,13 @@ otherwise guess:
 
 \begin{lstlisting}[caption={Distinguishing user and model changes.}]
 selectedCustomer.subscribe(event -> {
-    if (event.origin() == ChangeOrigin.USER) {
+    if (event.origin() == StandardChangeOrigin.USER) {
         rememberRecentSelection(event.newValue());
     }
 });
 
-selectedCustomer.setValue(rowFromTable, ChangeOrigin.USER);
-selectedCustomer.setValue(rowFromInitialLoad, ChangeOrigin.MODEL);
+selectedCustomer.setValue(rowFromTable, StandardChangeOrigin.USER);
+selectedCustomer.setValue(rowFromInitialLoad, StandardChangeOrigin.MODEL);
 \end{lstlisting}
 
 In a table selection binding, this distinction matters. A user click should be
@@ -168,7 +168,7 @@ different meaning.
 
 \begin{coruscobox}{Origins at the Swing Boundary}
 Corusco Swing bindings write user-originated component edits with
-\api{ChangeOrigin.USER}. Presenter-originated changes retain their model origin
+\api{StandardChangeOrigin.USER}. Presenter-originated changes retain their model origin
 when they update components. This makes feedback loops easier to detect and
 keeps tests from asserting only the final value.
 \end{coruscobox}
@@ -307,7 +307,7 @@ SimpleValue<CustomerId> selectedCustomerId = SimpleValue.empty();
 MasterDetailValue<CustomerId, CustomerDetails> details =
         MasterDetailValue.of(selectedCustomerId, repository::loadDetails);
 
-selectedCustomerId.setValue(new CustomerId(42), ChangeOrigin.USER);
+selectedCustomerId.setValue(new CustomerId(42), StandardChangeOrigin.USER);
 \end{lstlisting}
 
 The example is synchronous because core values are synchronous. If detail
@@ -409,10 +409,10 @@ DerivedValue<Boolean> canSave = DerivedValue.of(
         () -> dirty.value() && !problems.value().hasErrors() && !busy.value(),
         dirty, problems, busy);
 
-dirty.setValue(true, ChangeOrigin.USER);
+dirty.setValue(true, StandardChangeOrigin.USER);
 assertThat(canSave.value()).isTrue();
 
-busy.setValue(true, ChangeOrigin.SYSTEM);
+busy.setValue(true, StandardChangeOrigin.SYSTEM);
 assertThat(canSave.value()).isFalse();
 \end{lstlisting}
 
@@ -674,7 +674,7 @@ DerivedValue<Boolean> canDelete = DerivedValue.of(
         selected, busy, permissions);
 
 selected.subscribe(event -> {
-    if (event.origin() == ChangeOrigin.USER) {
+    if (event.origin() == StandardChangeOrigin.USER) {
         auditSelection(event.newValue());
     }
 });
@@ -767,7 +767,7 @@ the intended owner of a user edit. The type boundary is small, but it prevents
 whole classes of accidental writes.
 
 Origins should remain stable diagnostic ids. A custom origin created with
-\api{ChangeOrigin.of} should be named as a stable fact, not as a sentence that
+\api{CustomChangeOrigin.of} should be named as a stable fact, not as a sentence that
 changes whenever a method is renamed. Good custom origins include
 \api{import.customers}, \api{restore.preferences}, and \api{generated.form}.
 Poor origins include \api{some button thing} or a localized message. Origins may
@@ -940,7 +940,7 @@ List<Integer> observed = new ArrayList<>();
 
 doubled.subscribe(event -> observed.add(event.newValue()));
 doubled.close();
-source.setValue(2, ChangeOrigin.MODEL);
+source.setValue(2, StandardChangeOrigin.MODEL);
 
 assertThat(observed).isEmpty();
 assertThat(doubled.value()).isEqualTo(2);
@@ -965,10 +965,10 @@ SimpleValue<CustomerRow> selected = SimpleValue.empty();
 List<ChangeOrigin> origins = new ArrayList<>();
 selected.subscribe(event -> origins.add(event.origin()));
 
-selected.setValue(rowFromUserClick, ChangeOrigin.USER);
-selected.setValue(rowFromRestore, ChangeOrigin.MODEL);
+selected.setValue(rowFromUserClick, StandardChangeOrigin.USER);
+selected.setValue(rowFromRestore, StandardChangeOrigin.MODEL);
 
-assertThat(origins).containsExactly(ChangeOrigin.USER, ChangeOrigin.MODEL);
+assertThat(origins).containsExactly(StandardChangeOrigin.USER, StandardChangeOrigin.MODEL);
 \end{lstlisting}
 
 Avoid tests that assert only listener counts. A listener count may prove that an
@@ -990,7 +990,7 @@ private final SimpleValue<CustomerId> selectedCustomerId = SimpleValue.empty();
 
 void tableSelectionChanged() {
     CustomerId id = selectedIdFromTable();
-    selectedCustomerId.setValue(id, ChangeOrigin.USER);
+    selectedCustomerId.setValue(id, StandardChangeOrigin.USER);
 }
 
 ReadableValue<Boolean> hasSelection =
@@ -1169,7 +1169,7 @@ DerivedValue<Boolean> filterDirty = DerivedValue.of(
         draftFilter, committedFilter);
 
 void applyFilter() {
-    committedFilter.setValue(draftFilter.value(), ChangeOrigin.USER);
+    committedFilter.setValue(draftFilter.value(), StandardChangeOrigin.USER);
 }
 \end{lstlisting}
 
@@ -1216,8 +1216,8 @@ SimpleValue<Integer> draftPageSize =
         SimpleValue.of(preferences.pageSize().value());
 
 void commitPreferences() {
-    preferences.theme().setValue(draftTheme.value(), ChangeOrigin.USER);
-    preferences.pageSize().setValue(draftPageSize.value(), ChangeOrigin.USER);
+    preferences.theme().setValue(draftTheme.value(), StandardChangeOrigin.USER);
+    preferences.pageSize().setValue(draftPageSize.value(), StandardChangeOrigin.USER);
 }
 \end{lstlisting}
 
@@ -1391,8 +1391,8 @@ underlying fact and model it as a \api{ReadableValue<String>}.
 to represent "nothing selected".
 \item Write a derived value for Save enablement using dirty state, problem
 state, and busy state.
-\item Add a test that records \api{ChangeOrigin.USER} and
-\api{ChangeOrigin.MODEL} transitions separately.
+\item Add a test that records \api{StandardChangeOrigin.USER} and
+\api{StandardChangeOrigin.MODEL} transitions separately.
 \item Create a \api{MappedValue} for a window title. Close it and verify that
 later source changes do not notify the closed mapping.
 \item Identify one place where a value is not enough and a form model or command

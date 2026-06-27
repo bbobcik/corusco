@@ -317,7 +317,7 @@ int viewRow = table.getSelectedRow();
 if (viewRow >= 0) {
     int modelRow = table.convertRowIndexToModel(viewRow);
     CustomerRow row = tableModel.rowAt(modelRow);
-    selectedCustomer.setValue(row, ChangeOrigin.USER);
+    selectedCustomer.setValue(row, StandardChangeOrigin.USER);
 }
 \end{lstlisting}
 

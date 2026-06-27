@@ -87,7 +87,7 @@ TextFieldModel<CustomerEdit, BigDecimal> creditLimit =
                 new BigDecimal("10.00"),
                 Converters.bigDecimal(EmptyTextPolicy.REJECT));
 
-creditLimit.setRawText("12,", ChangeOrigin.USER);
+creditLimit.setRawText("12,", StandardChangeOrigin.USER);
 
 String visibleText = creditLimit.rawText().value();
 BigDecimal semanticValue = creditLimit.value();
@@ -130,7 +130,7 @@ radio groups, and fields whose component already edits the semantic type.
 FieldModel<CustomerEdit, Boolean> active =
         new FieldModel<>(CustomerFields.ACTIVE, true);
 
-active.setValue(false, ChangeOrigin.USER);
+active.setValue(false, StandardChangeOrigin.USER);
 boolean dirty = active.isDirty();
 boolean touched = active.isTouched();
 \end{lstlisting}
@@ -378,7 +378,7 @@ text, semantic fields, and validators, then assert raw text, parse state,
 problems, dirty state, touched state, committability, and committed result.
 
 \begin{lstlisting}[caption={Testing invalid intermediate input.}]
-form.creditLimit.setRawText("bad", ChangeOrigin.USER);
+form.creditLimit.setRawText("bad", StandardChangeOrigin.USER);
 
 assertThat(form.creditLimit.rawText().value()).isEqualTo("bad");
 assertThat(form.creditLimit.value()).isEqualByComparingTo("10.00");
@@ -1138,11 +1138,11 @@ final class LegacyCustomerFormAdapter
     private final CustomerEditFormModel model;
 
     void pullFromComponents() {
-        model.name.setRawText(panel.nameField().getText(), ChangeOrigin.USER);
+        model.name.setRawText(panel.nameField().getText(), StandardChangeOrigin.USER);
         model.creditLimit.setRawText(
-                panel.creditLimitField().getText(), ChangeOrigin.USER);
+                panel.creditLimitField().getText(), StandardChangeOrigin.USER);
         model.active.setValue(
-                panel.activeBox().isSelected(), ChangeOrigin.USER);
+                panel.activeBox().isSelected(), StandardChangeOrigin.USER);
     }
 
     @Override

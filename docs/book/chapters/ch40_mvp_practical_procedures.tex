@@ -68,15 +68,15 @@ final class CustomerEditorPresenter implements AutoCloseable {
         if (!form.isCommittable() || saveBusy.value()) {
             return;
         }
-        saveBusy.setValue(true, ChangeOrigin.SYSTEM);
+        saveBusy.setValue(true, StandardChangeOrigin.SYSTEM);
         service.save(form.result());
-        saveBusy.setValue(false, ChangeOrigin.SYSTEM);
+        saveBusy.setValue(false, StandardChangeOrigin.SYSTEM);
     }
 
     private void updateSaveEnabled() {
         saveCommand.setEnabled(
                 form.isCommittable() && !saveBusy.value(),
-                ChangeOrigin.SYSTEM);
+                StandardChangeOrigin.SYSTEM);
     }
 }
 \end{lstlisting}
@@ -266,11 +266,11 @@ final class CustomerInspectorPresenter implements AutoCloseable {
 
     private void loadDetail(CustomerId id, CustomerService service) {
         long token = generation.next();
-        busy.setValue(true, ChangeOrigin.SYSTEM);
+        busy.setValue(true, StandardChangeOrigin.SYSTEM);
         service.loadAsync(id, loaded -> {
             if (generation.isCurrent(token)) {
-                detail.setValue(loaded, ChangeOrigin.SYSTEM);
-                busy.setValue(false, ChangeOrigin.SYSTEM);
+                detail.setValue(loaded, StandardChangeOrigin.SYSTEM);
+                busy.setValue(false, StandardChangeOrigin.SYSTEM);
             }
         });
     }
@@ -323,7 +323,7 @@ final class CustomerWorkspacePresenter implements AutoCloseable {
             CustomerRow row = event.newValue();
             selectedCustomerId.setValue(
                     row == null ? null : row.id(),
-                    ChangeOrigin.SYSTEM);
+                    StandardChangeOrigin.SYSTEM);
             loadDetail(service, row == null ? null : row.id());
         });
     }
@@ -458,8 +458,8 @@ void saveCommandUsesGeneratedIdentity() {
 
     assertThat(save.enabled()).isFalse();
 
-    form.name().setRawText("Ada", ChangeOrigin.USER);
-    form.creditLimit().setRawText("100.00", ChangeOrigin.USER);
+    form.name().setRawText("Ada", StandardChangeOrigin.USER);
+    form.creditLimit().setRawText("100.00", StandardChangeOrigin.USER);
 
     assertThat(save.enabled()).isTrue();
     save.invoke();

@@ -335,7 +335,7 @@ shown.
 CustomerEdit original = new CustomerEdit("Ada", "Active");
 CustomerEditFormModel model = new CustomerEditFormModel(original);
 
-model.name.setRawText("Grace Hopper", ChangeOrigin.USER);
+model.name.setRawText("Grace Hopper", StandardChangeOrigin.USER);
 
 assertThat(model.problems().hasErrors()).isFalse();
 assertThat(model.toResult().name()).isEqualTo("Grace Hopper");
@@ -608,7 +608,7 @@ final class CustomerPresenter {
 
     @UiAction(id = "customer/active", selectable = true)
     void toggleActive() {
-        activePreview.setValue(!activePreview.value(), ChangeOrigin.USER);
+        activePreview.setValue(!activePreview.value(), StandardChangeOrigin.USER);
     }
 }
 \end{lstlisting}

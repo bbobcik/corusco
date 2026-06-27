@@ -50,7 +50,7 @@ The cheapest useful test is usually not a Swing test. If a screen has a customer
 Testing a form model directly has three advantages. It runs quickly because there is no component tree. It states the behavior in the vocabulary of the business rule. It remains stable when the screen changes from a plain text field to a formatted field, a combo box, or a generated editor. Swing tests still matter, but they become adapter tests rather than a disguised specification for the whole form.
 
 \begin{lstlisting}[caption={Testing parsing and validation without Swing.}]
-form.creditLimit().setRawText("-1", ChangeOrigin.USER);
+form.creditLimit().setRawText("-1", StandardChangeOrigin.USER);
 
 assertThat(form.creditLimit().rawText().value()).isEqualTo("-1");
 assertThat(form.creditLimit().parsedValue().isPresent()).isTrue();
@@ -66,7 +66,7 @@ Core command tests follow the same principle. A Save command has an identity, re
 Command save = commands.require(CustomerActions.SAVE);
 
 assertThat(save.isEnabled()).isFalse();
-form.name().setRawText("Ada", ChangeOrigin.USER);
+form.name().setRawText("Ada", StandardChangeOrigin.USER);
 assertThat(save.isEnabled()).isTrue();
 
 save.execute();
@@ -192,11 +192,11 @@ tester.runOnEdt((view, presenter) -> {
     field.setText("Grace");
     assertThat(model.rawText().value()).isEqualTo("Grace");
 
-    model.setRawText("Ada", ChangeOrigin.MODEL);
+    model.setRawText("Ada", StandardChangeOrigin.MODEL);
     assertThat(field.getText()).isEqualTo("Ada");
 
     presenter.close();
-    model.setRawText("Late", ChangeOrigin.MODEL);
+    model.setRawText("Late", StandardChangeOrigin.MODEL);
     assertThat(field.getText()).isEqualTo("Ada");
 });
 \end{lstlisting}
@@ -491,7 +491,7 @@ The best cleanup test asserts effects, not private internals. Close the scope. M
 
 \begin{lstlisting}[caption={Testing cleanup by effect.}]
 scope.close();
-statusText.setValue("late", ChangeOrigin.MODEL);
+statusText.setValue("late", StandardChangeOrigin.MODEL);
 
 assertThat(statusLabel.getText()).isEqualTo("before close");
 \end{lstlisting}

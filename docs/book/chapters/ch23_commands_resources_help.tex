@@ -964,7 +964,7 @@ Command save = commands.require(CustomerActions.SAVE);
 assertThat(save.key()).isEqualTo(CustomerActions.SAVE);
 assertThat(save.isEnabled()).isFalse();
 
-form.name.setRawText("Grace", ChangeOrigin.USER);
+form.name.setRawText("Grace", StandardChangeOrigin.USER);
 assertThat(save.isEnabled()).isTrue();
 \end{lstlisting}
 

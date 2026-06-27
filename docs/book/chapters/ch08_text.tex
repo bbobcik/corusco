@@ -526,7 +526,7 @@ SubscriptionScope scope = new SubscriptionScope();
 scope.add(BindingFactory.textField(creditLimitField, creditLimit));
 \end{lstlisting}
 
-The binding installs a document listener, initializes the component from the model's raw text, propagates user document changes to the model with \api{ChangeOrigin.USER}, and removes both listener and subscription when closed. That lifecycle detail is not ornamental. Text fields appear in dialogs, tabs, popups, and generated forms; bindings that do not close become leaks or duplicate event paths.
+The binding installs a document listener, initializes the component from the model's raw text, propagates user document changes to the model with \api{StandardChangeOrigin.USER}, and removes both listener and subscription when closed. That lifecycle detail is not ornamental. Text fields appear in dialogs, tabs, popups, and generated forms; bindings that do not close become leaks or duplicate event paths.
 
 The feedback guard inside a binding is equally important. A user edit changes the document, which changes the model, which may notify observers. A model reset changes the raw text, which changes the document. Without a guard, model-originated updates can loop back as user-originated edits. Corusco's binding machinery gives this loop a named owner instead of relying on fragile listener flags in every screen.
 

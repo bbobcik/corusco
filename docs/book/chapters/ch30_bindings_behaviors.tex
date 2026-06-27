@@ -81,7 +81,7 @@ tracking bugs, or mysterious "field changed during open" bugs.
 The second contract is origin. Corusco value changes carry enough information
 to distinguish user-originated updates from programmatic updates when the model
 supports it. Text and selected-state bindings write with
-\api{ChangeOrigin.USER}. A presenter can then distinguish a user's keystroke
+\api{StandardChangeOrigin.USER}. A presenter can then distinguish a user's keystroke
 from a reset button, a background load, or an apply operation. That distinction
 is not decorative. Dirty flags, validation timing, undo grouping, command
 enablement, and support diagnostics all depend on knowing whether a change came
@@ -202,7 +202,7 @@ document, or selection failure.
 \api{BindingFactory.textField} binds a \api{JTextField} to a
 \api{TextFieldModel}. It initializes the component from raw text, installs a
 document listener, propagates user document changes to the model with
-\api{ChangeOrigin.USER}, observes model raw-text changes, and closes both
+\api{StandardChangeOrigin.USER}, observes model raw-text changes, and closes both
 listener and subscription when closed.
 
 The phrase "raw text" matters. The binding does not bind the field directly to
@@ -225,7 +225,7 @@ guards and cleanup.
 \api{BindingFactory.selected} binds an \api{AbstractButton} to a Boolean
 \api{FieldModel}. This covers check boxes, radio buttons, and toggle buttons.
 The component is initialized from the model. User item events write
-\api{ChangeOrigin.USER}. Model events update the button while a guard prevents
+\api{StandardChangeOrigin.USER}. Model events update the button while a guard prevents
 echo writes.
 
 \begin{lstlisting}[caption={Checkbox state belongs to the model.}]
@@ -342,7 +342,7 @@ text area from becoming a private model hidden in a widget.
 
 Selected-state bindings look simpler, but they teach the same lesson. A
 checkbox's selected state mirrors a Boolean field. User item events write with
-\api{ChangeOrigin.USER}; model changes update the checkbox under a feedback
+\api{StandardChangeOrigin.USER}; model changes update the checkbox under a feedback
 guard. If the same Boolean also appears as a menu item, toolbar toggle, or
 filter chip, the Boolean field remains the fact. The controls are presentations
 of it. Plain Swing often lets each control become a little source of truth,
@@ -1052,15 +1052,15 @@ The plain Swing version of a field setup may look like this:
 nameField.getDocument().addDocumentListener(new DocumentListener() {
     @Override
     public void insertUpdate(DocumentEvent event) {
-        form.name.setRawText(nameField.getText(), ChangeOrigin.USER);
+        form.name.setRawText(nameField.getText(), StandardChangeOrigin.USER);
     }
     @Override
     public void removeUpdate(DocumentEvent event) {
-        form.name.setRawText(nameField.getText(), ChangeOrigin.USER);
+        form.name.setRawText(nameField.getText(), StandardChangeOrigin.USER);
     }
     @Override
     public void changedUpdate(DocumentEvent event) {
-        form.name.setRawText(nameField.getText(), ChangeOrigin.USER);
+        form.name.setRawText(nameField.getText(), StandardChangeOrigin.USER);
     }
 });
 

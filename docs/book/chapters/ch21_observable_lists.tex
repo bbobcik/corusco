@@ -852,7 +852,7 @@ if (viewRow >= 0) {
     int modelRow = table.convertRowIndexToModel(viewRow);
     row = rows.get(modelRow);
 }
-selectedCustomer.setValue(row, ChangeOrigin.USER);
+selectedCustomer.setValue(row, StandardChangeOrigin.USER);
 \end{lstlisting}
 
 Generated table bindings can hide this boilerplate, but they cannot change the
@@ -1157,7 +1157,7 @@ CollectionDerivedValue<CustomerRow, Boolean> hasInvalidRows =
 \begin{lstlisting}[caption={Expose row count as scalar state when commands need it.}]
 SimpleValue<Integer> rowCount = SimpleValue.of(visibleRows.size());
 Subscription rowCountSubscription = visibleRows.subscribe(changes ->
-        rowCount.setValue(visibleRows.size(), ChangeOrigin.MODEL));
+        rowCount.setValue(visibleRows.size(), StandardChangeOrigin.MODEL));
 
 DerivedValue<Boolean> canExport = DerivedValue.of(
         () -> rowCount.value() > 0
@@ -1187,7 +1187,7 @@ void afterRefresh() {
     boolean stillPresent = rows.stream()
             .anyMatch(row -> row.id().equals(selected));
     if (!stillPresent) {
-        selectedId.setValue(null, ChangeOrigin.MODEL);
+        selectedId.setValue(null, StandardChangeOrigin.MODEL);
     }
 }
 \end{lstlisting}
@@ -1311,7 +1311,7 @@ SimpleValue<ProblemSet> loadProblems =
         SimpleValue.of(ProblemSet.empty());
 
 void loadFailed(Throwable failure) {
-    loadProblems.setValue(problemFor(failure), ChangeOrigin.SYSTEM);
+    loadProblems.setValue(problemFor(failure), StandardChangeOrigin.SYSTEM);
 }
 \end{lstlisting}
 

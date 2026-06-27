@@ -401,7 +401,7 @@ and a serious table must name them rather than pretend they are rare.
 
 \api{TableSelectionBinding} binds a \api{JTable} selection to a writable
 selected model-row value and optionally a selected row value. User-originated
-selection writes \api{ChangeOrigin.USER}. Presenter-originated changes to the
+selection writes \api{StandardChangeOrigin.USER}. Presenter-originated changes to the
 model-row value select the corresponding view row. The binding uses Swing's
 view/model conversion APIs and listens to selection, table-model, and row-sorter
 changes so selection remains coherent after sorting or structural updates.
