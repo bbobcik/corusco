@@ -4,7 +4,7 @@
 
 \begin{chaptermap}
 Core question & How should changing row collections be represented before Swing displays them?\\
-Primary APIs & \api{ObservableList}, \api{ObservableArrayList}, \api{ListChange}, \api{ListChangeSet}, \api{FilteredList}, \api{SortedList}, \api{MappedList}, \api{LoadableList}, \api{EdtObservableList}, and \api{GlazedObservableList}.\\
+Primary APIs & \api{ObservableList}, \api{ObservableArrayList}, \api{ListChange}, \api{ListChangeSet}, \api{FilteredList}, \api{SortedList}, \api{MappedList}, \api{LoadableList}, \api{CollectionItemValue}, \api{CollectionMatchingValue}, \api{CollectionDerivedValue}, \api{MasterDetailCollection}, \api{EdtObservableList}, and \api{GlazedObservableList}.\\
 Plain Swing baseline & \api{AbstractTableModel}, \api{ListModel}, and \api{ComboBoxModel} need precise events but are often fed broad resets.\\
 Corusco connection & Observable lists adapt to list, combo-box, and table models with precise events and lifecycle-owned bindings.\\
 Companion example & \largeDataExample.\\
@@ -123,7 +123,9 @@ row" as one delivery and update a dependent structure once.
 \termdef{List change}{in Corusco} is one structural mutation: inserted,
 removed, replaced, moved, or cleared. \termdef{List change set}{in Corusco} is
 an ordered delivery of one or more changes. Batches use change sets to avoid
-publishing partial intermediate states.
+publishing partial intermediate states. Each delivered change set also carries a
+\api{ChangeOrigin}, using \api{StandardChangeOrigin.MODEL} for ordinary
+presenter-owned writes unless the caller supplies a more specific origin.
 
 This is more precise than a plain "changed" callback and less elaborate than a
 complete diff engine. It matches what Swing adapters normally need. A table
@@ -223,6 +225,28 @@ MappedList<CustomerRow, CustomerChoice> choices = MappedList.of(source,
 Do not use mapping to hide expensive per-row work that should be cached or
 loaded separately. Mapping should be cheap enough to run as part of change
 propagation.
+
+\textbf{Streams and snapshots.}
+
+\api{ObservableReadableCollection.stream()} is for immediate read-only
+traversal in collection order. It is useful for questions such as "does any row
+match this id?" or "how many visible rows satisfy this predicate?" without
+forcing an immutable snapshot copy. The returned stream is still an ordinary
+single-use Java stream, and it is not a durable snapshot.
+
+\api{snapshot()} and \api{snapshotStream()} are the durable alternatives. Use
+them when the contents must survive later list mutation, be stored in a value,
+or be passed across a boundary that may outlive the current read.
+
+\begin{lstlisting}[caption={Immediate traversal versus durable snapshot.}]
+boolean hasErrors = rows.stream()
+        .anyMatch(CustomerRow::hasErrors);
+
+List<CustomerRow> retainedRows = rows.snapshot();
+long retainedErrorCount = rows.snapshotStream()
+        .filter(CustomerRow::hasErrors)
+        .count();
+\end{lstlisting}
 
 \textbf{Loadable lists.}
 
@@ -556,6 +580,19 @@ was removed. The filtered view has already translated the source event through
 its predicate. A Swing adapter over the filtered view should fire Swing events
 in filtered coordinates. A presenter that needs source identity should store row
 ids rather than trying to reverse-engineer source indexes.
+
+Observable collections also bridge back to scalar values. A selected table index
+can become a nullable current-row value with \api{CollectionItemValue}. A
+selected id can become a nullable current-row value with
+\api{CollectionMatchingValue}. Row count, empty state, and snapshot summaries
+can be represented with \api{CollectionDerivedValue}. Use its stream-based
+factories, such as \api{fromStream}, \api{anyMatch}, \api{allMatch}, and
+\api{noneMatch}, when the scalar only needs immediate traversal. Use the
+snapshot-based factory when the mapper must retain or inspect a durable
+point-in-time list. A selected master row can choose the active detail rows
+through \api{MasterDetailCollection}. These bridges preserve change origins, so
+a user-originated selection and a model-originated reload remain
+distinguishable after crossing the collection boundary.
 
 Batches preserve ordered change semantics while reducing delivery noise. A batch
 does not mean "some unknown reset happened." It means a set of mutations belongs
@@ -1027,6 +1064,7 @@ rows.move(2, 0);
 rows.remove(1);
 
 assertThat(events).hasSize(4);
+assertThat(events.getFirst().origin()).isEqualTo(StandardChangeOrigin.MODEL);
 \end{lstlisting}
 
 Adapter tests should assert EDT delivery when the adapter claims it. An
@@ -1099,22 +1137,22 @@ ObservableArrayList<CustomerRow> visibleRows =
 SimpleValue<CustomerId> selectedId = SimpleValue.empty();
 SimpleValue<SearchState> searchState =
         SimpleValue.of(new SearchState.Idle());
+CollectionDerivedValue<CustomerRow, Boolean> rowsEmpty =
+        CollectionDerivedValue.isEmpty(visibleRows);
 
 DerivedValue<Boolean> canExport = DerivedValue.of(
-        () -> !visibleRows.snapshot().isEmpty()
+        () -> !rowsEmpty.value()
                 && searchState.value() instanceof SearchState.Loaded,
-        searchState);
+        rowsEmpty, searchState);
 \end{lstlisting}
 
-The listing is intentionally imperfect: \api{canExport} reads a snapshot but
-does not observe the row list. In real code, export enablement might be updated
-by a list-size value, a table descriptor, or a command model that observes both
-the list and the load state. The imperfection is a teaching point. Observable
-lists are collections, not scalar values. When scalar state depends on
-collection size, decide how that scalar will be observed. Some screens derive
-size by subscribing to the list and updating a \api{rowCount} value. Others
-derive command enablement inside the table companion. The policy should be
-visible.
+For predicate-style questions, use the stream-based derived factories:
+
+\begin{lstlisting}[caption={Stream-based collection derivation.}]
+CollectionDerivedValue<CustomerRow, Boolean> hasInvalidRows =
+        CollectionDerivedValue.anyMatch(visibleRows,
+                CustomerRow::hasValidationProblems);
+\end{lstlisting}
 
 \begin{lstlisting}[caption={Expose row count as scalar state when commands need it.}]
 SimpleValue<Integer> rowCount = SimpleValue.of(visibleRows.size());
@@ -1146,7 +1184,7 @@ void afterRefresh() {
     if (selected == null) {
         return;
     }
-    boolean stillPresent = rows.snapshot().stream()
+    boolean stillPresent = rows.stream()
             .anyMatch(row -> row.id().equals(selected));
     if (!stillPresent) {
         selectedId.setValue(null, ChangeOrigin.MODEL);
@@ -1201,7 +1239,7 @@ ObservableComboBoxModel<TagChoice> model =
         ObservableComboBoxModel.of(tags);
 
 model.addElement(new TagChoice("urgent"));
-assert tags.snapshot().contains(new TagChoice("urgent"));
+assert tags.stream().anyMatch(new TagChoice("urgent")::equals);
 \end{lstlisting}
 
 Selection still deserves its own model when other parts of the screen care. The

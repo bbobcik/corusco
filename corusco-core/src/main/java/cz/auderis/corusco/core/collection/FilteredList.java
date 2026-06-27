@@ -3,32 +3,47 @@ package cz.auderis.corusco.core.collection;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.ReadableValue;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Read-only filtered view over an {@link ObservableReadableCollection}.
  *
- * <p>The view subscribes to a source collection, exposes only elements accepted by a
- * predicate, and emits change events with indices relative to the filtered
- * view. Dispatch is synchronous on the source collection's change-delivery
- * thread. Like the source collection primitives, this class is not
- * synchronized.</p>
+ * <p>The view subscribes to a source collection, exposes only elements accepted
+ * by a predicate, and emits change events with indices relative to the
+ * filtered view. Dispatch is synchronous on the source collection's
+ * change-delivery thread. Like the source collection primitives, this class is
+ * not synchronized.</p>
+ *
+ * <p>The predicate may be fixed for the lifetime of the view or supplied by a
+ * {@link ReadableValue}. Source collection changes preserve the source change
+ * origin. Observable-predicate changes recompute the visible rows and, when the
+ * effective visible snapshot changes, emit a reset-style change set using the
+ * predicate event origin. A predicate value must never be {@code null}; the
+ * constructor rejects a {@code null} current predicate and later emitted
+ * {@code null} predicates fail during change delivery.</p>
  *
  * <p>Direct mutation methods throw {@link UnsupportedOperationException}. The
  * source collection remains the mutation owner so source indices, filtering, and
  * later transformed views stay coherent. Call {@link #close()} when the view is
- * no longer needed to release its source subscription.</p>
+ * no longer needed to release its source and observable-predicate
+ * subscriptions.</p>
  *
  * @param <E> element type
  */
-public final class FilteredList<E> implements ObservableList<E>, Disposable {
+public final class FilteredList<E extends @NonNull Object> implements ObservableList<E>, Disposable {
 
     private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private final Subscription subscription;
+    private final Subscription predicateSubscription;
     private Predicate<? super E> predicate;
     private final List<E> sourceSnapshot;
     private List<E> visible;
@@ -56,6 +71,41 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
         this.sourceSnapshot = new ArrayList<>(source.snapshot());
         this.visible = filter(sourceSnapshot);
         this.subscription = source.subscribe(this::sourceChanged);
+        this.predicateSubscription = Subscription.EMPTY;
+    }
+
+    /**
+     * Creates a filtered view with an observable visibility predicate.
+     *
+     * @param source source collection
+     * @param predicate observable visibility predicate; current and later
+     *        predicate values must be non-null
+     */
+    public FilteredList(ObservableList<E> source, ReadableValue<? extends Predicate<? super E>> predicate) {
+        this((ObservableReadableCollection<E>) source, predicate);
+    }
+
+    /**
+     * Creates a filtered view with an observable visibility predicate.
+     *
+     * @param source source collection
+     * @param predicate observable visibility predicate; current and later
+     *        predicate values must be non-null
+     */
+    public FilteredList(
+            ObservableReadableCollection<E> source,
+            ReadableValue<? extends Predicate<? super E>> predicate
+    ) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(predicate, "predicate");
+        this.predicate = Objects.requireNonNull(predicate.value(), "predicate value");
+        this.sourceSnapshot = new ArrayList<>(source.snapshot());
+        this.visible = filter(sourceSnapshot);
+        this.subscription = source.subscribe(this::sourceChanged);
+        this.predicateSubscription = predicate.subscribe(event -> setPredicate(
+                Objects.requireNonNull(event.newValue(), "predicate value"),
+                event.origin()
+        ));
     }
 
     /**
@@ -66,7 +116,10 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
      * @param <E> element type
      * @return filtered view
      */
-    public static <E> FilteredList<E> of(ObservableList<E> source, Predicate<? super E> predicate) {
+    public static <E extends @NonNull Object> FilteredList<E> of(
+            ObservableList<E> source,
+            Predicate<? super E> predicate
+    ) {
         return new FilteredList<>(source, predicate);
     }
 
@@ -78,7 +131,42 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
      * @param <E> element type
      * @return filtered view
      */
-    public static <E> FilteredList<E> of(ObservableReadableCollection<E> source, Predicate<? super E> predicate) {
+    public static <E extends @NonNull Object> FilteredList<E> of(
+            ObservableReadableCollection<E> source,
+            Predicate<? super E> predicate
+    ) {
+        return new FilteredList<>(source, predicate);
+    }
+
+    /**
+     * Creates a filtered view with an observable visibility predicate.
+     *
+     * @param source source collection
+     * @param predicate observable visibility predicate; current and later
+     *        predicate values must be non-null
+     * @param <E> element type
+     * @return filtered view
+     */
+    public static <E extends @NonNull Object> FilteredList<E> of(
+            ObservableList<E> source,
+            ReadableValue<? extends Predicate<? super E>> predicate
+    ) {
+        return new FilteredList<>(source, predicate);
+    }
+
+    /**
+     * Creates a filtered view with an observable visibility predicate.
+     *
+     * @param source source collection
+     * @param predicate observable visibility predicate; current and later
+     *        predicate values must be non-null
+     * @param <E> element type
+     * @return filtered view
+     */
+    public static <E extends @NonNull Object> FilteredList<E> of(
+            ObservableReadableCollection<E> source,
+            ReadableValue<? extends Predicate<? super E>> predicate
+    ) {
         return new FilteredList<>(source, predicate);
     }
 
@@ -97,59 +185,80 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
         return List.copyOf(visible);
     }
 
+    @Override
+    public Stream<E> stream() {
+        return visible.stream();
+    }
+
     /**
      * Replaces the visibility predicate and refreshes the view.
      *
-     * <p>Predicate replacement is reported as a reset: removed visible
-     * contents followed by inserted new visible contents where applicable. The
-     * source collection remains unchanged; only the filtered view and its listeners
-     * observe the reset.</p>
+     * <p>Predicate replacement is reported as a model-origin reset: removed
+     * visible contents followed by inserted new visible contents where
+     * applicable. The source collection remains unchanged; only the filtered
+     * view and its listeners observe the reset.</p>
      *
      * @param predicate new visibility predicate
      */
     public void setPredicate(Predicate<? super E> predicate) {
+        setPredicate(predicate, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Replaces the visibility predicate and refreshes the view.
+     *
+     * <p>Predicate replacement is reported as a reset with the supplied origin:
+     * removed visible contents followed by inserted new visible contents where
+     * applicable. No event is emitted when the effective visible snapshot is
+     * unchanged.</p>
+     *
+     * @param predicate new visibility predicate
+     * @param origin change origin for a delivered reset
+     */
+    public void setPredicate(Predicate<? super E> predicate, ChangeOrigin origin) {
         this.predicate = Objects.requireNonNull(predicate, "predicate");
+        Objects.requireNonNull(origin, "origin");
         List<E> nextVisible = filter(sourceSnapshot);
         if (visible.equals(nextVisible)) {
             return;
         }
         List<ListChange<E>> changes = resetChanges(visible, nextVisible);
         visible = nextVisible;
-        fireIfNotEmpty(changes);
+        fireIfNotEmpty(changes, origin);
     }
 
     @Override
-    public void add(E element) {
+    public void add(E element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void add(int index, E element) {
+    public void add(int index, E element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public E set(int index, E element) {
+    public E set(int index, E element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public E remove(int index) {
+    public E remove(int index, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void move(int fromIndex, int toIndex) {
+    public void move(int fromIndex, int toIndex, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void clear() {
+    public void clear(ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void batch(Consumer<ObservableList<E>> work) {
+    public void batch(ChangeOrigin origin, Consumer<ObservableList<E>> work) {
         throw readOnly();
     }
 
@@ -163,8 +272,12 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
         if (closed) {
             return;
         }
-        subscription.close();
         closed = true;
+        try {
+            subscription.close();
+        } finally {
+            predicateSubscription.close();
+        }
     }
 
     private void sourceChanged(ListChangeSet<E> changes) {
@@ -175,7 +288,7 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
         for (ListChange<E> change : changes.changes()) {
             apply(change, visibleChanges);
         }
-        fireIfNotEmpty(visibleChanges);
+        fireIfNotEmpty(visibleChanges, changes.origin());
     }
 
     private void apply(ListChange<E> change, List<ListChange<E>> visibleChanges) {
@@ -291,11 +404,11 @@ public final class FilteredList<E> implements ObservableList<E>, Disposable {
         }
     }
 
-    private void fireIfNotEmpty(List<ListChange<E>> changes) {
+    private void fireIfNotEmpty(List<ListChange<E>> changes, ChangeOrigin origin) {
         if (changes.isEmpty()) {
             return;
         }
-        ListChangeSet<E> changeSet = new ListChangeSet<>(changes);
+        ListChangeSet<E> changeSet = new ListChangeSet<>(changes, origin);
         listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 

@@ -8,7 +8,9 @@ import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
 import javax.swing.SwingUtilities;
+import org.jspecify.annotations.NonNull;
 
 /**
  * {@link ObservableReadableCollection} wrapper that delivers listener callbacks
@@ -27,7 +29,8 @@ import javax.swing.SwingUtilities;
  *
  * @param <E> element type
  */
-public final class EdtObservableReadableCollection<E> implements ObservableReadableCollection<E>, Disposable {
+public final class EdtObservableReadableCollection<E extends @NonNull Object>
+        implements ObservableReadableCollection<E>, Disposable {
 
     private final Object monitor = new Object();
     private final ObservableReadableCollection<E> source;
@@ -52,7 +55,9 @@ public final class EdtObservableReadableCollection<E> implements ObservableReada
      * @param <E> element type
      * @return EDT-dispatching wrapper
      */
-    public static <E> EdtObservableReadableCollection<E> of(ObservableReadableCollection<E> source) {
+    public static <E extends @NonNull Object> EdtObservableReadableCollection<E> of(
+            ObservableReadableCollection<E> source
+    ) {
         return new EdtObservableReadableCollection<>(source);
     }
 
@@ -69,6 +74,11 @@ public final class EdtObservableReadableCollection<E> implements ObservableReada
     @Override
     public List<E> snapshot() {
         return source.snapshot();
+    }
+
+    @Override
+    public Stream<E> stream() {
+        return source.stream();
     }
 
     /**

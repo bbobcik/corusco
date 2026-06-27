@@ -3,6 +3,7 @@ package cz.auderis.corusco.swing.collection;
 import cz.auderis.corusco.core.collection.ListChange;
 import cz.auderis.corusco.core.collection.ListChangeSet;
 import cz.auderis.corusco.core.collection.ObservableArrayList;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +33,10 @@ class EdtObservableListTest {
             delivered.countDown();
         });
 
-        Thread worker = new Thread(() -> source.add("background"), "corusco-edt-list-test");
+        Thread worker = new Thread(
+                () -> source.add("background", StandardChangeOrigin.USER),
+                "corusco-edt-list-test"
+        );
         worker.start();
         worker.join();
 
@@ -40,6 +44,7 @@ class EdtObservableListTest {
         assertThat(deliveredOnEdt).isTrue();
         assertThat(deliveredChanges.get().changes())
                 .containsExactly(new ListChange.Inserted<>(0, List.of("background")));
+        assertThat(deliveredChanges.get().origin()).isEqualTo(StandardChangeOrigin.USER);
         edtList.close();
     }
 
@@ -68,7 +73,7 @@ class EdtObservableListTest {
             List<ListChangeSet<String>> events = new ArrayList<>();
             edtList.subscribe(events::add);
 
-            edtList.batch(list -> {
+            edtList.batch(StandardChangeOrigin.SYSTEM, list -> {
                 list.add("a");
                 list.add("b");
                 list.set(1, "B");
@@ -81,6 +86,7 @@ class EdtObservableListTest {
                     new ListChange.Inserted<>(1, List.of("b")),
                     new ListChange.Replaced<>(1, "b", "B")
             );
+            assertThat(events.getFirst().origin()).isEqualTo(StandardChangeOrigin.SYSTEM);
             edtList.close();
         });
     }
@@ -169,6 +175,19 @@ class EdtObservableListTest {
         assertThat(deliveredChanges.get().changes())
                 .containsExactly(new ListChange.Inserted<>(0, List.of("background")));
         assertThat(edtCollection.get(0)).isEqualTo("background");
+        edtCollection.close();
+    }
+
+    @Test
+    void wrappersDelegateStreamReadsToSource() {
+        ObservableArrayList<String> source = ObservableArrayList.of(List.of("a", "b"));
+        EdtObservableList<String> edtList = EdtObservableList.of(source);
+        EdtObservableReadableCollection<String> edtCollection = EdtObservableReadableCollection.of(source);
+
+        assertThat(edtList.stream()).containsExactly("a", "b");
+        assertThat(edtCollection.stream()).containsExactly("a", "b");
+
+        edtList.close();
         edtCollection.close();
     }
 

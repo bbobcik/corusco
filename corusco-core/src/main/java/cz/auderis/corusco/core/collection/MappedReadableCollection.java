@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.stream.Stream;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Read-only mapped view over an {@link ObservableReadableCollection}.
@@ -27,7 +29,8 @@ import java.util.function.Function;
  * @param <S> source element type
  * @param <T> mapped element type
  */
-public class MappedReadableCollection<S, T> implements ObservableReadableCollection<T>, Disposable {
+public class MappedReadableCollection<S extends @NonNull Object, T extends @NonNull Object>
+        implements ObservableReadableCollection<T>, Disposable {
 
     private final Function<? super S, ? extends T> mapper;
     private final ListenerSet<ListChangeListener<T>, ListChangeSet<T>> listeners = new ListenerSet<>();
@@ -60,7 +63,7 @@ public class MappedReadableCollection<S, T> implements ObservableReadableCollect
      * @param <T> mapped element type
      * @return mapped readable collection
      */
-    public static <S, T> MappedReadableCollection<S, T> of(
+    public static <S extends @NonNull Object, T extends @NonNull Object> MappedReadableCollection<S, T> of(
             ObservableReadableCollection<S> source,
             Function<? super S, ? extends T> mapper
     ) {
@@ -80,6 +83,11 @@ public class MappedReadableCollection<S, T> implements ObservableReadableCollect
     @Override
     public List<T> snapshot() {
         return List.copyOf(mapped);
+    }
+
+    @Override
+    public Stream<T> stream() {
+        return mapped.stream();
     }
 
     @Override
@@ -105,7 +113,7 @@ public class MappedReadableCollection<S, T> implements ObservableReadableCollect
         for (ListChange<S> sourceChange : sourceChanges.changes()) {
             apply(sourceChange, changes);
         }
-        fireIfNotEmpty(changes);
+        fireIfNotEmpty(changes, sourceChanges);
     }
 
     private void apply(ListChange<S> sourceChange, List<ListChange<T>> changes) {
@@ -169,11 +177,11 @@ public class MappedReadableCollection<S, T> implements ObservableReadableCollect
         return result;
     }
 
-    private void fireIfNotEmpty(List<ListChange<T>> changes) {
+    private void fireIfNotEmpty(List<ListChange<T>> changes, ListChangeSet<S> sourceChanges) {
         if (changes.isEmpty()) {
             return;
         }
-        ListChangeSet<T> changeSet = new ListChangeSet<>(changes);
+        ListChangeSet<T> changeSet = new ListChangeSet<>(changes, sourceChanges.origin());
         listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 }

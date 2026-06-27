@@ -2,10 +2,13 @@ package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.ChangeOrigin;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Mutable {@link ObservableList} implementation backed by an {@link ArrayList}.
@@ -24,12 +27,13 @@ import java.util.Objects;
  *
  * @param <E> element type
  */
-public final class ObservableArrayList<E> implements ObservableList<E> {
+public final class ObservableArrayList<E extends @NonNull Object> implements ObservableList<E> {
 
     private final List<E> elements = new ArrayList<>();
     private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private final List<ListChange<E>> batchedChanges = new ArrayList<>();
     private int batchDepth;
+    private ChangeOrigin batchOrigin;
 
     /**
      * Creates an empty observable list.
@@ -56,7 +60,7 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
      * @param <E> element type
      * @return observable list
      */
-    public static <E> ObservableArrayList<E> empty() {
+    public static <E extends @NonNull Object> ObservableArrayList<E> empty() {
         return new ObservableArrayList<>();
     }
 
@@ -67,7 +71,7 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
      * @param <E> element type
      * @return observable list
      */
-    public static <E> ObservableArrayList<E> of(Collection<? extends E> elements) {
+    public static <E extends @NonNull Object> ObservableArrayList<E> of(Collection<? extends E> elements) {
         return new ObservableArrayList<>(elements);
     }
 
@@ -87,55 +91,70 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
     }
 
     @Override
-    public void add(E element) {
-        add(elements.size(), element);
+    public Stream<E> stream() {
+        return elements.stream();
     }
 
     @Override
-    public void add(int index, E element) {
+    public void add(E element, ChangeOrigin origin) {
+        add(elements.size(), element, origin);
+    }
+
+    @Override
+    public void add(int index, E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(origin, "origin");
         elements.add(index, element);
-        record(new ListChange.Inserted<>(index, singleton(element)));
+        record(new ListChange.Inserted<>(index, singleton(element)), origin);
     }
 
     @Override
-    public E set(int index, E element) {
+    public E set(int index, E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(origin, "origin");
         E oldElement = elements.set(index, element);
-        record(new ListChange.Replaced<>(index, oldElement, element));
+        record(new ListChange.Replaced<>(index, oldElement, element), origin);
         return oldElement;
     }
 
     @Override
-    public E remove(int index) {
+    public E remove(int index, ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         E removed = elements.remove(index);
-        record(new ListChange.Removed<>(index, singleton(removed)));
+        record(new ListChange.Removed<>(index, singleton(removed)), origin);
         return removed;
     }
 
     @Override
-    public void move(int fromIndex, int toIndex) {
+    public void move(int fromIndex, int toIndex, ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         if (fromIndex == toIndex) {
             return;
         }
         E element = elements.remove(fromIndex);
         elements.add(toIndex, element);
-        record(new ListChange.Moved<>(fromIndex, toIndex, element));
+        record(new ListChange.Moved<>(fromIndex, toIndex, element), origin);
     }
 
     @Override
-    public void clear() {
+    public void clear(ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         if (elements.isEmpty()) {
             return;
         }
         List<E> removed = new ArrayList<>(elements);
         elements.clear();
-        record(new ListChange.Cleared<>(removed));
+        record(new ListChange.Cleared<>(removed), origin);
     }
 
     @Override
-    public void batch(java.util.function.Consumer<ObservableList<E>> work) {
+    public void batch(ChangeOrigin origin, java.util.function.Consumer<ObservableList<E>> work) {
         Objects.requireNonNull(work, "work");
+        Objects.requireNonNull(origin, "origin");
+        ChangeOrigin previousOrigin = batchOrigin;
+        if (batchDepth == 0) {
+            batchOrigin = origin;
+        }
         batchDepth++;
         try {
             work.accept(this);
@@ -144,7 +163,10 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
             if (batchDepth == 0 && !batchedChanges.isEmpty()) {
                 List<ListChange<E>> delivery = new ArrayList<>(batchedChanges);
                 batchedChanges.clear();
-                fire(new ListChangeSet<>(delivery));
+                fire(new ListChangeSet<>(delivery, batchOrigin));
+            }
+            if (batchDepth == 0) {
+                batchOrigin = previousOrigin;
             }
         }
     }
@@ -154,12 +176,12 @@ public final class ObservableArrayList<E> implements ObservableList<E> {
         return listeners.addListener(listener);
     }
 
-    private void record(ListChange<E> change) {
+    private void record(ListChange<E> change, ChangeOrigin origin) {
         if (batchDepth > 0) {
             batchedChanges.add(change);
             return;
         }
-        fire(ListChangeSet.of(change));
+        fire(ListChangeSet.of(change, origin));
     }
 
     private void fire(ListChangeSet<E> changeSet) {

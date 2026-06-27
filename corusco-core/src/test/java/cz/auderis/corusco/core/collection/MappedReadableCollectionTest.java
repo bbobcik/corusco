@@ -1,5 +1,6 @@
 package cz.auderis.corusco.core.collection;
 
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -16,6 +17,8 @@ class MappedReadableCollectionTest {
         MappedReadableCollection<Integer, String> mapped = MappedReadableCollection.of(source, value -> "v" + value);
         List<ListChangeSet<String>> events = new ArrayList<>();
         mapped.subscribe(events::add);
+
+        assertThat(mapped.stream()).containsExactly("v1", "v3");
 
         source.add(2);
         source.remove(1);
@@ -40,6 +43,20 @@ class MappedReadableCollectionTest {
         assertThatThrownBy(() -> source.add(2))
                 .isInstanceOf(NullPointerException.class);
         assertThat(mapped.snapshot()).containsExactly("v1");
+    }
+
+    @Test
+    void propagatesSourceChangeOrigin() {
+        ObservableArrayList<Integer> source = ObservableArrayList.empty();
+        MappedReadableCollection<Integer, String> mapped = MappedReadableCollection.of(source, value -> "v" + value);
+        List<ListChangeSet<String>> events = new ArrayList<>();
+        mapped.subscribe(events::add);
+
+        source.add(1, StandardChangeOrigin.USER);
+
+        assertThat(events).hasSize(1);
+        assertThat(events.getFirst().origin()).isEqualTo(StandardChangeOrigin.USER);
+        assertThat(events.getFirst().changes()).containsExactly(new ListChange.Inserted<>(0, List.of("v1")));
     }
 
     @Test

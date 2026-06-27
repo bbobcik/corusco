@@ -1,9 +1,11 @@
 package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import org.jspecify.annotations.NonNull;
 import org.jetbrains.annotations.UnmodifiableView;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Read-only observable ordered and indexed collection.
@@ -11,9 +13,10 @@ import java.util.List;
  * <p>This contract is the common read surface for observable lists, sorted
  * sets, and other observable collections that have a stable presentation
  * order. It exposes the operations needed by read-only views: current size,
- * indexed reads, immutable ordered snapshots, and change subscription.
- * Consumers that need indexed mutation, batching, or list-owned write
- * operations should depend on {@link ObservableList} instead.</p>
+ * indexed reads, immediate stream traversal, immutable ordered snapshots, and
+ * change subscription. Consumers that need indexed mutation, batching, or
+ * list-owned write operations should depend on {@link ObservableList}
+ * instead.</p>
  *
  * <p>Change events use {@link ListChangeSet} because Corusco presentation
  * collections expose a stable snapshot order. For non-list implementations,
@@ -21,7 +24,7 @@ import java.util.List;
  *
  * @param <E> element type
  */
-public interface ObservableReadableCollection<E> {
+public interface ObservableReadableCollection<E extends @NonNull Object> {
 
     /**
      * Returns current size.
@@ -47,6 +50,32 @@ public interface ObservableReadableCollection<E> {
      */
     @UnmodifiableView
     List<E> snapshot();
+
+    /**
+     * Returns a sequential stream over current elements in collection order.
+     *
+     * <p>The returned stream is single-use like ordinary Java streams. It is
+     * intended for immediate read-only traversal such as {@code anyMatch},
+     * {@code findFirst}, {@code map}, or {@code count}. Implementations may
+     * stream directly from their backing storage, so the stream is not an
+     * immutable point-in-time snapshot. Mutating the source during traversal is
+     * outside this contract and may fail according to the backing collection.</p>
+     *
+     * @return sequential stream over current elements
+     */
+    Stream<E> stream();
+
+    /**
+     * Returns a sequential stream over an immutable ordered snapshot.
+     *
+     * <p>Use this method, or {@link #snapshot()}, when traversal must be stable
+     * even if the source collection changes after the stream is obtained.</p>
+     *
+     * @return sequential stream over a durable snapshot
+     */
+    default Stream<E> snapshotStream() {
+        return snapshot().stream();
+    }
 
     /**
      * Subscribes a listener.

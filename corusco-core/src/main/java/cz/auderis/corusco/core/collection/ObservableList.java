@@ -1,19 +1,22 @@
 package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 
 import java.util.List;
 import java.util.function.Consumer;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Mutable indexed list that publishes structural changes to subscribers.
  *
  * <p>This is the core list contract used by table models, list adapters,
  * filtered views, and presenter-owned row caches. Callers can read current
- * contents, mutate the list through explicit methods, take immutable snapshots,
- * and subscribe to ordered {@link ListChangeSet} deliveries. Implementations
- * decide whether they own storage or adapt another source, and document that
- * ownership at the concrete type.</p>
+ * contents, mutate the list through explicit methods, stream current contents,
+ * take immutable snapshots, and subscribe to ordered {@link ListChangeSet}
+ * deliveries. Implementations decide whether they own storage or adapt another
+ * source, and document that ownership at the concrete type.</p>
  *
  * <p>Core implementations are not synchronized. Listener dispatch is
  * synchronous on the mutating thread and commonly uses a listener snapshot, so
@@ -28,7 +31,7 @@ import java.util.function.Consumer;
  *
  * @param <E> element type
  */
-public interface ObservableList<E> extends ObservableReadableCollection<E> {
+public interface ObservableList<E extends @NonNull Object> extends ObservableReadableCollection<E> {
 
     /**
      * Returns current size.
@@ -59,7 +62,17 @@ public interface ObservableList<E> extends ObservableReadableCollection<E> {
      *
      * @param element element
      */
-    void add(E element);
+    default void add(E element) {
+        add(element, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Appends an element.
+     *
+     * @param element element
+     * @param origin change origin
+     */
+    void add(E element, ChangeOrigin origin);
 
     /**
      * Inserts an element.
@@ -67,7 +80,18 @@ public interface ObservableList<E> extends ObservableReadableCollection<E> {
      * @param index insertion index
      * @param element element
      */
-    void add(int index, E element);
+    default void add(int index, E element) {
+        add(index, element, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Inserts an element.
+     *
+     * @param index insertion index
+     * @param element element
+     * @param origin change origin
+     */
+    void add(int index, E element, ChangeOrigin origin);
 
     /**
      * Replaces an element.
@@ -76,7 +100,19 @@ public interface ObservableList<E> extends ObservableReadableCollection<E> {
      * @param element new element
      * @return previous element
      */
-    E set(int index, E element);
+    default E set(int index, E element) {
+        return set(index, element, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Replaces an element.
+     *
+     * @param index index
+     * @param element new element
+     * @param origin change origin
+     * @return previous element
+     */
+    E set(int index, E element, ChangeOrigin origin);
 
     /**
      * Removes an element.
@@ -84,7 +120,18 @@ public interface ObservableList<E> extends ObservableReadableCollection<E> {
      * @param index index
      * @return removed element
      */
-    E remove(int index);
+    default E remove(int index) {
+        return remove(index, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Removes an element.
+     *
+     * @param index index
+     * @param origin change origin
+     * @return removed element
+     */
+    E remove(int index, ChangeOrigin origin);
 
     /**
      * Moves an element within the list.
@@ -92,12 +139,32 @@ public interface ObservableList<E> extends ObservableReadableCollection<E> {
      * @param fromIndex original index
      * @param toIndex target index after removal
      */
-    void move(int fromIndex, int toIndex);
+    default void move(int fromIndex, int toIndex) {
+        move(fromIndex, toIndex, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Moves an element within the list.
+     *
+     * @param fromIndex original index
+     * @param toIndex target index after removal
+     * @param origin change origin
+     */
+    void move(int fromIndex, int toIndex, ChangeOrigin origin);
 
     /**
      * Clears the list.
      */
-    void clear();
+    default void clear() {
+        clear(StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Clears the list.
+     *
+     * @param origin change origin
+     */
+    void clear(ChangeOrigin origin);
 
     /**
      * Runs mutations as one delivered change set.
@@ -108,7 +175,21 @@ public interface ObservableList<E> extends ObservableReadableCollection<E> {
      *
      * @param work mutation work
      */
-    void batch(Consumer<ObservableList<E>> work);
+    default void batch(Consumer<ObservableList<E>> work) {
+        batch(StandardChangeOrigin.MODEL, work);
+    }
+
+    /**
+     * Runs mutations as one delivered change set.
+     *
+     * <p>The supplied origin applies to the delivered batch change set. Nested
+     * mutations should keep their structural order; implementations with a
+     * single delivered batch origin should document any different policy.</p>
+     *
+     * @param origin change origin
+     * @param work mutation work
+     */
+    void batch(ChangeOrigin origin, Consumer<ObservableList<E>> work);
 
     /**
      * Subscribes a listener.

@@ -11,6 +11,7 @@ import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.Objects;
 import javax.swing.table.AbstractTableModel;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Swing table model backed by an {@link ObservableReadableCollection} of typed
@@ -41,7 +42,7 @@ import javax.swing.table.AbstractTableModel;
  *
  * @param <R> row type
  */
-public final class ObservableTableModel<R> extends AbstractTableModel implements Binding {
+public final class ObservableTableModel<R extends @NonNull Object> extends AbstractTableModel implements Binding {
 
     private static final long serialVersionUID = -5049576461875382557L;
 
@@ -92,7 +93,10 @@ public final class ObservableTableModel<R> extends AbstractTableModel implements
      * @param <R> row type
      * @return table model
      */
-    public static <R> ObservableTableModel<R> of(ObservableList<R> rows, TableDescriptor<R> descriptor) {
+    public static <R extends @NonNull Object> ObservableTableModel<R> of(
+            ObservableList<R> rows,
+            TableDescriptor<R> descriptor
+    ) {
         return new ObservableTableModel<>(rows, descriptor);
     }
 
@@ -108,7 +112,7 @@ public final class ObservableTableModel<R> extends AbstractTableModel implements
      * @param <R> row type
      * @return read-only table model
      */
-    public static <R> ObservableTableModel<R> readOnly(
+    public static <R extends @NonNull Object> ObservableTableModel<R> readOnly(
             ObservableReadableCollection<R> rows,
             TableDescriptor<R> descriptor
     ) {

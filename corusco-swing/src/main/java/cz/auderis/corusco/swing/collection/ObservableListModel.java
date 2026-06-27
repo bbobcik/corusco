@@ -9,6 +9,7 @@ import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.Objects;
 import javax.swing.AbstractListModel;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Swing {@link javax.swing.ListModel} adapter over a Corusco
@@ -32,7 +33,7 @@ import javax.swing.AbstractListModel;
  *
  * @param <E> element type
  */
-public class ObservableListModel<E> extends AbstractListModel<E> implements Binding {
+public class ObservableListModel<E extends @NonNull Object> extends AbstractListModel<E> implements Binding {
 
     private static final long serialVersionUID = 8502923115430530483L;
 
@@ -73,7 +74,7 @@ public class ObservableListModel<E> extends AbstractListModel<E> implements Bind
      * @param <E> element type
      * @return list model
      */
-    public static <E> ObservableListModel<E> of(ObservableList<E> source) {
+    public static <E extends @NonNull Object> ObservableListModel<E> of(ObservableList<E> source) {
         return new ObservableListModel<>(source);
     }
 
@@ -84,7 +85,7 @@ public class ObservableListModel<E> extends AbstractListModel<E> implements Bind
      * @param <E> element type
      * @return list model
      */
-    public static <E> ObservableListModel<E> of(ObservableReadableCollection<E> source) {
+    public static <E extends @NonNull Object> ObservableListModel<E> of(ObservableReadableCollection<E> source) {
         return new ObservableListModel<>(source);
     }
 

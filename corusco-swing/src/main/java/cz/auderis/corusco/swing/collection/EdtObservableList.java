@@ -6,12 +6,14 @@ import cz.auderis.corusco.core.collection.ObservableList;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.ChangeOrigin;
 import org.jspecify.annotations.NonNull;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import javax.swing.SwingUtilities;
 
 /**
@@ -33,7 +35,7 @@ import javax.swing.SwingUtilities;
  *
  * @param <E> element type
  */
-public final class EdtObservableList<E> implements ObservableList<E>, Disposable {
+public final class EdtObservableList<E extends @NonNull Object> implements ObservableList<E>, Disposable {
 
     private final Object monitor = new Object();
     private final ObservableList<E> source;
@@ -58,7 +60,7 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
      * @param <E> element type
      * @return EDT-dispatching wrapper
      */
-    public static <E> EdtObservableList<E> of(ObservableList<E> source) {
+    public static <E extends @NonNull Object> EdtObservableList<E> of(ObservableList<E> source) {
         return new EdtObservableList<>(source);
     }
 
@@ -77,6 +79,11 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
         return Collections.unmodifiableList(source.snapshot());
     }
 
+    @Override
+    public Stream<E> stream() {
+        return source.stream();
+    }
+
     /**
      * Returns the wrapped source list.
      *
@@ -87,42 +94,42 @@ public final class EdtObservableList<E> implements ObservableList<E>, Disposable
     }
 
     @Override
-    public void add(@NonNull E element) {
+    public void add(@NonNull E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
-        source.add(element);
+        source.add(element, origin);
     }
 
     @Override
-    public void add(int index, E element) {
+    public void add(int index, E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
-        source.add(index, element);
+        source.add(index, element, origin);
     }
 
     @Override
-    public E set(int index, E element) {
+    public E set(int index, E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
-        return source.set(index, element);
+        return source.set(index, element, origin);
     }
 
     @Override
-    public E remove(int index) {
-        return source.remove(index);
+    public E remove(int index, ChangeOrigin origin) {
+        return source.remove(index, origin);
     }
 
     @Override
-    public void move(int fromIndex, int toIndex) {
-        source.move(fromIndex, toIndex);
+    public void move(int fromIndex, int toIndex, ChangeOrigin origin) {
+        source.move(fromIndex, toIndex, origin);
     }
 
     @Override
-    public void clear() {
-        source.clear();
+    public void clear(ChangeOrigin origin) {
+        source.clear(origin);
     }
 
     @Override
-    public void batch(Consumer<ObservableList<E>> work) {
+    public void batch(ChangeOrigin origin, Consumer<ObservableList<E>> work) {
         Objects.requireNonNull(work, "work");
-        source.batch(ignored -> work.accept(this));
+        source.batch(origin, ignored -> work.accept(this));
     }
 
     @Override

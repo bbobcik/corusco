@@ -11,6 +11,8 @@ import cz.auderis.corusco.core.collection.ObservableList;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import org.jspecify.annotations.NonNull;
 
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * Corusco {@link ObservableList} view over a Glazed Lists {@link EventList}.
@@ -38,7 +41,7 @@ import java.util.function.Consumer;
  *
  * @param <E> element type
  */
-public final class GlazedObservableList<E> implements ObservableList<E>, Disposable {
+public final class GlazedObservableList<E extends @NonNull Object> implements ObservableList<E>, Disposable {
 
     private final EventList<E> source;
     private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
@@ -46,6 +49,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
     private final ListEventListener<E> sourceListener = this::sourceChanged;
     private List<E> sourceSnapshot;
     private int batchDepth;
+    private ChangeOrigin batchOrigin;
     private boolean closed;
     private boolean suppressSourceEvents;
 
@@ -67,7 +71,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
      * @param <E> element type
      * @return adapter
      */
-    public static <E> GlazedObservableList<E> of(EventList<E> source) {
+    public static <E extends @NonNull Object> GlazedObservableList<E> of(EventList<E> source) {
         return new GlazedObservableList<>(source);
     }
 
@@ -98,6 +102,11 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
         return List.copyOf(snapshotSource());
     }
 
+    @Override
+    public Stream<E> stream() {
+        return sourceSnapshot.stream();
+    }
+
     /**
      * Returns the wrapped Glazed Lists event list.
      *
@@ -108,54 +117,67 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
     }
 
     @Override
-    public void add(@NonNull E element) {
-        Objects.requireNonNull(element, "element");
-        Lock lock = source.getReadWriteLock().writeLock();
-        lock.lock();
-        try {
-            source.add(element);
-        } finally {
-            lock.unlock();
-        }
+    public void add(@NonNull E element, ChangeOrigin origin) {
+        add(size(), element, origin);
     }
 
     @Override
-    public void add(int index, E element) {
+    public void add(int index, E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(origin, "origin");
         Lock lock = source.getReadWriteLock().writeLock();
         lock.lock();
         try {
+            suppressSourceEvents = true;
             source.add(index, element);
+            sourceSnapshot.add(index, element);
         } finally {
+            suppressSourceEvents = false;
             lock.unlock();
         }
+        record(new ListChange.Inserted<>(index, singleton(element)), origin);
     }
 
     @Override
-    public E set(int index, E element) {
+    public E set(int index, E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(origin, "origin");
         Lock lock = source.getReadWriteLock().writeLock();
         lock.lock();
+        E oldElement;
         try {
-            return source.set(index, element);
+            suppressSourceEvents = true;
+            oldElement = source.set(index, element);
+            sourceSnapshot.set(index, element);
         } finally {
+            suppressSourceEvents = false;
             lock.unlock();
         }
+        record(new ListChange.Replaced<>(index, oldElement, element), origin);
+        return oldElement;
     }
 
     @Override
-    public E remove(int index) {
+    public E remove(int index, ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         Lock lock = source.getReadWriteLock().writeLock();
         lock.lock();
+        E removed;
         try {
-            return source.remove(index);
+            suppressSourceEvents = true;
+            removed = source.remove(index);
+            sourceSnapshot.remove(index);
         } finally {
+            suppressSourceEvents = false;
             lock.unlock();
         }
+        record(new ListChange.Removed<>(index, singleton(removed)), origin);
+        return removed;
     }
 
     @Override
-    public void move(int fromIndex, int toIndex) {
+    public void move(int fromIndex, int toIndex, ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         if (fromIndex == toIndex) {
             return;
         }
@@ -166,28 +188,44 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
             suppressSourceEvents = true;
             moved = source.remove(fromIndex);
             source.add(toIndex, moved);
-            sourceSnapshot = new ArrayList<>(source);
+            sourceSnapshot.remove(fromIndex);
+            sourceSnapshot.add(toIndex, moved);
         } finally {
             suppressSourceEvents = false;
             lock.unlock();
         }
-        record(new ListChange.Moved<>(fromIndex, toIndex, moved));
+        record(new ListChange.Moved<>(fromIndex, toIndex, moved), origin);
     }
 
     @Override
-    public void clear() {
+    public void clear(ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         Lock lock = source.getReadWriteLock().writeLock();
         lock.lock();
+        List<E> removed;
         try {
+            if (source.isEmpty()) {
+                return;
+            }
+            suppressSourceEvents = true;
+            removed = new ArrayList<>(source);
             source.clear();
+            sourceSnapshot.clear();
         } finally {
+            suppressSourceEvents = false;
             lock.unlock();
         }
+        record(new ListChange.Cleared<>(removed), origin);
     }
 
     @Override
-    public void batch(Consumer<ObservableList<E>> work) {
+    public void batch(ChangeOrigin origin, Consumer<ObservableList<E>> work) {
         Objects.requireNonNull(work, "work");
+        Objects.requireNonNull(origin, "origin");
+        ChangeOrigin previousOrigin = batchOrigin;
+        if (batchDepth == 0) {
+            batchOrigin = origin;
+        }
         batchDepth++;
         try {
             work.accept(this);
@@ -196,7 +234,10 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
             if (batchDepth == 0 && !batchedChanges.isEmpty()) {
                 List<ListChange<E>> delivery = new ArrayList<>(batchedChanges);
                 batchedChanges.clear();
-                fire(new ListChangeSet<>(delivery));
+                fire(new ListChangeSet<>(delivery, batchOrigin));
+            }
+            if (batchDepth == 0) {
+                batchOrigin = previousOrigin;
             }
         }
     }
@@ -236,7 +277,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
                 default -> throw new IllegalStateException("Unknown Glazed Lists event type: " + event.getType());
             }
         }
-        fireIfNotEmpty(changes);
+        fireIfNotEmpty(changes, StandardChangeOrigin.MODEL);
     }
 
     private void applyInsert(int index, List<ListChange<E>> changes) {
@@ -265,7 +306,7 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
         if (!sourceSnapshot.isEmpty()) {
             changes.add(new ListChange.Inserted<>(0, sourceSnapshot));
         }
-        fireIfNotEmpty(changes);
+        fireIfNotEmpty(changes, StandardChangeOrigin.MODEL);
     }
 
     private List<E> snapshotSource() {
@@ -278,23 +319,23 @@ public final class GlazedObservableList<E> implements ObservableList<E>, Disposa
         }
     }
 
-    private void fireIfNotEmpty(List<ListChange<E>> changes) {
+    private void fireIfNotEmpty(List<ListChange<E>> changes, ChangeOrigin origin) {
         if (changes.isEmpty()) {
             return;
         }
-        record(changes);
+        record(changes, origin);
     }
 
-    private void record(ListChange<E> change) {
-        record(Collections.singletonList(change));
+    private void record(ListChange<E> change, ChangeOrigin origin) {
+        record(Collections.singletonList(change), origin);
     }
 
-    private void record(List<ListChange<E>> changes) {
+    private void record(List<ListChange<E>> changes, ChangeOrigin origin) {
         if (batchDepth > 0) {
             batchedChanges.addAll(changes);
             return;
         }
-        fire(new ListChangeSet<>(changes));
+        fire(new ListChangeSet<>(changes, origin));
     }
 
     private void fire(ListChangeSet<E> changeSet) {

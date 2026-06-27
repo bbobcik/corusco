@@ -3,11 +3,15 @@ package cz.auderis.corusco.core.collection;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Read-only sorted view over an {@link ObservableReadableCollection}.
@@ -28,7 +32,7 @@ import java.util.function.Consumer;
  *
  * @param <E> element type
  */
-public final class SortedList<E> implements ObservableList<E>, Disposable {
+public final class SortedList<E extends @NonNull Object> implements ObservableList<E>, Disposable {
 
     private final ObservableReadableCollection<E> source;
     private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
@@ -68,7 +72,10 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
      * @param <E> element type
      * @return sorted view
      */
-    public static <E> SortedList<E> of(ObservableList<E> source, Comparator<? super E> comparator) {
+    public static <E extends @NonNull Object> SortedList<E> of(
+            ObservableList<E> source,
+            Comparator<? super E> comparator
+    ) {
         return new SortedList<>(source, comparator);
     }
 
@@ -80,7 +87,10 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
      * @param <E> element type
      * @return sorted view
      */
-    public static <E> SortedList<E> of(ObservableReadableCollection<E> source, Comparator<? super E> comparator) {
+    public static <E extends @NonNull Object> SortedList<E> of(
+            ObservableReadableCollection<E> source,
+            Comparator<? super E> comparator
+    ) {
         return new SortedList<>(source, comparator);
     }
 
@@ -99,48 +109,63 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
         return List.copyOf(sorted);
     }
 
+    @Override
+    public Stream<E> stream() {
+        return sorted.stream();
+    }
+
     /**
      * Replaces the comparator and refreshes the sorted view.
      *
      * @param comparator new comparator
      */
     public void setComparator(Comparator<? super E> comparator) {
+        setComparator(comparator, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Replaces the comparator and refreshes the sorted view.
+     *
+     * @param comparator new comparator
+     * @param origin change origin for a delivered reset
+     */
+    public void setComparator(Comparator<? super E> comparator, ChangeOrigin origin) {
         this.comparator = Objects.requireNonNull(comparator, "comparator");
-        refreshFromSource();
+        refreshFromSource(origin);
     }
 
     @Override
-    public void add(E element) {
+    public void add(E element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void add(int index, E element) {
+    public void add(int index, E element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public E set(int index, E element) {
+    public E set(int index, E element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public E remove(int index) {
+    public E remove(int index, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void move(int fromIndex, int toIndex) {
+    public void move(int fromIndex, int toIndex, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void clear() {
+    public void clear(ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void batch(Consumer<ObservableList<E>> work) {
+    public void batch(ChangeOrigin origin, Consumer<ObservableList<E>> work) {
         throw readOnly();
     }
 
@@ -159,20 +184,21 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
         closed = true;
     }
 
-    private void sourceChanged(ListChangeSet<E> ignored) {
+    private void sourceChanged(ListChangeSet<E> changes) {
         if (!closed) {
-            refreshFromSource();
+            refreshFromSource(changes.origin());
         }
     }
 
-    private void refreshFromSource() {
+    private void refreshFromSource(ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         List<E> next = sorted(source.snapshot());
         if (sorted.equals(next)) {
             return;
         }
         List<ListChange<E>> changes = resetChanges(sorted, next);
         sorted = next;
-        fireIfNotEmpty(changes);
+        fireIfNotEmpty(changes, origin);
     }
 
     private List<E> sorted(List<E> elements) {
@@ -192,11 +218,11 @@ public final class SortedList<E> implements ObservableList<E>, Disposable {
         return changes;
     }
 
-    private void fireIfNotEmpty(List<ListChange<E>> changes) {
+    private void fireIfNotEmpty(List<ListChange<E>> changes, ChangeOrigin origin) {
         if (changes.isEmpty()) {
             return;
         }
-        ListChangeSet<E> changeSet = new ListChangeSet<>(changes);
+        ListChangeSet<E> changeSet = new ListChangeSet<>(changes, origin);
         listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 

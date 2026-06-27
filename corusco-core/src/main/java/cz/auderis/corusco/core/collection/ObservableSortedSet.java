@@ -2,6 +2,8 @@ package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -9,7 +11,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.TreeSet;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Mutable observable sorted set with ordered indexed reads.
@@ -27,7 +31,7 @@ import org.jspecify.annotations.Nullable;
  *
  * @param <E> element type
  */
-public final class ObservableSortedSet<E> implements ObservableReadableCollection<E> {
+public final class ObservableSortedSet<E extends @NonNull Object> implements ObservableReadableCollection<E> {
 
     private final TreeSet<E> elements;
     private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners;
@@ -68,7 +72,7 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
      * @param <E> element type
      * @return observable sorted set
      */
-    public static <E> ObservableSortedSet<E> empty(Comparator<? super E> comparator) {
+    public static <E extends @NonNull Object> ObservableSortedSet<E> empty(Comparator<? super E> comparator) {
         return new ObservableSortedSet<>(comparator);
     }
 
@@ -80,7 +84,7 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
      * @param <E> element type
      * @return observable sorted set
      */
-    public static <E> ObservableSortedSet<E> of(
+    public static <E extends @NonNull Object> ObservableSortedSet<E> of(
             Collection<? extends E> elements,
             Comparator<? super E> comparator
     ) {
@@ -111,13 +115,25 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
      * @return {@code true} when the set changed
      */
     public boolean add(E element) {
+        return add(element, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Adds an element when no comparator-equivalent element is present.
+     *
+     * @param element element to add
+     * @param origin change origin
+     * @return {@code true} when the set changed
+     */
+    public boolean add(E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(origin, "origin");
         if (!elements.add(element)) {
             return false;
         }
         int index = indexOfEquivalent(element);
         final var event = new ListChange.Inserted<>(index, singleton(element));
-        fireEvent(event);
+        fireEvent(event, origin);
         return true;
     }
 
@@ -128,13 +144,25 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
      * @return {@code true} when the set changed
      */
     public boolean remove(E element) {
+        return remove(element, StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Removes an element equivalent to the supplied value.
+     *
+     * @param element element to remove
+     * @param origin change origin
+     * @return {@code true} when the set changed
+     */
+    public boolean remove(E element, ChangeOrigin origin) {
         Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(origin, "origin");
         LocatedElement<E> existing = findEquivalent(element);
         if (existing == null || !elements.remove(existing.element())) {
             return false;
         }
         final ListChange.Removed<E> event = new ListChange.Removed<>(existing.index(), singleton(existing.element()));
-        fireEvent(event);
+        fireEvent(event, origin);
         return true;
     }
 
@@ -142,12 +170,22 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
      * Clears the set.
      */
     public void clear() {
+        clear(StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Clears the set.
+     *
+     * @param origin change origin
+     */
+    public void clear(ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         if (elements.isEmpty()) {
             return;
         }
         List<E> removed = snapshot();
         elements.clear();
-        fire(ListChangeSet.of(new ListChange.Cleared<>(removed)));
+        fire(ListChangeSet.of(new ListChange.Cleared<>(removed), origin));
     }
 
     /**
@@ -166,6 +204,11 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
     @Override
     public List<E> snapshot() {
         return List.copyOf(elements);
+    }
+
+    @Override
+    public Stream<E> stream() {
+        return elements.stream();
     }
 
     /**
@@ -187,8 +230,8 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
         return listeners.addListener(listener);
     }
 
-    private void fireEvent(ListChange<E> event) {
-        final ListChangeSet<E> changeSet = ListChangeSet.of(event);
+    private void fireEvent(ListChange<E> event, ChangeOrigin origin) {
+        final ListChangeSet<E> changeSet = ListChangeSet.of(event, origin);
         listeners.fireEvent(changeSet, ListChangeListener::listChanged);
     }
 
@@ -245,7 +288,7 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
         return new UnsupportedOperationException("ObservableSortedSet list view is read-only; mutate the set");
     }
 
-    private record LocatedElement<E>(int index, E element) {
+    private record LocatedElement<E extends @NonNull Object>(int index, E element) {
     }
 
     private final class SortedSetListView implements ObservableList<E> {
@@ -266,37 +309,42 @@ public final class ObservableSortedSet<E> implements ObservableReadableCollectio
         }
 
         @Override
-        public void add(E element) {
+        public Stream<E> stream() {
+            return ObservableSortedSet.this.stream();
+        }
+
+        @Override
+        public void add(E element, ChangeOrigin origin) {
             throw readOnly();
         }
 
         @Override
-        public void add(int index, E element) {
+        public void add(int index, E element, ChangeOrigin origin) {
             throw readOnly();
         }
 
         @Override
-        public E set(int index, E element) {
+        public E set(int index, E element, ChangeOrigin origin) {
             throw readOnly();
         }
 
         @Override
-        public E remove(int index) {
+        public E remove(int index, ChangeOrigin origin) {
             throw readOnly();
         }
 
         @Override
-        public void move(int fromIndex, int toIndex) {
+        public void move(int fromIndex, int toIndex, ChangeOrigin origin) {
             throw readOnly();
         }
 
         @Override
-        public void clear() {
+        public void clear(ChangeOrigin origin) {
             throw readOnly();
         }
 
         @Override
-        public void batch(Consumer<ObservableList<E>> work) {
+        public void batch(ChangeOrigin origin, Consumer<ObservableList<E>> work) {
             throw readOnly();
         }
 

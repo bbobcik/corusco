@@ -1,5 +1,7 @@
 package cz.auderis.corusco.core.collection;
 
+import org.jspecify.annotations.NonNull;
+
 /**
  * Callback notified when an {@link ObservableReadableCollection} publishes
  * structural changes.
@@ -14,7 +16,7 @@ package cz.auderis.corusco.core.collection;
  * @param <E> element type
  */
 @FunctionalInterface
-public interface ListChangeListener<E> {
+public interface ListChangeListener<E extends @NonNull Object> {
 
     /**
      * Receives a list change set.

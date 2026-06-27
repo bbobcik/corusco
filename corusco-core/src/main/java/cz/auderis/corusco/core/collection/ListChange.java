@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.collection;
 
 import java.util.List;
+import org.jspecify.annotations.NonNull;
 
 /**
  * One precise observable-list mutation.
@@ -21,7 +22,7 @@ import java.util.List;
  *
  * @param <E> element type
  */
-public sealed interface ListChange<E>
+public sealed interface ListChange<E extends @NonNull Object>
         permits ListChange.Inserted, ListChange.Removed, ListChange.Replaced, ListChange.Moved, ListChange.Cleared {
 
     /**
@@ -31,7 +32,7 @@ public sealed interface ListChange<E>
      * @param elements inserted elements
      * @param <E> element type
      */
-    record Inserted<E>(int index, List<E> elements) implements ListChange<E> {
+    record Inserted<E extends @NonNull Object>(int index, List<E> elements) implements ListChange<E> {
         public Inserted {
             elements = immutableCopy(elements);
         }
@@ -44,7 +45,7 @@ public sealed interface ListChange<E>
      * @param elements removed elements
      * @param <E> element type
      */
-    record Removed<E>(int index, List<E> elements) implements ListChange<E> {
+    record Removed<E extends @NonNull Object>(int index, List<E> elements) implements ListChange<E> {
         public Removed {
             elements = immutableCopy(elements);
         }
@@ -58,7 +59,7 @@ public sealed interface ListChange<E>
      * @param newElement new element
      * @param <E> element type
      */
-    record Replaced<E>(int index, E oldElement, E newElement) implements ListChange<E> {
+    record Replaced<E extends @NonNull Object>(int index, E oldElement, E newElement) implements ListChange<E> {
     }
 
     /**
@@ -69,7 +70,7 @@ public sealed interface ListChange<E>
      * @param element moved element
      * @param <E> element type
      */
-    record Moved<E>(int fromIndex, int toIndex, E element) implements ListChange<E> {
+    record Moved<E extends @NonNull Object>(int fromIndex, int toIndex, E element) implements ListChange<E> {
     }
 
     /**
@@ -78,13 +79,13 @@ public sealed interface ListChange<E>
      * @param elements elements removed by clear
      * @param <E> element type
      */
-    record Cleared<E>(List<E> elements) implements ListChange<E> {
+    record Cleared<E extends @NonNull Object>(List<E> elements) implements ListChange<E> {
         public Cleared {
             elements = immutableCopy(elements);
         }
     }
 
-    private static <E> List<E> immutableCopy(List<E> elements) {
+    private static <E extends @NonNull Object> List<E> immutableCopy(List<E> elements) {
         return List.copyOf(elements);
     }
 }

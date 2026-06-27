@@ -1,8 +1,11 @@
 package cz.auderis.corusco.core.collection;
 
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
+import cz.auderis.corusco.core.value.SimpleValue;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,6 +21,7 @@ class FilteredListTest {
         assertThat(filtered.size()).isEqualTo(2);
         assertThat(filtered.get(0)).isEqualTo(2);
         assertThat(filtered.snapshot()).containsExactly(2, 4);
+        assertThat(filtered.stream()).containsExactly(2, 4);
     }
 
     @Test
@@ -121,6 +125,26 @@ class FilteredListTest {
     }
 
     @Test
+    void preservesSourceOriginAndUsesPredicateReplacementOrigin() {
+        ObservableArrayList<Integer> source = ObservableArrayList.of(List.of(1, 2, 3));
+        FilteredList<Integer> filtered = FilteredList.of(source, value -> value % 2 == 0);
+        List<ListChangeSet<Integer>> events = new ArrayList<>();
+        filtered.subscribe(events::add);
+
+        source.add(4, StandardChangeOrigin.USER);
+        filtered.setPredicate(value -> value > 2, StandardChangeOrigin.GENERATED);
+
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0).origin()).isEqualTo(StandardChangeOrigin.USER);
+        assertThat(events.get(0).changes()).containsExactly(new ListChange.Inserted<>(1, List.of(4)));
+        assertThat(events.get(1).origin()).isEqualTo(StandardChangeOrigin.GENERATED);
+        assertThat(events.get(1).changes()).containsExactly(
+                new ListChange.Cleared<>(List.of(2, 4)),
+                new ListChange.Inserted<>(0, List.of(3, 4))
+        );
+    }
+
+    @Test
     void closeStopsFutureEvents() {
         ObservableArrayList<Integer> source = ObservableArrayList.of(List.of(1, 2));
         FilteredList<Integer> filtered = FilteredList.of(source, value -> value % 2 == 0);
@@ -130,6 +154,67 @@ class FilteredListTest {
         filtered.close();
         filtered.close();
         source.add(4);
+
+        assertThat(filtered.snapshot()).containsExactly(2);
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    void observablePredicateChangesPublishResetWithPredicateOrigin() {
+        ObservableArrayList<Integer> source = ObservableArrayList.of(List.of(1, 2, 3, 4));
+        SimpleValue<Predicate<? super Integer>> predicate = SimpleValue.of(value -> value % 2 == 0);
+        FilteredList<Integer> filtered = FilteredList.of(source, predicate);
+        List<ListChangeSet<Integer>> events = new ArrayList<>();
+        filtered.subscribe(events::add);
+
+        source.add(6, StandardChangeOrigin.USER);
+        predicate.setValue(value -> value > 3, StandardChangeOrigin.GENERATED);
+        predicate.setValue(value -> value > 0, StandardChangeOrigin.SYSTEM);
+
+        assertThat(filtered.snapshot()).containsExactly(1, 2, 3, 4, 6);
+        assertThat(events).hasSize(3);
+        assertThat(events.get(0).origin()).isEqualTo(StandardChangeOrigin.USER);
+        assertThat(events.get(0).changes()).containsExactly(new ListChange.Inserted<>(2, List.of(6)));
+        assertThat(events.get(1).origin()).isEqualTo(StandardChangeOrigin.GENERATED);
+        assertThat(events.get(1).changes()).containsExactly(
+                new ListChange.Cleared<>(List.of(2, 4, 6)),
+                new ListChange.Inserted<>(0, List.of(4, 6))
+        );
+        assertThat(events.get(2).origin()).isEqualTo(StandardChangeOrigin.SYSTEM);
+        assertThat(events.get(2).changes()).containsExactly(
+                new ListChange.Cleared<>(List.of(4, 6)),
+                new ListChange.Inserted<>(0, List.of(1, 2, 3, 4, 6))
+        );
+    }
+
+    @Test
+    void observablePredicateRejectsNullValuesAndSilentWhenVisibleRowsDoNotChange() {
+        ObservableArrayList<Integer> source = ObservableArrayList.of(List.of(2, 4));
+        SimpleValue<Predicate<? super Integer>> predicate = SimpleValue.of(value -> value % 2 == 0);
+        FilteredList<Integer> filtered = FilteredList.of(source, predicate);
+        List<ListChangeSet<Integer>> events = new ArrayList<>();
+        filtered.subscribe(events::add);
+
+        predicate.setValue(value -> value > 0, StandardChangeOrigin.USER);
+
+        assertThat(events).isEmpty();
+        assertThatThrownBy(() -> FilteredList.of(source, SimpleValue.<Predicate<? super Integer>>empty()))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> predicate.setValue(null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void observablePredicateCloseStopsPredicateAndSourceEvents() {
+        ObservableArrayList<Integer> source = ObservableArrayList.of(List.of(1, 2));
+        SimpleValue<Predicate<? super Integer>> predicate = SimpleValue.of(value -> value % 2 == 0);
+        FilteredList<Integer> filtered = FilteredList.of(source, predicate);
+        List<ListChangeSet<Integer>> events = new ArrayList<>();
+        filtered.subscribe(events::add);
+
+        filtered.close();
+        source.add(4);
+        predicate.setValue(value -> true);
 
         assertThat(filtered.snapshot()).containsExactly(2);
         assertThat(events).isEmpty();

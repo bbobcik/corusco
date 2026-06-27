@@ -1,7 +1,9 @@
 package cz.auderis.corusco.core.collection;
 
+import cz.auderis.corusco.core.value.ChangeOrigin;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Read-only mapped list view over an {@link ObservableList}.
@@ -18,7 +20,8 @@ import java.util.function.Function;
  * @param <S> source element type
  * @param <T> mapped element type
  */
-public final class MappedList<S, T> extends MappedReadableCollection<S, T> implements ObservableList<T> {
+public final class MappedList<S extends @NonNull Object, T extends @NonNull Object>
+        extends MappedReadableCollection<S, T> implements ObservableList<T> {
 
     /**
      * Creates a mapped list view.
@@ -39,7 +42,7 @@ public final class MappedList<S, T> extends MappedReadableCollection<S, T> imple
      * @param <T> mapped element type
      * @return mapped list
      */
-    public static <S, T> MappedList<S, T> of(
+    public static <S extends @NonNull Object, T extends @NonNull Object> MappedList<S, T> of(
             ObservableList<S> source,
             Function<? super S, ? extends T> mapper
     ) {
@@ -47,37 +50,37 @@ public final class MappedList<S, T> extends MappedReadableCollection<S, T> imple
     }
 
     @Override
-    public void add(T element) {
+    public void add(T element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void add(int index, T element) {
+    public void add(int index, T element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public T set(int index, T element) {
+    public T set(int index, T element, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public T remove(int index) {
+    public T remove(int index, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void move(int fromIndex, int toIndex) {
+    public void move(int fromIndex, int toIndex, ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void clear() {
+    public void clear(ChangeOrigin origin) {
         throw readOnly();
     }
 
     @Override
-    public void batch(Consumer<ObservableList<T>> work) {
+    public void batch(ChangeOrigin origin, Consumer<ObservableList<T>> work) {
         throw readOnly();
     }
 

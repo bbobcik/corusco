@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -34,6 +35,19 @@ class LoadableListTest {
     }
 
     @Test
+    void streamLoadsLazilyAndReusesAttachedCache() {
+        AtomicInteger loads = new AtomicInteger();
+        LoadableList<String> list = LoadableList.of(() -> List.of("row-" + loads.incrementAndGet()));
+
+        assertThat(list.isAttached()).isFalse();
+        assertThat(list.stream()).containsExactly("row-1");
+        assertThat(list.stream()).containsExactly("row-1");
+
+        assertThat(list.isAttached()).isTrue();
+        assertThat(loads).hasValue(1);
+    }
+
+    @Test
     void mutationsLoadCacheAndPublishOrdinaryListChanges() {
         LoadableList<String> list = LoadableList.of(() -> List.of("alpha"));
         List<ListChangeSet<String>> events = new ArrayList<>();
@@ -64,6 +78,28 @@ class LoadableListTest {
 
         assertThat(events).hasSize(1);
         assertThat(events.getFirst().changes()).containsExactly(
+                new ListChange.Cleared<>(List.of("alpha", "beta")),
+                new ListChange.Inserted<>(0, List.of("gamma"))
+        );
+    }
+
+    @Test
+    void refreshAndMutationsPublishSuppliedOrigins() {
+        AtomicReference<List<String>> source = new AtomicReference<>(List.of("alpha"));
+        LoadableList<String> list = LoadableList.of(source::get);
+        List<ListChangeSet<String>> events = new ArrayList<>();
+        list.subscribe(events::add);
+
+        assertThat(list.snapshot()).containsExactly("alpha");
+        list.add("beta", StandardChangeOrigin.USER);
+        source.set(List.of("gamma"));
+        list.refresh(StandardChangeOrigin.SYSTEM);
+
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0).origin()).isEqualTo(StandardChangeOrigin.USER);
+        assertThat(events.get(0).changes()).containsExactly(new ListChange.Inserted<>(1, List.of("beta")));
+        assertThat(events.get(1).origin()).isEqualTo(StandardChangeOrigin.SYSTEM);
+        assertThat(events.get(1).changes()).containsExactly(
                 new ListChange.Cleared<>(List.of("alpha", "beta")),
                 new ListChange.Inserted<>(0, List.of("gamma"))
         );

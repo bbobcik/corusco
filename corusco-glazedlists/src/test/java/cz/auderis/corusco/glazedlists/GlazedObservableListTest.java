@@ -7,6 +7,7 @@ import cz.auderis.corusco.core.collection.ListChange;
 import cz.auderis.corusco.core.collection.ListChangeSet;
 import cz.auderis.corusco.core.collection.MappedReadableCollection;
 import cz.auderis.corusco.core.collection.ObservableSortedSet;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -25,7 +26,19 @@ class GlazedObservableListTest {
         assertThat(adapter.size()).isEqualTo(2);
         assertThat(adapter.get(1)).isEqualTo("b");
         assertThat(adapter.snapshot()).containsExactly("a", "b");
+        assertThat(adapter.stream()).containsExactly("a", "b");
         assertThat(adapter.source()).isSameAs(source);
+    }
+
+    @Test
+    void streamReflectsMaintainedSnapshot() {
+        BasicEventList<String> source = eventListOf("a", "b");
+        GlazedObservableList<String> adapter = GlazedObservableList.of(source);
+
+        source.add(1, "x");
+        source.remove(0);
+
+        assertThat(adapter.stream()).containsExactly("x", "b");
     }
 
     @Test
@@ -41,6 +54,12 @@ class GlazedObservableListTest {
 
         assertThat(adapter.snapshot()).containsExactly("a", "B");
         assertThat(events).hasSize(3);
+        assertThat(events).extracting(ListChangeSet::origin)
+                .containsExactly(
+                        StandardChangeOrigin.MODEL,
+                        StandardChangeOrigin.MODEL,
+                        StandardChangeOrigin.MODEL
+                );
         assertThat(events.get(0).changes()).containsExactly(new ListChange.Inserted<>(0, List.of("a")));
         assertThat(events.get(1).changes()).containsExactly(new ListChange.Replaced<>(1, "b", "B"));
         assertThat(events.get(2).changes()).containsExactly(new ListChange.Removed<>(2, List.of("c")));
@@ -53,13 +72,20 @@ class GlazedObservableListTest {
         List<ListChangeSet<String>> events = new ArrayList<>();
         adapter.subscribe(events::add);
 
-        adapter.add(0, "a");
-        adapter.set(1, "B");
-        adapter.move(2, 0);
-        adapter.remove(1);
+        adapter.add(0, "a", StandardChangeOrigin.USER);
+        adapter.set(1, "B", StandardChangeOrigin.GENERATED);
+        adapter.move(2, 0, StandardChangeOrigin.BINDING);
+        adapter.remove(1, StandardChangeOrigin.SYSTEM);
 
         assertThat(source).containsExactly("c", "B");
         assertThat(events).hasSize(4);
+        assertThat(events).extracting(ListChangeSet::origin)
+                .containsExactly(
+                        StandardChangeOrigin.USER,
+                        StandardChangeOrigin.GENERATED,
+                        StandardChangeOrigin.BINDING,
+                        StandardChangeOrigin.SYSTEM
+                );
         assertThat(events.get(0).changes()).containsExactly(new ListChange.Inserted<>(0, List.of("a")));
         assertThat(events.get(1).changes()).containsExactly(new ListChange.Replaced<>(1, "b", "B"));
         assertThat(events.get(2).changes()).containsExactly(new ListChange.Moved<>(2, 0, "c"));
@@ -91,7 +117,7 @@ class GlazedObservableListTest {
         List<ListChangeSet<String>> events = new ArrayList<>();
         adapter.subscribe(events::add);
 
-        adapter.batch(list -> {
+        adapter.batch(StandardChangeOrigin.SYSTEM, list -> {
             list.add(0, "a");
             list.set(1, "B");
             list.move(2, 0);
@@ -99,6 +125,7 @@ class GlazedObservableListTest {
 
         assertThat(source).containsExactly("c", "a", "B");
         assertThat(events).hasSize(1);
+        assertThat(events.getFirst().origin()).isEqualTo(StandardChangeOrigin.SYSTEM);
         assertThat(events.getFirst().changes()).containsExactly(
                 new ListChange.Inserted<>(0, List.of("a")),
                 new ListChange.Replaced<>(1, "b", "B"),

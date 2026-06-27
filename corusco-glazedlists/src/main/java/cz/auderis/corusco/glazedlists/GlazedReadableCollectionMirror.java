@@ -12,6 +12,7 @@ import cz.auderis.corusco.core.lifecycle.Subscription;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Read-only Glazed Lists mirror of an {@link ObservableReadableCollection}.
@@ -33,7 +34,7 @@ import java.util.Objects;
  *
  * @param <E> element type
  */
-public final class GlazedReadableCollectionMirror<E> implements Disposable {
+public final class GlazedReadableCollectionMirror<E extends @NonNull Object> implements Disposable {
 
     private final BasicEventList<E> mutableEventList;
     private final EventList<E> eventList;
@@ -59,7 +60,9 @@ public final class GlazedReadableCollectionMirror<E> implements Disposable {
      * @param <E> element type
      * @return mirror
      */
-    public static <E> GlazedReadableCollectionMirror<E> of(ObservableReadableCollection<E> source) {
+    public static <E extends @NonNull Object> GlazedReadableCollectionMirror<E> of(
+            ObservableReadableCollection<E> source
+    ) {
         return new GlazedReadableCollectionMirror<>(source);
     }
 

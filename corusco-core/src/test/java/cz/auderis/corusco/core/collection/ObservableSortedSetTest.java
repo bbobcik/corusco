@@ -20,6 +20,7 @@ class ObservableSortedSetTest {
 
         assertThat(set.size()).isEqualTo(3);
         assertThat(set.snapshot()).containsExactly(1, 2, 3);
+        assertThat(set.stream()).containsExactly(1, 2, 3);
     }
 
     @Test
@@ -126,6 +127,7 @@ class ObservableSortedSetTest {
         assertThat(view.size()).isEqualTo(3);
         assertThat(view.get(0)).isEqualTo(1);
         assertThat(view.snapshot()).containsExactly(1, 2, 3);
+        assertThat(view.stream()).containsExactly(1, 2, 3);
         assertThat(events.getFirst().changes())
                 .containsExactly(new ListChange.Inserted<>(1, List.of(2)));
         assertThatThrownBy(() -> view.add(4))

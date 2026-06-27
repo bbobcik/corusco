@@ -7,6 +7,7 @@ import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.Objects;
 import javax.swing.ComboBoxModel;
 import javax.swing.MutableComboBoxModel;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Swing combo-box model backed by a Corusco {@link ObservableList}.
@@ -30,7 +31,8 @@ import javax.swing.MutableComboBoxModel;
  *
  * @param <E> element type
  */
-public final class ObservableComboBoxModel<E> extends ObservableListModel<E> implements MutableComboBoxModel<E> {
+public final class ObservableComboBoxModel<E extends @NonNull Object>
+        extends ObservableListModel<E> implements MutableComboBoxModel<E> {
 
     private static final long serialVersionUID = -2632725478545469038L;
 
@@ -57,7 +59,7 @@ public final class ObservableComboBoxModel<E> extends ObservableListModel<E> imp
      * @param <E> element type
      * @return combo-box model
      */
-    public static <E> ObservableComboBoxModel<E> of(ObservableList<E> source) {
+    public static <E extends @NonNull Object> ObservableComboBoxModel<E> of(ObservableList<E> source) {
         return new ObservableComboBoxModel<>(source);
     }
 

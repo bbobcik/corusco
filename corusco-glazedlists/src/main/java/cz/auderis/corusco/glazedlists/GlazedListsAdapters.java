@@ -2,6 +2,7 @@ package cz.auderis.corusco.glazedlists;
 
 import ca.odell.glazedlists.EventList;
 import cz.auderis.corusco.core.collection.ObservableReadableCollection;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Entry point for adapting Glazed Lists collections to Corusco collection APIs.
@@ -35,7 +36,7 @@ public final class GlazedListsAdapters {
      * @param <E> element type
      * @return observable-list adapter
      */
-    public static <E> GlazedObservableList<E> observableList(EventList<E> source) {
+    public static <E extends @NonNull Object> GlazedObservableList<E> observableList(EventList<E> source) {
         return GlazedObservableList.of(source);
     }
 
@@ -51,7 +52,7 @@ public final class GlazedListsAdapters {
      * @param <E> element type
      * @return event-list mirror
      */
-    public static <E> GlazedReadableCollectionMirror<E> eventListMirror(
+    public static <E extends @NonNull Object> GlazedReadableCollectionMirror<E> eventListMirror(
             ObservableReadableCollection<E> source
     ) {
         return GlazedReadableCollectionMirror.of(source);

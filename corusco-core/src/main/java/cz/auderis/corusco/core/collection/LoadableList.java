@@ -3,6 +3,8 @@ package cz.auderis.corusco.core.collection;
 import cz.auderis.corusco.core.lifecycle.Detachable;
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.ChangeOrigin;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -11,6 +13,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
+import org.jspecify.annotations.NonNull;
 
 /**
  * Supplier-backed observable list that loads lazily and detaches its cache.
@@ -35,7 +39,7 @@ import java.util.function.Supplier;
  *
  * @param <E> element type
  */
-public final class LoadableList<E> implements ObservableList<E>, Detachable {
+public final class LoadableList<E extends @NonNull Object> implements ObservableList<E>, Detachable {
 
     private final Supplier<? extends Collection<? extends E>> loader;
     private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
@@ -60,7 +64,9 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
      * @param <E> element type
      * @return loadable list
      */
-    public static <E> LoadableList<E> of(Supplier<? extends Collection<? extends E>> loader) {
+    public static <E extends @NonNull Object> LoadableList<E> of(
+            Supplier<? extends Collection<? extends E>> loader
+    ) {
         return new LoadableList<>(loader);
     }
 
@@ -89,39 +95,44 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
     }
 
     @Override
-    public void add(E element) {
-        attached().add(element);
+    public Stream<E> stream() {
+        return attached().stream();
     }
 
     @Override
-    public void add(int index, E element) {
-        attached().add(index, element);
+    public void add(E element, ChangeOrigin origin) {
+        attached().add(element, origin);
     }
 
     @Override
-    public E set(int index, E element) {
-        return attached().set(index, element);
+    public void add(int index, E element, ChangeOrigin origin) {
+        attached().add(index, element, origin);
     }
 
     @Override
-    public E remove(int index) {
-        return attached().remove(index);
+    public E set(int index, E element, ChangeOrigin origin) {
+        return attached().set(index, element, origin);
     }
 
     @Override
-    public void move(int fromIndex, int toIndex) {
-        attached().move(fromIndex, toIndex);
+    public E remove(int index, ChangeOrigin origin) {
+        return attached().remove(index, origin);
     }
 
     @Override
-    public void clear() {
-        attached().clear();
+    public void move(int fromIndex, int toIndex, ChangeOrigin origin) {
+        attached().move(fromIndex, toIndex, origin);
     }
 
     @Override
-    public void batch(Consumer<ObservableList<E>> work) {
+    public void clear(ChangeOrigin origin) {
+        attached().clear(origin);
+    }
+
+    @Override
+    public void batch(ChangeOrigin origin, Consumer<ObservableList<E>> work) {
         Objects.requireNonNull(work, "work");
-        attached().batch(ignored -> work.accept(this));
+        attached().batch(origin, ignored -> work.accept(this));
     }
 
     @Override
@@ -152,12 +163,24 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
      * @return refreshed immutable snapshot
      */
     public List<E> refresh() {
+        return refresh(StandardChangeOrigin.MODEL);
+    }
+
+    /**
+     * Reloads rows and emits a reset-style change set when the visible snapshot
+     * changes.
+     *
+     * @param origin change origin for a delivered reset
+     * @return refreshed immutable snapshot
+     */
+    public List<E> refresh(ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
         List<E> oldSnapshot = isAttached() ? cache.snapshot() : List.of();
         boolean hadAttachedCache = isAttached();
         List<E> newSnapshot = loadSnapshot();
         replaceCache(newSnapshot);
         if (hadAttachedCache && !oldSnapshot.equals(newSnapshot)) {
-            fire(resetChanges(oldSnapshot, newSnapshot));
+            fire(resetChanges(oldSnapshot, newSnapshot, origin));
         }
         return cache.snapshot();
     }
@@ -182,7 +205,7 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
         cacheSubscription = cache.subscribe(this::fire);
     }
 
-    private ListChangeSet<E> resetChanges(List<E> oldSnapshot, List<E> newSnapshot) {
+    private ListChangeSet<E> resetChanges(List<E> oldSnapshot, List<E> newSnapshot, ChangeOrigin origin) {
         List<ListChange<E>> changes = new ArrayList<>(2);
         if (!oldSnapshot.isEmpty()) {
             changes.add(new ListChange.Cleared<>(oldSnapshot));
@@ -190,7 +213,7 @@ public final class LoadableList<E> implements ObservableList<E>, Detachable {
         if (!newSnapshot.isEmpty()) {
             changes.add(new ListChange.Inserted<>(0, newSnapshot));
         }
-        return new ListChangeSet<>(changes);
+        return new ListChangeSet<>(changes, origin);
     }
 
     private void fire(ListChangeSet<E> changeSet) {

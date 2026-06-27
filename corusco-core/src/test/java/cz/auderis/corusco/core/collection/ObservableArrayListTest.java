@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.collection;
 
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,28 @@ class ObservableArrayListTest {
                 new ListChange.Replaced<>(1, "b", "B")
         );
         assertThat(list.snapshot()).containsExactly("a", "B");
+    }
+
+    @Test
+    void attachesOriginsToSingleAndBatchedChanges() {
+        ObservableArrayList<String> list = ObservableArrayList.empty();
+        List<ListChangeSet<String>> events = new ArrayList<>();
+        list.subscribe(events::add);
+
+        list.add("a", StandardChangeOrigin.USER);
+        list.batch(StandardChangeOrigin.SYSTEM, batch -> {
+            batch.add("b");
+            batch.set(0, "A", StandardChangeOrigin.GENERATED);
+        });
+
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0).origin()).isEqualTo(StandardChangeOrigin.USER);
+        assertThat(events.get(0).changes()).containsExactly(new ListChange.Inserted<>(0, List.of("a")));
+        assertThat(events.get(1).origin()).isEqualTo(StandardChangeOrigin.SYSTEM);
+        assertThat(events.get(1).changes()).containsExactly(
+                new ListChange.Inserted<>(1, List.of("b")),
+                new ListChange.Replaced<>(0, "a", "A")
+        );
     }
 
     @Test
