@@ -17,7 +17,7 @@ if (gradle.startParameter.taskNames.any { taskName ->
 
 allprojects {
     group = 'cz.auderis.corusco'
-    version = '1.2.0-SNAPSHOT'
+    version = '1.2.0'
 }
 
 def publishableProjects = subprojects.findAll {
@@ -30,7 +30,7 @@ def binaryCompatibilityProjectNames = [
     'corusco-swing'
 ]
 def binaryCompatibilityProjects = publishableProjects.findAll { binaryCompatibilityProjectNames.contains(it.name) }
-def binaryCompatibilityBaselineVersion = 'v1.0.0'
+def binaryCompatibilityBaselineVersion = 'v1.1.0'
 def binaryCompatibilityBaselineDir = new File(rootDir, ".machine_env/api-baselines/${binaryCompatibilityBaselineVersion}")
 def publicationGroupPath = group.toString().replace('.', File.separator)
 def publicationVersion = version.toString()
@@ -338,7 +338,7 @@ def binaryCompatibilityTasks = binaryCompatibilityProjects.collect { comparedPro
 
 tasks.register('establishBinaryCompatibilityBaseline') {
     group = 'verification'
-    description = 'Creates the v1.0.0 binary compatibility baseline jars when they do not exist yet.'
+    description = 'Creates the binary compatibility baseline jars when they do not exist yet.'
     dependsOn binaryCompatibilityProjects.collect { it.tasks.named('jar') }
 
     doLast {
@@ -361,7 +361,7 @@ binaryCompatibilityTasks.each {
 
 tasks.register('verifyBinaryCompatibility') {
     group = 'verification'
-    description = 'Checks binary compatibility of published runtime modules, establishing the v1.0.0 baseline on first run.'
+    description = 'Checks binary compatibility of published runtime modules, establishing the baseline on first run.'
     dependsOn 'establishBinaryCompatibilityBaseline'
     dependsOn binaryCompatibilityTasks
 }

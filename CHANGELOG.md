@@ -3,7 +3,7 @@
 All notable changes to Corusco are recorded here. The project follows the
 compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
-## 1.1.0 - Unreleased
+## 1.2.0 - 2026-06-27
 
 ### Added
 
@@ -40,7 +40,9 @@ compatibility rules in [docs/release-policy.md](docs/release-policy.md).
   1.0 source compatibility. They keep the 1.0 same-package Swing companion
   behavior while new code should migrate to `@CoruscoForm`, `@CoruscoTable`, and
   `@SwingCompanionPackage`.
-- No intentional breaking changes from `1.0.0`.
+- Binary compatibility with the earlier `1.0.x`/`1.1.x` API baseline is not a
+  release blocker for this phase; consumers should validate source changes
+  against the 1.2 API surface before upgrading.
 
 ## 1.0.0 - 2026-06-17
 
