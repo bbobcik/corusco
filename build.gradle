@@ -17,7 +17,7 @@ if (gradle.startParameter.taskNames.any { taskName ->
 
 allprojects {
     group = 'cz.auderis.corusco'
-    version = '1.1.0'
+    version = '1.2.0-SNAPSHOT'
 }
 
 def publishableProjects = subprojects.findAll {

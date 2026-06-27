@@ -63,10 +63,13 @@
  * with {@code cz.auderis.corusco.core.lifecycle} so presenters can release
  * cached state without destroying the owning object.</p>
  *
- * <p>Null values are allowed only where the specific value contract and
- * application meaning allow them. For example, a selected row value commonly
- * uses {@code null} to mean "no selection", while a required form field may use
- * a richer field model so absence, parse failure, and validation failure remain
+ * <p>Although the package is {@link org.jspecify.annotations.NullMarked}, the
+ * scalar value payload is nullable by design: {@code value()},
+ * {@code setValue(...)}, {@code refresh()}, suppliers, mappers, and loaders
+ * use explicit nullable type-use annotations where they accept or produce a
+ * possibly absent value. For example, a selected row value commonly uses
+ * {@code null} to mean "no selection", while a required form field may use a
+ * richer field model so absence, parse failure, and validation failure remain
  * distinguishable. Document null meaning at the presenter boundary instead of
  * relying on readers to infer it from implementation details.</p>
  *

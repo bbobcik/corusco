@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.value;
 
 import cz.auderis.corusco.core.lifecycle.Detachable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Readable value that can release and later rebuild its cached value.
@@ -13,12 +14,17 @@ import cz.auderis.corusco.core.lifecycle.Detachable;
  * is the explicit operation for reloading and notifying subscribers when the
  * effective value changes.</p>
  *
+ * <p>Implementations that emit events from {@code refresh()} should document
+ * the origin they attach. Lazy loading through {@link #value()} should not be
+ * assumed to emit an event unless the implementation explicitly says so.</p>
+ *
  * <p>Implementors should make attachment state observable through
  * {@link #isAttached()} and should document whether {@link #detach()} and
  * {@link #invalidate()} are equivalent. Subscribers remain owned by the value
  * implementation until their subscriptions are closed.</p>
  *
- * @param <T> value type
+ * @param <T> value type; attached and refreshed values may still be
+ *         {@code null}
  */
 public interface DetachableValue<T> extends ReadableValue<T>, Detachable {
 
@@ -45,5 +51,5 @@ public interface DetachableValue<T> extends ReadableValue<T>, Detachable {
      *
      * @return refreshed value, possibly {@code null}
      */
-    T refresh();
+    @Nullable T refresh();
 }

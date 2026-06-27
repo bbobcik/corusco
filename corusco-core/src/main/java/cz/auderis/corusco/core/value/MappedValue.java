@@ -3,6 +3,8 @@ package cz.auderis.corusco.core.value;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -15,43 +17,52 @@ import java.util.function.Function;
  * immediately, updates synchronously when the source changes, and emits an
  * event only when the mapped value changes.</p>
  *
+ * <p>Events emitted by this value propagate the origin of the source event that
+ * caused recomputation. Initial computation in the factory path does not emit
+ * an event. Propagating the source origin lets listeners distinguish a mapped
+ * value changed by a direct user edit, model load, binding echo, or custom
+ * origin without losing the causal classification at the projection boundary.</p>
+ *
  * <p>The instance owns the source subscription and its own listeners. Closing
  * the mapped value removes the source subscription, clears listeners, and makes
- * later subscriptions no-ops. Null source values are passed to the mapper, so
- * the mapper owns null-handling policy.</p>
+ * later subscriptions no-ops. Null source values are passed to the mapper, and
+ * mapper results may also be {@code null}; the mapper owns the null-handling
+ * policy.</p>
  *
  * <p>The class is Swing-free, not synchronized, and inherits the threading
  * assumptions of the source value.</p>
  *
- * @param <A> source value type
- * @param <B> mapped value type
+ * @param <A> source value type; source values passed to the mapper may be
+ *         {@code null}
+ * @param <B> mapped value type; mapper results may be {@code null}
  */
 public final class MappedValue<A, B> implements ReadableValue<B>, Disposable {
 
     private final ReadableValue<A> source;
-    private final Function<? super A, ? extends B> mapper;
+    private final Function<? super @Nullable A, ? extends @Nullable B> mapper;
     private final Subscription sourceSubscription;
     private final ListenerSet<ValueChangeListener<B>, ValueChangeEvent<B>> listeners = new ListenerSet<>();
-    private B value;
+    private @Nullable B value;
     private boolean closed;
 
     /**
      * Creates a mapped value.
      *
      * @param source source value
-     * @param mapper mapping function, invoked synchronously
+     * @param mapper mapping function, invoked synchronously; receives nullable
+     *         source values and may return {@code null}
      * @param <A> source value type
      * @param <B> mapped value type
      * @return mapped value subscribed to the source
      */
     public static <A, B> MappedValue<A, B> of(
             ReadableValue<A> source,
-            Function<? super A, ? extends B> mapper
+            Function<? super @Nullable A, ? extends @Nullable B> mapper
     ) {
         return new MappedValue<>(source, mapper);
     }
 
-    private MappedValue(ReadableValue<A> source, Function<? super A, ? extends B> mapper) {
+    private MappedValue(ReadableValue<A> source, Function<? super @Nullable A, ? extends @Nullable B> mapper) {
         this.source = Objects.requireNonNull(source, "source");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.value = mapper.apply(source.value());
@@ -59,7 +70,7 @@ public final class MappedValue<A, B> implements ReadableValue<B>, Disposable {
     }
 
     @Override
-    public B value() {
+    public @Nullable B value() {
         return value;
     }
 
@@ -92,8 +103,8 @@ public final class MappedValue<A, B> implements ReadableValue<B>, Disposable {
         if (closed) {
             return;
         }
-        B oldValue = value;
-        B newValue = mapper.apply(source.value());
+        @Nullable B oldValue = value;
+        @Nullable B newValue = mapper.apply(source.value());
         if (Objects.equals(oldValue, newValue)) {
             return;
         }

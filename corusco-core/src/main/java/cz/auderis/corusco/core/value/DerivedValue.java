@@ -4,6 +4,8 @@ import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
 import cz.auderis.corusco.core.lifecycle.SubscriptionScope;
+import org.jspecify.annotations.Nullable;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -17,28 +19,36 @@ import java.util.function.Supplier;
  * value immediately, recomputes synchronously when any dependency changes, and
  * emits one event when the computed value changes.</p>
  *
+ * <p>Events emitted by this value propagate the origin of the dependency event
+ * that triggered recomputation. Initial computation in the factory path does
+ * not emit an event. When several dependencies change separately, each emitted
+ * derived event carries the origin of the dependency event that caused that
+ * specific recomputation.</p>
+ *
  * <p>The instance owns its dependency subscriptions and its own listener
- * registrations. Closing it removes dependency subscriptions, clears listeners, and makes
- * later subscriptions no-ops. Callers should close derived values from the same
- * lifecycle that owns the presenter or binding using them.</p>
+ * registrations. Closing it removes dependency subscriptions, clears listeners,
+ * and makes later subscriptions no-ops. Callers should close derived values
+ * from the same lifecycle that owns the presenter or binding using them.</p>
  *
  * <p>The class is not synchronized and inherits the threading assumptions of
  * its dependencies. The supplier may return {@code null}; equal recomputed
  * values do not emit events.</p>
  *
- * @param <T> derived value type
+ * @param <T> derived value type; supplier results may be {@code null}
  */
 public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
 
-    private final Supplier<? extends T> supplier;
-    private final SubscriptionScope dependencyScope = new SubscriptionScope();
-    private final ListenerSet<ValueChangeListener<T>, ValueChangeEvent<T>> listeners = new ListenerSet<>();
-    private T value;
+    private final Supplier<? extends @Nullable T> supplier;
+    private final SubscriptionScope dependencyScope;
+    private final ListenerSet<ValueChangeListener<T>, ValueChangeEvent<T>> listeners;
+    private @Nullable T value;
     private boolean closed;
 
-    private DerivedValue(Supplier<? extends T> supplier, Iterable<? extends ReadableValue<?>> dependencies) {
-        this.supplier = Objects.requireNonNull(supplier, "supplier");
+    private DerivedValue(Supplier<? extends @Nullable T> supplier, Iterable<? extends ReadableValue<?>> dependencies) {
         Objects.requireNonNull(dependencies, "dependencies");
+        this.supplier = Objects.requireNonNull(supplier, "supplier");
+        this.dependencyScope = new SubscriptionScope();
+        this.listeners = new ListenerSet<>();
         this.value = supplier.get();
         for (ReadableValue<?> dependency : dependencies) {
             Objects.requireNonNull(dependency, "dependency");
@@ -55,7 +65,7 @@ public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
      * @return a derived value subscribed to the dependencies
      */
     public static <T> DerivedValue<T> of(
-            Supplier<? extends T> supplier,
+            Supplier<? extends @Nullable T> supplier,
             Iterable<? extends ReadableValue<?>> dependencies
     ) {
         return new DerivedValue<>(supplier, dependencies);
@@ -69,15 +79,12 @@ public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
      * @param <T> derived value type
      * @return a derived value subscribed to the dependencies
      */
-    public static <T> DerivedValue<T> of(
-            Supplier<? extends T> supplier,
-            ReadableValue<?>... dependencies
-    ) {
+    public static <T> DerivedValue<T> of(Supplier<? extends @Nullable T> supplier, ReadableValue<?>... dependencies) {
         return new DerivedValue<>(supplier, List.of(dependencies));
     }
 
     @Override
-    public T value() {
+    public @Nullable T value() {
         return value;
     }
 
@@ -110,8 +117,8 @@ public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
         if (closed) {
             return;
         }
-        T oldValue = value;
-        T newValue = supplier.get();
+        @Nullable T oldValue = value;
+        @Nullable T newValue = supplier.get();
         if (Objects.equals(oldValue, newValue)) {
             return;
         }
@@ -119,4 +126,5 @@ public final class DerivedValue<T> implements ReadableValue<T>, Disposable {
         ValueChangeEvent<T> event = new ValueChangeEvent<>(this, oldValue, newValue, origin);
         listeners.fireEvent(event, ValueChangeListener::valueChanged);
     }
+
 }

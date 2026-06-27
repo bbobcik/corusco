@@ -1,6 +1,7 @@
 package cz.auderis.corusco.core.value;
 
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A synchronously observable value.
@@ -20,7 +21,9 @@ import cz.auderis.corusco.core.lifecycle.Subscription;
  * behavior. They should avoid emitting events for unchanged effective values
  * unless a concrete implementation explicitly documents that pattern.</p>
  *
- * @param <T> value type
+ * @param <T> value type; the current value may still be {@code null} because
+ *         nullability is represented on {@link #value()} rather than on this
+ *         type parameter
  */
 public interface ReadableValue<T> {
 
@@ -29,7 +32,7 @@ public interface ReadableValue<T> {
      *
      * @return current value, possibly {@code null}
      */
-    T value();
+    @Nullable T value();
 
     /**
      * Subscribes a listener to effective value changes.

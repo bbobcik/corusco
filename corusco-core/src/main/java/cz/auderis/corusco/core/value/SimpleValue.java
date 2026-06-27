@@ -2,6 +2,8 @@ package cz.auderis.corusco.core.value;
 
 import cz.auderis.corusco.core.lifecycle.ListenerSet;
 import cz.auderis.corusco.core.lifecycle.Subscription;
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 
 /**
@@ -18,23 +20,29 @@ import java.util.Objects;
  * dispatch uses a snapshot so removing a listener during dispatch does not skip
  * or duplicate unrelated listeners.</p>
  *
+ * <p>When a mutation emits an event, the event origin is exactly the origin
+ * supplied to {@link #setValue(Object, ChangeOrigin)}. The convenience
+ * {@link #setValue(Object)} method inherited from {@link WritableValue} uses
+ * {@link StandardChangeOrigin#MODEL}. This class does not reinterpret or
+ * replace caller-provided origins.</p>
+ *
  * <p>The value does not know about Swing or background tasks. If it is bound to
  * a Swing component, the binding or presenter is responsible for EDT
  * confinement.</p>
  *
- * @param <T> value type
+ * @param <T> value type; the stored value may be {@code null}
  */
 public final class SimpleValue<T> implements WritableValue<T> {
 
     private final ListenerSet<ValueChangeListener<T>, ValueChangeEvent<T>> listeners = new ListenerSet<>();
-    private T value;
+    private @Nullable T value;
 
     /**
      * Creates a value with an initial value.
      *
      * @param initialValue initial value, possibly {@code null}
      */
-    public SimpleValue(T initialValue) {
+    public SimpleValue(@Nullable T initialValue) {
         this.value = initialValue;
     }
 
@@ -55,19 +63,19 @@ public final class SimpleValue<T> implements WritableValue<T> {
      * @param <T> value type
      * @return a value initialized to {@code initialValue}
      */
-    public static <T> SimpleValue<T> of(T initialValue) {
+    public static <T> SimpleValue<T> of(@Nullable T initialValue) {
         return new SimpleValue<>(initialValue);
     }
 
     @Override
-    public T value() {
+    public @Nullable T value() {
         return value;
     }
 
     @Override
-    public void setValue(T newValue, ChangeOrigin origin) {
+    public void setValue(@Nullable T newValue, ChangeOrigin origin) {
         Objects.requireNonNull(origin, "origin");
-        T oldValue = value;
+        @Nullable T oldValue = value;
         if (Objects.equals(oldValue, newValue)) {
             return;
         }
@@ -87,7 +95,7 @@ public final class SimpleValue<T> implements WritableValue<T> {
      * @param newValue new value
      * @param origin change origin
      */
-    private void fireChanged(T oldValue, T newValue, ChangeOrigin origin) {
+    private void fireChanged(@Nullable T oldValue, @Nullable T newValue, ChangeOrigin origin) {
         ValueChangeEvent<T> event = new ValueChangeEvent<>(this, oldValue, newValue, origin);
         listeners.fireEvent(event, ValueChangeListener::valueChanged);
     }

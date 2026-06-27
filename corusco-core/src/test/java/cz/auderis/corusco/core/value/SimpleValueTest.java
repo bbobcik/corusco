@@ -91,4 +91,13 @@ class SimpleValueTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("id must not be blank");
     }
+
+    @Test
+    void standardOriginIdsAreRejectedForCustomOrigins() {
+        for (StandardChangeOrigin standardOrigin : StandardChangeOrigin.values()) {
+            assertThatThrownBy(() -> CustomChangeOrigin.of(standardOrigin.id()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("cannot create custom origin with standard id");
+        }
+    }
 }
