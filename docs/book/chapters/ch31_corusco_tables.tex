@@ -4,8 +4,8 @@
 
 \begin{chaptermap}
 Core question & How does Corusco make serious \api{JTable} work less fragile without hiding Swing's real table mechanics?\\
-Primary APIs & \api{TableDescriptor}, \api{TableKey}, \api{ColumnKey}, \api{Column}, \api{ColumnDescriptor}, \api{ObservableTableModel}, \api{TableStateController}, \api{TableSelectionBinding}, \api{TableCellValidationBinding}, \api{TableCellTooltipBinding}, \api{TableHeaderTooltipBinding}, and \api{TableHeaderColumnVisibilityMenu}.\\
-Swing topics & Model and view coordinates, selection, sorting, filtering, validation, tooltips, persisted layout, hidden columns, editable cells, renderers, and large data.\\
+Primary APIs & \api{TableDescriptor}, \api{TableKey}, \api{ColumnKey}, \api{Column}, \api{ColumnDescriptor}, \api{CoruscoDataSource}, \api{CoruscoRowSelection}, \api{CoruscoEditSession}, \api{ObservableTableModel}, \api{TableStateController}, \api{TableSelectionBinding}, \api{TableCellValidationBinding}, \api{TableCellTooltipBinding}, \api{TableHeaderTooltipBinding}, and \api{TableHeaderColumnVisibilityMenu}.\\
+Swing topics & Model and view coordinates, key-based selection, sorting, filtering, validation, virtual data windows, tooltips, persisted layout, hidden columns, editable cells, renderers, and large data.\\
 Companion examples & \largeDataExample, \api{ObservableTableModelExample}, \api{TableSelectionBindingExample}, \api{TableStateExample}, \api{GeneratedTableColumnsExample}, \api{TableCellValidationExample}, and \api{TableHeaderTooltipExample}.\\
 \end{chaptermap}
 
@@ -332,6 +332,63 @@ lifecycle because it owns a subscription to the row source. When the view
 closes, close the model or the binding scope that owns it. Otherwise a row
 source can keep notifying a table model after the table is gone. That leak may
 not appear in a short demo, but it appears in long-running desktop sessions.
+
+\section{Windowed enterprise data sources}
+
+The descriptor contract says what a table means. It does not require all rows
+to be loaded in memory. Enterprise screens often show a window over a remote or
+large data set: a search result page, a server-sorted query, a permission-bound
+view, or a refreshable list whose total count may be unknown. The
+\api{cz.auderis.corusco.core.data} package names that layer without choosing a
+repository technology.
+
+\api{CoruscoDataRequest} combines a \api{CoruscoDataRange}, a
+\api{CoruscoDataQuery}, and a refresh generation. A \api{CoruscoDataLoader}
+loads one \api{CoruscoDataPage} synchronously while observing a
+\api{CancellationToken}. \api{DefaultCoruscoDataSource} runs that loader
+through a \api{TaskService}, keeps the previous rows visible while a refresh is
+running, suppresses stale completions by generation, and records failures in a
+\api{CoruscoDataStatus}. The package still has no \api{JTable}, JDBC, REST,
+Kafka, or backpressure contract.
+
+\begin{lstlisting}[caption={Descriptor-backed table data without committing to a backend.}]
+CoruscoRowIdentity<CustomerRow, CustomerId> identity =
+        CoruscoRowIdentity.of(CustomerRow.class,
+                CustomerId.class, CustomerRow::id);
+
+CoruscoTableDataDescriptor<CustomerRow, CustomerId> dataTable =
+        new CoruscoTableDataDescriptor<>(CUSTOMER_TABLE, identity);
+
+CoruscoDataSource<CustomerRow, CustomerId> source =
+        new DefaultCoruscoDataSource<>(
+                identity,
+                customerLoader,
+                taskService);
+\end{lstlisting}
+
+Selection at this layer is by key, not by view row or current window index.
+\api{CoruscoRowSelection} can represent no selection, explicit selected keys,
+or "all rows matching this query except these excluded keys." That last state
+is important for large result sets: selecting all matching rows should not
+materialize every key merely to keep a checkbox honest. Swing selection models
+can still operate in view coordinates at the component boundary, but presenter
+state should keep the durable row key.
+
+Edit staging follows the same rule. The
+\api{cz.auderis.corusco.core.data.edit} package contains
+\api{CoruscoEditSession}, \api{CoruscoEditSet}, \api{CoruscoEditChange},
+\api{CoruscoVersionToken}, \api{CoruscoSaveResult}, and
+\api{CoruscoConflict}. A session stages create, update, delete, discard, and
+clear operations in stable key order. Save results can report conflicts and
+\api{ProblemSet} validation details without owning a database transaction,
+HTTP request, or message stream.
+
+The table-state bridge is deliberately small.
+\api{CoruscoTableDataQueries} maps persisted \api{TableState} sort metadata
+into \api{CoruscoDataQuery} sort terms by column persistence id. This lets a
+server-side data source honor the same stable ids that Swing table state uses
+for visible sorting, while leaving filtering language, transport, and backend
+translation to adapter modules.
 
 \section{Selection and coordinate systems}
 

@@ -13,6 +13,8 @@ runtime policy decisions that are stable enough to guard in the build.
 - `cz.auderis.corusco.core.collection`
 - `cz.auderis.corusco.core.command`
 - `cz.auderis.corusco.core.convert`
+- `cz.auderis.corusco.core.data`
+- `cz.auderis.corusco.core.data.edit`
 - `cz.auderis.corusco.core.dialog`
 - `cz.auderis.corusco.core.form`
 - `cz.auderis.corusco.core.help`
