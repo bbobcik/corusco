@@ -3,6 +3,24 @@
 All notable changes to Corusco are recorded here. The project follows the
 compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
+## Unreleased - 1.3.0 development
+
+### Added
+
+- Typed large-data request, page, edit, conflict, and row-identity contracts.
+- Fixed-schema dataset and time-series annotations, descriptors, aggregation
+  metadata, missing/quality policies, and generated columnar frames.
+- `DataSetFrameTableModel` for displaying generated frames without making row
+  materialization the table-model contract.
+- GitHub Actions verification for pull requests, feature branches, and release
+  readiness on `main`.
+
+### Compatibility
+
+- The 1.3 development line keeps the v1.2.0 binary compatibility baseline.
+- Transport-specific integrations, live streaming, backpressure, and generic
+  runtime data frames remain deferred.
+
 ## 1.2.0 - 2026-06-27
 
 ### Added

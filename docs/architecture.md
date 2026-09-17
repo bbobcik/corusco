@@ -187,15 +187,20 @@ tests, example regression tests, and local verification commands.
 
 ## Current Limits
 
-The project is preparing the `1.1.0` stable release in the `1.x` line. The
-current branch adds observable readable collections, richer generated form
-metadata, abstract-class form sources, and multi-form dialog state handling.
-The following areas remain candidates for future releases:
+The `1.2.0` release is the current stable baseline and `1.3.0-SNAPSHOT` is the
+active development line. The 1.3 work currently focuses on typed large-data,
+fixed-schema dataset, and time-series contracts, generated columnar frames, and
+their Swing table bridge.
+
+The following areas remain intentionally deferred:
 
 - generated-source compatibility checks beyond the runtime binary gate;
 - later editor families such as numeric range controls, checkbox groups, picker
   components, and custom rich-value editors;
-- any optional legacy reflection adapter.
+- transport-specific adapters such as JDBC, REST, Kafka, or time-series
+  databases;
+- live streaming, backpressure, retention policies, and an optional legacy
+  reflection adapter.
 
 Local Maven publication, source/Javadoc artifacts, JPMS module names, and the
 compatibility policy are now documented in [Release Policy](release-policy.md).

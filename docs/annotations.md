@@ -26,6 +26,33 @@ Annotation types are grouped by authoring concern:
 The root `cz.auderis.corusco.annotations` package is kept for module-level
 support only. Import the package that matches the annotated source element.
 
+## Fixed-Schema Dataset Annotations
+
+Use `@CoruscoDataSet` for a non-generic record whose columns have a stable
+semantic schema. This is separate from `@CoruscoTable`: dataset annotations
+describe time axes, dimensions, measures, sequence columns, units, missingness,
+quality, and aggregation capabilities, while table annotations describe an
+ordinary row-oriented Swing table.
+
+```java
+@CoruscoDataSet(id = "market/quotes")
+record Quote(
+        @TimeAxis(unit = "millis", monotonic = true) long timestamp,
+        @Dimension String symbol,
+        @Measure(unit = "USD", missing = MissingPolicy.NAN) double bid
+) {
+}
+```
+
+The processor generates typed dataset keys, column descriptors, a dataset
+descriptor, and a columnar frame companion. `QualityColumn` connects quality
+metadata to named measures without conflating quality with missing values.
+Generated dataset IDs and column IDs are stable compatibility tokens.
+
+The current contract is fixed-schema and Swing-free in core. It does not define
+JDBC, REST, Kafka, streaming, backpressure, or a general-purpose runtime
+data-frame API.
+
 ## Stable ID Rules
 
 IDs become typed-key IDs, resource IDs, problem-code IDs, and persisted table

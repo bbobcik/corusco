@@ -34,6 +34,21 @@ row source
 | `TableStateController<R>` | Restores, observes, saves, and flushes JTable column/sort state. |
 | `TableHeaderColumnVisibilityMenu<R>` | Header popup menu that toggles descriptor columns through the state controller. |
 
+## Fixed-Schema Data Frames
+
+`DataSetFrameTableModel<R>` is the optional Swing bridge for generated fixed-
+schema dataset frames. It takes a `DataSetDescriptor<R>`, a row-count supplier,
+and a typed descriptor-column value provider. The table reads values on demand;
+the model does not own the frame or require a list of materialized rows.
+
+Use the generated dataset descriptor and frame together when a screen needs
+semantic column roles, units, missing/quality metadata, or time-axis-aware
+rendering. Continue using `ObservableTableModel` for ordinary row-oriented
+tables and `@CoruscoTable` records.
+
+The bridge is read-only in the current 1.3 line. Editing, persistence-provider
+adapters, live feeds, and backpressure are separate future contracts.
+
 Column access is explicit Java code. Editable columns return a replacement row,
 which fits immutable records and generated updater helpers.
 
