@@ -178,7 +178,10 @@ tasks.register('compileExamplesAgainstPublishedArtifacts', Exec) {
     description = 'Compiles example sources against artifacts already published to Maven local.'
     dependsOn publishableProjects.collect { it.tasks.named('publishToMavenLocal') }
     workingDir projectRootPath
-    commandLine new File(projectRootPath, 'gradlew.bat').absolutePath,
+    def wrapperName = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('win')
+            ? 'gradlew.bat'
+            : 'gradlew'
+    commandLine new File(projectRootPath, wrapperName).absolutePath,
             ':corusco-examples:compilePublishedArtifactsJava',
             '--quiet',
             '--stacktrace'
