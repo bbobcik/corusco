@@ -134,6 +134,7 @@ is the next product slice.
 | [COR-120](COR-120-align-1.3-roadmap-and-governance.md) | `COR-120 Align 1.3 roadmap and governance` | Current-state documentation and plan alignment |
 | [COR-121](COR-121-add-github-actions-verification.md) | `COR-121 Add GitHub Actions verification` | Pull-request, main, and release-gate CI |
 | [COR-122](COR-122-harden-data-plane-and-showcase.md) | `COR-122 Harden data plane and showcase` | Next dataset/time-series correctness and example slice |
+| [COR-123](COR-123-make-release-verification-portable.md) | `COR-123 Make release verification portable` | Cross-platform published-artifact verification |
 
 ## Stage Completion Rule
 
