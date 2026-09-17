@@ -116,6 +116,25 @@ commit has been created.
 | [COR-085](COR-085-add-preview-release-readiness-gate.md) | `COR-085 Add preview release readiness gate` | Stage 21, generated Javadoc and aggregate preview release gate slice |
 | [COR-086](COR-086-finalize-preview-release.md) | `COR-086 Finalize preview release` | Stage 21, version finalization and `v0.1.0-preview` tag slice |
 
+## Post-roadmap maintenance and 1.3
+
+The following plans record the work that followed the original Stage 21
+roadmap. COR-114 through COR-119 are historical implementation/release slices;
+COR-120 and COR-121 are the current governance and CI alignment slices; COR-122
+is the next product slice.
+
+| Plan | Commit message | Coverage |
+| --- | --- | --- |
+| [COR-114](COR-114-add-collection-to-scalar-bridges.md) | `COR-114 Add bridge between observable collections and scalars` | Collection-derived and master-detail value bridges |
+| [COR-115](COR-115-add-large-data-core-contract.md) | `COR-115 Add large data core contract and support` | Neutral paged data and edit contracts |
+| [COR-116](COR-116-add-fixed-schema-time-series-support.md) | `COR-116 Add support for tidy data and timeseries` | Dataset annotations, descriptors, frames, and table bridge |
+| [COR-117](COR-117-update-swing-book.md) | `COR-117 Update Swing book contents to reflect Corusco changes` | Documentation synchronization |
+| [COR-118](COR-118-release-1.2.0.md) | `COR-118 Release 1.2.0` | Stable release baseline |
+| [COR-119](COR-119-initialize-development-1.3.0.md) | `COR-119 Initialize development of version 1.3.0` | 1.3.0-SNAPSHOT initialization |
+| [COR-120](COR-120-align-1.3-roadmap-and-governance.md) | `COR-120 Align 1.3 roadmap and governance` | Current-state documentation and plan alignment |
+| [COR-121](COR-121-add-github-actions-verification.md) | `COR-121 Add GitHub Actions verification` | Pull-request, main, and release-gate CI |
+| [COR-122](COR-122-harden-data-plane-and-showcase.md) | `COR-122 Harden data plane and showcase` | Next dataset/time-series correctness and example slice |
+
 ## Stage Completion Rule
 
 A stage is complete only when:
