@@ -5,8 +5,8 @@ applications. It is built around typed presentation models, generated metadata,
 lifecycle-aware Swing behaviors, table helpers, and UI tests that can exercise
 generated wiring without falling back to reflection or string property paths.
 
-The current repository contains the 1.2 stable runtime and the beginning of the
-1.3 development line. It includes observable values and readable collections,
+The current repository contains the stable 1.3.0 runtime. It includes observable
+values and readable collections,
 field models, validation and problem reporting, Swing bindings, generated
 form/table metadata, table-state persistence, dialogs, async helpers, Glazed
 Lists interop, the Swing MVP test harness, and typed large-data/time-series

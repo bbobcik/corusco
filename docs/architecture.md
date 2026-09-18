@@ -187,10 +187,9 @@ tests, example regression tests, and local verification commands.
 
 ## Current Limits
 
-The `1.2.0` release is the current stable baseline and `1.3.0-SNAPSHOT` is the
-active development line. The 1.3 work currently focuses on typed large-data,
-fixed-schema dataset, and time-series contracts, generated columnar frames, and
-their Swing table bridge.
+The `1.3.0` release is the current stable baseline. It focuses on typed
+large-data, fixed-schema dataset, and time-series contracts, generated columnar
+frames, and their Swing table bridge.
 
 The following areas remain intentionally deferred:
 

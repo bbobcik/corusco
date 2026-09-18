@@ -53,16 +53,16 @@ The framework shall not replace Swing. It shall make Swing application construct
 
 Stages 0 through 21 describe the architecture that was implemented through the
 1.2.0 stable release. The current repository also contains the post-roadmap
-COR-114 through COR-119 work: collection-to-scalar bridges, large-data
+COR-114 through COR-124 work: collection-to-scalar bridges, large-data
 contracts, fixed-schema dataset and time-series metadata, generated columnar
-frames, the 1.2.0 release, and initialization of the 1.3.0 development line.
+frames, and the 1.3.0 release.
 
 The original stage sequence below is retained as historical design context. It
 is no longer the active implementation queue.
 
-### 2.4 Version 1.3 Direction
+### 2.4 Version 1.3 Direction and Release Boundary
 
-Version 1.3 should mature the typed data plane before adding transport-specific
+Version 1.3 matured the typed data plane before adding transport-specific
 integrations. Its center is a fixed-schema, allocation-conscious path from
 annotated source records to generated descriptors and columnar frames, with an
 optional Swing table bridge. Core remains Swing-free and does not define JDBC,
@@ -1755,23 +1755,20 @@ A feature is done when:
 
 ---
 
-## 14. Immediate Task Sequence
+## 14. Next Task Sequence
 
-The original roadmap queue is complete through the 1.2.0 baseline. The active
-sequence for 1.3 is:
+The original roadmap queue is complete through the 1.2.0 baseline, and the
+post-roadmap 1.3 sequence is complete through the `v1.3.0` release. The next
+sequence is deliberately use-case-led:
 
-1. Reconcile README, architecture, roadmap, API review, guides, changelog, and
-   implementation-stage plans with the current 1.2/1.3 state.
-2. Harden generated dataset descriptors and columnar frames with source-shape,
-   missingness, quality, time-axis, aggregation, and table-bridge tests.
-3. Make the time-series showcase the canonical end-to-end data-plane example.
-4. Verify every pull request and the `main` branch through GitHub Actions using
-   the AudEnv-recommended Gradle commands and JDK 25.
-5. Run the full release gate, merge the 1.3 branch into `main`, and tag 1.3.0
-   only after the documentation, compatibility, generated-source, runtime, and
-   example evidence agrees.
-6. Select a concrete 1.4 adapter use case before adding SQL, REST, streaming, or
-   other transport-specific APIs.
+1. Select a concrete 1.4 adapter use case and document its ownership,
+   lifecycle, pagination, failure, and cancellation boundaries.
+2. Add an ADR and compatibility review for the selected adapter without
+   weakening the transport-neutral core contracts.
+3. Implement one focused adapter slice with an executable example and failure
+   tests before considering additional SQL, REST, or streaming integrations.
+4. Keep pull-request, `main`, and release-readiness verification green through
+   GitHub Actions and the AudEnv-recommended Gradle commands.
 
 ---
 

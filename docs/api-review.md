@@ -5,8 +5,8 @@ and method-level compatibility is governed by
 [Release Policy](release-policy.md); this document records the package names and
 runtime policy decisions that are stable enough to guard in the build.
 
-The v1.2.0 release is the current stable baseline. The v1.3 development line
-adds the typed data surfaces under `core.data`, `core.dataset`, and
+The v1.3.0 release is the current stable baseline. It adds the typed data
+surfaces under `core.data`, `core.dataset`, and
 `annotations.dataset`, plus generated dataset companions and the Swing
 `DataSetFrameTableModel`. These are reviewed as additive compatibility-sensitive
 APIs against v1.2.0.

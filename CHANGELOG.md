@@ -3,7 +3,7 @@
 All notable changes to Corusco are recorded here. The project follows the
 compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
-## Unreleased - 1.3.0 development
+## 1.3.0 - 2026-09-18
 
 ### Added
 
@@ -17,7 +17,7 @@ compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
 ### Compatibility
 
-- The 1.3 development line keeps the v1.2.0 binary compatibility baseline.
+- The 1.3.0 release keeps the v1.2.0 binary compatibility baseline.
 - Transport-specific integrations, live streaming, backpressure, and generic
   runtime data frames remain deferred.
 

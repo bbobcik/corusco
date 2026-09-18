@@ -135,6 +135,7 @@ is the next product slice.
 | [COR-121](COR-121-add-github-actions-verification.md) | `COR-121 Add GitHub Actions verification` | Pull-request, main, and release-gate CI |
 | [COR-122](COR-122-harden-data-plane-and-showcase.md) | `COR-122 Harden data plane and showcase` | Next dataset/time-series correctness and example slice |
 | [COR-123](COR-123-make-release-verification-portable.md) | `COR-123 Make release verification portable` | Cross-platform published-artifact verification |
+| [COR-124](COR-124-release-1.3.0.md) | `COR-124 Release 1.3.0` | Stable 1.3.0 version finalization and tag |
 
 ## Stage Completion Rule
 
