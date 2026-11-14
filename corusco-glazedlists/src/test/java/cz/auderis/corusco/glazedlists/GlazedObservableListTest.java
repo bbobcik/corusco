@@ -203,6 +203,8 @@ class GlazedObservableListTest {
 
     @SafeVarargs
     private static <E> BasicEventList<E> eventListOf(E... elements) {
-        return new BasicEventList<>(new ArrayList<>(List.of(elements)));
+        BasicEventList<E> result = new BasicEventList<>();
+        result.addAll(List.of(elements));
+        return result;
     }
 }

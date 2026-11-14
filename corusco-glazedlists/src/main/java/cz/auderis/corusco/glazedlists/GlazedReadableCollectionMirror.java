@@ -9,7 +9,6 @@ import cz.auderis.corusco.core.collection.ListChangeSet;
 import cz.auderis.corusco.core.collection.ObservableReadableCollection;
 import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.lifecycle.Subscription;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
@@ -48,7 +47,8 @@ public final class GlazedReadableCollectionMirror<E extends @NonNull Object> imp
      */
     public GlazedReadableCollectionMirror(ObservableReadableCollection<E> source) {
         Objects.requireNonNull(source, "source");
-        this.mutableEventList = new BasicEventList<>(new ArrayList<>(source.snapshot()));
+        this.mutableEventList = new BasicEventList<>();
+        this.mutableEventList.addAll(source.snapshot());
         this.eventList = GlazedLists.readOnlyList(mutableEventList);
         this.subscription = source.subscribe(this::sourceChanged);
     }
