@@ -114,6 +114,26 @@ class TableStateStoreTest {
     }
 
     @Test
+    void failedReplacementPreservesTheSavedState() {
+        Preferences root = preferencesRoot();
+        TableState original = customerState();
+        TableStateStore store = new PreferencesTableStateStore(root);
+        store.save(original);
+        store.flush();
+        String tooLong = "x".repeat(Preferences.MAX_VALUE_LENGTH + 1);
+        TableState invalid = new TableState(
+                original.tableId(), List.of(new ColumnState(tooLong, 180, 0, true)), List.of());
+
+        assertThatThrownBy(() -> store.save(invalid)).isInstanceOf(TableStateStoreException.class);
+        assertThat(new PreferencesTableStateStore(root).load(original.tableId())).contains(original);
+
+        TableState next = original.withSchemaVersion(2);
+        store.save(next);
+        store.flush();
+        assertThat(new PreferencesTableStateStore(root).load(original.tableId())).contains(next);
+    }
+
+    @Test
     void preferencesStoreRoundTripsLongTableIds() {
         Preferences root = preferencesRoot();
         String longId = "cz.auderis.corusco.examples.customers.CustomerOverviewTable/detail/červené-řádky";

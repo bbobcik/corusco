@@ -26,7 +26,9 @@ compatibility rules in [docs/release-policy.md](docs/release-policy.md).
   are unchanged) and wraps Preferences argument/state failures in
   `TableStateStoreException`. `TableStateController` falls back to descriptor
   defaults instead of aborting installation when stored state cannot be
-  loaded.
+  loaded. A replacement is flushed before it becomes active, so a failed write
+  leaves the previous saved state available. Existing table state remains
+  readable.
 - Annotation processor: primitive `@TextField` components (`int`, and now
   `long`) reject empty text instead of producing a committable form whose
   `toResult()` threw `NullPointerException`; `long`/`Long` text fields are
@@ -49,14 +51,16 @@ compatibility rules in [docs/release-policy.md](docs/release-policy.md).
   now use `CLASS` retention so Gradle can reprocess them incrementally.
 - The binary-compatibility gate compares with the published 1.3.0 artifacts,
   resolved from Maven local or Maven Central, and fails if they cannot be
-  resolved. `establishBinaryCompatibilityBaseline` and the
-  `.machine_env/api-baselines` directory are no longer used.
+  resolved. CI builds the baseline artifacts from the pinned 1.3.0 release
+  checkout before running the gate.
 - Build: Gradle 9.9.1; JUnit 6.1.3, FlatLaf 3.8, H2 2.5.252, MigLayout 11.5.2,
   Glazed Lists 1.12.0, JSpecify 1.0.1; newer release, dependency-check,
   CycloneDX and aggregate-javadoc plugins.
 - Build: Error Prone and NullAway (JSpecify mode, warnings for now) analyze
   the main sources of published modules; JaCoCo reports are written after
   tests; randomized model tests cover `FilteredList` and `SortedList`.
+- Build: a standalone Gradle consumer test verifies that incremental builds
+  regenerate and remove Swing companions when their inputs change.
 - CI: a `gui-tests` job runs the Swing tests under Xvfb with
   `-PtestHeadless=false`, so GUI-only tests such as `FormDialogShellTest` run.
 

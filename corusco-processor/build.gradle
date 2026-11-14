@@ -5,9 +5,23 @@ plugins {
 
 dependencies {
     implementation project(':corusco-annotations')
+    testImplementation gradleTestKit()
     testImplementation project(':corusco-core')
     testImplementation project(':corusco-swing')
     testImplementation project(':corusco-test')
+}
+
+[project, project(':corusco-annotations'), project(':corusco-core'), project(':corusco-swing')].each { library ->
+    library.pluginManager.withPlugin('java-library') {
+        def artifact = library.tasks.named('jar', Jar).flatMap { it.archiveFile }
+        def propertyName = "consumerJar.${library.name}"
+        tasks.named('test', Test) {
+            inputs.file(artifact).withPropertyName(propertyName)
+            doFirst {
+                systemProperty propertyName, artifact.get().asFile.absolutePath
+            }
+        }
+    }
 }
 
 jar {

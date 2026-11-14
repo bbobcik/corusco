@@ -96,6 +96,14 @@ example compilation against Maven-local artifacts, Javadoc generation, and
 manual API review because binary compatibility alone cannot describe generated
 source contracts.
 
+The 1.3.x baseline is 1.3.0. The release-readiness workflow builds and
+installs the baseline artifacts into Maven local from the independent
+`v1.3.0` checkout pinned at `05aba8eb17938b776bc32be59d13ae0ec05cec3d`.
+For a local run without that release in Maven local, run
+`./gradlew publishToMavenLocal --quiet --stacktrace` in a separate checkout of
+that commit first. The compatibility task fails when the baseline cannot be
+resolved.
+
 ## Release Checklist
 
 Before tagging a release:

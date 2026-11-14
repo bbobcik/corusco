@@ -134,7 +134,7 @@ public final class EdtObservableList<E extends @NonNull Object> implements Obser
     @Override
     public void batch(ChangeOrigin origin, Consumer<ObservableList<E>> work) {
         Objects.requireNonNull(work, "work");
-        relay.withSourceReads(() -> source.batch(origin, ignored -> work.accept(this)));
+        source.batch(origin, ignored -> relay.withSourceReads(() -> work.accept(this)));
     }
 
     @Override

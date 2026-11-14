@@ -208,6 +208,29 @@ class EdtObservableListTest {
     }
 
     @Test
+    void batchListenersReadTheStateForTheirEventWhenSourceMutationIsReentrant() {
+        SwingEdt.runAndWait(() -> {
+            ObservableArrayList<String> source = ObservableArrayList.empty();
+            source.subscribe(changes -> {
+                if (source.size() == 1) {
+                    source.add("nested");
+                }
+            });
+            try (var edtList = EdtObservableList.of(source)) {
+                List<List<String>> snapshots = new ArrayList<>();
+                edtList.subscribe(changes -> snapshots.add(edtList.snapshot()));
+
+                edtList.batch(StandardChangeOrigin.MODEL, list -> {
+                    list.add("first");
+                    assertThat(list.snapshot()).containsExactly("first");
+                });
+
+                assertThat(snapshots).containsExactly(List.of("first"), List.of("first", "nested"));
+            }
+        });
+    }
+
+    @Test
     void edtReadsMatchDeliveredEventsWhileBackgroundProducerIsAhead() throws Exception {
         ObservableArrayList<Integer> source = ObservableArrayList.empty();
         EdtObservableList<Integer> edtList = EdtObservableList.of(source);

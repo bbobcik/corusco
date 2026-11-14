@@ -19,7 +19,9 @@ import java.util.prefs.Preferences;
  * of Java serialization, keeping the persisted form explicit and independent
  * of record binary compatibility. The internal store format version is
  * separate from {@link TableState#schemaVersion()}, which belongs to the
- * application's table schema and is available to migration hooks. Instances
+ * application's table schema and is available to migration hooks. Each save
+ * flushes a replacement snapshot before publishing its slot at the table node.
+ * Existing snapshots stored directly in the table node are readable. Instances
  * are not synchronized; use one instance from the UI/lifecycle owner that also
  * calls {@link #flush()}.</p>
  */
@@ -32,8 +34,11 @@ public final class PreferencesTableStateStore implements TableStateStore {
     private static final String KEY_VERSION = "version";
     private static final String KEY_SCHEMA_VERSION = "schemaVersion";
     private static final String KEY_TABLE_ID = "tableId";
+    private static final String KEY_ACTIVE_SLOT = "activeSlot";
     private static final String KEY_COLUMN_COUNT = "columns.count";
     private static final String KEY_SORT_COUNT = "sort.count";
+    private static final String FIRST_SLOT = "state-a";
+    private static final String SECOND_SLOT = "state-b";
 
     private final Preferences root;
 
@@ -55,7 +60,16 @@ public final class PreferencesTableStateStore implements TableStateStore {
                 return Optional.empty();
             }
             Preferences node = root.node(nodeName);
-            return Optional.of(readState(requiredTableId, node));
+            String slot = activeSlot(node, requiredTableId);
+            if (slot == null) {
+                return node.keys().length == 0
+                        ? Optional.empty()
+                        : Optional.of(readState(requiredTableId, node));
+            }
+            if (!node.nodeExists(slot)) {
+                throw malformed(requiredTableId, "active snapshot is missing");
+            }
+            return Optional.of(readState(requiredTableId, node.node(slot)));
         } catch (BackingStoreException | IllegalArgumentException | IllegalStateException e) {
             throw new TableStateStoreException("Cannot load table state for " + requiredTableId, e);
         }
@@ -66,10 +80,42 @@ public final class PreferencesTableStateStore implements TableStateStore {
         Objects.requireNonNull(state, "state");
         try {
             Preferences node = root.node(nodeName(state.tableId()));
-            node.clear();
-            writeState(node, state);
+            String previous = node.get(KEY_ACTIVE_SLOT, null);
+            String next = FIRST_SLOT.equals(previous) ? SECOND_SLOT : FIRST_SLOT;
+            Preferences snapshot = node.node(next);
+            snapshot.clear();
+            writeState(snapshot, state);
+            snapshot.flush();
+            activate(node, previous, next);
         } catch (BackingStoreException | IllegalArgumentException | IllegalStateException e) {
             throw new TableStateStoreException("Cannot save table state for " + state.tableId(), e);
+        }
+    }
+
+    private static String activeSlot(Preferences node, String tableId) {
+        String slot = node.get(KEY_ACTIVE_SLOT, null);
+        if (slot == null || FIRST_SLOT.equals(slot) || SECOND_SLOT.equals(slot)) {
+            return slot;
+        }
+        throw malformed(tableId, "invalid active snapshot");
+    }
+
+    private static void activate(Preferences node, String previous, String next) throws BackingStoreException {
+        node.put(KEY_ACTIVE_SLOT, next);
+        try {
+            node.flush();
+        } catch (BackingStoreException failure) {
+            try {
+                if (previous == null) {
+                    node.remove(KEY_ACTIVE_SLOT);
+                } else {
+                    node.put(KEY_ACTIVE_SLOT, previous);
+                }
+                node.flush();
+            } catch (BackingStoreException | IllegalArgumentException | IllegalStateException rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+            throw failure;
         }
     }
 
