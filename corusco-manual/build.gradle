@@ -16,7 +16,11 @@ dependencies {
                         && !['corusco-examples', 'corusco-manual'].contains(it.name)
                         && it.file('src/main/java/module-info.java').isFile()
             }
-            .each { javadoc it }
+            .each { javadoc dependencies.project(path: it.path) }
+    // Annotation modules are compileOnlyApi dependencies of the published modules,
+    // so they are not inherited by the aggregate Javadoc module path.
+    javadocClasspath libs.jspecify
+    javadocClasspath libs.jetbrains.annotations
 }
 
 tasks.register('renderManualHtml') {

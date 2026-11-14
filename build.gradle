@@ -402,9 +402,14 @@ if (project.hasProperty('LOCAL_CREDENTIALS')) {
     }
 }
 
+// Resolve plugin ids from the root catalog once; subprojects must not look up
+// the root 'libs' property implicitly (deprecated, an error in Gradle 10).
+def sharedPluginIds = ['reproducibleBuilds', 'dependencyCheck', 'cycloneDx'].collect { plugin ->
+    libs.plugins[plugin].get().pluginId
+}
 allprojects {
-    for (def plugin in ['reproducibleBuilds', 'dependencyCheck', 'cycloneDx']) {
-        apply plugin: libs.plugins[plugin].get().pluginId
+    sharedPluginIds.each { pluginId ->
+        apply plugin: pluginId
     }
 }
 
