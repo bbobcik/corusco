@@ -9,10 +9,17 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         mavenCentral()
+        // Corusco's own artifacts (binary-compatibility baselines and the
+        // published-artifact example check) come from Maven local first and
+        // then from Maven Central, never from other repositories.
         exclusiveContent {
-            forRepository {
-                mavenLocal()
-            }
+            forRepositories(
+                    mavenLocal(),
+                    maven {
+                        name = 'MavenCentralCorusco'
+                        url = uri('https://repo.maven.apache.org/maven2/')
+                    }
+            )
             filter {
                 includeGroup 'cz.auderis.corusco'
             }

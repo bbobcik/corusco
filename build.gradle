@@ -30,8 +30,11 @@ def binaryCompatibilityProjectNames = [
     'corusco-swing'
 ]
 def binaryCompatibilityProjects = publishableProjects.findAll { binaryCompatibilityProjectNames.contains(it.name) }
-def binaryCompatibilityBaselineVersion = 'v1.2.0'
-def binaryCompatibilityBaselineDir = new File(rootDir, ".machine_env/api-baselines/${binaryCompatibilityBaselineVersion}")
+// Published release that the current sources must stay binary compatible with.
+// The baseline jars are resolved as regular artifacts (Maven local first, then
+// Maven Central, see settings.gradle); the gate fails when they cannot be found.
+def binaryCompatibilityBaselineVersion = providers.gradleProperty('binaryCompatibilityBaselineVersion')
+        .getOrElse('1.3.0')
 def publicationGroupPath = group.toString().replace('.', File.separator)
 def publicationVersion = version.toString()
 def projectRootPath = rootDir.absolutePath
@@ -316,14 +319,16 @@ tasks.register('aggregateJavadoc') {
 
 def binaryCompatibilityTasks = binaryCompatibilityProjects.collect { comparedProject ->
     def capitalizedName = comparedProject.name.split('-').collect { it.capitalize() }.join('')
-    def baselineJar = new File(binaryCompatibilityBaselineDir, "${comparedProject.name}-${binaryCompatibilityBaselineVersion}.jar")
+    def baselineNotation = "${group}:${comparedProject.name}:${binaryCompatibilityBaselineVersion}@jar"
+    def baseline = configurations.detachedConfiguration(dependencies.create(baselineNotation))
+    baseline.transitive = false
     tasks.register("japicmp${capitalizedName}", me.champeau.gradle.japicmp.JapicmpTask) {
         group = 'verification'
-        description = "Checks binary compatibility for ${comparedProject.name} against ${binaryCompatibilityBaselineVersion}."
+        description = "Checks binary compatibility for ${comparedProject.name} against published ${baselineNotation}."
         dependsOn comparedProject.tasks.named('jar')
-        oldClasspath.from(files(baselineJar))
+        oldClasspath.from(baseline)
         newClasspath.from(comparedProject.tasks.named('jar'))
-        oldArchives.from(files(baselineJar))
+        oldArchives.from(baseline)
         newArchives.from(comparedProject.tasks.named('jar'))
         onlyModified = true
         onlyBinaryIncompatibleModified = true
@@ -333,39 +338,12 @@ def binaryCompatibilityTasks = binaryCompatibilityProjects.collect { comparedPro
                 comparedProject.layout.buildDirectory.get().asFile,
                 "reports/japicmp/${comparedProject.name}.txt"
         )
-        onlyIf {
-            baselineJar.isFile()
-        }
-    }
-}
-
-tasks.register('establishBinaryCompatibilityBaseline') {
-    group = 'verification'
-    description = 'Creates the binary compatibility baseline jars when they do not exist yet.'
-    dependsOn binaryCompatibilityProjects.collect { it.tasks.named('jar') }
-
-    doLast {
-        binaryCompatibilityBaselineDir.mkdirs()
-        binaryCompatibilityProjectNames.each { projectName ->
-            def baselineJar = new File(binaryCompatibilityBaselineDir, "${projectName}-${binaryCompatibilityBaselineVersion}.jar")
-            if (!baselineJar.isFile()) {
-                def currentJar = new File(projectRootPath, "${projectName}/build/libs/${projectName}-${publicationVersion}.jar")
-                java.nio.file.Files.copy(currentJar.toPath(), baselineJar.toPath())
-            }
-        }
-    }
-}
-
-binaryCompatibilityTasks.each {
-    it.configure {
-        mustRunAfter tasks.named('establishBinaryCompatibilityBaseline')
     }
 }
 
 tasks.register('verifyBinaryCompatibility') {
     group = 'verification'
-    description = 'Checks binary compatibility of published runtime modules, establishing the baseline on first run.'
-    dependsOn 'establishBinaryCompatibilityBaseline'
+    description = "Checks binary compatibility of published runtime modules against release ${binaryCompatibilityBaselineVersion}."
     dependsOn binaryCompatibilityTasks
 }
 
