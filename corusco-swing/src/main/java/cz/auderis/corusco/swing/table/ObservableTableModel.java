@@ -9,6 +9,7 @@ import cz.auderis.corusco.core.table.Column;
 import cz.auderis.corusco.core.table.TableDescriptor;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
+import java.util.List;
 import java.util.Objects;
 import javax.swing.table.AbstractTableModel;
 import org.jspecify.annotations.NonNull;
@@ -31,6 +32,12 @@ import org.jspecify.annotations.NonNull;
  * readable collection, report all cells as non-editable, and ignore
  * {@link #setValueAt(Object, int, int)}. Closing the model removes its source
  * subscription and is idempotent.</p>
+ *
+ * <p>A source change set with one change is translated to a precise row
+ * insert, delete or update event. A change set with several changes, such as
+ * one produced by a batch, is reported with
+ * {@link #fireTableDataChanged()} because Swing listeners read the model in
+ * its final state while handling each event.</p>
  *
  * <p>Generated {@code @CoruscoTable} records create row-specific companions,
  * such as {@code CustomerRowTableDescriptor} with a table-model factory and
@@ -225,9 +232,16 @@ public final class ObservableTableModel<R extends @NonNull Object> extends Abstr
         if (suppressSourceEvents) {
             return;
         }
-        for (ListChange<R> change : changes.changes()) {
-            apply(change);
+        List<ListChange<R>> changeList = changes.changes();
+        if (changeList.size() == 1) {
+            apply(changeList.getFirst());
+            return;
         }
+        // Swing listeners (notably RowSorter) read the model while handling each
+        // event, but the model already reflects the whole change set. Precise
+        // per-change events would describe intermediate states the model never
+        // exposes, so a multi-change set is reported as a full data change.
+        fireTableDataChanged();
     }
 
     private void apply(ListChange<R> change) {

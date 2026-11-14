@@ -151,6 +151,94 @@ class ObservableTableModelTest {
         SwingEdt.runAndWait(() -> model.get().close());
     }
 
+    @Test
+    void reportsMultiChangeBatchAsDataChange() {
+        SwingEdt.runAndWait(() -> {
+            ObservableArrayList<CustomerRow> rows = ObservableArrayList.of(List.of(
+                    new CustomerRow("Acme", 2),
+                    new CustomerRow("Globex", 5)
+            ));
+            ObservableTableModel<CustomerRow> model = ObservableTableModel.of(rows, customerTable());
+            List<EventRecord> events = recordEvents(model);
+
+            rows.batch(list -> {
+                list.add(0, new CustomerRow("Initech", 1));
+                list.remove(2);
+            });
+
+            assertThat(events).containsExactly(
+                    new EventRecord(TableModelEvent.UPDATE, 0, Integer.MAX_VALUE, TableModelEvent.ALL_COLUMNS)
+            );
+            model.close();
+        });
+    }
+
+    @Test
+    void sortedTableSurvivesBatchedInsertAndRemove() {
+        SwingEdt.runAndWait(() -> {
+            ObservableArrayList<CustomerRow> rows = ObservableArrayList.of(customers(100));
+            ObservableTableModel<CustomerRow> model = ObservableTableModel.of(rows, customerTable());
+            javax.swing.JTable table = new javax.swing.JTable(model);
+            table.setAutoCreateRowSorter(true);
+            table.getRowSorter().setSortKeys(List.of(new javax.swing.RowSorter.SortKey(1, javax.swing.SortOrder.DESCENDING)));
+
+            rows.batch(list -> {
+                list.add(0, new CustomerRow("Inserted", 1_000));
+                list.remove(50);
+            });
+
+            assertThat(table.getRowCount()).isEqualTo(100);
+            assertThat(table.getValueAt(0, 0)).isEqualTo("Inserted");
+            assertSortedDescending(table);
+            model.close();
+        });
+    }
+
+    @Test
+    void sortedTableTracksRandomChanges() {
+        SwingEdt.runAndWait(() -> {
+            java.util.Random random = new java.util.Random(20261114L);
+            ObservableArrayList<CustomerRow> rows = ObservableArrayList.of(customers(30));
+            ObservableTableModel<CustomerRow> model = ObservableTableModel.of(rows, customerTable());
+            javax.swing.JTable table = new javax.swing.JTable(model);
+            table.setAutoCreateRowSorter(true);
+            ((javax.swing.DefaultRowSorter<?, ?>) table.getRowSorter()).setSortsOnUpdates(true);
+            table.getRowSorter().setSortKeys(List.of(new javax.swing.RowSorter.SortKey(1, javax.swing.SortOrder.DESCENDING)));
+
+            for (int step = 0; step < 500; step++) {
+                int operation = random.nextInt(rows.size() == 0 ? 1 : 5);
+                switch (operation) {
+                    case 0 -> rows.add(random.nextInt(rows.size() + 1), new CustomerRow("n" + step, random.nextInt(1_000)));
+                    case 1 -> rows.remove(random.nextInt(rows.size()));
+                    case 2 -> rows.set(random.nextInt(rows.size()), new CustomerRow("s" + step, random.nextInt(1_000)));
+                    case 3 -> rows.move(random.nextInt(rows.size()), random.nextInt(rows.size()));
+                    default -> rows.batch(list -> {
+                        list.add(0, new CustomerRow("b" + list.size(), random.nextInt(1_000)));
+                        list.remove(random.nextInt(list.size()));
+                    });
+                }
+                assertThat(table.getRowCount()).isEqualTo(rows.size());
+                assertSortedDescending(table);
+            }
+            model.close();
+        });
+    }
+
+    private static List<CustomerRow> customers(int count) {
+        List<CustomerRow> result = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            result.add(new CustomerRow("Customer " + i, i));
+        }
+        return result;
+    }
+
+    private static void assertSortedDescending(javax.swing.JTable table) {
+        for (int viewRow = 1; viewRow < table.getRowCount(); viewRow++) {
+            assertThat((Integer) table.getValueAt(viewRow - 1, 1))
+                    .isGreaterThanOrEqualTo((Integer) table.getValueAt(viewRow, 1));
+        }
+    }
+
     private static List<EventRecord> recordEvents(ObservableTableModel<?> model) {
         List<EventRecord> events = new ArrayList<>();
         model.addTableModelListener(new TableModelListener() {
