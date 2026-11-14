@@ -9,6 +9,7 @@ import cz.auderis.corusco.core.table.TableDescriptor;
 import cz.auderis.corusco.core.table.TableState;
 import cz.auderis.corusco.core.table.TableStateMigration;
 import cz.auderis.corusco.core.table.TableStateStore;
+import cz.auderis.corusco.core.table.TableStateStoreException;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.ArrayList;
@@ -32,6 +33,7 @@ import javax.swing.event.RowSorterListener;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 import javax.swing.table.TableModel;
+import org.jspecify.annotations.Nullable;
 
 /**
  * EDT-confined controller that restores and persists a {@link JTable}'s view state.
@@ -61,6 +63,8 @@ import javax.swing.table.TableModel;
  * @param <R> row type
  */
 public final class TableStateController<R> implements Binding {
+
+    private static final System.Logger LOGGER = System.getLogger(TableStateController.class.getName());
 
     /**
      * Default debounce interval for table state writes triggered by Swing
@@ -246,12 +250,29 @@ public final class TableStateController<R> implements Binding {
         this.tableColumnsById = discoverTableColumns();
         this.saveScheduler = new TableStateSaveScheduler(saveDelayMillis, this::writeCurrentState);
 
-        applyState(TableState.merge(descriptor, store.load(descriptor.key().id()).orElse(null), migration));
+        applyState(TableState.merge(descriptor, loadStoredState(), migration));
         columnModel.addColumnModelListener(columnListener);
         if (table.getRowSorter() != null) {
             table.getRowSorter().addRowSorterListener(sorterListener);
         }
-        saveNow();
+        try {
+            saveNow();
+        } catch (TableStateStoreException e) {
+            LOGGER.log(System.Logger.Level.WARNING, "Cannot save initial table state for " + descriptor.key().id(), e);
+        }
+    }
+
+    private @Nullable TableState loadStoredState() {
+        try {
+            return store.load(descriptor.key().id()).orElse(null);
+        } catch (TableStateStoreException e) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "Cannot load stored table state for " + descriptor.key().id() + "; using descriptor defaults",
+                    e
+            );
+            return null;
+        }
     }
 
     /**

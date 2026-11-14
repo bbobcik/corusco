@@ -17,6 +17,7 @@ import cz.auderis.corusco.core.table.TableKey;
 import cz.auderis.corusco.core.table.TableState;
 import cz.auderis.corusco.core.table.TableStateMigration;
 import cz.auderis.corusco.core.table.TableStateStore;
+import cz.auderis.corusco.core.table.TableStateStoreException;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import java.util.List;
 import java.util.Optional;
@@ -271,14 +272,37 @@ class TableStateControllerTest {
     private record CustomerRow(String name, int orders, String status) {
     }
 
+    @Test
+    void fallsBackToDescriptorDefaultsWhenStoredStateCannotBeLoaded() {
+        SwingEdt.runAndWait(() -> {
+            RecordingStore store = new RecordingStore();
+            store.failLoads = true;
+            ObservableTableModel<CustomerRow> model = model();
+            JTable table = table(model);
+
+            TableStateController<CustomerRow> controller = TableStateController.install(table, model, store);
+
+            assertThat(visibleColumnIds(table))
+                    .containsExactly("customers/name", "customers/orders", "customers/status");
+            assertThat(store.state()).isPresent();
+            controller.close();
+            model.close();
+        });
+    }
+
     private static final class RecordingStore implements TableStateStore {
 
         private final InMemoryTableStateStore delegate = new InMemoryTableStateStore();
         private boolean flushed;
         private int saveCount;
 
+        private boolean failLoads;
+
         @Override
         public Optional<TableState> load(String tableId) {
+            if (failLoads) {
+                throw new TableStateStoreException("Malformed table state for " + tableId + ": test");
+            }
             return delegate.load(tableId);
         }
 

@@ -1,6 +1,8 @@
 package cz.auderis.corusco.core.table;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -24,6 +26,8 @@ import java.util.prefs.Preferences;
 public final class PreferencesTableStateStore implements TableStateStore {
 
     private static final int FORMAT_VERSION = 1;
+
+    private static final String HASHED_NODE_PREFIX = "sha256.";
 
     private static final String KEY_VERSION = "version";
     private static final String KEY_SCHEMA_VERSION = "schemaVersion";
@@ -52,7 +56,7 @@ public final class PreferencesTableStateStore implements TableStateStore {
             }
             Preferences node = root.node(nodeName);
             return Optional.of(readState(requiredTableId, node));
-        } catch (BackingStoreException e) {
+        } catch (BackingStoreException | IllegalArgumentException | IllegalStateException e) {
             throw new TableStateStoreException("Cannot load table state for " + requiredTableId, e);
         }
     }
@@ -64,7 +68,7 @@ public final class PreferencesTableStateStore implements TableStateStore {
             Preferences node = root.node(nodeName(state.tableId()));
             node.clear();
             writeState(node, state);
-        } catch (BackingStoreException e) {
+        } catch (BackingStoreException | IllegalArgumentException | IllegalStateException e) {
             throw new TableStateStoreException("Cannot save table state for " + state.tableId(), e);
         }
     }
@@ -77,7 +81,7 @@ public final class PreferencesTableStateStore implements TableStateStore {
             if (root.nodeExists(nodeName)) {
                 root.node(nodeName).removeNode();
             }
-        } catch (BackingStoreException e) {
+        } catch (BackingStoreException | IllegalArgumentException | IllegalStateException e) {
             throw new TableStateStoreException("Cannot remove table state for " + requiredTableId, e);
         }
     }
@@ -222,10 +226,25 @@ public final class PreferencesTableStateStore implements TableStateStore {
         throw malformed(node.get(KEY_TABLE_ID, "<unknown>"), "invalid boolean key " + key);
     }
 
-    private static String nodeName(String tableId) {
-        return Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(tableId.getBytes(StandardCharsets.UTF_8));
+    static String nodeName(String tableId) {
+        byte[] idBytes = tableId.getBytes(StandardCharsets.UTF_8);
+        String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(idBytes);
+        if (encoded.length() <= Preferences.MAX_NAME_LENGTH) {
+            // Corusco 1.0 - 1.3.0 layout, kept so existing stored state stays readable.
+            return encoded;
+        }
+        // '.' is not part of the URL-safe Base64 alphabet, so hashed names cannot
+        // collide with directly encoded ones. The stored table id is verified on
+        // load, so a hash collision is reported as malformed state.
+        return HASHED_NODE_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(sha256(idBytes));
+    }
+
+    private static byte[] sha256(byte[] input) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(input);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     private static TableStateStoreException malformed(String tableId, String detail) {

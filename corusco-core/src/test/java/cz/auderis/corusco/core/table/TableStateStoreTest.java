@@ -113,6 +113,46 @@ class TableStateStoreTest {
                 .hasMessageContaining("invalid integer key columns.0.width");
     }
 
+    @Test
+    void preferencesStoreRoundTripsLongTableIds() {
+        Preferences root = preferencesRoot();
+        String longId = "cz.auderis.corusco.examples.customers.CustomerOverviewTable/detail/červené-řádky";
+        assertThat(longId.getBytes(StandardCharsets.UTF_8).length).isGreaterThan(60);
+        TableState state = new TableState(longId, customerState().columns(), customerState().sort());
+
+        TableStateStore first = new PreferencesTableStateStore(root);
+        first.save(state);
+        first.flush();
+
+        TableStateStore second = new PreferencesTableStateStore(root);
+        assertThat(second.load(longId)).contains(state);
+        second.remove(longId);
+        assertThat(second.load(longId)).isEmpty();
+    }
+
+    @Test
+    void preferencesStoreKeepsDirectNodeNamesForIdsThatFit() {
+        assertThat(PreferencesTableStateStore.nodeName("customers")).isEqualTo(encodedNodeName("customers"));
+        String longName = PreferencesTableStateStore.nodeName("x".repeat(500));
+        assertThat(longName).startsWith("sha256.").hasSizeLessThanOrEqualTo(Preferences.MAX_NAME_LENGTH);
+    }
+
+    @Test
+    void preferencesStoreWrapsBackingStoreArgumentFailures() {
+        Preferences root = preferencesRoot();
+        TableStateStore store = new PreferencesTableStateStore(root);
+        try {
+            root.removeNode();
+        } catch (BackingStoreException e) {
+            throw new IllegalStateException(e);
+        }
+        preferencesRoot = null;
+
+        assertThatThrownBy(() -> store.load("customers"))
+                .isInstanceOf(TableStateStoreException.class)
+                .hasMessageContaining("Cannot load table state for customers");
+    }
+
     private Preferences preferencesRoot() {
         preferencesRoot = Preferences.userRoot()
                 .node("/cz/auderis/corusco/tests/table-state/" + UUID.randomUUID());
