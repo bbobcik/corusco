@@ -74,12 +74,16 @@ final class TimeseriesDatabasePanel extends JPanel {
         setOptimizedRenderers(true);
     }
 
-    void loadRows(List<TimeseriesObservation> loadedRows) {
+    static TimeseriesObservationFrame prepareFrame(List<TimeseriesObservation> loadedRows) {
         TimeseriesObservationFrame.Builder builder = TimeseriesObservationFrame.builder(loadedRows.size());
         for (TimeseriesObservation row : loadedRows) {
             builder.add(row);
         }
-        frame = builder.build();
+        return builder.build();
+    }
+
+    void loadFrame(TimeseriesObservationFrame prepared) {
+        frame = prepared;
         model.fireTableDataChanged();
         updateMetrics();
     }

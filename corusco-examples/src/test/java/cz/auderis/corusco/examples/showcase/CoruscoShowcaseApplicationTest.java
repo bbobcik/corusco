@@ -1,10 +1,21 @@
 package cz.auderis.corusco.examples.showcase;
 
 import org.junit.jupiter.api.Test;
+import cz.auderis.corusco.swing.binding.SwingEdt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CoruscoShowcaseApplicationTest {
+
+    @Test
+    void runtimeConstructsShellBeforeLoading() {
+        SwingEdt.runAndWait(() -> {
+            try (ShowcaseRuntime runtime = new ShowcaseRuntime()) {
+                assertThat(runtime.layer()).isNotNull();
+                assertThat(runtime.loadedRowCount()).isZero();
+            }
+        });
+    }
 
     @Test
     void showcaseScenarioExercisesGeneratedActionsAndH2Tables() {

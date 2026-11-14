@@ -43,6 +43,7 @@ public final class CoruscoShowcaseApplication {
             });
             frame.pack();
             frame.setVisible(true);
+            runtime.reloadTimeseries();
         });
     }
 
@@ -52,10 +53,15 @@ public final class CoruscoShowcaseApplication {
      * @return diagnostics for tests and documentation checks
      */
     public static List<String> runScenario() {
+        if (SwingUtilities.isEventDispatchThread()) {
+            throw new IllegalStateException("Scenario must run off the EDT");
+        }
+        var prepared = TimeseriesDatabasePanel.prepareFrame(H2TimeseriesRepository.loadObservations());
         java.util.concurrent.atomic.AtomicReference<List<String>> result = new java.util.concurrent.atomic.AtomicReference<>();
         SwingEdt.runAndWait(() -> {
             ShowcaseRuntime runtime = new ShowcaseRuntime();
             try {
+                runtime.loadPreparedFrame(prepared);
                 result.set(runtime.diagnostics());
             } finally {
                 runtime.close();

@@ -47,3 +47,10 @@ tasks.register('generateBookFigures', JavaExec) {
     mainClass = 'cz.auderis.corusco.examples.book.BookFigureGenerator'
     args rootProject.file('docs/book/figures').absolutePath
 }
+
+tasks.register('diagnosticsBenchmark', JavaExec) {
+    description = 'Measures synthetic sorted and filtered log snapshot replacement.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'cz.auderis.corusco.examples.showcase.DiagnosticsBenchmark'
+    jvmArgs '-Djava.awt.headless=true'
+}

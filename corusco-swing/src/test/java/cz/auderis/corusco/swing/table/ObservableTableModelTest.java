@@ -18,12 +18,37 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.event.TableModelEvent;
 import javax.swing.event.TableModelListener;
+import javax.swing.JTable;
+import javax.swing.RowFilter;
+import javax.swing.table.TableRowSorter;
+import cz.auderis.corusco.core.value.StandardChangeOrigin;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ObservableTableModelTest {
+
+    @Test
+    void replacementKeepsSortedFilteredTableConsistent() {
+        SwingEdt.runAndWait(() -> {
+            var rows = ObservableArrayList.of(List.of(new CustomerRow("Old", 1)));
+            var model = ObservableTableModel.of(rows, customerTable());
+            var table = new JTable(model);
+            var sorter = new TableRowSorter<>(model);
+            table.setRowSorter(sorter);
+            sorter.setRowFilter(RowFilter.regexFilter("^A", 0));
+            sorter.toggleSortOrder(0);
+            rows.replaceContents(List.of(new CustomerRow("Zed", 0), new CustomerRow("Amy", 1),
+                    new CustomerRow("Alice", 2)), StandardChangeOrigin.SYSTEM);
+            assertThat(table.getRowCount()).isEqualTo(2);
+            assertThat(table.getValueAt(0, 0)).isEqualTo("Alice");
+            assertThat(table.getValueAt(1, 0)).isEqualTo("Amy");
+            rows.replaceContents(List.of(), StandardChangeOrigin.SYSTEM);
+            assertThat(table.getRowCount()).isZero();
+            model.close();
+        });
+    }
 
     @Test
     void exposesRowsAndTypedColumns() {

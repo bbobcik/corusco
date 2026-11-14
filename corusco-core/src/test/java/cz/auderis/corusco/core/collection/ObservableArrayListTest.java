@@ -12,6 +12,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ObservableArrayListTest {
 
     @Test
+    void replaceContentsValidatesAndPublishesOneChangeSet() {
+        ObservableArrayList<String> list = ObservableArrayList.of(List.of("old"));
+        List<ListChangeSet<String>> events = new ArrayList<>();
+        list.subscribe(events::add);
+        assertThatThrownBy(() -> list.replaceContents(singletonNull(), StandardChangeOrigin.USER))
+                .isInstanceOf(NullPointerException.class);
+        assertThat(list.snapshot()).containsExactly("old");
+        assertThat(events).isEmpty();
+        list.replaceContents(List.of("new", "other"), StandardChangeOrigin.USER);
+        assertThat(list.snapshot()).containsExactly("new", "other");
+        assertThat(events).hasSize(1);
+        assertThat(events.getFirst().origin()).isEqualTo(StandardChangeOrigin.USER);
+        assertThat(events.getFirst().changes()).containsExactly(
+                new ListChange.Cleared<>(List.of("old")),
+                new ListChange.Inserted<>(0, List.of("new", "other")));
+        list.replaceContents(List.of("new", "other"), StandardChangeOrigin.SYSTEM);
+        assertThat(events).hasSize(1);
+    }
+
+    @Test
     void reportsPreciseSingleChanges() {
         ObservableArrayList<String> list = ObservableArrayList.of(List.of("b", "c"));
         List<ListChangeSet<String>> events = new ArrayList<>();

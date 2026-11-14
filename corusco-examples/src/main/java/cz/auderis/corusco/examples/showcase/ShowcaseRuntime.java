@@ -6,12 +6,10 @@ import cz.auderis.corusco.core.table.InMemoryTableStateStore;
 import cz.auderis.corusco.core.table.TableStateStore;
 import cz.auderis.corusco.core.task.TaskCallbacks;
 import cz.auderis.corusco.core.task.TaskService;
-import cz.auderis.corusco.core.value.StandardChangeOrigin;
-import cz.auderis.corusco.core.value.SimpleValue;
+import cz.auderis.corusco.core.task.TaskHandle;
 import cz.auderis.corusco.swing.binding.BindingScope;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 import cz.auderis.corusco.swing.command.SwingActionAdapter;
-import cz.auderis.corusco.swing.task.BusyOverlayBinding;
 import cz.auderis.corusco.swing.task.SwingTaskServices;
 import java.awt.Desktop;
 import java.net.URI;
@@ -36,7 +34,6 @@ final class ShowcaseRuntime implements AutoCloseable {
 
     private final BindingScope scope = new BindingScope();
     private final TaskService taskService = SwingTaskServices.virtualThreads();
-    private final SimpleValue<Boolean> busy = SimpleValue.of(false);
     private final JLabel statusLabel = new JLabel("Ready");
     private final TimeseriesDatabasePanel timeseriesPanel;
     private final EventStreamPanel eventPanel;
@@ -50,6 +47,9 @@ final class ShowcaseRuntime implements AutoCloseable {
     private final MutableCommand saveCommand;
     private final MutableCommand addEventCommand;
     private final MutableCommand optimizedCommand;
+    private TaskHandle<TimeseriesObservationFrame> loadTask;
+    private long generation;
+    private boolean closed;
 
     ShowcaseRuntime() {
         SwingEdt.requireEdt();
@@ -59,11 +59,7 @@ final class ShowcaseRuntime implements AutoCloseable {
         generatedPanel = new GeneratedTableShowcasePanel(scope, stateStore, resources, statusLabel);
         timeseriesPanel = new TimeseriesDatabasePanel(scope, stateStore, resources, statusLabel);
         eventPanel = new EventStreamPanel(scope, resources, statusLabel);
-        statusLabel.setText("Loading 100K H2 observations...");
-        timeseriesPanel.loadRows(H2TimeseriesRepository.loadObservations());
-        statusLabel.setText("Loaded " + timeseriesPanel.model.getRowCount() + " observations from H2.");
         overviewPanel = new ShowcaseOverviewPanel();
-        overviewPanel.record("Loaded 100K H2 observations");
 
         ShowcasePresenter presenter = new ShowcasePresenter();
         saveCommand = ShowcasePresenterActions.saveCommand(presenter);
@@ -118,7 +114,6 @@ final class ShowcaseRuntime implements AutoCloseable {
         shell.add(tabs(), "cell 1 1, grow");
         shell.add(statusBar(), "cell 1 2, growx");
         layer = new JLayer<>(shell);
-        scope.add(BusyOverlayBinding.install(layer, busy));
         menuBar = buildMenuBar();
         refreshOverview();
     }
@@ -129,6 +124,15 @@ final class ShowcaseRuntime implements AutoCloseable {
 
     JMenuBar menuBar() {
         return menuBar;
+    }
+
+    int loadedRowCount() {
+        return timeseriesPanel.model.getRowCount();
+    }
+
+    void loadPreparedFrame(TimeseriesObservationFrame frame) {
+        timeseriesPanel.loadFrame(frame);
+        refreshOverview();
     }
 
     List<String> diagnostics() {
@@ -160,6 +164,9 @@ final class ShowcaseRuntime implements AutoCloseable {
     @Override
     public void close() {
         SwingEdt.requireEdt();
+        closed = true;
+        generation++;
+        if (loadTask != null) loadTask.cancel();
         scope.close();
         taskService.close();
     }
@@ -178,25 +185,30 @@ final class ShowcaseRuntime implements AutoCloseable {
         refreshOverview();
     }
 
-    private void reloadTimeseries() {
-        busy.setValue(true, StandardChangeOrigin.USER);
+    void reloadTimeseries() {
+        long requestedGeneration = ++generation;
+        if (loadTask != null) loadTask.cancel();
         statusLabel.setText("Loading 100K H2 observations...");
-        taskService.submit(
-                cancellation -> H2TimeseriesRepository.loadObservations(),
+        loadTask = taskService.submit(
+                cancellation -> {
+                    var rows = H2TimeseriesRepository.loadObservations();
+                    cancellation.throwIfCancellationRequested();
+                    return TimeseriesDatabasePanel.prepareFrame(rows);
+                },
                 new TaskCallbacks<>() {
                     @Override
-                    public void succeeded(List<TimeseriesObservation> rows) {
-                        timeseriesPanel.loadRows(rows);
-                        busy.setValue(false, StandardChangeOrigin.SYSTEM);
+                    public void succeeded(TimeseriesObservationFrame frame) {
+                        if (closed || requestedGeneration != generation) return;
+                        timeseriesPanel.loadFrame(frame);
                         eventPanel.addSyntheticEvent("Reloaded H2 time-series observations");
-                        recordActivity("Reloaded " + rows.size() + " H2 observations");
-                        statusLabel.setText("Loaded " + rows.size() + " observations from H2.");
+                        recordActivity("Reloaded " + frame.size() + " H2 observations");
+                        statusLabel.setText("Loaded " + frame.size() + " observations from H2.");
                         refreshOverview();
                     }
 
                     @Override
                     public void failed(Throwable error) {
-                        busy.setValue(false, StandardChangeOrigin.SYSTEM);
+                        if (closed || requestedGeneration != generation) return;
                         recordActivity("H2 load failed");
                         statusLabel.setText("H2 load failed: " + error.getMessage());
                         refreshOverview();

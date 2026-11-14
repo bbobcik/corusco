@@ -147,6 +147,28 @@ public final class ObservableArrayList<E extends @NonNull Object> implements Obs
         record(new ListChange.Cleared<>(removed), origin);
     }
 
+    /**
+     * Replaces the contents in one change set. The input is copied and validated
+     * before the list is changed; equal contents produce no notification.
+     *
+     * @param replacement new contents, with no null elements
+     * @param origin origin of the change
+     */
+    public void replaceContents(Collection<? extends E> replacement, ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
+        List<E> copy = List.copyOf(Objects.requireNonNull(replacement, "replacement"));
+        if (elements.equals(copy)) {
+            return;
+        }
+        batch(origin, ignored -> {
+            clear(origin);
+            if (!copy.isEmpty()) {
+                elements.addAll(copy);
+                record(new ListChange.Inserted<>(0, copy), origin);
+            }
+        });
+    }
+
     @Override
     public void batch(ChangeOrigin origin, java.util.function.Consumer<ObservableList<E>> work) {
         Objects.requireNonNull(work, "work");
