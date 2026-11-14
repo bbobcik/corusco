@@ -624,6 +624,16 @@ final class GeneratedSourceWriter {
 
     private String buildRulesSource(List<FieldSpec> fields, String generatedType, String fieldsType) {
         SimpleMutableFragment source = new SimpleMutableFragment();
+        for (FieldSpec field : fields) {
+            for (ConstraintSpec constraint : field.constraints) {
+                if ("REGEX".equals(constraint.kind)) {
+                    source.appendFormatted("""
+                                private static final Pattern %s = Pattern.compile(%s);
+
+                            """, patternConstant(constraint), stringLiteralOrNull(constraint.min));
+                }
+            }
+        }
         source.appendFormatted("""
                     private static RuleSet<%s> buildRules() {
                         RuleSet.Builder<%s> rules = RuleSet.builder();
@@ -790,10 +800,13 @@ final class GeneratedSourceWriter {
                     + bigDecimalOrNull(constraint.min) + ", " + bigDecimalOrNull(constraint.max) + ", " + message + ")";
             case "INT_RANGE" -> "Validators.integerRange("
                     + constraint.min + ", " + constraint.max + ", " + message + ")";
-            case "REGEX" -> "Validators.regex(Pattern.compile("
-                    + stringLiteralOrNull(constraint.min) + "), " + message + ")";
+            case "REGEX" -> "Validators.regex(" + patternConstant(constraint) + ", " + message + ")";
             default -> throw new IllegalStateException("Unknown constraint kind: " + constraint.kind);
         };
+    }
+
+    private static String patternConstant(ConstraintSpec constraint) {
+        return constraint.problemConstant + "_PATTERN";
     }
 
     private String resultValueExpression(FieldSpec field) {

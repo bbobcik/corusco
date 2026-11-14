@@ -14,7 +14,6 @@ import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
-import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.PackageElement;
@@ -42,13 +41,13 @@ import javax.tools.Diagnostic;
         "cz.auderis.corusco.annotations.table.SwingTable",
         "cz.auderis.corusco.annotations.command.UiAction"
 })
-@SupportedSourceVersion(SourceVersion.RELEASE_25)
 public final class CoruscoAnnotationProcessor extends AbstractProcessor {
 
     private Elements elements;
     private Types types;
     private Messager messager;
     private Filer filer;
+    private DeferredElements deferredElements;
 
     /**
      * Creates a processor instance for the Java compiler.
@@ -63,10 +62,28 @@ public final class CoruscoAnnotationProcessor extends AbstractProcessor {
         types = processingEnv.getTypeUtils();
         messager = processingEnv.getMessager();
         filer = processingEnv.getFiler();
+        deferredElements = new DeferredElements(elements);
+    }
+
+    /**
+     * Returns the latest source version supported by the running compiler.
+     *
+     * <p>The processor only relies on stable {@code javax.lang.model} APIs, so
+     * it does not pin a specific release and keeps working on newer JDKs
+     * without a warning.</p>
+     *
+     * @return latest supported source version
+     */
+    @Override
+    public SourceVersion getSupportedSourceVersion() {
+        return SourceVersion.latestSupported();
     }
 
     @Override
-    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment currentRound) {
+        // Elements referring to types that other processors have not generated
+        // yet are deferred to a later round (see DeferredElements).
+        RoundEnvironment roundEnv = deferredElements.prepareRound(currentRound);
         FormProcessor formProcessor = new FormProcessor(elements, types, filer, messager);
         TableProcessor tableProcessor = new TableProcessor(elements, types, filer, messager);
         DataSetProcessor dataSetProcessor = new DataSetProcessor(elements, types, filer, messager);

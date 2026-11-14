@@ -185,6 +185,11 @@ final class FormProcessor {
                 failed = true;
                 continue;
             }
+            if (source.type().getKind() == TypeKind.ERROR) {
+                error(source.element(), "Cannot resolve component type " + source.type());
+                failed = true;
+                continue;
+            }
             if (!isSupportedValueType(source.type())) {
                 error(source.element(), "Generated field keys require primitive or declared component types");
                 failed = true;
@@ -627,7 +632,7 @@ final class FormProcessor {
             valid = false;
         }
         if (field.textField && field.converterExpression == null) {
-            error(element, "@TextField supports String, Integer, BigDecimal, and LocalDate in this processor stage");
+            error(element, "@TextField supports String, int, Integer, long, Long, BigDecimal, and LocalDate in this processor stage");
             valid = false;
         }
         if (element.getAnnotation(IntRange.class) != null && (!field.textField || !isInteger(type))) {
@@ -656,6 +661,13 @@ final class FormProcessor {
         if (regex != null && regex.value().isBlank()) {
             error(element, "@Regex pattern must not be blank");
             valid = false;
+        } else if (regex != null) {
+            try {
+                java.util.regex.Pattern.compile(regex.value());
+            } catch (java.util.regex.PatternSyntaxException e) {
+                error(element, "@Regex pattern is invalid: " + e.getDescription() + " near index " + e.getIndex());
+                valid = false;
+            }
         }
         Help help = element.getAnnotation(Help.class);
         if (help != null) {
@@ -679,12 +691,18 @@ final class FormProcessor {
             return null;
         }
         String erased = types.erasure(type).toString();
+        // Primitive components cannot hold null, so empty text must be a parse
+        // failure that blocks commit instead of a null value.
         if (type.getKind() == TypeKind.INT) {
-            return "Converters.integer(EmptyTextPolicy.NULL_VALUE)";
+            return "Converters.integer(EmptyTextPolicy.REJECT)";
+        }
+        if (type.getKind() == TypeKind.LONG) {
+            return "Converters.longValue(EmptyTextPolicy.REJECT)";
         }
         return switch (erased) {
             case "java.lang.String" -> "Converters.string()";
             case "java.lang.Integer" -> "Converters.integer(EmptyTextPolicy.NULL_VALUE)";
+            case "java.lang.Long" -> "Converters.longValue(EmptyTextPolicy.NULL_VALUE)";
             case "java.math.BigDecimal" -> "Converters.bigDecimal(EmptyTextPolicy.NULL_VALUE)";
             case "java.time.LocalDate" -> "Converters.localDate(EmptyTextPolicy.NULL_VALUE)";
             default -> null;

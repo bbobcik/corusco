@@ -17,7 +17,7 @@ import java.lang.annotation.Target;
  *         source upgrades
  */
 @Deprecated(since = "1.1.0", forRemoval = false)
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.TYPE)
 public @interface SwingTable {
 

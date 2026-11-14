@@ -18,7 +18,7 @@ import java.lang.annotation.Target;
  * same-package generation behavior and are accepted as explicit migration
  * targets when their annotation metadata is available to javac.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.PACKAGE)
 public @interface SwingCompanionPackage {
 

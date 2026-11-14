@@ -837,7 +837,7 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.messages())
-                .contains("@TextField supports String, Integer, BigDecimal, and LocalDate in this processor stage");
+                .contains("@TextField supports String, int, Integer, long, Long, BigDecimal, and LocalDate in this processor stage");
     }
 
     @Test
@@ -1483,6 +1483,215 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(invalidMissing.success()).isFalse();
         assertThat(invalidMissing.messages()).contains("NAN missing policy requires float or double");
+    }
+
+    @Test
+    void primitiveTextFieldsRejectEmptyTextAndLongIsSupported() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+
+                @CoruscoForm(id = "customer")
+                public record CustomerEdit(
+                        @TextField int age,
+                        @TextField long visits,
+                        @TextField Long total
+                ) {
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
+                "Converters.integer(EmptyTextPolicy.REJECT)",
+                "Converters.longValue(EmptyTextPolicy.REJECT)",
+                "Converters.longValue(EmptyTextPolicy.NULL_VALUE)"
+        );
+
+        try (java.net.URLClassLoader loader = new java.net.URLClassLoader(
+                new java.net.URL[] {result.classes().toUri().toURL()},
+                getClass().getClassLoader()
+        )) {
+            Class<?> recordType = loader.loadClass("demo.CustomerEdit");
+            Class<?> modelType = loader.loadClass("demo.CustomerEditFormModel");
+            Object original = recordType.getConstructor(int.class, long.class, Long.class).newInstance(5, 7L, null);
+            cz.auderis.corusco.core.form.FormModel<?> form = (cz.auderis.corusco.core.form.FormModel<?>)
+                    modelType.getConstructor(recordType).newInstance(original);
+            assertThat(form.isCommittable()).isTrue();
+
+            for (String field : List.of("age", "visits")) {
+                cz.auderis.corusco.core.form.TextFieldModel<?, ?> model =
+                        (cz.auderis.corusco.core.form.TextFieldModel<?, ?>) modelType.getField(field).get(form);
+                String previous = model.rawText().value();
+                model.setRawText("", cz.auderis.corusco.core.value.StandardChangeOrigin.USER);
+                assertThat(form.isCommittable()).as(field + " cleared").isFalse();
+                model.setRawText(previous, cz.auderis.corusco.core.value.StandardChangeOrigin.USER);
+            }
+            assertThat(form.isCommittable()).isTrue();
+            assertThat(form.toResult()).isEqualTo(original);
+        }
+    }
+
+    @Test
+    void rejectsInvalidRegexPatternAtCompileTime() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+                import cz.auderis.corusco.annotations.validation.Regex;
+
+                @CoruscoForm(id = "customer")
+                public record CustomerEdit(@TextField @Regex("[a-") String code) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("@Regex pattern is invalid");
+    }
+
+    @Test
+    void compilesRegexPatternsOncePerFormType() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                import cz.auderis.corusco.annotations.form.TextField;
+                import cz.auderis.corusco.annotations.validation.Regex;
+
+                @CoruscoForm(id = "customer")
+                public record CustomerEdit(@TextField @Regex("[A-Z]{3}") String code) {
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        String model = result.generatedSource("demo/CustomerEditFormModel.java");
+        assertThat(model)
+                .contains("private static final Pattern CODE_REGEX_PATTERN = Pattern.compile(\"[A-Z]{3}\");")
+                .contains("Validators.regex(CODE_REGEX_PATTERN, ");
+        assertThat(model.split("Pattern\\.compile\\(", -1)).hasSize(2);
+    }
+
+    @Test
+    void defersFormsReferencingTypesGeneratedByOtherProcessors() throws Exception {
+        GeneratedSourceCompilation result = GeneratedSourceCompiler.in(tempDir)
+                .withProcessor(new CustomerTypeGenerator())
+                .withProcessor(new CoruscoAnnotationProcessor())
+                .compile(List.of(
+                        new GeneratedSourceCompiler.SourceFile("demo/package-info.java", """
+                                @cz.auderis.corusco.annotations.SwingCompanionPackage
+                                package demo;
+                                """),
+                        new GeneratedSourceCompiler.SourceFile("demo/CustomerEdit.java", """
+                                package demo;
+
+                                import cz.auderis.corusco.annotations.form.ComboBox;
+                                import cz.auderis.corusco.annotations.form.CoruscoForm;
+                                import cz.auderis.corusco.annotations.form.TextField;
+                                import cz.auderis.corusco.annotations.table.Column;
+                                import cz.auderis.corusco.annotations.table.CoruscoTable;
+
+                                @CoruscoForm(id = "customer")
+                                @CoruscoTable(id = "customers")
+                                public record CustomerEdit(
+                                        @TextField @Column String name,
+                                        @ComboBox @Column GeneratedCustomerType type
+                                ) {
+                                }
+                                """)
+                ));
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        assertThat(result.messages()).doesNotContain("requires");
+        result.assertGeneratedSourceContains("demo/CustomerEditFields.java",
+                "FieldKey<CustomerEdit, demo.GeneratedCustomerType> TYPE");
+        assertThat(result.hasGeneratedSource("demo/CustomerEditBehaviorPlan.java")).isTrue();
+        assertThat(result.hasGeneratedSource("demo/CustomerEditColumns.java")).isTrue();
+    }
+
+    @Test
+    void reportsUnresolvedComponentTypesInFinalRound() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.ComboBox;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+
+                @CoruscoForm(id = "customer")
+                public record CustomerEdit(@ComboBox MissingType type) {
+                }
+                """);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.messages()).contains("MissingType");
+    }
+
+    @Test
+    void supportsLatestSourceVersionWithoutPinnedAnnotation() {
+        assertThat(CoruscoAnnotationProcessor.class
+                .isAnnotationPresent(javax.annotation.processing.SupportedSourceVersion.class)).isFalse();
+        assertThat(new CoruscoAnnotationProcessor().getSupportedSourceVersion())
+                .isEqualTo(javax.lang.model.SourceVersion.latestSupported());
+    }
+
+    @Test
+    void registersAsAggregatingGradleProcessorReadingClassRetainedAnnotations() throws Exception {
+        String registration;
+        try (java.io.InputStream input = CoruscoAnnotationProcessor.class
+                .getResourceAsStream("/META-INF/gradle/incremental.annotation.processors")) {
+            assertThat(input).isNotNull();
+            registration = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+        }
+        assertThat(registration)
+                .isEqualTo("cz.auderis.corusco.processor.CoruscoAnnotationProcessor,aggregating");
+        for (Class<? extends java.lang.annotation.Annotation> annotation : List.of(
+                cz.auderis.corusco.annotations.SwingCompanionPackage.class,
+                cz.auderis.corusco.annotations.form.CoruscoForm.class,
+                cz.auderis.corusco.annotations.form.SwingForm.class,
+                cz.auderis.corusco.annotations.table.CoruscoTable.class,
+                cz.auderis.corusco.annotations.table.SwingTable.class,
+                cz.auderis.corusco.annotations.dataset.CoruscoDataSet.class,
+                cz.auderis.corusco.annotations.command.UiAction.class
+        )) {
+            assertThat(annotation.getAnnotation(java.lang.annotation.Retention.class).value())
+                    .as(annotation.getName())
+                    .isNotEqualTo(java.lang.annotation.RetentionPolicy.SOURCE);
+        }
+    }
+
+    /**
+     * Stand-in for a third-party processor that generates a type referenced
+     * by Corusco-annotated sources.
+     */
+    @javax.annotation.processing.SupportedAnnotationTypes("*")
+    private static final class CustomerTypeGenerator extends javax.annotation.processing.AbstractProcessor {
+
+        private boolean generated;
+
+        @Override
+        public javax.lang.model.SourceVersion getSupportedSourceVersion() {
+            return javax.lang.model.SourceVersion.latestSupported();
+        }
+
+        @Override
+        public boolean process(
+                java.util.Set<? extends javax.lang.model.element.TypeElement> annotations,
+                javax.annotation.processing.RoundEnvironment roundEnv
+        ) {
+            if (generated || roundEnv.processingOver()) {
+                return false;
+            }
+            generated = true;
+            try (java.io.Writer writer = processingEnv.getFiler()
+                    .createSourceFile("demo.GeneratedCustomerType")
+                    .openWriter()) {
+                writer.write("package demo;\n\npublic enum GeneratedCustomerType { RETAIL, BUSINESS }\n");
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            return false;
+        }
     }
 
     private GeneratedSourceCompilation compile(String source) throws Exception {

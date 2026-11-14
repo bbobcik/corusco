@@ -39,7 +39,7 @@ import java.lang.annotation.Target;
  * source, resource maps, diagnostics, and tests. Changing it should be treated
  * as a compatibility change.</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface UiAction {
 
