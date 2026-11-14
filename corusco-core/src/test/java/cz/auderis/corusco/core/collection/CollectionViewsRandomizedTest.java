@@ -23,6 +23,42 @@ class CollectionViewsRandomizedTest {
 
     private static final int STEPS = 400;
 
+    private record Row(int key, int id) { }
+
+    @ParameterizedTest
+    @ValueSource(longs = {1L, 7L, 42L, 20261114L})
+    void stableDistinctKeysAndReplayAcrossMixedChanges(long seed) {
+        Random random = new Random(seed);
+        ObservableArrayList<Row> source = ObservableArrayList.empty();
+        SortedList<Row> sorted = SortedList.of(source, Comparator.comparingInt(Row::key));
+        FilteredList<Row> filtered = FilteredList.of(sorted, row -> row.id() % 2 == 0);
+        List<Row> sortedReplay = new ArrayList<>();
+        List<Row> filteredReplay = new ArrayList<>();
+        sorted.subscribe(changes -> replay(changes, sortedReplay));
+        filtered.subscribe(changes -> replay(changes, filteredReplay));
+        for (int step = 0; step < STEPS; step++) {
+            int id = step;
+            int size = source.size();
+            int choice = size == 0 ? 0 : random.nextInt(5);
+            switch (choice) {
+                case 0 -> source.add(random.nextInt(size + 1), new Row(random.nextInt(4), id));
+                case 1 -> source.remove(random.nextInt(size));
+                case 2 -> source.set(random.nextInt(size), new Row(random.nextInt(4), id));
+                case 3 -> source.move(random.nextInt(size), random.nextInt(size));
+                default -> source.batch(list -> {
+                    list.add(random.nextInt(list.size() + 1), new Row(random.nextInt(4), id));
+                    list.remove(random.nextInt(list.size()));
+                });
+            }
+            List<Row> expected = source.snapshot().stream().sorted(Comparator.comparingInt(Row::key)).toList();
+            assertThat(sorted.snapshot()).as("seed %s step %s", seed, step).isEqualTo(expected);
+            assertThat(sortedReplay).isEqualTo(expected);
+            List<Row> expectedFiltered = expected.stream().filter(row -> row.id() % 2 == 0).toList();
+            assertThat(filtered.snapshot()).isEqualTo(expectedFiltered);
+            assertThat(filteredReplay).isEqualTo(expectedFiltered);
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(longs = {1L, 7L, 42L, 2026L, 20261114L, -3L, 987654321L, 5L})
     void filteredAndSortedViewsMatchPlainListModel(long seed) {

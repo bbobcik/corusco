@@ -22,11 +22,12 @@ import org.jspecify.annotations.NonNull;
  * provides stable sorted reads for presentation code, adapters, and tests that
  * should not own collection storage.</p>
  *
- * <p>Sorting makes many source mutations ambiguous to translate as a precise
- * single insert, remove, replace, or move in view coordinates. For deterministic
- * behavior, every visible content change is therefore reported as a reset:
- * cleared previous contents followed by inserted current contents where
- * applicable. Comparator replacement uses the same reset rule. Call
+ * <p>Single inserts, removals and replacements are reported in view coordinates.
+ * A replacement that changes position produces one change set containing a
+ * removal and an insertion. Compound source changes use a reset. Equal sort keys
+ * retain source order. The comparator must remain consistent between source
+ * events; call {@link #setComparator(Comparator)} after changing comparator
+ * state or fields used by it, even when using the same comparator instance. Call
  * {@link #close()} when the view is no longer needed to release its source
  * subscription.</p>
  *
@@ -34,11 +35,14 @@ import org.jspecify.annotations.NonNull;
  */
 public final class SortedList<E extends @NonNull Object> implements ObservableList<E>, Disposable {
 
-    private final ObservableReadableCollection<E> source;
+    private final List<Entry<E>> sourceOrder = new ArrayList<>();
+    private List<Entry<E>> sortedEntries;
     private final ListenerSet<ListChangeListener<E>, ListChangeSet<E>> listeners = new ListenerSet<>();
     private final Subscription subscription;
     private Comparator<? super E> comparator;
     private List<E> sorted;
+    // Comparator failure can leave the mirror ahead of the published snapshot.
+    private boolean needsRefresh;
     private boolean closed;
 
     /**
@@ -58,9 +62,11 @@ public final class SortedList<E extends @NonNull Object> implements ObservableLi
      * @param comparator sort comparator
      */
     public SortedList(ObservableReadableCollection<E> source, Comparator<? super E> comparator) {
-        this.source = Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(source, "source");
         this.comparator = Objects.requireNonNull(comparator, "comparator");
-        this.sorted = sorted(source.snapshot());
+        for (E element : source.snapshot()) sourceOrder.add(new Entry<>(element));
+        this.sortedEntries = sortedEntries();
+        this.sorted = values(sortedEntries);
         this.subscription = source.subscribe(this::sourceChanged);
     }
 
@@ -131,7 +137,7 @@ public final class SortedList<E extends @NonNull Object> implements ObservableLi
      */
     public void setComparator(Comparator<? super E> comparator, ChangeOrigin origin) {
         this.comparator = Objects.requireNonNull(comparator, "comparator");
-        refreshFromSource(origin);
+        refresh(origin);
     }
 
     @Override
@@ -185,26 +191,121 @@ public final class SortedList<E extends @NonNull Object> implements ObservableLi
     }
 
     private void sourceChanged(ListChangeSet<E> changes) {
-        if (!closed) {
-            refreshFromSource(changes.origin());
-        }
-    }
-
-    private void refreshFromSource(ChangeOrigin origin) {
-        Objects.requireNonNull(origin, "origin");
-        List<E> next = sorted(source.snapshot());
-        if (sorted.equals(next)) {
+        if (closed) return;
+        if (needsRefresh) {
+            for (ListChange<E> change : changes.changes()) applySourceChange(change);
+            refresh(changes.origin());
             return;
         }
+        if (changes.changes().size() == 1) {
+            ListChange<E> change = changes.changes().getFirst();
+            if (change instanceof ListChange.Inserted<E> inserted && inserted.elements().size() == 1) {
+                Entry<E> entry = new Entry<>(inserted.elements().getFirst());
+                sourceOrder.add(inserted.index(), entry);
+                needsRefresh = true;
+                int index = insertionIndex(entry, inserted.index());
+                sortedEntries.add(index, entry);
+                sorted.add(index, entry.value);
+                needsRefresh = false;
+                fireIfNotEmpty(List.of(new ListChange.Inserted<>(index, List.of(entry.value))), changes.origin());
+                return;
+            }
+            if (change instanceof ListChange.Removed<E> removed && removed.elements().size() == 1) {
+                Entry<E> entry = sourceOrder.remove(removed.index());
+                int index = sortedEntries.indexOf(entry);
+                sortedEntries.remove(index);
+                sorted.remove(index);
+                fireIfNotEmpty(List.of(new ListChange.Removed<>(index, List.of(entry.value))), changes.origin());
+                return;
+            }
+            if (change instanceof ListChange.Replaced<E> replaced) {
+                Entry<E> old = sourceOrder.get(replaced.index());
+                int oldIndex = sortedEntries.indexOf(old);
+                Entry<E> next = new Entry<>(replaced.newElement());
+                sourceOrder.set(replaced.index(), next);
+                sortedEntries.remove(oldIndex);
+                needsRefresh = true;
+                int newIndex = insertionIndex(next, replaced.index());
+                sortedEntries.add(newIndex, next);
+                if (oldIndex == newIndex) {
+                    sorted.set(oldIndex, next.value);
+                    needsRefresh = false;
+                    fireIfNotEmpty(List.of(new ListChange.Replaced<>(oldIndex, old.value, next.value)), changes.origin());
+                } else {
+                    sorted.remove(oldIndex);
+                    sorted.add(newIndex, next.value);
+                    needsRefresh = false;
+                    fireIfNotEmpty(List.of(new ListChange.Removed<>(oldIndex, List.of(old.value)),
+                            new ListChange.Inserted<>(newIndex, List.of(next.value))), changes.origin());
+                }
+                return;
+            }
+        }
+        for (ListChange<E> change : changes.changes()) applySourceChange(change);
+        refresh(changes.origin());
+    }
+
+    private void refresh(ChangeOrigin origin) {
+        Objects.requireNonNull(origin, "origin");
+        needsRefresh = true;
+        List<Entry<E>> nextEntries = sortedEntries();
+        if (sortedEntries.equals(nextEntries)) {
+            needsRefresh = false;
+            return;
+        }
+        List<E> next = values(nextEntries);
         List<ListChange<E>> changes = resetChanges(sorted, next);
+        sortedEntries = nextEntries;
         sorted = next;
+        needsRefresh = false;
         fireIfNotEmpty(changes, origin);
     }
 
-    private List<E> sorted(List<E> elements) {
-        List<E> result = new ArrayList<>(elements);
-        result.sort(comparator);
+    private List<Entry<E>> sortedEntries() {
+        List<Entry<E>> result = new ArrayList<>(sourceOrder);
+        result.sort((left, right) -> comparator.compare(left.value, right.value));
         return result;
+    }
+
+    private List<E> values(List<Entry<E>> entries) {
+        List<E> result = new ArrayList<>(entries.size());
+        for (Entry<E> entry : entries) result.add(entry.value);
+        return result;
+    }
+
+    private int insertionIndex(Entry<E> entry, int sourceIndex) {
+        int low = 0, high = sortedEntries.size();
+        while (low < high) {
+            int middle = (low + high) >>> 1;
+            if (comparator.compare(sortedEntries.get(middle).value, entry.value) < 0) low = middle + 1;
+            else high = middle;
+        }
+        if (low < sortedEntries.size() && comparator.compare(sortedEntries.get(low).value, entry.value) == 0) {
+            for (int i = 0; i < sourceIndex; i++) {
+                if (comparator.compare(sourceOrder.get(i).value, entry.value) == 0) low++;
+            }
+        }
+        return low;
+    }
+
+    private void applySourceChange(ListChange<E> change) {
+        switch (change) {
+            case ListChange.Inserted<E> inserted -> {
+                int index = inserted.index();
+                for (E element : inserted.elements()) sourceOrder.add(index++, new Entry<>(element));
+            }
+            case ListChange.Removed<E> removed -> {
+                sourceOrder.subList(removed.index(), removed.index() + removed.elements().size()).clear();
+            }
+            case ListChange.Replaced<E> replaced -> sourceOrder.set(replaced.index(), new Entry<>(replaced.newElement()));
+            case ListChange.Moved<E> moved -> sourceOrder.add(moved.toIndex(), sourceOrder.remove(moved.fromIndex()));
+            case ListChange.Cleared<E> ignored -> sourceOrder.clear();
+        }
+    }
+
+    private static final class Entry<E> {
+        private final E value;
+        private Entry(E value) { this.value = value; }
     }
 
     private List<ListChange<E>> resetChanges(List<E> previous, List<E> next) {

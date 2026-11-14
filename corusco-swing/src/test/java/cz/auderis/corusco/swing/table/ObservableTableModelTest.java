@@ -3,6 +3,7 @@ package cz.auderis.corusco.swing.table;
 import cz.auderis.corusco.core.collection.ObservableArrayList;
 import cz.auderis.corusco.core.collection.MappedReadableCollection;
 import cz.auderis.corusco.core.collection.ObservableSortedSet;
+import cz.auderis.corusco.core.collection.SortedList;
 import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.core.table.Column;
 import cz.auderis.corusco.core.table.ColumnCapabilities;
@@ -28,6 +29,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ObservableTableModelTest {
+
+    @Test
+    void relocatedSortedReplacementPublishesOneTableReset() {
+        SwingEdt.runAndWait(() -> {
+            var rows = ObservableArrayList.of(List.of(new CustomerRow("Amy", 1), new CustomerRow("Zed", 2)));
+            var sorted = SortedList.of(rows, Comparator.comparing(CustomerRow::name));
+            var model = ObservableTableModel.readOnly(sorted, customerTable());
+            var table = new JTable(model);
+            table.setRowSorter(new TableRowSorter<>(model));
+            List<EventRecord> events = recordEvents(model);
+            rows.set(0, new CustomerRow("Zoe", 1));
+            assertThat(events).containsExactly(new EventRecord(TableModelEvent.UPDATE, 0, Integer.MAX_VALUE,
+                    TableModelEvent.ALL_COLUMNS));
+            assertThat(table.getValueAt(0, 0)).isEqualTo("Zed");
+            assertThat(table.getValueAt(1, 0)).isEqualTo("Zoe");
+            model.close();
+            sorted.close();
+        });
+    }
 
     @Test
     void replacementKeepsSortedFilteredTableConsistent() {
