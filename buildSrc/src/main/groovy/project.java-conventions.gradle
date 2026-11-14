@@ -49,7 +49,10 @@ tasks.withType(Test) {
     }
 
     useJUnitPlatform()
-    systemProperty 'java.awt.headless', 'true'
+    // Headless by default so the suite runs anywhere; GUI-only tests skip
+    // themselves. Run with -PtestHeadless=false on a display (e.g. under Xvfb)
+    // to execute them.
+    systemProperty 'java.awt.headless', providers.gradleProperty('testHeadless').getOrElse('true')
     jvmArgs += [
             '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
             '--add-opens', 'java.base/java.io=ALL-UNNAMED',
