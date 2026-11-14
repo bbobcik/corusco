@@ -2,6 +2,8 @@ package cz.auderis.corusco.swing.dialog;
 
 import cz.auderis.corusco.core.problem.Problem;
 import cz.auderis.corusco.core.problem.ProblemSet;
+import cz.auderis.corusco.core.form.ObservableFormModel;
+import cz.auderis.corusco.core.lifecycle.Subscription;
 import cz.auderis.corusco.swing.binding.Binding;
 import cz.auderis.corusco.swing.binding.SwingEdt;
 
@@ -38,6 +40,7 @@ public final class FormDialogValidationBinding implements Binding {
     private final ProblemFocusResolver focusResolver;
     private final String originalText;
     private boolean closed;
+    private final Subscription subscription;
 
     private FormDialogValidationBinding(
             FormDialog<?, ?> dialog,
@@ -50,6 +53,8 @@ public final class FormDialogValidationBinding implements Binding {
         this.focusResolver = Objects.requireNonNull(focusResolver, "focusResolver");
         this.originalText = summaryLabel.getText();
         refresh();
+        subscription = dialog.formModel() instanceof ObservableFormModel<?> observable
+                ? observable.state().subscribe(event -> refresh()) : Subscription.EMPTY;
     }
 
     /**
@@ -143,6 +148,7 @@ public final class FormDialogValidationBinding implements Binding {
             return;
         }
         closed = true;
+        subscription.close();
         summaryLabel.setText(originalText);
     }
 

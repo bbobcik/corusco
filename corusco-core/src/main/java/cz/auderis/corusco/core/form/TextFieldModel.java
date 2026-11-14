@@ -48,6 +48,8 @@ public final class TextFieldModel<O, T> {
     private final SimpleValue<String> rawText;
     private final SimpleValue<ParseState<T>> parseState;
     private final SimpleValue<ProblemSet> problems = SimpleValue.of(ProblemSet.empty());
+    private final SimpleValue<Long> completed = SimpleValue.of(0L);
+    private FormMutations mutations = new FormMutations();
 
     /**
      * Creates a text field model.
@@ -155,10 +157,20 @@ public final class TextFieldModel<O, T> {
     public void setRawText(String newRawText, ChangeOrigin origin) {
         Objects.requireNonNull(newRawText, "newRawText");
         Objects.requireNonNull(origin, "origin");
+        mutations.run(() -> setRawTextNow(newRawText, origin));
+    }
+
+    private void setRawTextNow(String newRawText, ChangeOrigin origin) {
+        String beforeRaw = rawText.value();
+        ParseState<T> beforeParse = parseState.value();
+        T beforeValue = value();
+        boolean beforeTouched = field.isTouched();
+        boolean beforeDirty = field.isDirty();
+        var beforeProblems = problems().problems();
         rawText.setValue(newRawText, origin);
         ParseResult<T> result = converter.parse(newRawText);
         if (result instanceof ParseResult.Success<T> success) {
-            field.setValue(success.value(), origin);
+            field.setValueNow(success.value(), origin);
             parseState.setValue(new ParseState.Parsed<>(newRawText, success.value()), origin);
             problems.setValue(ProblemSet.empty(), origin);
         } else if (result instanceof ParseResult.Failure<T> failure) {
@@ -167,6 +179,9 @@ public final class TextFieldModel<O, T> {
             problems.setValue(ProblemSet.of(problem), origin);
             field.markTouched(origin);
         }
+        if (!Objects.equals(beforeRaw, rawText.value()) || !Objects.equals(beforeParse, parseState.value())
+                || !Objects.equals(beforeValue, value()) || beforeTouched != field.isTouched()
+                || beforeDirty != field.isDirty() || !beforeProblems.equals(problems().problems())) complete(origin);
     }
 
     /**
@@ -174,19 +189,35 @@ public final class TextFieldModel<O, T> {
      * problems to the original baseline.
      */
     public void reset() {
-        field.reset();
+        mutations.runOwned(this, "reset", this::resetNow);
+    }
+
+    void resetNow() {
+        boolean changed = field.isDirty() || field.isTouched() || problems().hasErrors();
+        field.resetNow();
         String resetText = converter.format(field.value().value());
         rawText.setValue(resetText, StandardChangeOrigin.SYSTEM);
         parseState.setValue(new ParseState.Parsed<>(resetText, field.value().value()), StandardChangeOrigin.SYSTEM);
         problems.setValue(ProblemSet.empty(), StandardChangeOrigin.SYSTEM);
+        if (changed) complete(StandardChangeOrigin.SYSTEM);
     }
 
     /**
      * Accepts the current semantic value as the new dirty-state baseline.
      */
     public void acceptCurrentValue() {
-        field.acceptCurrentValue();
+        mutations.runOwned(this, "accept", this::acceptCurrentValueNow);
     }
+
+    void acceptCurrentValueNow() {
+        boolean wasDirty = field.isDirty();
+        field.acceptCurrentValueNow();
+        if (wasDirty) complete(StandardChangeOrigin.SYSTEM);
+    }
+
+    ReadableValue<Long> completed() { return completed; }
+    void useMutations(FormMutations mutations) { this.mutations = mutations; field.useMutations(mutations); }
+    private void complete(ChangeOrigin origin) { completed.setValue(completed.value() + 1, origin); }
 
     /**
      * Indicates whether the field is dirty.

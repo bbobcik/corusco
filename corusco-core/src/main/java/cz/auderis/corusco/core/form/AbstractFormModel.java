@@ -38,8 +38,9 @@ import java.util.Objects;
  */
 public abstract class AbstractFormModel<R> implements FormModel<R> {
 
-    private final List<FieldModel<?, ?>> fields = new ArrayList<>();
-    private final List<TextFieldModel<?, ?>> textFields = new ArrayList<>();
+    protected final List<FieldModel<?, ?>> fields = new ArrayList<>();
+    protected final List<TextFieldModel<?, ?>> textFields = new ArrayList<>();
+    private FormMutations mutations = new FormMutations();
 
     /**
      * Creates an empty form model base.
@@ -59,6 +60,7 @@ public abstract class AbstractFormModel<R> implements FormModel<R> {
      */
     protected final <F extends FieldModel<?, ?>> F register(F field) {
         fields.add(Objects.requireNonNull(field, "field"));
+        fieldRegistered(field);
         return field;
     }
 
@@ -73,8 +75,12 @@ public abstract class AbstractFormModel<R> implements FormModel<R> {
     protected final <F extends TextFieldModel<?, ?>> F register(F field) {
         textFields.add(Objects.requireNonNull(field, "field"));
         fields.add(field.semanticField());
+        textFieldRegistered(field);
         return field;
     }
+
+    protected void fieldRegistered(FieldModel<?, ?> field) { }
+    protected void textFieldRegistered(TextFieldModel<?, ?> field) { }
 
     @Override
     public ProblemSet problems() {
@@ -92,22 +98,45 @@ public abstract class AbstractFormModel<R> implements FormModel<R> {
 
     @Override
     public void reset() {
+        mutations.runOwned(this, "reset", this::resetNow);
+    }
+
+    final void resetNow() { beginBatch();
+        try {
         for (TextFieldModel<?, ?> field : textFields) {
-            field.reset();
+            mutations.invokeChild(field, "reset", field::reset);
         }
         for (FieldModel<?, ?> field : fields) {
             if (!isOwnedByTextField(field)) {
-                field.reset();
+                mutations.invokeChild(field, "reset", field::reset);
             }
         }
+        } finally { endBatch(); }
     }
 
     @Override
     public void acceptCurrentValues() {
-        for (FieldModel<?, ?> field : fields) {
-            field.acceptCurrentValue();
-        }
+        mutations.runOwned(this, "accept", this::acceptNow);
     }
+
+    final void acceptNow() { beginBatch();
+        try {
+        for (TextFieldModel<?, ?> field : textFields) mutations.invokeChild(field, "accept", field::acceptCurrentValue);
+        for (FieldModel<?, ?> field : fields) {
+            if (!isOwnedByTextField(field)) mutations.invokeChild(field, "accept", field::acceptCurrentValue);
+        }
+        } finally { endBatch(); }
+    }
+
+    final void useMutations(FormMutations mutations) {
+        this.mutations = mutations;
+        fields.forEach(field -> field.useMutations(mutations));
+        textFields.forEach(field -> field.useMutations(mutations));
+    }
+    final FormMutations mutations() { return mutations; }
+
+    protected void beginBatch() { }
+    protected void endBatch() { }
 
     @Override
     public final R toResult() {
@@ -137,7 +166,7 @@ public abstract class AbstractFormModel<R> implements FormModel<R> {
         return ProblemSet.empty();
     }
 
-    private boolean isOwnedByTextField(FieldModel<?, ?> candidate) {
+    protected final boolean isOwnedByTextField(FieldModel<?, ?> candidate) {
         for (TextFieldModel<?, ?> textField : textFields) {
             if (textField.semanticField() == candidate) {
                 return true;

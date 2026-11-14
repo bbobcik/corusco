@@ -70,8 +70,7 @@ public final class BindingFactory {
      * @return binding
      */
     public static <O, T> Binding textField(JTextField component, TextFieldModel<O, T> model) {
-        return bindText(component::setText, component::getText, component.getDocument()::addDocumentListener,
-                component.getDocument()::removeDocumentListener, model);
+        return bindText(component::setText, component::getText, component.getDocument(), model);
     }
 
     /**
@@ -87,8 +86,7 @@ public final class BindingFactory {
      * @return binding
      */
     public static <O, T> Binding textArea(JTextArea component, TextFieldModel<O, T> model) {
-        return bindText(component::setText, component::getText, component.getDocument()::addDocumentListener,
-                component.getDocument()::removeDocumentListener, model);
+        return bindText(component::setText, component::getText, component.getDocument(), model);
     }
 
     /**
@@ -605,55 +603,75 @@ public final class BindingFactory {
         };
     }
 
+    private static final java.util.IdentityHashMap<javax.swing.text.Document, Integer> ACTIVE_DOCUMENTS = new java.util.IdentityHashMap<>();
+
     private static <O, T> Binding bindText(
             java.util.function.Consumer<String> setter,
             java.util.function.Supplier<String> getter,
-            java.util.function.Consumer<DocumentListener> addListener,
-            java.util.function.Consumer<DocumentListener> removeListener,
+            javax.swing.text.Document document,
             TextFieldModel<O, T> model
     ) {
         SwingEdt.requireEdt();
         Objects.requireNonNull(model, "model");
         SubscriptionScope scope = new SubscriptionScope();
         boolean[] updating = new boolean[1];
+        boolean[] closed = new boolean[1];
+        boolean[] pending = new boolean[1];
         setter.accept(model.rawText().value());
         DocumentListener listener = new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
-                updateModel();
+                updateModel(e);
             }
 
             @Override
             public void removeUpdate(DocumentEvent e) {
-                updateModel();
+                updateModel(e);
             }
 
             @Override
             public void changedUpdate(DocumentEvent e) {
-                updateModel();
+                updateModel(e);
             }
 
-            private void updateModel() {
+            private void updateModel(DocumentEvent event) {
                 if (!updating[0]) {
-                    model.setRawText(getter.get(), StandardChangeOrigin.USER);
+                    var activeDocument = event.getDocument();
+                    ACTIVE_DOCUMENTS.merge(activeDocument, 1, Integer::sum);
+                    try {
+                        model.setRawText(getter.get(), StandardChangeOrigin.USER);
+                    } finally {
+                        int depth = ACTIVE_DOCUMENTS.get(activeDocument) - 1;
+                        if (depth == 0) ACTIVE_DOCUMENTS.remove(activeDocument);
+                        else ACTIVE_DOCUMENTS.put(activeDocument, depth);
+                    }
                 }
             }
         };
-        addListener.accept(listener);
-        scope.onClose(() -> removeListener.accept(listener));
+        document.addDocumentListener(listener);
+        scope.onClose(() -> document.removeDocumentListener(listener));
+        Runnable synchronize = () -> {
+            if (closed[0] || Objects.equals(getter.get(), model.rawText().value())) return;
+            updating[0] = true;
+            try { setter.accept(model.rawText().value()); }
+            finally { updating[0] = false; }
+        };
         scope.add(model.rawText().subscribe(event -> {
             SwingEdt.requireEdt();
             if (!Objects.equals(getter.get(), event.newValue())) {
-                updating[0] = true;
-                try {
-                    setter.accept(event.newValue());
-                } finally {
-                    updating[0] = false;
+                if (ACTIVE_DOCUMENTS.containsKey(document)) {
+                    if (!pending[0]) {
+                        pending[0] = true;
+                        javax.swing.SwingUtilities.invokeLater(() -> { pending[0] = false; synchronize.run(); });
+                    }
+                } else {
+                    synchronize.run();
                 }
             }
         }));
         return () -> {
             SwingEdt.requireEdt();
+            closed[0] = true;
             scope.close();
         };
     }

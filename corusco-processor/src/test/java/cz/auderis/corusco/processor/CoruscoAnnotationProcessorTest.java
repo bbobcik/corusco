@@ -98,7 +98,7 @@ class CoruscoAnnotationProcessorTest {
                 "EditorDescriptor.checkBox()"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
-                "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>",
+                "public final class CustomerEditFormModel extends AbstractObservableFormModel<CustomerEdit>",
                 "public final TextFieldModel<CustomerEdit, java.lang.String> name;",
                 "public final TextFieldModel<CustomerEdit, java.math.BigDecimal> creditLimit;",
                 "public final FieldModel<CustomerEdit, demo.CustomerType> type;",
@@ -131,7 +131,7 @@ class CoruscoAnnotationProcessorTest {
                 "public final class CustomerEditBehaviorPlan",
                 "public static void install(CustomerEditView view, CustomerEditPresentationModel model, BehaviorScope scope)",
                 "StandardBehaviors.textFieldBinding(model.form().name)",
-                "StandardBehaviors.validationTooltip(model.form().name.problemSet())",
+                "StandardBehaviors.validationTooltip(model.form().fieldProblems(model.form().name.fieldKey()))",
                 "StandardBehaviors.selectAllOnFocus()",
                 "StandardBehaviors.checkBoxBinding(model.form().active)"
         );
@@ -265,7 +265,7 @@ class CoruscoAnnotationProcessorTest {
                 "public static final FieldDescriptor<CustomerEdit, java.lang.Boolean> ACTIVE"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
-                "public final class CustomerEditFormModel extends AbstractFormModel<GeneratedCustomerEdit>",
+                "public final class CustomerEditFormModel extends AbstractObservableFormModel<GeneratedCustomerEdit>",
                 "public CustomerEditFormModel(CustomerEdit original)",
                 "original.name()",
                 "original.type()",
@@ -956,7 +956,7 @@ class CoruscoAnnotationProcessorTest {
                 "public final class CustomerEditFields"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditFormModel.java",
-                "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>"
+                "public final class CustomerEditFormModel extends AbstractObservableFormModel<CustomerEdit>"
         );
         result.assertGeneratedSourceContains("demo/CustomerEditPresentationModel.java",
                 "public final class CustomerEditPresentationModel"
@@ -1020,7 +1020,7 @@ class CoruscoAnnotationProcessorTest {
 
         assertThat(result.success()).as(result.messages()).isTrue();
         result.assertGeneratedSourceContains("model/CustomerEditFormModel.java",
-                "public final class CustomerEditFormModel extends AbstractFormModel<CustomerEdit>"
+                "public final class CustomerEditFormModel extends AbstractObservableFormModel<CustomerEdit>"
         );
         assertThat(result.hasGeneratedSource("model/CustomerEditView.java")).isFalse();
         result.assertGeneratedSourceContains("ui/CustomerEditView.java",

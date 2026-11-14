@@ -5,6 +5,8 @@ import cz.auderis.corusco.core.command.CommandFactory;
 import cz.auderis.corusco.core.command.MutableCommand;
 import cz.auderis.corusco.core.dialog.DialogResult;
 import cz.auderis.corusco.core.form.FormModel;
+import cz.auderis.corusco.core.form.ObservableFormModel;
+import cz.auderis.corusco.core.lifecycle.Subscription;
 import cz.auderis.corusco.core.key.ActionKey;
 import cz.auderis.corusco.core.key.ResourceKey;
 import cz.auderis.corusco.swing.binding.Binding;
@@ -125,6 +127,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
     private R lastAppliedResult;
     private boolean hasAppliedResult;
     private boolean closed;
+    private final Subscription stateSubscription;
 
     /**
      * Creates a form dialog controller with no dirty-cancel confirmation.
@@ -143,7 +146,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
      *         {@code null}
      */
     public FormDialog(P formModel, JComponent root) {
-        this(formModel, root, DirtyState.CLEAN, CancelConfirmation.ALWAYS_CONFIRM);
+        this(formModel, root, defaultDirtyState(formModel), CancelConfirmation.ALWAYS_CONFIRM);
     }
 
     /**
@@ -210,6 +213,13 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
         this.cancelCommand = CommandFactory.command(ActionDescriptor.action(CANCEL_KEY, CANCEL_TEXT), command -> cancel());
         this.revertCommand = CommandFactory.command(ActionDescriptor.action(REVERT_KEY, REVERT_TEXT), command -> revert());
         refreshCommandState();
+        stateSubscription = formModel instanceof ObservableFormModel<?> observable
+                ? observable.state().subscribe(event -> refreshCommandState()) : Subscription.EMPTY;
+    }
+
+    private static DirtyState defaultDirtyState(FormModel<?> formModel) {
+        return formModel instanceof ObservableFormModel<?> observable
+                ? () -> observable.state().value().dirty() : DirtyState.CLEAN;
     }
 
     /**
@@ -391,6 +401,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
         formModel.acceptCurrentValues();
         result = accepted;
         closed = true;
+        stateSubscription.close();
         refreshCommandState();
         return true;
     }
@@ -476,6 +487,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
         hasAppliedResult = false;
         result = DialogResult.reverted();
         closed = true;
+        stateSubscription.close();
         refreshCommandState();
         return true;
     }
@@ -493,6 +505,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
     @Override
     public void close() {
         SwingEdt.requireEdt();
+        stateSubscription.close();
         if (closed) {
             return;
         }
@@ -523,6 +536,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
         result = DialogResult.cancelled();
         formModel.reset();
         closed = true;
+        stateSubscription.close();
         refreshCommandState();
     }
 
@@ -532,6 +546,7 @@ public class FormDialog<P extends FormModel<R>, R> implements Binding {
                 : DialogResult.cancelled();
         formModel.reset();
         closed = true;
+        stateSubscription.close();
         refreshCommandState();
     }
 

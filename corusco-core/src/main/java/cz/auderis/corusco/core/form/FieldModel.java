@@ -38,6 +38,8 @@ public class FieldModel<O, T> {
     private final SimpleValue<Boolean> dirty = SimpleValue.of(false);
     private final SimpleValue<Boolean> touched = SimpleValue.of(false);
     private T originalValue;
+    private final SimpleValue<Long> completed = SimpleValue.of(0L);
+    private FormMutations mutations = new FormMutations();
 
     /**
      * Creates a field model.
@@ -94,27 +96,52 @@ public class FieldModel<O, T> {
      * @param origin change origin
      */
     public void setValue(T newValue, ChangeOrigin origin) {
+        mutations.run(() -> setValueNow(newValue, origin));
+    }
+
+    void setValueNow(T newValue, ChangeOrigin origin) {
+        T before = value.value();
+        boolean wasTouched = isTouched();
         value.setValue(newValue, origin);
         touched.setValue(true, origin);
         refreshDirty(origin);
+        if (!Objects.equals(before, value.value()) || !wasTouched) complete(origin);
     }
 
     /**
      * Resets current value and touched state to the original baseline.
      */
     public void reset() {
+        mutations.runOwned(this, "reset", this::resetNow);
+    }
+
+    void resetNow() {
+        T before = value.value();
+        boolean wasTouched = isTouched();
+        boolean wasDirty = isDirty();
         value.setValue(originalValue, StandardChangeOrigin.SYSTEM);
         touched.setValue(false, StandardChangeOrigin.SYSTEM);
         refreshDirty(StandardChangeOrigin.SYSTEM);
+        if (!Objects.equals(before, value.value()) || wasTouched || wasDirty) complete(StandardChangeOrigin.SYSTEM);
     }
 
     /**
      * Accepts the current value as the new dirty-state baseline.
      */
     public void acceptCurrentValue() {
+        mutations.runOwned(this, "accept", this::acceptCurrentValueNow);
+    }
+
+    void acceptCurrentValueNow() {
+        boolean wasDirty = isDirty();
         originalValue = value.value();
         refreshDirty(StandardChangeOrigin.SYSTEM);
+        if (wasDirty != isDirty()) complete(StandardChangeOrigin.SYSTEM);
     }
+
+    ReadableValue<Long> completed() { return completed; }
+    void useMutations(FormMutations mutations) { this.mutations = mutations; }
+    private void complete(ChangeOrigin origin) { completed.setValue(completed.value() + 1, origin); }
 
     void markTouched(ChangeOrigin origin) {
         touched.setValue(true, origin);

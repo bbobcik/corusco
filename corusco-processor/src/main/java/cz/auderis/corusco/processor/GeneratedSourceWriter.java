@@ -671,8 +671,8 @@ final class GeneratedSourceWriter {
             return """
                         scope.install(view.%s(), List.of(
                                 StandardBehaviors.textFieldBinding(model.form().%s),
-                                StandardBehaviors.validationTooltip(model.form().%s.problemSet()),
-                                StandardBehaviors.validationBorder(model.form().%s.problemSet()),
+                                StandardBehaviors.validationTooltip(model.form().fieldProblems(model.form().%s.fieldKey())),
+                                StandardBehaviors.validationBorder(model.form().fieldProblems(model.form().%s.fieldKey())),
                                 StandardBehaviors.selectAllOnFocus()%s
                         ));
                     """.formatted(
