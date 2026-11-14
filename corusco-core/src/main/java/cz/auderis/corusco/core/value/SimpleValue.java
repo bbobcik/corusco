@@ -5,6 +5,8 @@ import cz.auderis.corusco.core.lifecycle.Subscription;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Basic mutable {@link WritableValue} implementation.
@@ -14,7 +16,8 @@ import java.util.Objects;
  * state. It owns the current value and the listener registrations returned from
  * {@link #subscribe(ValueChangeListener)}.</p>
  *
- * <p>Mutation and listener dispatch are synchronous. This class is not
+ * <p>Ordinary instances mutate and dispatch synchronously. A backed value may
+ * use its owner's dispatcher to defer a reentrant mutation. This class is not
  * synchronized and is intended for single-owner presentation state. Equal
  * values, including equal {@code null} values, do not emit events. Listener
  * dispatch uses a snapshot so removing a listener during dispatch does not skip
@@ -36,6 +39,9 @@ public final class SimpleValue<T> implements WritableValue<T> {
 
     private final ListenerSet<ValueChangeListener<T>, ValueChangeEvent<T>> listeners = new ListenerSet<>();
     private @Nullable T value;
+    private final @Nullable Supplier<@Nullable T> reader;
+    private final @Nullable Consumer<@Nullable T> writer;
+    private final Consumer<Runnable> mutationDispatcher;
 
     /**
      * Creates a value with an initial value.
@@ -44,6 +50,36 @@ public final class SimpleValue<T> implements WritableValue<T> {
      */
     public SimpleValue(@Nullable T initialValue) {
         this.value = initialValue;
+        this.reader = null;
+        this.writer = null;
+        this.mutationDispatcher = Runnable::run;
+    }
+
+    private SimpleValue(Supplier<@Nullable T> reader, Consumer<@Nullable T> writer, Consumer<Runnable> mutationDispatcher) {
+        this.reader = Objects.requireNonNull(reader, "reader");
+        this.writer = Objects.requireNonNull(writer, "writer");
+        this.mutationDispatcher = Objects.requireNonNull(mutationDispatcher, "mutationDispatcher");
+    }
+
+    /** Creates an owner capability and its value backed by externally owned state. */
+    public static <T> Backing<T> backedBy(Supplier<@Nullable T> reader, Consumer<@Nullable T> writer) {
+        return backedBy(reader, writer, Runnable::run);
+    }
+
+    /** Creates a backed value whose owner serializes mutations and their notifications, including null values. */
+    public static <T> Backing<T> backedBy(Supplier<@Nullable T> reader, Consumer<@Nullable T> writer, Consumer<Runnable> mutationDispatcher) {
+        return new Backing<>(new SimpleValue<>(reader, writer, mutationDispatcher));
+    }
+
+    /** Owner-only capability for announcing a change already installed in backing state. */
+    public static final class Backing<T> {
+        private final SimpleValue<T> value;
+        private Backing(SimpleValue<T> value) { this.value = value; }
+        public SimpleValue<T> value() { return value; }
+        public void notifyChange(@Nullable T oldValue, @Nullable T newValue, ChangeOrigin origin) {
+            Objects.requireNonNull(origin, "origin");
+            if (!Objects.equals(oldValue, newValue)) value.fireChanged(oldValue, newValue, origin);
+        }
     }
 
     /**
@@ -69,17 +105,25 @@ public final class SimpleValue<T> implements WritableValue<T> {
 
     @Override
     public @Nullable T value() {
-        return value;
+        return reader == null ? value : reader.get();
     }
 
     @Override
     public void setValue(@Nullable T newValue, ChangeOrigin origin) {
         Objects.requireNonNull(origin, "origin");
-        @Nullable T oldValue = value;
+        mutationDispatcher.accept(() -> setValueNow(newValue, origin));
+    }
+
+    private void setValueNow(@Nullable T newValue, ChangeOrigin origin) {
+        @Nullable T oldValue = value();
         if (Objects.equals(oldValue, newValue)) {
             return;
         }
-        value = newValue;
+        if (writer == null) {
+            value = newValue;
+        } else {
+            writer.accept(newValue);
+        }
         fireChanged(oldValue, newValue, origin);
     }
 

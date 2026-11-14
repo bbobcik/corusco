@@ -17,6 +17,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Executes UI-initiated background work and delivers callbacks on a configured
@@ -28,11 +29,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  * callback executor. Swing applications should pass an executor that dispatches
  * to the Event Dispatch Thread when callbacks update Swing state.</p>
  *
+ * <p>Worker rejection is reported synchronously. Once the worker has accepted
+ * a submission, an exception from a busy-start listener instead cancels the
+ * work and is delivered as the task failure. Callback and busy-end listener
+ * exceptions complete the handle exceptionally; they cannot turn an accepted
+ * submission into a synchronous worker rejection.</p>
+ *
  * <p>The service owns the worker executor only when created through
  * {@link #virtualThreads(Executor)}. Instances created with
  * {@link #of(ExecutorService, Executor)} cancel outstanding handles on close
  * but leave the caller-owned executor service open. Closing is idempotent and
  * causes later submissions to fail with {@link IllegalStateException}.</p>
+ * <p>Close attempts every cancellation and owned-worker shutdown even when one
+ * fails, then rethrows the first failure with later distinct failures suppressed.</p>
  */
 public final class DefaultTaskService implements TaskService {
 
@@ -82,33 +91,75 @@ public final class DefaultTaskService implements TaskService {
     public <T> TaskHandle<T> submit(UiTask<? extends T> task, TaskCallbacks<? super T> callbacks) {
         Objects.requireNonNull(task, "task");
         Objects.requireNonNull(callbacks, "callbacks");
-        if (closed) {
-            throw new IllegalStateException("TaskService is closed");
-        }
         CancellationSource cancellation = new CancellationSource();
         TaskHandleImpl<T> handle = new TaskHandleImpl<>(cancellation, callbacks);
-        handles.add(handle);
-        markStarted(handle);
-        Future<?> workerFuture = workerExecutor.submit(() -> runTask(task, handle));
+        synchronized (handles) {
+            if (closed) throw new IllegalStateException("TaskService is closed");
+            handles.add(handle);
+        }
+        Future<?> workerFuture;
+        try {
+            workerFuture = workerExecutor.submit(() -> runTask(task, handle));
+        } catch (RejectedExecutionException e) {
+            handles.remove(handle);
+            throw e;
+        }
         handle.workerFuture = workerFuture;
         if (cancellation.isCancellationRequested()) {
             workerFuture.cancel(true);
+        }
+        try {
+            markStarted(handle);
+        } catch (RuntimeException | Error observerError) {
+            synchronized (handle) {
+                handle.observerFailed = true;
+                handle.earlyOutcome = TaskOutcome.failure(observerError);
+            }
+            cancellation.cancel();
+            workerFuture.cancel(true);
+        } finally {
+            TaskOutcome<T> earlyOutcome;
+            synchronized (handle) {
+                handle.started = true;
+                earlyOutcome = handle.earlyOutcome;
+                handle.earlyOutcome = null;
+                if (earlyOutcome != null) handle.finishStarted.set(true);
+            }
+            if (earlyOutcome != null) {
+                try { dispatchFinish(handle, earlyOutcome); }
+                catch (RuntimeException | Error callbackError) {
+                    // Completion captures direct callback failures after acceptance.
+                }
+            }
         }
         return handle;
     }
 
     @Override
     public void close() {
-        if (closed) {
-            return;
+        List<TaskHandleImpl<?>> snapshot;
+        synchronized (handles) {
+            if (closed) return;
+            closed = true;
+            snapshot = List.copyOf(handles);
         }
-        closed = true;
-        for (TaskHandleImpl<?> handle : List.copyOf(handles)) {
-            handle.cancel();
+        Throwable failure = null;
+        for (TaskHandleImpl<?> handle : snapshot) {
+            try { handle.cancel(); }
+            catch (RuntimeException | Error e) {
+                if (failure == null) failure = e;
+                else if (failure != e) failure.addSuppressed(e);
+            }
         }
         if (ownsWorkerExecutor) {
-            workerExecutor.shutdownNow();
+            try { workerExecutor.shutdownNow(); }
+            catch (RuntimeException | Error e) {
+                if (failure == null) failure = e;
+                else if (failure != e) failure.addSuppressed(e);
+            }
         }
+        if (failure instanceof RuntimeException e) throw e;
+        if (failure instanceof Error e) throw e;
     }
 
     private <T> void runTask(UiTask<? extends T> task, TaskHandleImpl<T> handle) {
@@ -129,47 +180,74 @@ public final class DefaultTaskService implements TaskService {
     }
 
     private void markStarted(TaskHandleImpl<?> handle) {
+        boolean first = activeTasks.getAndIncrement() == 0;
         handle.busy.setValue(true, StandardChangeOrigin.SYSTEM);
-        if (activeTasks.getAndIncrement() == 0) {
+        if (first) {
             busy.setValue(true, StandardChangeOrigin.SYSTEM);
         }
     }
 
     private <T> void finish(TaskHandleImpl<T> handle, TaskOutcome<T> outcome) {
-        if (!handle.finishStarted.compareAndSet(false, true)) {
-            return;
+        synchronized (handle) {
+            if (!handle.started) {
+                if (handle.observerFailed) return;
+                if (handle.earlyOutcome == null || outcome.state() == TaskState.CANCELLED) {
+                    handle.earlyOutcome = outcome;
+                }
+                return;
+            }
+            if (!handle.finishStarted.compareAndSet(false, true)) return;
         }
+        dispatchFinish(handle, outcome);
+    }
+
+    private <T> void dispatchFinish(TaskHandleImpl<T> handle, TaskOutcome<T> outcome) {
+        AtomicBoolean entered = new AtomicBoolean();
         try {
-            callbackExecutor.execute(() -> finishOnCallbackExecutor(handle, outcome));
+            callbackExecutor.execute(() -> {
+                entered.set(true);
+                finishOnCallbackExecutor(handle, outcome);
+            });
         } catch (RejectedExecutionException e) {
+            if (entered.get()) throw e;
             finishOnCallbackExecutor(handle, TaskOutcome.failure(e));
         }
     }
 
     private <T> void finishOnCallbackExecutor(TaskHandleImpl<T> handle, TaskOutcome<T> outcome) {
+        Throwable notificationError = null;
         try {
             handle.busy.setValue(false, StandardChangeOrigin.SYSTEM);
-            if (activeTasks.decrementAndGet() == 0) {
-                busy.setValue(false, StandardChangeOrigin.SYSTEM);
+        } catch (RuntimeException | Error e) {
+            notificationError = e;
+        }
+        if (activeTasks.decrementAndGet() == 0) {
+            try { busy.setValue(false, StandardChangeOrigin.SYSTEM); }
+            catch (RuntimeException | Error e) {
+                if (notificationError == null) notificationError = e;
+                else if (notificationError != e) notificationError.addSuppressed(e);
             }
-            handles.remove(handle);
+        }
+        handles.remove(handle);
+        try {
             switch (outcome.state()) {
-                case SUCCESS -> {
-                    handle.callbacks.succeeded(outcome.result());
-                    handle.completion.complete(outcome.result());
-                }
-                case FAILURE -> {
-                    handle.callbacks.failed(outcome.error());
-                    handle.completion.completeExceptionally(outcome.error());
-                }
-                case CANCELLED -> {
-                    handle.callbacks.cancelled();
-                    handle.completion.cancel(false);
-                }
+                case SUCCESS -> handle.callbacks.succeeded(outcome.result());
+                case FAILURE -> handle.callbacks.failed(outcome.error());
+                case CANCELLED -> handle.callbacks.cancelled();
             }
-        } catch (Throwable e) {
-            handle.completion.completeExceptionally(e);
-            throw e;
+        } catch (RuntimeException | Error e) {
+            if (notificationError == null) notificationError = e;
+            else if (notificationError != e) notificationError.addSuppressed(e);
+        }
+        if (notificationError != null) {
+            handle.completion.completeExceptionally(notificationError);
+            if (notificationError instanceof RuntimeException e) throw e;
+            throw (Error) notificationError;
+        }
+        switch (outcome.state()) {
+            case SUCCESS -> handle.completion.complete(outcome.result());
+            case FAILURE -> handle.completion.completeExceptionally(outcome.error());
+            case CANCELLED -> handle.completion.cancel(false);
         }
     }
 
@@ -201,7 +279,10 @@ public final class DefaultTaskService implements TaskService {
         private final SimpleValue<Boolean> busy = SimpleValue.of(false);
         private final CompletableFuture<T> completion = new CompletableFuture<>();
         private final AtomicBoolean finishStarted = new AtomicBoolean();
-        private volatile Future<?> workerFuture;
+        private volatile @Nullable Future<?> workerFuture;
+        private boolean started;
+        private boolean observerFailed;
+        private @Nullable TaskOutcome<T> earlyOutcome;
 
         private TaskHandleImpl(CancellationSource cancellation, TaskCallbacks<? super T> callbacks) {
             this.cancellation = cancellation;

@@ -5,6 +5,7 @@ import cz.auderis.corusco.core.lifecycle.Disposable;
 import cz.auderis.corusco.core.value.ChangeOrigin;
 import cz.auderis.corusco.core.value.ReadableValue;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Observable, key-aware current data window.
@@ -86,6 +87,17 @@ public interface CoruscoDataSource<R extends @NonNull Object, K extends @NonNull
      * @return count value
      */
     ReadableValue<CoruscoDataCount> totalCount();
+
+    /**
+     * Returns the accepted page's reconciled range, query and generation, when
+     * known. This remains associated with the displayed rows during loading or
+     * failure. Implementations without this information return null.
+     *
+     * @return accepted page identity, or null if unavailable
+     */
+    default @Nullable CoruscoDataRequest acceptedRequest() {
+        return null;
+    }
 
     /**
      * Requests a page using the current query.
