@@ -142,4 +142,26 @@ class ObservableArrayListTest {
         result.add(null);
         return result;
     }
+
+    @Test
+    void deliversChangesInOrderWhenListenerMutatesDuringNotification() {
+        ObservableArrayList<Integer> list = ObservableArrayList.of(List.of(1, 2, 3, 4));
+        List<ListChangeSet<Integer>> laterListenerEvents = new ArrayList<>();
+        list.subscribe(changes -> {
+            if (list.size() > 4) {
+                list.remove(list.size() - 1);
+            }
+        });
+        FilteredList<Integer> filtered = FilteredList.of(list, value -> value % 2 == 0);
+        list.subscribe(laterListenerEvents::add);
+
+        list.add(0, 10);
+
+        assertThat(list.snapshot()).containsExactly(10, 1, 2, 3);
+        assertThat(filtered.snapshot()).containsExactly(10, 2);
+        assertThat(laterListenerEvents).extracting(ListChangeSet::changes).containsExactly(
+                List.of(new ListChange.Inserted<>(0, List.of(10))),
+                List.of(new ListChange.Removed<>(4, List.of(4)))
+        );
+    }
 }

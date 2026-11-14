@@ -100,4 +100,21 @@ class SimpleValueTest {
                     .hasMessage("cannot create custom origin with standard id");
         }
     }
+
+    @Test
+    void deliversNestedChangesInOrderToAllListeners() {
+        SimpleValue<Integer> value = SimpleValue.of(0);
+        List<String> observed = new ArrayList<>();
+        value.subscribe(event -> {
+            if (event.newValue() != null && event.newValue() == 1) {
+                value.setValue(2);
+            }
+        });
+        value.subscribe(event -> observed.add(event.oldValue() + "->" + event.newValue()));
+
+        value.setValue(1);
+
+        assertThat(value.value()).isEqualTo(2);
+        assertThat(observed).containsExactly("0->1", "1->2");
+    }
 }

@@ -4,6 +4,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.BiConsumer;
@@ -28,6 +29,14 @@ import java.util.function.BiConsumer;
  * lifecycles, but callers should avoid keeping stale subscriptions for listener
  * instances that they remove and later register again.</p>
  *
+ * <p>Events raised re-entrantly, that is by a listener of this set on the
+ * thread that is currently dispatching an event of this set, are queued and
+ * delivered after the current dispatch reaches every listener. Every listener
+ * therefore observes events from one thread in the order they were raised,
+ * even when an earlier listener reacts to an event by raising another one.
+ * Dispatches started concurrently from different threads are not ordered
+ * against each other.</p>
+ *
  * @param <LSNR> listener type
  * @param <EVT> event payload type
  */
@@ -35,6 +44,8 @@ public final class ListenerSet<LSNR, EVT> {
 
     private final Object mutationLock = new Object();
     private volatile Object @Nullable [] listeners;
+    private volatile @Nullable Thread dispatchingThread;
+    private final ArrayDeque<PendingEvent> pendingEvents = new ArrayDeque<>();
 
     /**
      * Adds a listener when the same listener instance is not already present.
@@ -120,7 +131,11 @@ public final class ListenerSet<LSNR, EVT> {
      *
      * <p>The event payload may be {@code null}. Listener additions, removals,
      * and clears performed while dispatch is in progress affect only later
-     * dispatches.</p>
+     * dispatches. When this method is called on the thread that is already
+     * dispatching an event of this set (for example from a listener that
+     * mutates the event source), the new event is queued with the listeners
+     * registered at that moment and delivered once the current dispatch has
+     * reached all its listeners.</p>
      *
      * @param event event payload, possibly {@code null}
      * @param listenerDispatch dispatcher that invokes one listener with the
@@ -133,9 +148,53 @@ public final class ListenerSet<LSNR, EVT> {
         if (null == currentListeners) {
             return;
         }
+        final Thread currentThread = Thread.currentThread();
+        if (dispatchingThread == currentThread) {
+            // Only the dispatching thread touches pendingEvents.
+            pendingEvents.addLast(new PendingEvent(currentListeners, event, listenerDispatch));
+            return;
+        }
+        if (!DISPATCHING_THREAD.compareAndSet(this, (Thread) null, currentThread)) {
+            // Another thread is dispatching; concurrent dispatches are unordered.
+            dispatch(currentListeners, event, listenerDispatch);
+            return;
+        }
+        try {
+            dispatch(currentListeners, event, listenerDispatch);
+            PendingEvent pending;
+            while (null != (pending = pendingEvents.pollFirst())) {
+                dispatch(pending.listeners(), pending.event(), pending.dispatch());
+            }
+        } finally {
+            pendingEvents.clear();
+            dispatchingThread = null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <LSNR, EVT> void dispatch(
+            Object[] currentListeners,
+            @Nullable EVT event,
+            BiConsumer<? super LSNR, ? super @Nullable EVT> listenerDispatch
+    ) {
         for (Object lsnrObj : currentListeners) {
             final LSNR lsnr = (LSNR) lsnrObj;
             listenerDispatch.accept(lsnr, event);
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    private record PendingEvent(Object[] listeners, @Nullable Object event, BiConsumer dispatch) {
+    }
+
+    private static final VarHandle DISPATCHING_THREAD;
+    static {
+        try {
+            DISPATCHING_THREAD = MethodHandles
+                    .lookup()
+                    .findVarHandle(ListenerSet.class, "dispatchingThread", Thread.class);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
         }
     }
 

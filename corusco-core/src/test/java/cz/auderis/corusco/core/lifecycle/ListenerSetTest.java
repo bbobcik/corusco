@@ -108,6 +108,49 @@ class ListenerSetTest {
         assertThat(observed).containsExactly("null");
     }
 
+    @Test
+    void deliversReentrantEventsAfterCurrentDispatchInRaiseOrder() {
+        ListenerSet<java.util.function.Consumer<String>, String> listeners = new ListenerSet<>();
+        List<String> observed = new ArrayList<>();
+        listeners.addListener(event -> {
+            observed.add("first:" + event);
+            if (event.equals("a")) {
+                listeners.fireEvent("b", java.util.function.Consumer::accept);
+                observed.add("first-after-nested-fire");
+            }
+        });
+        listeners.addListener(event -> observed.add("second:" + event));
+
+        listeners.fireEvent("a", java.util.function.Consumer::accept);
+
+        assertThat(observed).containsExactly(
+                "first:a",
+                "first-after-nested-fire",
+                "second:a",
+                "first:b",
+                "second:b"
+        );
+    }
+
+    @Test
+    void recoversAfterListenerFailure() {
+        ListenerSet<java.util.function.Consumer<String>, String> listeners = new ListenerSet<>();
+        List<String> observed = new ArrayList<>();
+        listeners.addListener(event -> {
+            observed.add(event);
+            if (event.equals("boom")) {
+                throw new IllegalStateException("boom");
+            }
+        });
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> listeners.fireEvent("boom", java.util.function.Consumer::accept)
+        ).isInstanceOf(IllegalStateException.class);
+        listeners.fireEvent("next", java.util.function.Consumer::accept);
+
+        assertThat(observed).containsExactly("boom", "next");
+    }
+
     private static final class EqualRunnable implements Runnable {
 
         private final Runnable delegate;
