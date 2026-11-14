@@ -36,6 +36,7 @@ final class ShowcaseRuntime implements AutoCloseable {
     private final TaskService taskService = SwingTaskServices.virtualThreads();
     private final JLabel statusLabel = new JLabel("Ready");
     private final TimeseriesDatabasePanel timeseriesPanel;
+    private final PagedTimeseriesPanel pagedTimeseriesPanel;
     private final EventStreamPanel eventPanel;
     private final CustomerWorkspacePanel customerPanel;
     private final GeneratedTableShowcasePanel generatedPanel;
@@ -58,6 +59,7 @@ final class ShowcaseRuntime implements AutoCloseable {
         customerPanel = new CustomerWorkspacePanel(scope, resources, statusLabel);
         generatedPanel = new GeneratedTableShowcasePanel(scope, stateStore, resources, statusLabel);
         timeseriesPanel = new TimeseriesDatabasePanel(scope, stateStore, resources, statusLabel);
+        pagedTimeseriesPanel = new PagedTimeseriesPanel(scope, taskService, resources);
         eventPanel = new EventStreamPanel(scope, resources, statusLabel);
         overviewPanel = new ShowcaseOverviewPanel();
 
@@ -251,6 +253,8 @@ final class ShowcaseRuntime implements AutoCloseable {
         tabs.addTab("Overview", overviewPanel);
         tabs.addTab("Customer Workflow", customerPanel);
         tabs.addTab("Market Data Grid", timeseriesPanel);
+        tabs.addTab("Paged time series", pagedTimeseriesPanel);
+        tabs.addChangeListener(event -> { if (tabs.getSelectedComponent() == pagedTimeseriesPanel) pagedTimeseriesPanel.activate(); });
         tabs.addTab("Generated Table Lab", generatedPanel);
         tabs.addTab("Event Stream", eventPanel);
         return tabs;

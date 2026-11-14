@@ -10,6 +10,13 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import cz.auderis.corusco.core.data.CoruscoDataCount;
+import cz.auderis.corusco.core.data.CoruscoDataFilterOperator;
+import cz.auderis.corusco.core.data.CoruscoDataPage;
+import cz.auderis.corusco.core.data.CoruscoDataRequest;
+import cz.auderis.corusco.core.data.CoruscoDataSort;
+import cz.auderis.corusco.core.task.CancellationToken;
+import java.util.Map;
 
 final class H2TimeseriesRepository {
 
@@ -17,8 +24,65 @@ final class H2TimeseriesRepository {
 
     private static final String URL = "jdbc:h2:mem:corusco_showcase_timeseries;DB_CLOSE_DELAY=-1";
     private static volatile boolean seeded;
+    private static final Map<String, String> FILTER_COLUMNS = Map.of(
+            TimeseriesObservationColumns.SYMBOL.key().id(), "symbol", TimeseriesObservationColumns.REGION.key().id(), "region");
+    private static final Map<String, String> SORT_COLUMNS = Map.of(
+            TimeseriesObservationColumns.SYMBOL.key().id(), "symbol", TimeseriesObservationColumns.TIMESTAMP_MILLIS.key().id(), "timestamp_millis");
 
     private H2TimeseriesRepository() {
+    }
+
+    static CoruscoDataPage<TimeseriesObservation> loadPage(CoruscoDataRequest request, CancellationToken cancellation) throws SQLException {
+        cancellation.throwIfCancellationRequested();
+        StringBuilder where = new StringBuilder(" where 1=1");
+        List<String> values = new ArrayList<>();
+        for (var filter : request.query().filters()) {
+            String column = FILTER_COLUMNS.get(filter.fieldId());
+            if (column == null) throw new IllegalArgumentException("Unknown filter: " + filter.fieldId());
+            if (filter.operator() != CoruscoDataFilterOperator.CONTAINS || filter.values().size() != 1 || !(filter.values().getFirst() instanceof String text))
+                throw new IllegalArgumentException("Expected a text contains filter");
+            text = text.trim();
+            if (!text.isEmpty()) {
+                where.append(" and lower(").append(column).append(") like lower(?) escape '!'");
+                values.add("%" + text.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%");
+            }
+        }
+        StringBuilder order = new StringBuilder();
+        for (var sort : request.query().sort()) {
+            String column = SORT_COLUMNS.get(sort.fieldId());
+            if (column == null) throw new IllegalArgumentException("Unknown sort: " + sort.fieldId());
+            order.append(column).append(sort.direction() == CoruscoDataSort.Direction.ASCENDING ? " asc, " : " desc, ");
+        }
+        order.append("seq asc");
+        try (Connection connection = DriverManager.getConnection(URL)) {
+            seedIfNeeded(connection);
+            long count;
+            try (PreparedStatement statement = connection.prepareStatement("select count(*) from observations" + where)) {
+                bindFilters(statement, values);
+                try (ResultSet result = statement.executeQuery()) { result.next(); count = result.getLong(1); }
+            }
+            List<TimeseriesObservation> rows = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("select * from observations" + where + " order by " + order + " limit ? offset ?")) {
+                bindFilters(statement, values);
+                statement.setInt(values.size() + 1, request.range().limit());
+                statement.setLong(values.size() + 2, request.range().offset());
+                try (ResultSet result = statement.executeQuery()) { while (result.next()) rows.add(readRow(result)); }
+            }
+            cancellation.throwIfCancellationRequested();
+            return new CoruscoDataPage<>(rows, request.range(), CoruscoDataCount.exact(count));
+        }
+    }
+
+    private static void bindFilters(PreparedStatement statement, List<String> values) throws SQLException {
+        for (int i = 0; i < values.size(); i++) statement.setString(i + 1, values.get(i));
+    }
+
+    private static TimeseriesObservation readRow(ResultSet resultSet) throws SQLException {
+        return new TimeseriesObservation(resultSet.getLong("seq"), resultSet.getLong("timestamp_millis"),
+                resultSet.getString("symbol"), resultSet.getString("venue"), resultSet.getString("region"),
+                resultSet.getString("channel"), ObservationState.valueOf(resultSet.getString("state")),
+                resultSet.getBigDecimal("bid"), resultSet.getBigDecimal("ask"), resultSet.getBigDecimal("last_price"),
+                resultSet.getLong("volume"), resultSet.getBigDecimal("notional"), resultSet.getDouble("latency_millis"));
     }
 
     static List<TimeseriesObservation> loadObservations() {
@@ -33,21 +97,7 @@ final class H2TimeseriesRepository {
                     ResultSet resultSet = statement.executeQuery()) {
                 List<TimeseriesObservation> rows = new ArrayList<>(OBSERVATION_COUNT);
                 while (resultSet.next()) {
-                    rows.add(new TimeseriesObservation(
-                            resultSet.getLong("seq"),
-                            resultSet.getLong("timestamp_millis"),
-                            resultSet.getString("symbol"),
-                            resultSet.getString("venue"),
-                            resultSet.getString("region"),
-                            resultSet.getString("channel"),
-                            ObservationState.valueOf(resultSet.getString("state")),
-                            resultSet.getBigDecimal("bid"),
-                            resultSet.getBigDecimal("ask"),
-                            resultSet.getBigDecimal("last_price"),
-                            resultSet.getLong("volume"),
-                            resultSet.getBigDecimal("notional"),
-                            resultSet.getDouble("latency_millis")
-                    ));
+                    rows.add(readRow(resultSet));
                 }
                 return rows;
             }
