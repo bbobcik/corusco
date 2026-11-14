@@ -206,4 +206,98 @@ class EdtObservableListTest {
             throw new AssertionError("Interrupted while waiting for worker thread", e);
         }
     }
+
+    @Test
+    void edtReadsMatchDeliveredEventsWhileBackgroundProducerIsAhead() throws Exception {
+        ObservableArrayList<Integer> source = ObservableArrayList.empty();
+        EdtObservableList<Integer> edtList = EdtObservableList.of(source);
+        assertEdtReadsFollowDeliveredEvents(source, edtList, edtList::size, edtList::get, edtList::snapshot);
+        edtList.close();
+    }
+
+    @Test
+    void readableWrapperEdtReadsMatchDeliveredEventsWhileBackgroundProducerIsAhead() throws Exception {
+        ObservableArrayList<Integer> source = ObservableArrayList.empty();
+        EdtObservableReadableCollection<Integer> edtCollection = EdtObservableReadableCollection.of(source);
+        assertEdtReadsFollowDeliveredEvents(
+                source,
+                edtCollection,
+                edtCollection::size,
+                edtCollection::get,
+                edtCollection::snapshot
+        );
+        edtCollection.close();
+    }
+
+    @Test
+    void edtMutationsInterleavedWithQueuedBackgroundChangesStayOrdered() throws Exception {
+        ObservableArrayList<String> source = ObservableArrayList.empty();
+        EdtObservableList<String> edtList = EdtObservableList.of(source);
+        CountDownLatch backgroundDone = new CountDownLatch(1);
+        List<String> mirroredByEvents = new ArrayList<>();
+        edtList.subscribe(changes -> changes.changes().forEach(change -> {
+            if (change instanceof ListChange.Inserted<String> inserted) {
+                mirroredByEvents.addAll(inserted.index(), inserted.elements());
+            }
+        }));
+
+        SwingEdt.runAndWait(() -> {
+            Thread worker = new Thread(() -> {
+                source.add("background");
+                backgroundDone.countDown();
+            }, "corusco-edt-list-order-test");
+            worker.start();
+            try {
+                assertThat(backgroundDone.await(2, TimeUnit.SECONDS)).isTrue();
+                worker.join();
+            } catch (InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+            // The background change is still queued for the EDT here.
+            edtList.add("edt");
+            assertThat(edtList.snapshot()).containsExactly("background", "edt");
+        });
+        SwingEdt.runAndWait(() -> assertThat(mirroredByEvents).containsExactly("background", "edt"));
+        edtList.close();
+    }
+
+    private static void assertEdtReadsFollowDeliveredEvents(
+            ObservableArrayList<Integer> source,
+            cz.auderis.corusco.core.collection.ObservableReadableCollection<Integer> wrapper,
+            java.util.function.IntSupplier size,
+            java.util.function.IntFunction<Integer> get,
+            java.util.function.Supplier<List<Integer>> snapshot
+    ) throws Exception {
+        int total = 2_000;
+        List<Integer> delivered = new ArrayList<>();
+        List<String> mismatches = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CountDownLatch allDelivered = new CountDownLatch(1);
+        wrapper.subscribe(changes -> {
+            for (ListChange<Integer> change : changes.changes()) {
+                if (change instanceof ListChange.Inserted<Integer> inserted) {
+                    delivered.addAll(inserted.index(), inserted.elements());
+                }
+            }
+            if (size.getAsInt() != delivered.size()) {
+                mismatches.add("size " + size.getAsInt() + " after " + delivered.size() + " delivered");
+            } else if (get.apply(delivered.size() - 1).intValue() != delivered.getLast()) {
+                mismatches.add("last element differs at " + delivered.size());
+            }
+            if (delivered.size() == total) {
+                allDelivered.countDown();
+            }
+        });
+
+        Thread producer = new Thread(() -> {
+            for (int i = 0; i < total; i++) {
+                source.add(i);
+            }
+        }, "corusco-edt-list-producer");
+        producer.start();
+        producer.join();
+
+        assertThat(allDelivered.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(mismatches).isEmpty();
+        SwingEdt.runAndWait(() -> assertThat(snapshot.get()).isEqualTo(delivered));
+    }
 }
