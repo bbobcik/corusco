@@ -3,12 +3,29 @@ package cz.auderis.corusco.core.resource;
 import cz.auderis.corusco.core.key.ResourceKey;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.ListResourceBundle;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MapResourcesTest {
+
+    @Test
+    void bundleResourcesUseTypedLookupAndMissingFallback() {
+        var bundle = new ListResourceBundle() {
+            protected Object[][] getContents() {
+                return new Object[][]{{LABEL.id(), "Name"}, {WIDTH.id(), 160}};
+            }
+        };
+        Resources resources = Resources.fromBundle(bundle);
+        assertThat(resources.require(LABEL)).isEqualTo("Name");
+        assertThat(resources.find(TOOLTIP)).isEmpty();
+        assertThat(resources.resolve(TOOLTIP, "fallback")).isEqualTo("fallback");
+        assertThatThrownBy(() -> resources.find(ResourceKey.of(WIDTH.id(), String.class)))
+                .isInstanceOf(ResourceException.class).hasMessageContaining(WIDTH.id());
+        assertThatThrownBy(() -> Resources.of(null)).isInstanceOf(NullPointerException.class);
+    }
 
     private static final ResourceKey<String> LABEL = ResourceKey.of("customer/name/label", String.class);
     private static final ResourceKey<String> TOOLTIP = ResourceKey.of("customer/name/tooltip", String.class);

@@ -1,8 +1,18 @@
 package cz.auderis.corusco.core.convert;
 
 import java.math.BigDecimal;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.text.ParsePosition;
 import java.time.LocalDate;
+import java.time.chrono.IsoChronology;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
+import java.time.format.DecimalStyle;
+import java.time.format.FormatStyle;
+import java.time.format.ResolverStyle;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -16,7 +26,7 @@ import java.util.function.Function;
  * input to remain in a {@code TextFieldModel} while the last valid semantic
  * value is preserved.</p>
  *
- * <p>The converters are locale-neutral. Numbers use JDK parsing for the target
+ * <p>The default converters are locale-neutral. Numbers use JDK parsing for the target
  * type, dates use ISO-8601 {@code yyyy-MM-dd}, and enum values use enum
  * constant names. Empty-text behavior is controlled by
  * {@link EmptyTextPolicy} for types where empty text may represent either a
@@ -73,6 +83,18 @@ public final class Converters {
     }
 
     /**
+     * Creates a localized integer converter. Decimal notation is accepted when
+     * its value is integral and within range.
+     * @param emptyTextPolicy empty-text policy
+     * @param locale number locale
+     * @return localized integer converter
+     * @see #bigDecimal(EmptyTextPolicy, Locale)
+     */
+    public static StringConverter<Integer> integer(EmptyTextPolicy emptyTextPolicy, Locale locale) {
+        return localizedNumber(Integer.class, emptyTextPolicy, locale, BigDecimal::intValueExact);
+    }
+
+    /**
      * Creates a long converter.
      *
      * @param emptyTextPolicy empty-text policy
@@ -83,6 +105,18 @@ public final class Converters {
     }
 
     /**
+     * Creates a localized long converter. Decimal notation is accepted when
+     * its value is integral and within range.
+     * @param emptyTextPolicy empty-text policy
+     * @param locale number locale
+     * @return localized long converter
+     * @see #bigDecimal(EmptyTextPolicy, Locale)
+     */
+    public static StringConverter<Long> longValue(EmptyTextPolicy emptyTextPolicy, Locale locale) {
+        return localizedNumber(Long.class, emptyTextPolicy, locale, BigDecimal::longValueExact);
+    }
+
+    /**
      * Creates a BigDecimal converter.
      *
      * @param emptyTextPolicy empty-text policy
@@ -90,6 +124,20 @@ public final class Converters {
      */
     public static StringConverter<BigDecimal> bigDecimal(EmptyTextPolicy emptyTextPolicy) {
         return number(BigDecimal.class, emptyTextPolicy, BigDecimal::new);
+    }
+
+    /**
+     * Creates a localized decimal converter. Parsing consumes the entire input;
+     * whitespace is not trimmed. Grouping is optional, but when present must
+     * match the locale's grouping size and separator. Non-finite values are rejected.
+     * Formatting preserves all fractional digits without rounding.
+     *
+     * @param emptyTextPolicy empty-text policy
+     * @param locale number locale
+     * @return localized decimal converter
+     */
+    public static StringConverter<BigDecimal> bigDecimal(EmptyTextPolicy emptyTextPolicy, Locale locale) {
+        return localizedNumber(BigDecimal.class, emptyTextPolicy, locale, Function.identity());
     }
 
     /**
@@ -111,6 +159,91 @@ public final class Converters {
                 },
                 value -> value == null ? "" : value.toString()
         );
+    }
+
+    /**
+     * Creates a strict localized short-date converter. The locale's short pattern
+     * is used with a proleptic year of at least four digits instead of a reduced
+     * two-digit year, avoiding a moving century window.
+     *
+     * @param emptyTextPolicy empty-text policy
+     * @param locale date locale
+     * @return localized date converter
+     */
+    public static StringConverter<LocalDate> localDate(EmptyTextPolicy emptyTextPolicy, Locale locale) {
+        Objects.requireNonNull(locale, "locale");
+        String pattern = DateTimeFormatterBuilder.getLocalizedDateTimePattern(
+                FormatStyle.SHORT, null, IsoChronology.INSTANCE, locale);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(fullYearPattern(pattern), locale)
+                .withDecimalStyle(DecimalStyle.of(locale))
+                .withResolverStyle(ResolverStyle.STRICT);
+        return new BasicConverter<>(LocalDate.class, emptyTextPolicy, raw -> {
+            try {
+                return LocalDate.parse(raw, formatter);
+            } catch (DateTimeParseException e) {
+                throw new IllegalArgumentException("Expected localized date", e);
+            }
+        }, value -> value == null ? "" : formatter.format(value));
+    }
+
+    private static String fullYearPattern(String pattern) {
+        StringBuilder result = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '\'') {
+                result.append(c);
+                if (i + 1 < pattern.length() && pattern.charAt(i + 1) == '\'') {
+                    result.append(pattern.charAt(++i));
+                } else {
+                    quoted = !quoted;
+                }
+            } else if (!quoted && c == 'y') {
+                result.append("uuuu");
+                while (i + 1 < pattern.length() && pattern.charAt(i + 1) == 'y') i++;
+            } else {
+                result.append(c);
+            }
+        }
+        return result.toString();
+    }
+
+    private static <T extends Number> StringConverter<T> localizedNumber(
+            Class<T> type, EmptyTextPolicy policy, Locale locale, Function<BigDecimal, T> conversion) {
+        Objects.requireNonNull(locale, "locale");
+        return new BasicConverter<>(type, policy, raw -> {
+            DecimalFormat format = decimalFormat(locale);
+            ParsePosition position = new ParsePosition(0);
+            Number parsed = format.parse(raw, position);
+            if (!(parsed instanceof BigDecimal decimal) || position.getIndex() != raw.length()) {
+                throw new IllegalArgumentException("Expected " + type.getSimpleName());
+            }
+            try {
+                return conversion.apply(decimal);
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException("Expected " + type.getSimpleName(), e);
+            }
+        }, value -> {
+            if (value == null) return "";
+            DecimalFormat format = decimalFormat(locale);
+            if (value instanceof BigDecimal decimal) {
+                int scale = Math.max(0, decimal.scale());
+                format.setMaximumFractionDigits(scale);
+                format.setMinimumFractionDigits(scale);
+            }
+            return format.format(value);
+        });
+    }
+
+    private static DecimalFormat decimalFormat(Locale locale) {
+        NumberFormat numberFormat = NumberFormat.getNumberInstance(locale);
+        if (!(numberFormat instanceof DecimalFormat format)) {
+            throw new IllegalArgumentException("Locale does not provide a decimal format: " + locale);
+        }
+        format.setStrict(true);
+        format.setParseBigDecimal(true);
+        format.setMaximumIntegerDigits(Integer.MAX_VALUE);
+        return format;
     }
 
     /**

@@ -60,6 +60,10 @@ public final class MapResources implements Resources {
         if (value == null) {
             return Optional.empty();
         }
+        return checkedValue(key, value);
+    }
+
+    static <T> Optional<T> checkedValue(ResourceKey<T> key, Object value) {
         if (!key.valueType().isInstance(value)) {
             throw new ResourceException(
                     "Resource " + key.id() + " has type " + value.getClass().getName()

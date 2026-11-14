@@ -4,6 +4,8 @@ import cz.auderis.corusco.core.key.ResourceKey;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.MissingResourceException;
+import java.util.ResourceBundle;
 
 /**
  * Typed resource lookup boundary.
@@ -79,5 +81,30 @@ public interface Resources {
      */
     static Resources of(Map<String, ?> values) {
         return MapResources.of(values);
+    }
+
+    /**
+     * Creates resources backed by a bundle, including its parent lookup chain.
+     * Missing keys resolve as empty; present values use the same type check as
+     * map-backed resources. The bundle is consulted on each lookup.
+     *
+     * @param bundle resource bundle
+     * @return bundle-backed resources
+     */
+    static Resources fromBundle(ResourceBundle bundle) {
+        Objects.requireNonNull(bundle, "bundle");
+        return new Resources() {
+            @Override
+            public <T> Optional<T> find(ResourceKey<T> key) {
+                Objects.requireNonNull(key, "key");
+                Object value;
+                try {
+                    value = bundle.getObject(key.id());
+                } catch (MissingResourceException e) {
+                    return Optional.empty();
+                }
+                return MapResources.checkedValue(key, value);
+            }
+        };
     }
 }
