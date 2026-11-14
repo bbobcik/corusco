@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JTextArea;
@@ -130,6 +131,59 @@ public final class BindingFactory {
             SwingEdt.requireEdt();
             scope.close();
         };
+    }
+
+    /**
+     * Binds a combo box selection to a field model.
+     *
+     * <p>The combo box is initialized from the model value. Only the selected
+     * item is bound; the caller owns the combo-box items, typically through a
+     * {@link javax.swing.ComboBoxModel} populated before or after binding. User
+     * selection updates the model with {@link StandardChangeOrigin#USER}, and a
+     * cleared selection writes {@code null}. Model changes select the matching
+     * item without feeding back through the action listener. Closing the
+     * binding removes the listener and the value subscription.</p>
+     *
+     * @param component combo box
+     * @param model field model holding the selected value
+     * @param <O> owner/model type
+     * @param <T> item value type
+     * @return binding
+     * @since 1.3.1
+     */
+    public static <O, T> Binding comboBox(JComboBox<T> component, FieldModel<O, T> model) {
+        SwingEdt.requireEdt();
+        Objects.requireNonNull(component, "component");
+        Objects.requireNonNull(model, "model");
+        SubscriptionScope scope = new SubscriptionScope();
+        boolean[] updating = new boolean[1];
+        selectComboItem(component, model.value().value(), updating);
+        ActionListener actionListener = event -> {
+            if (!updating[0]) {
+                @SuppressWarnings("unchecked")
+                T selected = (T) component.getSelectedItem();
+                model.setValue(selected, StandardChangeOrigin.USER);
+            }
+        };
+        component.addActionListener(actionListener);
+        scope.onClose(() -> component.removeActionListener(actionListener));
+        scope.add(model.value().subscribe(event -> {
+            SwingEdt.requireEdt();
+            selectComboItem(component, event.newValue(), updating);
+        }));
+        return () -> {
+            SwingEdt.requireEdt();
+            scope.close();
+        };
+    }
+
+    private static void selectComboItem(JComboBox<?> component, Object value, boolean[] updating) {
+        updating[0] = true;
+        try {
+            component.setSelectedItem(value);
+        } finally {
+            updating[0] = false;
+        }
     }
 
     /**

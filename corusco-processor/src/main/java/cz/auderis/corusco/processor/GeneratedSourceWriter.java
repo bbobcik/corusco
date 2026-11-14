@@ -688,6 +688,12 @@ final class GeneratedSourceWriter {
                                 StandardBehaviors.checkBoxBinding(model.form().%s)%s
                         ));
                     """.formatted(field.viewMethodName, field.componentName, componentStateBehavior);
+        } else if ("COMBO_BOX".equals(field.kind)) {
+            return """
+                        scope.install(view.%s(), List.of(
+                                StandardBehaviors.comboBoxBinding(model.form().%s)%s
+                        ));
+                    """.formatted(field.viewMethodName, field.componentName, componentStateBehavior);
         } else if ("RADIO_GROUP".equals(field.kind) && !field.options.isEmpty()) {
             return """
                         scope.install(view.%s(), List.of(

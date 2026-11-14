@@ -1574,6 +1574,30 @@ class CoruscoAnnotationProcessorTest {
     }
 
     @Test
+    void generatesComboBoxBindingInBehaviorPlan() throws Exception {
+        GeneratedSourceCompilation result = compile("""
+                package demo;
+
+                import cz.auderis.corusco.annotations.form.ComboBox;
+                import cz.auderis.corusco.annotations.form.CoruscoForm;
+
+                @CoruscoForm(id = "customer")
+                public record CustomerEdit(@ComboBox CustomerType type, @ComboBox String region) {
+                }
+
+                enum CustomerType {
+                    RETAIL, BUSINESS
+                }
+                """);
+
+        assertThat(result.success()).as(result.messages()).isTrue();
+        result.assertGeneratedSourceContains("demo/CustomerEditBehaviorPlan.java",
+                "StandardBehaviors.comboBoxBinding(model.form().type)",
+                "StandardBehaviors.comboBoxBinding(model.form().region)"
+        );
+    }
+
+    @Test
     void defersFormsReferencingTypesGeneratedByOtherProcessors() throws Exception {
         GeneratedSourceCompilation result = GeneratedSourceCompiler.in(tempDir)
                 .withProcessor(new CustomerTypeGenerator())

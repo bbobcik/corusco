@@ -27,6 +27,13 @@ public final class StandardBehaviorKeys {
     public static final BehaviorKey RADIO_GROUP_BINDING = BehaviorKey.of("binding/radio-group");
 
     /**
+     * Primary combo-box selected-item binding behavior.
+     *
+     * @since 1.3.1
+     */
+    public static final BehaviorKey COMBO_BOX_BINDING = BehaviorKey.of("binding/combo-box");
+
+    /**
      * Component-state binding behavior.
      */
     public static final BehaviorKey COMPONENT_STATE = BehaviorKey.of("binding/component-state");

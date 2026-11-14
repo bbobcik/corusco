@@ -26,6 +26,7 @@ import javax.swing.AbstractAction;
 import javax.swing.AbstractButton;
 import javax.swing.ActionMap;
 import javax.swing.InputMap;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JLayer;
@@ -139,6 +140,34 @@ public final class StandardBehaviors {
             @Override
             public Binding install(BehaviorContext<AbstractButton> context) {
                 return BindingFactory.selected(context.component(), model);
+            }
+        };
+    }
+
+    /**
+     * Creates a combo-box selected-item binding behavior.
+     *
+     * <p>The behavior installs a primary binding through
+     * {@link BindingFactory#comboBox(JComboBox, FieldModel)}. The combo-box
+     * items are owned by the caller.</p>
+     *
+     * @param model field model holding the selected value
+     * @param <O> owner/model type
+     * @param <T> item value type
+     * @return combo-box binding behavior
+     * @since 1.3.1
+     */
+    public static <O, T> BindingBehavior<JComboBox<T>> comboBoxBinding(FieldModel<O, T> model) {
+        Objects.requireNonNull(model, "model");
+        return new BindingBehavior<>() {
+            @Override
+            public BehaviorDescriptor descriptor() {
+                return BehaviorDescriptor.primaryBinding(StandardBehaviorKeys.COMBO_BOX_BINDING);
+            }
+
+            @Override
+            public Binding install(BehaviorContext<JComboBox<T>> context) {
+                return BindingFactory.comboBox(context.component(), model);
             }
         };
     }

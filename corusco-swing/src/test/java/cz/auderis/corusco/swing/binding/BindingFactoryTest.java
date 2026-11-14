@@ -105,6 +105,35 @@ class BindingFactoryTest {
     }
 
     @Test
+    void comboBoxBindingSynchronizesSelectionAndModel() {
+        SwingEdt.runAndWait(() -> {
+            FieldModel<CustomerEdit, AuthenticationMode> mode =
+                    new FieldModel<>(AUTHENTICATION_MODE, AuthenticationMode.values()[0]);
+            javax.swing.JComboBox<AuthenticationMode> combo = new javax.swing.JComboBox<>(AuthenticationMode.values());
+            combo.setSelectedIndex(-1);
+            List<ChangeOrigin> origins = new java.util.ArrayList<>();
+            mode.value().subscribe(event -> origins.add(event.origin()));
+
+            Binding binding = BindingFactory.comboBox(combo, mode);
+            assertThat(combo.getSelectedItem()).isEqualTo(AuthenticationMode.values()[0]);
+            assertThat(origins).isEmpty();
+
+            AuthenticationMode last = AuthenticationMode.values()[AuthenticationMode.values().length - 1];
+            combo.setSelectedItem(last);
+            assertThat(mode.value().value()).isEqualTo(last);
+            assertThat(origins).containsExactly(StandardChangeOrigin.USER);
+
+            mode.setValue(AuthenticationMode.values()[0], StandardChangeOrigin.MODEL);
+            assertThat(combo.getSelectedItem()).isEqualTo(AuthenticationMode.values()[0]);
+            assertThat(origins).containsExactly(StandardChangeOrigin.USER, StandardChangeOrigin.MODEL);
+
+            binding.close();
+            combo.setSelectedItem(last);
+            assertThat(mode.value().value()).isEqualTo(AuthenticationMode.values()[0]);
+        });
+    }
+
+    @Test
     void checkboxAndReadableValueBindingsUpdateComponentsAndModels() {
         SwingEdt.runAndWait(() -> {
             FieldModel<CustomerEdit, Boolean> active = new FieldModel<>(ACTIVE, false);
