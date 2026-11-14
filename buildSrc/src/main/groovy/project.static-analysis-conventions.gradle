@@ -1,0 +1,37 @@
+/**
+ * ------------------------------------------------------
+ * STATIC ANALYSIS OF PUBLISHED MODULES (MAIN SOURCES)
+ * ------------------------------------------------------
+ *
+ * Error Prone with its default checks runs on main sources only; tests and
+ * generated sources are not analyzed. NullAway runs in JSpecify mode over all
+ * Corusco packages. Its findings are reported as warnings for now because most
+ * packages are not @NullMarked yet; raise the severity to ERROR once the
+ * warning count reaches zero. Use -PerrorProne=false to skip the analysis.
+ */
+
+import net.ltgt.gradle.errorprone.CheckSeverity
+
+plugins {
+    id 'java-library'
+    id 'net.ltgt.errorprone'
+}
+
+dependencies {
+    errorprone libs.errorprone.core
+    errorprone libs.nullaway
+}
+
+def errorProneEnabled = providers.gradleProperty('errorProne').getOrElse('true').toBoolean()
+
+tasks.withType(JavaCompile).configureEach {
+    def mainCompilation = name == 'compileJava'
+    options.errorprone {
+        enabled = errorProneEnabled && mainCompilation
+        disableWarningsInGeneratedCode = true
+        excludedPaths = '.*/build/generated/.*'
+        check('NullAway', CheckSeverity.WARN)
+        option('NullAway:AnnotatedPackages', 'cz.auderis.corusco')
+        option('NullAway:JSpecifyMode', 'true')
+    }
+}

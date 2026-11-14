@@ -6,6 +6,7 @@
 
 plugins {
     id 'java-library'
+    id 'jacoco'
 }
 
 group = rootProject.group
@@ -61,6 +62,21 @@ tasks.withType(Test) {
     testLogging {
         events 'failed'
         exceptionFormat = 'full'
+    }
+}
+
+jacoco {
+    toolVersion = libs.versions.jacoco.get()
+}
+
+tasks.named('test') {
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.named('jacocoTestReport', JacocoReport) {
+    reports {
+        xml.required = true
+        html.required = true
     }
 }
 

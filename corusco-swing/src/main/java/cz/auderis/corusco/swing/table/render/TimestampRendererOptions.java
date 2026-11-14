@@ -78,7 +78,8 @@ public record TimestampRendererOptions(
         if (cacheSize <= 0) {
             throw new IllegalArgumentException("cacheSize must be greater than zero");
         }
-        DateTimeFormatter.ofPattern(pattern, Locale.ROOT);
+        // Fail fast on an invalid pattern; the formatter itself is created per renderer.
+        var _ = DateTimeFormatter.ofPattern(pattern, Locale.ROOT);
     }
 
     /**

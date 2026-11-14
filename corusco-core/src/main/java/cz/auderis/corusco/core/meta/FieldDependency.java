@@ -39,7 +39,7 @@ public record FieldDependency<T>(
         if (expectedValues.isEmpty()) {
             throw new IllegalArgumentException("Expected values must not be empty");
         }
-        effect = Objects.requireNonNull(effect, "effect");
+        Objects.requireNonNull(effect, "effect");
     }
 
     /**
