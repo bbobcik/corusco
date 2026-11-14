@@ -3,7 +3,40 @@
 All notable changes to Corusco are recorded here. The project follows the
 compatibility rules in [docs/release-policy.md](docs/release-policy.md).
 
-## 1.3.1 - Unreleased
+## 1.4.0 - 2026-11-14
+
+### Added
+
+- `ObservableArrayList.replaceContents` replaces a snapshot in a single change
+  set for coherent table refreshes.
+- Generated form models expose aggregate validation, dirty state, and a
+  revision through `ObservableFormModel`. Observable composite forms let
+  dialogs share this state across tabs and coalesce reset and baseline changes.
+- `PagedTableBinding` shows the last accepted page during loading and failure.
+  The H2 showcase demonstrates server-side filtering and sorting, retry, and
+  key-based selection within the same query.
+- Opt-in locale-aware number and date converters and typed resource bundle
+  lookup through `Resources.fromBundle`.
+
+### Changed
+
+- `SortedList` publishes precise single-row changes, preserves source order
+  for equal sort keys, and retains reset events for compound source changes.
+- The showcase prepares the H2 observations and generated frame on a worker.
+
+### Fixed
+
+- Worker rejection leaves task tracking intact, and accepted tasks complete
+  exactly once.
+- Paged data sources publish coherent request and accepted-page state and ignore
+  superseded completions.
+
+### Compatibility
+
+- Verified binary compatibility against 1.3.0. Generated names, stable IDs,
+  JPMS names, and the default converter choices are preserved.
+
+## 1.3.1 changes included in 1.4.0
 
 ### Fixed
 
